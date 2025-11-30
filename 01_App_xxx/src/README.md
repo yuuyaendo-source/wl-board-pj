@@ -1,2 +1,2 @@
-﻿\# Digital Logic Lab
+\# Digital Logic Lab
 
