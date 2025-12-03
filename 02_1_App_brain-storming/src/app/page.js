@@ -1,74 +1,64 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import Image from "next/image";
 import styles from "./page.module.css";
 
 export default function Home() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [boardId, setBoardId] = useState("");
-
-  useEffect(() => {
-    const savedName = localStorage.getItem("userName");
-    if (savedName) setName(savedName);
-  }, []);
-
-  const handleStart = (targetBoardId) => {
-    if (!name.trim()) {
-      alert("名前を入力してください");
-      return;
-    }
-    localStorage.setItem("userName", name);
-    router.push(`/board/${targetBoardId}`);
-  };
-
-  const createNewBoard = () => {
-    const newId = Math.random().toString(36).substring(2, 9);
-    handleStart(newId);
-  };
-
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <h1 className={styles.title}>Brainstorming App</h1>
-
-        <div className={styles.card}>
-          <div className={styles.inputGroup}>
-            <label>参加者名</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="あなたの名前"
-              className={styles.input}
+        <Image
+          className={styles.logo}
+          src="/next.svg"
+          alt="Next.js logo"
+          width={100}
+          height={20}
+          priority
+        />
+        <div className={styles.intro}>
+          <h1>To get started, edit the page.js file.</h1>
+          <p>
+            Looking for a starting point or more instructions? Head over to{" "}
+            <a
+              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Templates
+            </a>{" "}
+            or the{" "}
+            <a
+              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Learning
+            </a>{" "}
+            center.
+          </p>
+        </div>
+        <div className={styles.ctas}>
+          <a
+            className={styles.primary}
+            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Image
+              className={styles.logo}
+              src="/vercel.svg"
+              alt="Vercel logomark"
+              width={16}
+              height={16}
             />
-          </div>
-
-          <div className={styles.actions}>
-            <button onClick={createNewBoard} className={styles.primaryButton}>
-              新規ボード作成
-            </button>
-
-            <div className={styles.divider}>または</div>
-
-            <div className={styles.joinGroup}>
-              <input
-                type="text"
-                value={boardId}
-                onChange={(e) => setBoardId(e.target.value)}
-                placeholder="ボードIDを入力"
-                className={styles.input}
-              />
-              <button
-                onClick={() => boardId && handleStart(boardId)}
-                className={styles.secondaryButton}
-                disabled={!boardId}
-              >
-                再開
-              </button>
-            </div>
-          </div>
+            Deploy Now
+          </a>
+          <a
+            className={styles.secondary}
+            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Documentation
+          </a>
         </div>
       </main>
     </div>
