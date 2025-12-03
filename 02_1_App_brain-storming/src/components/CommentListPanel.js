@@ -3,7 +3,7 @@
 import { useState } from "react";
 import styles from "./CommentListPanel.module.css";
 
-export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, onClose }) {
+export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, onUngroupNotes, onClose }) {
     const [selectedNotes, setSelectedNotes] = useState([]);
 
     const toggleSelection = (noteId) => {
@@ -23,6 +23,15 @@ export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, on
         setSelectedNotes([]);
     };
 
+    const handleUngroupSelected = () => {
+        if (selectedNotes.length === 0) {
+            alert("解除する付箋を選択してください");
+            return;
+        }
+        onUngroupNotes(selectedNotes);
+        setSelectedNotes([]);
+    };
+
     return (
         <div className={styles.panel}>
             <div className={styles.header}>
@@ -32,11 +41,18 @@ export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, on
 
             <div className={styles.actions}>
                 <span>{selectedNotes.length} 個選択中</span>
-                {selectedNotes.length >= 2 && (
-                    <button onClick={handleGroupSelected} className={styles.groupButton}>
-                        グループ化
-                    </button>
-                )}
+                <div className={styles.actionButtons}>
+                    {selectedNotes.length >= 2 && (
+                        <button onClick={handleGroupSelected} className={styles.groupButton}>
+                            グループ化
+                        </button>
+                    )}
+                    {selectedNotes.length > 0 && (
+                        <button onClick={handleUngroupSelected} className={styles.ungroupButton}>
+                            解除
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className={styles.noteList}>

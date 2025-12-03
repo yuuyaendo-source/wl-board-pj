@@ -171,7 +171,7 @@ export default function BoardPage() {
             // Calculate scroll position to center the note
             const noteX = note.x * scale;
             const noteY = note.y * scale;
-            const centerX = noteX - (container.clientWidth / 2) + 100; // 100 is half note width
+            const centerX = noteX - (container.clientWidth / 2) + 100;
             const centerY = noteY - (container.clientHeight / 2) + 100;
 
             container.scrollTo({
@@ -180,24 +180,91 @@ export default function BoardPage() {
                 behavior: 'smooth'
             });
 
-            // Highlight effect (optional)
+            // Highlight effect
             setTimeout(() => {
                 const noteElement = document.querySelector(`[data-note-id="${note.id}"]`);
                 if (noteElement) {
                     noteElement.style.animation = 'highlight 1s';
                     setTimeout(() => noteElement.style.animation = '', 1000);
                 }
-                type = "text"
-                value = { title }
-                onChange = {(e) => setTitle(e.target.value)
-}
-placeholder = "ボードタイトルを入力..."
-className = { styles.titleInput }
-    />
-    <div className={styles.status}>
-        {isConnected ? "🟢 Online" : "🔴 Offline"}
-    </div>
-            </div >
+            }, 500);
+        }
+    };
+
+    const handleGroupNotes = (noteIds) => {
+        const groupId = `group-${Date.now()}`;
+
+        // Calculate center position from selected notes
+        const selectedNotes = notes.filter(n => noteIds.includes(n.id));
+        if (selectedNotes.length === 0) return;
+
+        const centerX = selectedNotes.reduce((sum, n) => sum + n.x, 0) / selectedNotes.length;
+        const centerY = selectedNotes.reduce((sum, n) => sum + n.y, 0) / selectedNotes.length;
+
+        // Arrange notes in a circle around the center
+        const radius = 250;
+        const angleStep = (2 * Math.PI) / selectedNotes.length;
+
+        const updatedNotes = selectedNotes.map((note, index) => {
+            const angle = angleStep * index;
+            const newX = centerX + Math.cos(angle) * radius;
+            const newY = centerY + Math.sin(angle) * radius;
+
+            return {
+                ...note,
+                x: newX,
+                y: newY,
+                groupId
+            };
+        });
+
+        setNotes((prev) =>
+            prev.map((n) => {
+                const updated = updatedNotes.find(un => un.id === n.id);
+                return updated || n;
+            })
+        );
+
+        // Update on server
+        updatedNotes.forEach(note => {
+            socket.emit("update-note", { boardId, note });
+        });
+
+        alert(`${noteIds.length}個の付箋をグループ化しました`);
+    };
+
+    const handleUngroupNotes = (noteIds) => {
+        setNotes((prev) =>
+            prev.map((n) =>
+                noteIds.includes(n.id) ? { ...n, groupId: null } : n
+            )
+        );
+
+        // Update on server
+        noteIds.forEach(noteId => {
+            const note = notes.find(n => n.id === noteId);
+            if (note) {
+                socket.emit("update-note", { boardId, note: { ...note, groupId: null } });
+            }
+        });
+
+        alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
+    };
+
+    return (
+        <div className={styles.boardContainer} ref={boardContainerRef}>
+            <div className={styles.header}>
+                <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="ボードタイトルを入力..."
+                    className={styles.titleInput}
+                />
+                <div className={styles.status}>
+                    {isConnected ? "🟢 Online" : "🔴 Offline"}
+                </div>
+            </div>
 
             <Toolbar
                 onAddNote={addNote}
@@ -220,16 +287,15 @@ className = { styles.titleInput }
                 />
             </div>
 
-{
-    showCommentPanel && (
-        <CommentListPanel
-            notes={notes}
-            onJumpToNote={handleJumpToNote}
-            onGroupNotes={handleGroupNotes}
-            onClose={() => setShowCommentPanel(false)}
-        />
-    )
-}
-        </div >
+            {showCommentPanel && (
+                <CommentListPanel
+                    notes={notes}
+                    onJumpToNote={handleJumpToNote}
+                    onGroupNotes={handleGroupNotes}
+                    onUngroupNotes={handleUngroupNotes}
+                    onClose={() => setShowCommentPanel(false)}
+                />
+            )}
+        </div>
     );
 }
