@@ -42,6 +42,9 @@ app.prepare().then(() => {
         }, 500);
     };
 
+    // Store users by board
+    const boardUsers = {}; // { boardId: { socketId: { username, joinedAt } } }
+
     io.on('connection', (socket) => {
         console.log('Client connected:', socket.id);
 
@@ -55,6 +58,32 @@ app.prepare().then(() => {
             }
 
             socket.emit('init-board', boards[boardId]);
+        });
+
+        socket.on('user-join', ({ boardId, username }) => {
+            console.log(`User ${username} (${socket.id}) joined board ${boardId}`);
+
+            // Initialize board users if needed
+            if (!boardUsers[boardId]) {
+                boardUsers[boardId] = {};
+            }
+
+            // Add user
+            boardUsers[boardId][socket.id] = {
+                socketId: socket.id,
+                username,
+                joinedAt: Date.now()
+            };
+
+            // Notify all users in the board
+            const usersList = Object.values(boardUsers[boardId]);
+            io.to(boardId).emit('users-list', usersList);
+
+            // Broadcast to others that someone joined
+            socket.to(boardId).emit('user-joined', {
+                socketId: socket.id,
+                username
+            });
         });
 
         socket.on('add-note', ({ boardId, note }) => {
@@ -86,6 +115,24 @@ app.prepare().then(() => {
 
         socket.on('disconnect', () => {
             console.log('Client disconnected:', socket.id);
+
+            // Remove user from all boards and notify others
+            Object.keys(boardUsers).forEach((boardId) => {
+                if (boardUsers[boardId][socket.id]) {
+                    const username = boardUsers[boardId][socket.id].username;
+                    delete boardUsers[boardId][socket.id];
+
+                    // Send updated users list
+                    const usersList = Object.values(boardUsers[boardId]);
+                    io.to(boardId).emit('users-list', usersList);
+
+                    // Notify others that user left
+                    socket.to(boardId).emit('user-left', {
+                        socketId: socket.id,
+                        username
+                    });
+                }
+            });
         });
     });
 

@@ -13,7 +13,7 @@ const COLORS = [
     "#ffffff"  // White
 ];
 
-export default function Toolbar({ onAddNote, color, setColor, scale, setScale, onDownload, onUpload, onToggleCommentPanel, onCenter }) {
+export default function Toolbar({ onAddNote, color, setColor, scale, setScale, onDownload, onUpload, onToggleCommentPanel, onCenter, onToggleParticipants }) {
     const fileInputRef = useRef(null);
 
     const handleFileUpload = (e) => {
@@ -77,6 +77,12 @@ export default function Toolbar({ onAddNote, color, setColor, scale, setScale, o
 
             <div className={styles.group}>
                 <button onClick={onToggleCommentPanel} title="コメント一覧">📝</button>
+            </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.group}>
+                <button onClick={onToggleParticipants} title="参加者リスト">👥</button>
             </div>
         </div>
     );

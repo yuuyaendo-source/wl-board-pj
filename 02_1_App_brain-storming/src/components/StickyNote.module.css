@@ -97,7 +97,24 @@
     font-size: 12px;
     color: #333;
     pointer-events: none;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    user-select: none;
+    font-weight: 500;
+}
+
+.authorBadge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--primary, #79dc89);
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    user-select: none;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

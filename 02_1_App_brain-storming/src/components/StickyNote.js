@@ -121,6 +121,11 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
                     🔗 Group
                 </div>
             )}
+            {note.author && (
+                <div className={styles.authorBadge} title={`作成者: ${note.author}`}>
+                    {note.author}
+                </div>
+            )}
         </div>
     );
 }

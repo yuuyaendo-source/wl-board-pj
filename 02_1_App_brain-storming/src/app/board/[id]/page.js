@@ -7,6 +7,8 @@ import styles from "./page.module.css";
 import BoardCanvas from "@/components/BoardCanvas";
 import Toolbar from "@/components/Toolbar";
 import CommentListPanel from "@/components/CommentListPanel";
+import UserDialog from "@/components/UserDialog";
+import ParticipantsList from "@/components/ParticipantsList";
 
 let socket;
 
@@ -19,9 +21,21 @@ export default function BoardPage() {
     const [scale, setScale] = useState(1);
     const [title, setTitle] = useState("");
     const [showCommentPanel, setShowCommentPanel] = useState(false);
+    const [username, setUsername] = useState("");
+    const [showUserDialog, setShowUserDialog] = useState(false);
+    const [participants, setParticipants] = useState([]);
+    const [showParticipantsList, setShowParticipantsList] = useState(false);
     const boardContainerRef = useRef(null);
 
     useEffect(() => {
+        // Check if user has a saved username
+        const savedUsername = localStorage.getItem('brainstorming-username');
+        if (savedUsername) {
+            setUsername(savedUsername);
+        } else {
+            setShowUserDialog(true);
+        }
+
         // Initialize Socket.io connection with reconnection options
         socket = io({
             reconnection: true,
@@ -34,6 +48,12 @@ export default function BoardPage() {
             console.log("Connected to server");
             setIsConnected(true);
             socket.emit("join-board", boardId);
+
+            // Send user info if username is set
+            const currentUsername = localStorage.getItem('brainstorming-username');
+            if (currentUsername) {
+                socket.emit("user-join", { boardId, username: currentUsername });
+            }
         });
 
         socket.on("init-board", (data) => {
@@ -59,6 +79,19 @@ export default function BoardPage() {
 
         socket.on("line-added", (line) => {
             setLines((prev) => [...prev, line]);
+        });
+
+        // User events
+        socket.on("users-list", (usersList) => {
+            setParticipants(usersList);
+        });
+
+        socket.on("user-joined", ({ username: newUsername }) => {
+            console.log(`${newUsername} joined the board`);
+        });
+
+        socket.on("user-left", ({ username: leftUsername }) => {
+            console.log(`${leftUsername} left the board`);
         });
 
         socket.on("disconnect", () => {
@@ -97,6 +130,17 @@ export default function BoardPage() {
         }
     };
 
+    const handleUserSubmit = (newUsername) => {
+        setUsername(newUsername);
+        localStorage.setItem('brainstorming-username', newUsername);
+        setShowUserDialog(false);
+
+        // Send user-join event to server
+        if (socket && socket.connected) {
+            socket.emit("user-join", { boardId, username: newUsername });
+        }
+    };
+
     const addNote = () => {
         // Generate more unique ID with timestamp + random
         const timestamp = Date.now().toString(36);
@@ -125,6 +169,8 @@ export default function BoardPage() {
             y: bottomY + Math.random() * 20 - 10,
             color: color,
             pinned: false,
+            author: username,
+            createdAt: Date.now()
         };
         // Optimistic update
         setNotes((prev) => [...prev, newNote]);
@@ -386,6 +432,7 @@ export default function BoardPage() {
                 onUpload={handleUpload}
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
                 onCenter={handleCenter}
+                onToggleParticipants={() => setShowParticipantsList(!showParticipantsList)}
             />
 
             <div className={styles.canvasWrapper}>
@@ -406,6 +453,17 @@ export default function BoardPage() {
                     onUngroupNotes={handleUngroupNotes}
                     onClose={() => setShowCommentPanel(false)}
                 />
+            )}
+
+            {showParticipantsList && (
+                <ParticipantsList
+                    participants={participants}
+                    onClose={() => setShowParticipantsList(false)}
+                />
+            )}
+
+            {showUserDialog && (
+                <UserDialog onSubmit={handleUserSubmit} />
             )}
         </div>
     );
