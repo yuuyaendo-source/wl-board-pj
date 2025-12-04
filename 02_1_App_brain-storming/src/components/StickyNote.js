@@ -111,6 +111,11 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
                 placeholder="Type here..."
                 className={styles.textarea}
             />
+            {note.groupId && (
+                <div className={styles.groupBadge} title={`Group ID: ${note.groupId}`}>
+                    🔗 Group
+                </div>
+            )}
         </div>
     );
 }

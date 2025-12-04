@@ -98,12 +98,44 @@ export default function BoardPage() {
         socket.emit("add-note", { boardId, note: newNote });
     };
 
+    const notesRef = useRef(notes);
+    useEffect(() => {
+        notesRef.current = notes;
+    }, [notes]);
+
     const updateTimeout = useRef(null);
 
     const updateNote = useCallback((updatedNote) => {
-        setNotes((prev) =>
-            prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
-        );
+        const currentNotes = notesRef.current;
+        const originalNote = currentNotes.find(n => n.id === updatedNote.id);
+
+        let notesToUpdate = [updatedNote];
+
+        if (originalNote && updatedNote.groupId) {
+            const dx = updatedNote.x - originalNote.x;
+            const dy = updatedNote.y - originalNote.y;
+
+            if (dx !== 0 || dy !== 0) {
+                const groupNotes = currentNotes.filter(
+                    n => n.groupId === updatedNote.groupId && n.id !== updatedNote.id
+                );
+
+                const additionalUpdates = groupNotes.map(n => ({
+                    ...n,
+                    x: n.x + dx,
+                    y: n.y + dy
+                }));
+
+                notesToUpdate = [...notesToUpdate, ...additionalUpdates];
+            }
+        }
+
+        setNotes((prev) => {
+            return prev.map((n) => {
+                const updated = notesToUpdate.find(un => un.id === n.id);
+                return updated || n;
+            });
+        });
 
         // Debounce: only send to server after 100ms of no updates
         if (updateTimeout.current) {
@@ -111,7 +143,9 @@ export default function BoardPage() {
         }
 
         updateTimeout.current = setTimeout(() => {
-            socket.emit("update-note", { boardId, note: updatedNote });
+            notesToUpdate.forEach(note => {
+                socket.emit("update-note", { boardId, note });
+            });
         }, 100);
     }, [boardId]);
 
