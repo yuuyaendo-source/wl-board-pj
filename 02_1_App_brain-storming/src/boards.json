@@ -174,5 +174,54 @@
       }
     ],
     "lines": []
+  },
+  "verify-group": {
+    "notes": [
+      {
+        "id": "miqqmyj3-llj7awerd",
+        "text": "",
+        "x": 762.1354166666666,
+        "y": 189.1537418735296,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "groupId": "group-1764810706804"
+      },
+      {
+        "id": "miqqmzgx-6g9zo4pua",
+        "text": "",
+        "x": 387.1354166666667,
+        "y": 405.6600928196393,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "groupId": "group-1764810706804"
+      },
+      {
+        "id": "miqqn0es-w7011vkj4",
+        "text": "",
+        "x": 1045.8958740234375,
+        "y": 51.28125,
+        "color": "#ffeb3b",
+        "pinned": false
+      },
+      {
+        "id": "miqqozgf-141ub1h30",
+        "text": "",
+        "x": 387.1354166666665,
+        "y": -27.35260907257998,
+        "color": "#ffcdd2",
+        "pinned": false,
+        "groupId": "group-1764810706804"
+      },
+      {
+        "id": "miqqpcjj-lbxnzm9pd",
+        "text": "",
+        "x": 424.3124999999999,
+        "y": -108.20078860887001,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "groupId": null
+      }
+    ],
+    "lines": []
   }
 }
