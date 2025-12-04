@@ -13,7 +13,7 @@ const COLORS = [
     "#ffffff"  // White
 ];
 
-export default function Toolbar({ onAddNote, color, setColor, scale, setScale, onDownload, onUpload, onToggleCommentPanel }) {
+export default function Toolbar({ onAddNote, color, setColor, scale, setScale, onDownload, onUpload, onToggleCommentPanel, onCenter }) {
     const fileInputRef = useRef(null);
 
     const handleFileUpload = (e) => {
@@ -65,6 +65,12 @@ export default function Toolbar({ onAddNote, color, setColor, scale, setScale, o
                     ref={(ref) => { if (fileInputRef) fileInputRef.current = ref; }}
                 />
                 <button onClick={() => document.querySelector('input[type="file"]')?.click()} title="ボードをアップロード">📂</button>
+            </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.group}>
+                <button onClick={onCenter} title="中央に戻る">🎯</button>
             </div>
 
             <div className={styles.divider} />

@@ -223,5 +223,211 @@
       }
     ],
     "lines": []
+  },
+  "verify-scroll": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-scroll-retry": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-drag": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-drag-retry": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-fixes": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-fixes-retry": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-center": {
+    "notes": [
+      {
+        "id": "miqw0osl-sj8lxardc",
+        "text": "",
+        "x": 1891.15625,
+        "y": 2147.515625,
+        "color": "#ffeb3b",
+        "pinned": false
+      },
+      {
+        "id": "miqw0tbj-3rlcvuffa",
+        "text": "",
+        "x": 2423.84375,
+        "y": 2695.703125,
+        "color": "#a7ffeb",
+        "pinned": false
+      },
+      {
+        "id": "miqw17po-5qnmlcgi9",
+        "text": "",
+        "x": 2458.40625,
+        "y": 2833.9375,
+        "color": "#ffcdd2",
+        "pinned": false
+      }
+    ],
+    "lines": []
+  },
+  "verify-drag-separation": {
+    "notes": [
+      {
+        "id": "miqw95s1-vink5m0hc",
+        "text": "",
+        "x": 1907.912605952808,
+        "y": 2153.6165932970493,
+        "color": "#ffeb3b",
+        "pinned": false
+      }
+    ],
+    "lines": []
+  },
+  "drag-fix-final": {
+    "notes": [
+      {
+        "id": "miqweq8b-igqycg4lg",
+        "text": "",
+        "x": 1901.030345679449,
+        "y": 2138.9399987157335,
+        "color": "#ffeb3b",
+        "pinned": false
+      }
+    ],
+    "lines": []
+  },
+  "verify-final-v2": {
+    "notes": [],
+    "lines": []
+  },
+  "verify-final-v3": {
+    "notes": [
+      {
+        "id": "miqwi5e7-2ec0fk4us",
+        "text": "",
+        "x": 1890.8550047468727,
+        "y": 2157.0032670528713,
+        "color": "#ffeb3b",
+        "pinned": false
+      }
+    ],
+    "lines": []
+  },
+  "test": {
+    "notes": [
+      {
+        "id": "miqws57b-opiwgpo6a",
+        "text": "test",
+        "x": 2517.15625,
+        "y": 2559.4296875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "groupId": null
+      },
+      {
+        "id": "miqwsg52-d0pjiods",
+        "text": "test2",
+        "x": 1820.1875610351562,
+        "y": 1568.8750915527344,
+        "color": "#a7ffeb",
+        "pinned": false
+      },
+      {
+        "id": "miqwsp0m-48q7rgeml",
+        "text": "test3",
+        "x": 1567.3541870117188,
+        "y": 1871.1251220703125,
+        "color": "#ffcdd2",
+        "pinned": false
+      },
+      {
+        "id": "miqwsx4a-ydypo564n",
+        "text": "test4",
+        "x": 2215.546875,
+        "y": 1661.484375,
+        "color": "#e1bee7",
+        "pinned": false
+      },
+      {
+        "id": "miqwt3ob-sdfdzj6xn",
+        "text": "test5",
+        "x": 2222.604248046875,
+        "y": 1991.5000915527344,
+        "color": "#fff9c4",
+        "pinned": false
+      },
+      {
+        "id": "miqwt9j9-huf6zjlmg",
+        "text": "test6",
+        "x": 2613.84375,
+        "y": 1611.03125,
+        "color": "#c5e1a5",
+        "pinned": false
+      },
+      {
+        "id": "miqwtgxp-hi9y7zi18",
+        "text": "test7\n",
+        "x": 1749.063158378709,
+        "y": 2926.07082344489,
+        "color": "#ffccbc",
+        "pinned": false,
+        "groupId": null
+      },
+      {
+        "id": "miqwtwak-zzy9qwzoh",
+        "text": "test8",
+        "x": 1249.063158378709,
+        "y": 2926.07082344489,
+        "color": "#b3e5fc",
+        "pinned": false,
+        "groupId": null
+      },
+      {
+        "id": "miqwu4xe-pqpjrhw2j",
+        "text": "test9",
+        "x": 2017.15625,
+        "y": 2559.4296875,
+        "color": "#ffffff",
+        "pinned": false,
+        "groupId": null
+      },
+      {
+        "id": "miqwwtsz-a2jtgnukg",
+        "text": "",
+        "x": 1954.3541870117188,
+        "y": 1882.4376220703125,
+        "color": "#c5e1a5",
+        "pinned": false
+      }
+    ],
+    "lines": []
+  },
+  "comprehensive-test": {
+    "notes": [
+      {
+        "id": "miqx0lbi-xktmd2znl",
+        "text": "Test Note 1",
+        "x": 1898.0597010911847,
+        "y": 2140.444046896885,
+        "color": "#a7ffeb",
+        "pinned": false
+      },
+      {
+        "id": "miqx1oqh-dcd36qkto",
+        "text": "",
+        "x": 1907.2892184043224,
+        "y": 2151.1948211870845,
+        "color": "#ffeb3b",
+        "pinned": false
+      }
+    ],
+    "lines": []
   }
 }

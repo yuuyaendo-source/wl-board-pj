@@ -17,6 +17,10 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
         if (note.pinned) return; // Don't drag if pinned
 
         if (e.target.tagName === "TEXTAREA") return; // Allow text selection
+
+        e.stopPropagation(); // Prevent board scroll when dragging note
+        e.preventDefault(); // Also prevent default to ensure board drag doesn't start
+
         setIsDragging(true);
         const rect = noteRef.current.getBoundingClientRect();
         offset.current = {
@@ -68,6 +72,7 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
     return (
         <div
             ref={noteRef}
+            data-sticky-note="true"
             className={`${styles.note} ${note.pinned ? styles.pinned : ''}`}
             style={{
                 left: note.x,

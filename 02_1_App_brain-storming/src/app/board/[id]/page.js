@@ -71,24 +71,57 @@ export default function BoardPage() {
         };
     }, [boardId]);
 
+    // Scroll to center on initial load
+    useEffect(() => {
+        const container = boardContainerRef.current;
+        if (container) {
+            // Wait a bit for layout
+            setTimeout(() => {
+                const scrollX = (4000 - container.clientWidth) / 2;
+                const scrollY = (4000 - container.clientHeight) / 2;
+                container.scrollTo(scrollX, scrollY);
+            }, 100);
+        }
+    }, []);
+
+    const handleCenter = () => {
+        const container = boardContainerRef.current;
+        if (container) {
+            const scrollX = (4000 - container.clientWidth) / 2;
+            const scrollY = (4000 - container.clientHeight) / 2;
+            container.scrollTo({
+                left: scrollX,
+                top: scrollY,
+                behavior: 'smooth'
+            });
+        }
+    };
+
     const addNote = () => {
         // Generate more unique ID with timestamp + random
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
 
-        // Position new notes at bottom center of viewport
-        const container = document.querySelector(`.${styles.boardContainer}`);
-        const containerRect = container?.getBoundingClientRect() || { width: window.innerWidth, height: window.innerHeight };
-        const scrollLeft = container?.scrollLeft || 0;
-        const scrollTop = container?.scrollTop || 0;
+        // Position new notes near the bottom center of the CURRENT VIEWPORT
+        const container = boardContainerRef.current;
+        if (!container) return;
 
-        const centerX = scrollLeft + (containerRect.width / 2) - 100; // Center minus half note width
-        const bottomY = scrollTop + containerRect.height - 280; // Bottom minus note height and some margin
+        const viewportWidth = container.clientWidth;
+        const viewportHeight = container.clientHeight;
+        const scrollLeft = container.scrollLeft;
+        const scrollTop = container.scrollTop;
+
+        // Calculate center x relative to the board
+        const centerX = scrollLeft + (viewportWidth / 2) - 100; // Center minus half note width
+
+        // Calculate bottom y relative to the board (near toolbar)
+        // Toolbar is at bottom 20px + padding ~50px. Let's place it 200px from bottom.
+        const bottomY = scrollTop + viewportHeight - 300;
 
         const newNote = {
             id: `${timestamp}-${random}`,
             text: "",
-            x: centerX + Math.random() * 20 - 10, // Small random offset
+            x: centerX + Math.random() * 20 - 10,
             y: bottomY + Math.random() * 20 - 10,
             color: color,
             pinned: false,
@@ -285,8 +318,51 @@ export default function BoardPage() {
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
     };
 
+    const [isDraggingBoard, setIsDraggingBoard] = useState(false);
+    const dragStart = useRef({ x: 0, y: 0 });
+    const scrollStart = useRef({ left: 0, top: 0 });
+
+    const handleMouseDown = (e) => {
+        // Only drag if clicking on the container or canvas directly (not notes)
+        // Check if the event target is within a sticky note using data attribute
+        const isClickingNote = e.target.closest('[data-sticky-note]');
+
+        if (!isClickingNote) {
+            setIsDraggingBoard(true);
+            dragStart.current = { x: e.clientX, y: e.clientY };
+            const container = boardContainerRef.current;
+            scrollStart.current = { left: container.scrollLeft, top: container.scrollTop };
+            container.style.cursor = 'grabbing';
+        }
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDraggingBoard) return;
+        e.preventDefault();
+        const container = boardContainerRef.current;
+        const dx = e.clientX - dragStart.current.x;
+        const dy = e.clientY - dragStart.current.y;
+        container.scrollLeft = scrollStart.current.left - dx;
+        container.scrollTop = scrollStart.current.top - dy;
+    };
+
+    const handleMouseUp = () => {
+        setIsDraggingBoard(false);
+        if (boardContainerRef.current) {
+            boardContainerRef.current.style.cursor = 'grab';
+        }
+    };
+
     return (
-        <div className={styles.boardContainer} ref={boardContainerRef}>
+        <div
+            className={styles.boardContainer}
+            ref={boardContainerRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            style={{ cursor: 'grab' }}
+        >
             <div className={styles.header}>
                 <input
                     type="text"
@@ -309,6 +385,7 @@ export default function BoardPage() {
                 onDownload={handleDownload}
                 onUpload={handleUpload}
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
+                onCenter={handleCenter}
             />
 
             <div className={styles.canvasWrapper}>
