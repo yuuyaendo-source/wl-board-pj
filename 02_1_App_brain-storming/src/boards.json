@@ -470,5 +470,359 @@
       }
     ],
     "lines": []
+  },
+  "feature-test": {
+    "notes": [
+      {
+        "id": "misc996e-545c7ktsn",
+        "text": "",
+        "x": 1376.65625,
+        "y": 1959.875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907332278,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "misc9a48-t1gpsjh8u",
+        "text": "",
+        "x": 1151.046875,
+        "y": 1994.4375,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907333496,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "misc9ij6-5qz8weo0l",
+        "text": "",
+        "x": 1725.3125,
+        "y": 2012.6875,
+        "color": "#ffcdd2",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907344402,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "misc9jh1-9xzw93fn3",
+        "text": "センター位置",
+        "x": 1468.203125,
+        "y": 1695.125,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907345621,
+        "groupId": "group-1764911111576",
+        "originalX": 1783.6875,
+        "originalY": 1873.703125
+      },
+      {
+        "id": "miscd6uu-c3afepxuc",
+        "text": "",
+        "x": 1644.1634560846928,
+        "y": 2306.8452222822802,
+        "color": "#e1bee7",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907515894,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "miscd8qr-f8vonsmyo",
+        "text": "",
+        "x": 1101.578125,
+        "y": 2272.6875,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764907518339,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "misehwwe-xx7yacpmv",
+        "text": "",
+        "x": 2953.5192649710666,
+        "y": 2867.139007568943,
+        "color": "#fff9c4",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764911095502,
+        "groupId": null,
+        "originalX": null,
+        "originalY": null
+      },
+      {
+        "id": "misei02r-qv0vcw843",
+        "text": "",
+        "x": 1488.203125,
+        "y": 1715.125,
+        "color": "#a7ffeb",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764911099619,
+        "groupId": "group-1764911111576",
+        "originalX": 2646.40625,
+        "originalY": 2795.546875
+      }
+    ],
+    "lines": []
+  },
+  "fix-test": {
+    "notes": [
+      {
+        "id": "misezoj5-1ah87cuub",
+        "text": "",
+        "x": 1908.1603965206225,
+        "y": 2150.133556459323,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764911924465
+      },
+      {
+        "id": "misf0hmu-b6bk4jyvk",
+        "text": "",
+        "x": 1899.3897672853686,
+        "y": 2147.7777372932924,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764911962182
+      },
+      {
+        "id": "misf0ikq-ty7gm50w5",
+        "text": "",
+        "x": 1899.1862511089682,
+        "y": 2143.150241798024,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764911963402
+      }
+    ],
+    "lines": []
+  },
+  "final-fix-test": {
+    "notes": [
+      {
+        "id": "misf21q8-e5b6bszvl",
+        "text": "",
+        "x": 1910.314009881247,
+        "y": 2140.4264205064865,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912034881
+      }
+    ],
+    "lines": []
+  },
+  "final-fix-test-2": {
+    "notes": [
+      {
+        "id": "misf3xju-iltmcbdtl",
+        "text": "",
+        "x": 1558.609375,
+        "y": 2031.546875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912122778
+      },
+      {
+        "id": "misf4eqq-dk0jju7rj",
+        "text": "",
+        "x": 1265.8125,
+        "y": 2035.1875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912145058,
+        "groupId": null
+      },
+      {
+        "id": "misf4fom-aiew5ua4q",
+        "text": "",
+        "x": 1643.65625,
+        "y": 1796.125,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912146278,
+        "groupId": null
+      },
+      {
+        "id": "misf4gmg-56sw37yd5",
+        "text": "",
+        "x": 1401.65625,
+        "y": 1720.125,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912147496,
+        "groupId": null
+      },
+      {
+        "id": "misf9cus-2jg0jv68t",
+        "text": "",
+        "x": 2018.8125,
+        "y": 2145.1875,
+        "color": "#b3e5fc",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912375892,
+        "groupId": null
+      },
+      {
+        "id": "misf9f4o-76ugdojvb",
+        "text": "",
+        "x": 1908.171875,
+        "y": 1662.5,
+        "color": "#fff9c4",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912378840
+      },
+      {
+        "id": "misf9gck-b4rfmwh2y",
+        "text": "",
+        "x": 2039.8125,
+        "y": 1951.1875,
+        "color": "#a7ffeb",
+        "pinned": false,
+        "author": "テストユーザー",
+        "createdAt": 1764912380420,
+        "groupId": null
+      }
+    ],
+    "lines": []
+  },
+  "test-board": {
+    "notes": [
+      {
+        "id": "misgdzps-przydgfbi",
+        "text": "",
+        "x": 3087.94775390625,
+        "y": 3263.9453125,
+        "color": "#e1bee7",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914271761,
+        "groupId": null
+      },
+      {
+        "id": "misgf9w8-8nnfs8zci",
+        "text": "",
+        "x": 660.2135009765625,
+        "y": 1395.4998779296875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914331608,
+        "groupId": "group-1764914455148"
+      },
+      {
+        "id": "misgfc4c-we3kry5du",
+        "text": "",
+        "x": 998.9973754882812,
+        "y": 1828.4868774414062,
+        "color": "#a7ffeb",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914334493,
+        "groupId": "group-1764914402778"
+      },
+      {
+        "id": "misgfddm-akm7dey3c",
+        "text": "",
+        "x": 670.2135009765625,
+        "y": 1405.4998779296875,
+        "color": "#ffcdd2",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914336122,
+        "groupId": "group-1764914455148"
+      },
+      {
+        "id": "misgff3c-c6vkfq9oe",
+        "text": "",
+        "x": 1008.9973754882812,
+        "y": 1838.4868774414062,
+        "color": "#e1bee7",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914338345,
+        "groupId": "group-1764914402778"
+      },
+      {
+        "id": "misgfhf2-vi3fsjqow",
+        "text": "",
+        "x": 1083.9973754882812,
+        "y": 1873.4868774414062,
+        "color": "#fff9c4",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914341358,
+        "groupId": "group-1764914402778"
+      },
+      {
+        "id": "misgfiym-5hmoctv8t",
+        "text": "",
+        "x": 680.2135009765625,
+        "y": 1415.4998779296875,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914343359,
+        "groupId": "group-1764914455148"
+      },
+      {
+        "id": "misgfkhv-v2dey900k",
+        "text": "",
+        "x": 2866.184814453125,
+        "y": 3154.1796875,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914345347,
+        "groupId": null
+      },
+      {
+        "id": "misgfn65-k2gcyka6i",
+        "text": "",
+        "x": 3593.9499930216825,
+        "y": 3593.9499930216825,
+        "color": "#e0e0e0",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914348814,
+        "groupId": "trash"
+      },
+      {
+        "id": "misgfp80-9rfaxnmn3",
+        "text": "",
+        "x": 3599.7371461631196,
+        "y": 3599.7371461631196,
+        "color": "#e0e0e0",
+        "pinned": false,
+        "author": "てすと",
+        "createdAt": 1764914351472,
+        "groupId": "trash"
+      }
+    ],
+    "lines": []
   }
 }

@@ -10,10 +10,15 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import ParticipantsList from "@/components/ParticipantsList";
 
+const SOCKET_SERVER_URL = "http://localhost:3000"; // Ensure this matches your server
+const TRASH_AREA = { x: 3600, y: 3600 };
+const TRASH_COLOR = "#e0e0e0";
+
 let socket;
 
 export default function BoardPage() {
-    const { id: boardId } = useParams();
+    const params = useParams();
+    const boardId = params?.id;
     const [notes, setNotes] = useState([]);
     const [lines, setLines] = useState([]);
     const [color, setColor] = useState("#ffeb3b"); // Default yellow
@@ -28,6 +33,8 @@ export default function BoardPage() {
     const boardContainerRef = useRef(null);
 
     useEffect(() => {
+        if (!boardId) return;
+
         // Check if user has a saved username
         const savedUsername = localStorage.getItem('brainstorming-username');
         if (savedUsername) {
@@ -75,6 +82,10 @@ export default function BoardPage() {
             setNotes((prev) =>
                 prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
             );
+        });
+
+        socket.on("note-deleted", (noteId) => {
+            setNotes((prev) => prev.filter((n) => n.id !== noteId));
         });
 
         socket.on("line-added", (line) => {
@@ -209,6 +220,20 @@ export default function BoardPage() {
             }
         }
 
+        // Logic for restoring from trash (logical deletion recovery)
+        if (originalNote && originalNote.groupId === 'trash') {
+            const isMoved = updatedNote.x !== originalNote.x || updatedNote.y !== originalNote.y;
+            const isColorChanged = updatedNote.color !== TRASH_COLOR;
+
+            if (isMoved || isColorChanged) {
+                // Restore from trash if moved or color changed
+                updatedNote.groupId = null;
+                // If it was only moved but color is still gray, keep it gray unless user changed it?
+                // Spec says "manually change color AND move". Let's assume ANY action restores it.
+                // If color changed, it's already updated in updatedNote.color
+            }
+        }
+
         setNotes((prev) => {
             return prev.map((n) => {
                 const updated = notesToUpdate.find(un => un.id === n.id);
@@ -231,6 +256,26 @@ export default function BoardPage() {
     const addLine = (line) => {
         setLines((prev) => [...prev, line]);
         socket.emit("add-line", { boardId, line });
+    };
+
+    const deleteNote = (noteId) => {
+        // Logical deletion: Move to trash area and change color
+        const noteToDelete = notes.find(n => n.id === noteId);
+        if (!noteToDelete) return;
+
+        const offset = Math.random() * 20 - 10;
+        const trashNote = {
+            ...noteToDelete,
+            color: TRASH_COLOR,
+            groupId: 'trash',
+            x: TRASH_AREA.x + offset,
+            y: TRASH_AREA.y + offset,
+            pinned: false // Unpin if pinned
+        };
+
+        // Optimistic update
+        setNotes((prev) => prev.map(n => n.id === noteId ? trashNote : n));
+        socket.emit("update-note", { boardId, note: trashNote });
     };
 
     const handleDownload = () => {
@@ -314,14 +359,14 @@ export default function BoardPage() {
         const centerX = selectedNotes.reduce((sum, n) => sum + n.x, 0) / selectedNotes.length;
         const centerY = selectedNotes.reduce((sum, n) => sum + n.y, 0) / selectedNotes.length;
 
-        // Arrange notes in a circle around the center
-        const radius = 250;
-        const angleStep = (2 * Math.PI) / selectedNotes.length;
-
+        // Arrange notes in a pile (slightly overlapped)
         const updatedNotes = selectedNotes.map((note, index) => {
-            const angle = angleStep * index;
-            const newX = centerX + Math.cos(angle) * radius;
-            const newY = centerY + Math.sin(angle) * radius;
+            // Offset each note slightly to create a messy pile effect
+            const offset = index * 10;
+            const totalOffset = (selectedNotes.length - 1) * 10 / 2;
+
+            const newX = centerX + offset - totalOffset;
+            const newY = centerY + offset - totalOffset;
 
             return {
                 ...note,
@@ -347,18 +392,25 @@ export default function BoardPage() {
     };
 
     const handleUngroupNotes = (noteIds) => {
+        const updatedNotes = notes
+            .filter(n => noteIds.includes(n.id))
+            .map(n => {
+                return {
+                    ...n,
+                    groupId: null,
+                };
+            });
+
         setNotes((prev) =>
-            prev.map((n) =>
-                noteIds.includes(n.id) ? { ...n, groupId: null } : n
-            )
+            prev.map((n) => {
+                const updated = updatedNotes.find(un => un.id === n.id);
+                return updated || n;
+            })
         );
 
         // Update on server
-        noteIds.forEach(noteId => {
-            const note = notes.find(n => n.id === noteId);
-            if (note) {
-                socket.emit("update-note", { boardId, note: { ...note, groupId: null } });
-            }
+        updatedNotes.forEach(note => {
+            socket.emit("update-note", { boardId, note });
         });
 
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
@@ -440,6 +492,7 @@ export default function BoardPage() {
                     notes={notes}
                     lines={lines}
                     onUpdateNote={updateNote}
+                    onDeleteNote={deleteNote}
                     onAddLine={addLine}
                     scale={scale}
                 />
