@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import styles from "./BoardCanvas.module.css";
 import StickyNote from "./StickyNote";
 
-export default function BoardCanvas({ notes, lines, onUpdateNote, onAddLine, scale }) {
+export default function BoardCanvas({ notes, lines, onUpdateNote, onDeleteNote, onAddLine, scale }) {
     const [drawingLine, setDrawingLine] = useState(null); // { startNoteId, startX, startY, currentX, currentY }
 
     // Handle line drawing logic here if needed, or keep it simple for now
@@ -37,6 +37,7 @@ export default function BoardCanvas({ notes, lines, onUpdateNote, onAddLine, sca
                     key={note.id}
                     note={note}
                     onUpdate={onUpdateNote}
+                    onDelete={onDeleteNote}
                     scale={scale}
                 />
             ))}

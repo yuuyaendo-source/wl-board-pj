@@ -6,7 +6,7 @@ const COLORS = [
     "#fff9c4", "#c5e1a5", "#ffccbc", "#b3e5fc", "#ffffff"
 ];
 
-export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouseUp }) {
+export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDown, onMouseUp }) {
     const [isDragging, setIsDragging] = useState(false);
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
@@ -16,7 +16,7 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
         if (e.defaultPrevented || e.altKey) return; // Don't drag if line drawing
         if (note.pinned) return; // Don't drag if pinned
 
-        if (e.target.tagName === "TEXTAREA") return; // Allow text selection
+        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return; // Allow text selection and button clicks
 
         e.stopPropagation(); // Prevent board scroll when dragging note
         e.preventDefault(); // Also prevent default to ensure board drag doesn't start
@@ -87,6 +87,7 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
             <button
                 className={styles.pinButton}
                 onClick={togglePin}
+                onMouseDown={(e) => e.stopPropagation()}
                 title={note.pinned ? "ピン留めを外す" : "ピン留めする"}
             >
                 {note.pinned ? "📌" : "📍"}
@@ -94,9 +95,23 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
             <button
                 className={styles.colorButton}
                 onClick={() => setShowColorPicker(!showColorPicker)}
+                onMouseDown={(e) => e.stopPropagation()}
                 title="色を変更"
             >
                 🎨
+            </button>
+            <button
+                className={styles.deleteButton}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm("この付箋を削除してもよろしいですか？")) {
+                        onDelete(note.id);
+                    }
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="削除"
+            >
+                🗑️
             </button>
             {showColorPicker && (
                 <div className={styles.colorPicker}>
@@ -106,6 +121,7 @@ export default function StickyNote({ note, onUpdate, scale, onMouseDown, onMouse
                             className={styles.colorOption}
                             style={{ backgroundColor: c }}
                             onClick={() => changeColor(c)}
+                            onMouseDown={(e) => e.stopPropagation()}
                         />
                     ))}
                 </div>

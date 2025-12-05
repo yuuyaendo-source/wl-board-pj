@@ -21,7 +21,8 @@
 }
 
 .pinButton,
-.colorButton {
+.colorButton,
+.deleteButton {
     position: absolute;
     top: 4px;
     background: rgba(255, 255, 255, 0.9);
@@ -42,8 +43,13 @@
     right: 32px;
 }
 
+.deleteButton {
+    right: 60px;
+}
+
 .pinButton:hover,
-.colorButton:hover {
+.colorButton:hover,
+.deleteButton:hover {
     background: rgba(255, 255, 255, 1);
 }
 

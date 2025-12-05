@@ -105,6 +105,14 @@ app.prepare().then(() => {
             }
         });
 
+        socket.on('delete-note', ({ boardId, noteId }) => {
+            if (boards[boardId]) {
+                boards[boardId].notes = boards[boardId].notes.filter((n) => n.id !== noteId);
+                io.to(boardId).emit('note-deleted', noteId);
+                saveBoards();
+            }
+        });
+
         socket.on('add-line', ({ boardId, line }) => {
             if (boards[boardId]) {
                 boards[boardId].lines.push(line);
