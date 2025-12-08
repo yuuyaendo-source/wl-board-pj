@@ -29,6 +29,26 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         };
     };
 
+    const handleTouchStart = (e) => {
+        if (note.pinned) return;
+        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return;
+
+        // e.stopPropagation(); // Might interfere with scrolling if not dragging?
+        // For dragging, we generally want to capture it.
+        // But if the user taps a button, we don't want to start dragging.
+
+        // Touch events usually don't have defaultPrevented in the same way for "line drawing" unless we handle it.
+        // Assuming line drawing isn't primary on touch yet or works differently.
+
+        setIsDragging(true);
+        const touch = e.touches[0];
+        const rect = noteRef.current.getBoundingClientRect();
+        offset.current = {
+            x: touch.clientX - rect.left,
+            y: touch.clientY - rect.top,
+        };
+    };
+
     useEffect(() => {
         const handleMouseMove = (e) => {
             if (!isDragging) return;
@@ -47,14 +67,35 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             setIsDragging(false);
         };
 
+        const handleTouchMove = (e) => {
+            if (!isDragging) return;
+            e.preventDefault(); // Prevent scrolling while dragging
+
+            const touch = e.touches[0];
+            const parentRect = noteRef.current.parentElement.getBoundingClientRect();
+
+            const newX = (touch.clientX - parentRect.left - offset.current.x) / scale;
+            const newY = (touch.clientY - parentRect.top - offset.current.y) / scale;
+
+            onUpdate({ ...note, x: newX, y: newY });
+        };
+
+        const handleTouchEnd = () => {
+            setIsDragging(false);
+        };
+
         if (isDragging) {
             window.addEventListener("mousemove", handleMouseMove);
             window.addEventListener("mouseup", handleMouseUp);
+            window.addEventListener("touchmove", handleTouchMove, { passive: false });
+            window.addEventListener("touchend", handleTouchEnd);
         }
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
             window.removeEventListener("mouseup", handleMouseUp);
+            window.removeEventListener("touchmove", handleTouchMove);
+            window.removeEventListener("touchend", handleTouchEnd);
         };
     }, [isDragging, note, onUpdate, scale]);
 
@@ -83,6 +124,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             }}
             onMouseDown={handleMouseDown}
             onMouseUp={onMouseUp}
+            onTouchStart={handleTouchStart}
         >
             <button
                 className={styles.pinButton}
