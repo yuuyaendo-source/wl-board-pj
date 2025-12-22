@@ -1,0 +1,112 @@
+/* [project]/02_Projects/02_1_App_brain-storming/src/components/UserDialog.module.css [app-client] (css) */
+.UserDialog-module__XDPH8a__overlay {
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: 10000;
+  background: #00000080;
+  justify-content: center;
+  align-items: center;
+  animation: .3s UserDialog-module__XDPH8a__fadeIn;
+  display: flex;
+  position: fixed;
+  inset: 0;
+}
+
+@keyframes UserDialog-module__XDPH8a__fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.UserDialog-module__XDPH8a__dialog {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  padding: 32px;
+  animation: .3s UserDialog-module__XDPH8a__slideUp;
+  box-shadow: 0 8px 32px #0003;
+}
+
+@keyframes UserDialog-module__XDPH8a__slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.UserDialog-module__XDPH8a__title {
+  color: #333;
+  text-align: center;
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.UserDialog-module__XDPH8a__description {
+  color: #666;
+  text-align: center;
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+
+.UserDialog-module__XDPH8a__input {
+  box-sizing: border-box;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 16px;
+  transition: border-color .2s;
+}
+
+.UserDialog-module__XDPH8a__input:focus {
+  border-color: var(--primary, #79dc89);
+}
+
+.UserDialog-module__XDPH8a__error {
+  color: #d32f2f;
+  text-align: center;
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.UserDialog-module__XDPH8a__button {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: bold;
+  transition: transform .1s, background .2s;
+}
+
+.UserDialog-module__XDPH8a__button:hover {
+  background: #6ac97a;
+}
+
+.UserDialog-module__XDPH8a__button:active {
+  transform: scale(.98);
+}
+
+.UserDialog-module__XDPH8a__note {
+  color: #999;
+  text-align: center;
+  margin: 16px 0 0;
+  font-size: 12px;
+}
+
+/*# sourceMappingURL=4674a_Projects_02_1_App_brain-storming_src_components_UserDialog_module_css_bad6b30c._.single.css.map*/

@@ -1,0 +1,142 @@
+/* [project]/components/CommentListPanel.module.css [app-client] (css) */
+.CommentListPanel-module__9DGtxq__panel {
+  z-index: 200;
+  background: #fff;
+  flex-direction: column;
+  width: 350px;
+  height: calc(100vh - 60px);
+  display: flex;
+  position: fixed;
+  top: 60px;
+  right: 0;
+  box-shadow: -4px 0 12px #0000001a;
+}
+
+.CommentListPanel-module__9DGtxq__header {
+  border-bottom: 1px solid #ddd;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__header h2 {
+  color: #333;
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.CommentListPanel-module__9DGtxq__closeButton {
+  cursor: pointer;
+  color: #666;
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 1.5rem;
+}
+
+.CommentListPanel-module__9DGtxq__closeButton:hover {
+  color: #000;
+}
+
+.CommentListPanel-module__9DGtxq__actions {
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__actionButtons {
+  gap: 8px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__groupButton, .CommentListPanel-module__9DGtxq__ungroupButton {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-weight: bold;
+}
+
+.CommentListPanel-module__9DGtxq__ungroupButton {
+  background: #ff6b6b;
+}
+
+.CommentListPanel-module__9DGtxq__groupButton:hover, .CommentListPanel-module__9DGtxq__ungroupButton:hover {
+  opacity: .9;
+}
+
+.CommentListPanel-module__9DGtxq__noteList {
+  flex: 1;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.CommentListPanel-module__9DGtxq__noteItem {
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__noteItem.CommentListPanel-module__9DGtxq__selected .CommentListPanel-module__9DGtxq__notePreview {
+  border-color: var(--primary, #79dc89);
+  box-shadow: 0 0 0 2px var(--primary, #79dc89);
+}
+
+.CommentListPanel-module__9DGtxq__checkbox {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  margin-top: 8px;
+}
+
+.CommentListPanel-module__9DGtxq__notePreview {
+  cursor: pointer;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 60px;
+  padding: 12px;
+  transition: all .2s;
+  position: relative;
+}
+
+.CommentListPanel-module__9DGtxq__notePreview:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px #0000001a;
+}
+
+.CommentListPanel-module__9DGtxq__noteText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-overflow: ellipsis;
+  max-height: 100px;
+  font-size: .9rem;
+  overflow: hidden;
+}
+
+.CommentListPanel-module__9DGtxq__pinnedBadge, .CommentListPanel-module__9DGtxq__groupBadge {
+  background: #fffc;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: .75rem;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.CommentListPanel-module__9DGtxq__groupBadge {
+  color: #fff;
+  background: #4caf50;
+  right: 30px;
+}
+
+/*# sourceMappingURL=components_CommentListPanel_module_css_bad6b30c._.single.css.map*/

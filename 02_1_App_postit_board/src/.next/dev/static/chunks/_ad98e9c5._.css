@@ -1,0 +1,276 @@
+/* [project]/app/board/[id]/page.module.css [app-client] (css) */
+.page-module__9vVkKq__boardContainer {
+  cursor: grab;
+  background-color: #f0f0f0;
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: auto;
+}
+
+.page-module__9vVkKq__boardContainer:active {
+  cursor: grabbing;
+}
+
+.page-module__9vVkKq__header {
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  z-index: 100;
+  background: #fffffff2;
+  border-bottom: 1px solid #ddd;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.page-module__9vVkKq__titleInput {
+  color: #333;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  outline: none;
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  transition: background .2s;
+}
+
+.page-module__9vVkKq__titleInput:hover, .page-module__9vVkKq__titleInput:focus {
+  background: #0000000d;
+}
+
+.page-module__9vVkKq__status {
+  flex-shrink: 0;
+  font-size: .9rem;
+  font-weight: bold;
+}
+
+.page-module__9vVkKq__canvasWrapper {
+  margin-top: 60px;
+}
+
+/* [project]/components/BoardCanvas.module.css [app-client] (css) */
+.BoardCanvas-module__qpzOaa__canvas {
+  background-image: radial-gradient(#ddd 1px, #0000 1px);
+  background-size: 20px 20px;
+  width: 10000px;
+  height: 10000px;
+  position: relative;
+}
+
+.BoardCanvas-module__qpzOaa__svgLayer {
+  pointer-events: none;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* [project]/components/Toolbar.module.css [app-client] (css) */
+.Toolbar-module__VaI4xq__toolbar {
+  z-index: 100;
+  background: #fff;
+  border-radius: 50px;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  display: flex;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 12px #00000026;
+}
+
+.Toolbar-module__VaI4xq__group {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.Toolbar-module__VaI4xq__addButton {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-weight: bold;
+  transition: transform .1s;
+}
+
+.Toolbar-module__VaI4xq__addButton:active {
+  transform: scale(.95);
+}
+
+.Toolbar-module__VaI4xq__colorBtn {
+  cursor: pointer;
+  border: 2px solid #ddd;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  transition: transform .1s;
+}
+
+.Toolbar-module__VaI4xq__colorBtn.Toolbar-module__VaI4xq__active {
+  border-color: #333;
+  transform: scale(1.1);
+}
+
+.Toolbar-module__VaI4xq__divider {
+  background: #eee;
+  width: 1px;
+  height: 24px;
+}
+
+/* [project]/components/CommentListPanel.module.css [app-client] (css) */
+.CommentListPanel-module__9DGtxq__panel {
+  z-index: 200;
+  background: #fff;
+  flex-direction: column;
+  width: 350px;
+  height: calc(100vh - 60px);
+  display: flex;
+  position: fixed;
+  top: 60px;
+  right: 0;
+  box-shadow: -4px 0 12px #0000001a;
+}
+
+.CommentListPanel-module__9DGtxq__header {
+  border-bottom: 1px solid #ddd;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__header h2 {
+  color: #333;
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.CommentListPanel-module__9DGtxq__closeButton {
+  cursor: pointer;
+  color: #666;
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 1.5rem;
+}
+
+.CommentListPanel-module__9DGtxq__closeButton:hover {
+  color: #000;
+}
+
+.CommentListPanel-module__9DGtxq__actions {
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__actionButtons {
+  gap: 8px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__groupButton, .CommentListPanel-module__9DGtxq__ungroupButton {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-weight: bold;
+}
+
+.CommentListPanel-module__9DGtxq__ungroupButton {
+  background: #ff6b6b;
+}
+
+.CommentListPanel-module__9DGtxq__groupButton:hover, .CommentListPanel-module__9DGtxq__ungroupButton:hover {
+  opacity: .9;
+}
+
+.CommentListPanel-module__9DGtxq__noteList {
+  flex: 1;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.CommentListPanel-module__9DGtxq__noteItem {
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  display: flex;
+}
+
+.CommentListPanel-module__9DGtxq__noteItem.CommentListPanel-module__9DGtxq__selected .CommentListPanel-module__9DGtxq__notePreview {
+  border-color: var(--primary, #79dc89);
+  box-shadow: 0 0 0 2px var(--primary, #79dc89);
+}
+
+.CommentListPanel-module__9DGtxq__checkbox {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  margin-top: 8px;
+}
+
+.CommentListPanel-module__9DGtxq__notePreview {
+  cursor: pointer;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  flex: 1;
+  min-height: 60px;
+  padding: 12px;
+  transition: all .2s;
+  position: relative;
+}
+
+.CommentListPanel-module__9DGtxq__notePreview:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px #0000001a;
+}
+
+.CommentListPanel-module__9DGtxq__noteText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-overflow: ellipsis;
+  max-height: 100px;
+  font-size: .9rem;
+  overflow: hidden;
+}
+
+.CommentListPanel-module__9DGtxq__pinnedBadge, .CommentListPanel-module__9DGtxq__groupBadge {
+  background: #fffc;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: .75rem;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.CommentListPanel-module__9DGtxq__groupBadge {
+  color: #fff;
+  background: #4caf50;
+  right: 30px;
+}
+
+/*# sourceMappingURL=_ad98e9c5._.css.map*/

@@ -1,0 +1,115 @@
+/* [project]/02_Projects/02_1_App_brain-storming/src/components/ParticipantsList.module.css [app-client] (css) */
+.ParticipantsList-module__IOaoEq__panel {
+  z-index: 200;
+  background: #fff;
+  border-radius: 12px;
+  width: 300px;
+  animation: .3s ParticipantsList-module__IOaoEq__slideIn;
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  box-shadow: 0 4px 20px #00000026;
+}
+
+@keyframes ParticipantsList-module__IOaoEq__slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.ParticipantsList-module__IOaoEq__header {
+  border-bottom: 1px solid #eee;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  display: flex;
+}
+
+.ParticipantsList-module__IOaoEq__title {
+  color: #333;
+  margin: 0;
+  font-size: 16px;
+}
+
+.ParticipantsList-module__IOaoEq__closeButton {
+  color: #999;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 20px;
+  transition: background .2s;
+}
+
+.ParticipantsList-module__IOaoEq__closeButton:hover {
+  background: #f0f0f0;
+}
+
+.ParticipantsList-module__IOaoEq__list {
+  max-height: 400px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.ParticipantsList-module__IOaoEq__empty {
+  text-align: center;
+  color: #999;
+  padding: 32px;
+  font-size: 14px;
+}
+
+.ParticipantsList-module__IOaoEq__participant {
+  border-radius: 8px;
+  align-items: center;
+  padding: 12px;
+  transition: background .2s;
+  display: flex;
+}
+
+.ParticipantsList-module__IOaoEq__participant:hover {
+  background: #f9f9f9;
+}
+
+.ParticipantsList-module__IOaoEq__avatar {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  border-radius: 50%;
+  flex-shrink: 0;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+  margin-right: 12px;
+  font-size: 18px;
+  font-weight: bold;
+  display: flex;
+}
+
+.ParticipantsList-module__IOaoEq__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ParticipantsList-module__IOaoEq__name {
+  color: #333;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.ParticipantsList-module__IOaoEq__status {
+  color: #666;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+/*# sourceMappingURL=a9f06_02_1_App_brain-storming_src_components_ParticipantsList_module_css_bad6b30c._.single.css.map*/

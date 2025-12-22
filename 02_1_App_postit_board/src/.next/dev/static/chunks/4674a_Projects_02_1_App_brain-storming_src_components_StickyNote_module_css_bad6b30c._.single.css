@@ -1,0 +1,126 @@
+/* [project]/02_Projects/02_1_App_brain-storming/src/components/StickyNote.module.css [app-client] (css) */
+.StickyNote-module__quzrGW__note {
+  cursor: grab;
+  flex-direction: column;
+  width: 200px;
+  height: 200px;
+  padding: 36px 16px 16px;
+  transition: transform .1s;
+  display: flex;
+  position: absolute;
+  box-shadow: 2px 4px 8px #0003;
+}
+
+.StickyNote-module__quzrGW__note:active {
+  cursor: grabbing;
+}
+
+.StickyNote-module__quzrGW__note.StickyNote-module__quzrGW__pinned {
+  cursor: default;
+  box-shadow: 0 0 0 3px var(--primary, #79dc89);
+}
+
+.StickyNote-module__quzrGW__pinButton, .StickyNote-module__quzrGW__colorButton, .StickyNote-module__quzrGW__deleteButton {
+  cursor: pointer;
+  z-index: 10;
+  background: #ffffffe6;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 16px;
+  transition: background .2s;
+  position: absolute;
+  top: 4px;
+}
+
+.StickyNote-module__quzrGW__pinButton {
+  right: 4px;
+}
+
+.StickyNote-module__quzrGW__colorButton {
+  right: 32px;
+}
+
+.StickyNote-module__quzrGW__deleteButton {
+  right: 60px;
+}
+
+.StickyNote-module__quzrGW__pinButton:hover, .StickyNote-module__quzrGW__colorButton:hover, .StickyNote-module__quzrGW__deleteButton:hover {
+  background: #fff;
+}
+
+.StickyNote-module__quzrGW__colorPicker {
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  grid-template-columns: repeat(3, 24px);
+  gap: 6px;
+  padding: 8px;
+  display: grid;
+  position: absolute;
+  top: 30px;
+  right: 4px;
+  box-shadow: 0 4px 12px #0003;
+}
+
+.StickyNote-module__quzrGW__colorOption {
+  cursor: pointer;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  transition: transform .1s;
+}
+
+.StickyNote-module__quzrGW__colorOption:hover {
+  border-color: #333;
+  transform: scale(1.1);
+}
+
+.StickyNote-module__quzrGW__textarea {
+  resize: none;
+  background: none;
+  border: none;
+  outline: none;
+  width: 100%;
+  height: 100%;
+  font-family: inherit;
+  font-size: 1.1rem;
+}
+
+.StickyNote-module__quzrGW__groupBadge {
+  color: #333;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background: #0000001a;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+}
+
+.StickyNote-module__quzrGW__authorBadge {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 12px;
+  max-width: 100px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  overflow: hidden;
+}
+
+/*# sourceMappingURL=4674a_Projects_02_1_App_brain-storming_src_components_StickyNote_module_css_bad6b30c._.single.css.map*/

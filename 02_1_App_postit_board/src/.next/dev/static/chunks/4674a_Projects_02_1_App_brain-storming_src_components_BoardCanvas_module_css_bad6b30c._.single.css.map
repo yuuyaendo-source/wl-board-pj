@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/02_Projects/02_1_App_brain-storming/src/components/BoardCanvas.module.css"],"sourcesContent":[".canvas {\r\n    position: relative;\r\n    width: 10000px;\r\n    height: 10000px;\r\n    background-image: radial-gradient(#ddd 1px, transparent 1px);\r\n    background-size: 20px 20px;\r\n}\r\n\r\n.svgLayer {\r\n    position: absolute;\r\n    top: 0;\r\n    left: 0;\r\n    width: 100%;\r\n    height: 100%;\r\n    pointer-events: none;\r\n    z-index: 0;\r\n}"],"names":[],"mappings":"AAAA;;;;;;;;AAQA"}}]
+}

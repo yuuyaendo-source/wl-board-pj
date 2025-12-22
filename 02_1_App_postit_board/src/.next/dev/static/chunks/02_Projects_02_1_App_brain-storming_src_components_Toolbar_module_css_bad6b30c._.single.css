@@ -1,0 +1,58 @@
+/* [project]/02_Projects/02_1_App_brain-storming/src/components/Toolbar.module.css [app-client] (css) */
+.Toolbar-module__We2rOW__toolbar {
+  z-index: 100;
+  background: #fff;
+  border-radius: 50px;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  display: flex;
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 12px #00000026;
+}
+
+.Toolbar-module__We2rOW__group {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.Toolbar-module__We2rOW__addButton {
+  background: var(--primary, #79dc89);
+  color: #fff;
+  cursor: pointer;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-weight: bold;
+  transition: transform .1s;
+}
+
+.Toolbar-module__We2rOW__addButton:active {
+  transform: scale(.95);
+}
+
+.Toolbar-module__We2rOW__colorBtn {
+  cursor: pointer;
+  border: 2px solid #ddd;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  transition: transform .1s;
+}
+
+.Toolbar-module__We2rOW__colorBtn.Toolbar-module__We2rOW__active {
+  border-color: #333;
+  transform: scale(1.1);
+}
+
+.Toolbar-module__We2rOW__divider {
+  background: #eee;
+  width: 1px;
+  height: 24px;
+}
+
+/*# sourceMappingURL=02_Projects_02_1_App_brain-storming_src_components_Toolbar_module_css_bad6b30c._.single.css.map*/
