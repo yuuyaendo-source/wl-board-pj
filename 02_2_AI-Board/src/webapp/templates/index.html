@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AI-Board</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            background-color: #121212;
+            /* Dark Mode Background */
+            color: #ffffff;
+            margin: 0;
+            overflow: hidden;
+            /* Canvas style */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #canvas {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .sticky-note {
+            position: absolute;
+            transition: all 0.5s ease;
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.4);
+            /* Glow effect */
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 5px;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .sticky-note img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 3px;
+        }
+
+        @keyframes popIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Branding / Overlay */
+        #branding {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 1px solid #333;
+            font-size: 0.8rem;
+            color: #aaa;
+            backdrop-filter: blur(5px);
+        }
+
+        .online-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #00ff00;
+            border-radius: 50%;
+            margin-right: 5px;
+            box-shadow: 0 0 5px #00ff00;
+        }
+
+        #ai-chat-box {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ffcc;
+            border-radius: 10px;
+            padding: 15px;
+            color: #00ffcc;
+            font-size: 1rem;
+            display: none;
+            /* Hidden by default */
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+            animation: slideIn 0.5s ease;
+        }
+
+        #ai-chat-box::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            right: 30px;
+            border-width: 10px 10px 0;
+            border-style: solid;
+            border-color: rgba(0, 0, 0, 0.8) transparent;
+            display: block;
+            width: 0;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="canvas">
+        <!-- Sticky notes will be injected here -->
+    </div>
+
+    <div id="ai-chat-box">
+        <strong>リン子:</strong> <span id="ai-text">...</span>
+    </div>
+
+    <div id="branding">
+        <span class="online-status"></span> AI-Board System Online | AI: Active
+    </div>
+
+    <script>
+        const socket = io();
+        const canvas = document.getElementById('canvas');
+        const aiChatBox = document.getElementById('ai-chat-box');
+        const aiText = document.getElementById('ai-text');
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('new_note', (data) => {
+            console.log('New note received:', data);
+            createStickyNote(data);
+        });
+
+        socket.on('ai_comment', (data) => {
+            console.log('AI Comment:', data);
+            aiText.innerText = data.comment;
+            aiChatBox.style.display = 'block';
+
+            // Hide after 10 seconds
+            setTimeout(() => {
+                aiChatBox.style.display = 'none';
+            }, 10000);
+        });
+
+        function createStickyNote(data) {
+            const noteDiv = document.createElement('div');
+            noteDiv.className = 'sticky-note';
+
+            // Random position variation for demo if x/y are static, 
+            // or use detected coordinates mapped to screen.
+            // For now, we'll try to use the passed coordinates but map them loosely
+            // or just scatter them if coordinates aren't calibrated to screen yet.
+
+            // シンプルにするため、まずはランダム配置またはグリッド配置っぽくする
+            // 実際の座標マッピングはキャリブレーションが必要なので、
+            // 今は画面中央付近にランダムに散らす
+
+            const randomX = Math.random() * (window.innerWidth - 200);
+            const randomY = Math.random() * (window.innerHeight - 200);
+
+            noteDiv.style.left = randomX + 'px';
+            noteDiv.style.top = randomY + 'px';
+            noteDiv.style.width = '200px'; // Width of the sticky note display
+
+            const img = document.createElement('img');
+            // Cache busting
+            img.src = '/static/captures/' + data.filename + '?t=' + new Date().getTime();
+
+            noteDiv.appendChild(img);
+            canvas.appendChild(noteDiv);
+        }
+    </script>
+</body>
+
+</html>

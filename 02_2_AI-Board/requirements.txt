@@ -1,0 +1,8 @@
+opencv-python
+numpy
+flask
+flask-socketio
+eventlet
+requests
+google-generativeai
+python-dotenv
