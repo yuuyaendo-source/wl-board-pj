@@ -1,0 +1,16 @@
+# --- ESP-IDF 専用設定 ---
+# ビルド生成物
+build/
+
+# 個人環境設定
+sdkconfig
+sdkconfig.old
+
+# システム・エディタ設定
+.vscode/
+.DS_Store
+Thumbs.db
+*.pyc
+__pycache__/
+managed_components/
+dependencies.lock

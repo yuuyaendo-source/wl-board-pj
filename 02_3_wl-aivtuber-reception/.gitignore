@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Certificates (機密情報)
+*.pem
+
+# AWS credentials
+*accessKeys.csv
+
+# VRM models (大きいファイル)
+*.vrm
+
+# Archived files
+archived/
+
+# Temporary files
+*.tmp
+*.mp3
