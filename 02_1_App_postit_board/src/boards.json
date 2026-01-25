@@ -78,6 +78,216 @@
         "x": 141.8580532218744,
         "y": 124.64652168115013,
         "color": "#a7ffeb"
+      },
+      {
+        "id": "mktjudhf-vu98m264t",
+        "text": "",
+        "x": 391.73959350585943,
+        "y": 2.8333435058593754,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テスト",
+        "createdAt": 1769334105795
+      },
+      {
+        "id": "mkto3vwv-rrhzv96me",
+        "text": "",
+        "x": 964.5312447254958,
+        "y": 623.6583101810413,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テスト",
+        "createdAt": 1769341268047
+      },
+      {
+        "id": "mkto47bv-p4rz1uoub",
+        "text": "テスト",
+        "x": 1691.2083740234375,
+        "y": 1972.4375610351562,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "テスト",
+        "createdAt": 1769341282843
+      },
+      {
+        "id": "mktrk22h-mmzb4365a",
+        "text": "テスト",
+        "x": 1398.5833740234375,
+        "y": 1834.8125610351562,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347061369
+      },
+      {
+        "id": "mktrkf4z-18yv2erke",
+        "text": "テスト",
+        "x": 2021.1563313007355,
+        "y": 1987.6875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347078307
+      },
+      {
+        "id": "mktryp37-7gmiv7lg0",
+        "text": "",
+        "x": 1934.5000915527344,
+        "y": 1757.1771240234375,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347744387
+      },
+      {
+        "id": "mkts1eed-588le7qaz",
+        "text": "AIが付箋に対してコメントしてくれるシステム",
+        "x": 694.5019843315634,
+        "y": 802.5005706501397,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347870501
+      },
+      {
+        "id": "mkts2o9b-pe8if8qnu",
+        "text": "音声で会話して",
+        "x": 668.7604217529297,
+        "y": 585.9271087646484,
+        "color": "#a7ffeb",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347929935
+      },
+      {
+        "id": "mkts3j2i-mm98zx43e",
+        "text": "新しいアイデアの相談をして",
+        "x": 424.125,
+        "y": 725.7291717529297,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769347969866
+      },
+      {
+        "id": "mkts4fto-wuylhxbv5",
+        "text": "このシステムを実際の会社に導入するとしたら？",
+        "x": 662.1666717529297,
+        "y": 412.86460876464844,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769348012316
+      },
+      {
+        "id": "mkts5qdf-h6ritwb53",
+        "text": "このシステムについて意見をください",
+        "x": 1908.4720964336454,
+        "y": 2112.405892088995,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769348072643
+      },
+      {
+        "id": "mktsg2dd-n6umc1lo3",
+        "text": "リン子さんがまだ声だけなので、３Dモデルを追加したい",
+        "x": 1700.0938415527344,
+        "y": 1730.2291870117188,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769348554753
+      },
+      {
+        "id": "mktshhl0-11hqm1v5m",
+        "text": "このアプリはどのくらい需要がある？",
+        "x": 2139.166748046875,
+        "y": 1746.8541870117188,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769348621124
+      },
+      {
+        "id": "mktskjpv-8vvilbvqo",
+        "text": "リン子さんが付箋を整理してくれる機能を作るのはどう？",
+        "x": 1856.2188415527344,
+        "y": 1891.53125,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769348763859
+      },
+      {
+        "id": "mkttjxtt-nqwj1bd58",
+        "text": "リン子さんの動作をチェックします。",
+        "x": 2168.6875,
+        "y": 1996.5625610351562,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769350415105
+      },
+      {
+        "id": "mkttl3ht-deeibqpvo",
+        "text": "動作が腕を水平にするだけになっています\n",
+        "x": 2046.3338317871094,
+        "y": 1656.917236328125,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769350469105
+      },
+      {
+        "id": "mkttlxq2-zfs254lnj",
+        "text": "リップシンクも動作してない",
+        "x": 2096.0833435058594,
+        "y": 1929.9584350585938,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769350508282
+      },
+      {
+        "id": "mktu3636-0a23u7kj5",
+        "text": "リン子さんの動作テスト",
+        "x": 1934.5055154377173,
+        "y": 2138.9264257701743,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769351312274
+      },
+      {
+        "id": "mktu4vva-qae7ysg0s",
+        "text": "テスト",
+        "x": 1920.4354954562875,
+        "y": 2136.1732763670398,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769351392342
+      },
+      {
+        "id": "mktu64cz-1zufym9iu",
+        "text": "リン子テスト",
+        "x": 1892.1222240560262,
+        "y": 2100.246655147719,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769351450003
+      },
+      {
+        "id": "mktu8bsj-ouvrrpfnu",
+        "text": "test",
+        "x": 1893.3045416762013,
+        "y": 2105.701192480548,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769351552947
       }
     ],
     "lines": []

@@ -168,6 +168,11 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     ))}
                 </div>
             )}
+            {note.imageUrl && (
+                <div className={styles.imageContainer}>
+                    <img src={note.imageUrl} alt="Sticky note capture" className={styles.image} />
+                </div>
+            )}
             <textarea
                 value={note.text}
                 onChange={(e) => onUpdate({ ...note, text: e.target.value })}

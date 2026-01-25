@@ -3,3 +3,7 @@
 __pycache__/
 *.pyc
 temp_captures/
+src/webapp/static/captures/
+src/webapp/static/voices/
+models_list.txt
+models.txt

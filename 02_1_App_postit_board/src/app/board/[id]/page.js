@@ -8,9 +8,10 @@ import BoardCanvas from "@/components/BoardCanvas";
 import Toolbar from "@/components/Toolbar";
 import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
+import NoteInputDialog from "@/components/NoteInputDialog";
 import ParticipantsList from "@/components/ParticipantsList";
 
-const SOCKET_SERVER_URL = "http://localhost:3000"; // Ensure this matches your server
+const SOCKET_SERVER_URL = "http://localhost:3000"; // サーバーのURLに合わせて変更してください
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
 
@@ -21,13 +22,14 @@ export default function BoardPage() {
     const boardId = params?.id;
     const [notes, setNotes] = useState([]);
     const [lines, setLines] = useState([]);
-    const [color, setColor] = useState("#ffeb3b"); // Default yellow
+    const [color, setColor] = useState("#ffeb3b"); // デフォルト色（黄色）
     const [isConnected, setIsConnected] = useState(false);
     const [scale, setScale] = useState(1);
     const [title, setTitle] = useState("");
     const [showCommentPanel, setShowCommentPanel] = useState(false);
     const [username, setUsername] = useState("");
     const [showUserDialog, setShowUserDialog] = useState(false);
+    const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [participants, setParticipants] = useState([]);
     const [showParticipantsList, setShowParticipantsList] = useState(false);
     const boardContainerRef = useRef(null);
@@ -35,7 +37,7 @@ export default function BoardPage() {
     useEffect(() => {
         if (!boardId) return;
 
-        // Check if user has a saved username
+        // ユーザー名が保存されているか確認
         const savedUsername = localStorage.getItem('brainstorming-username');
         if (savedUsername) {
             setUsername(savedUsername);
@@ -43,7 +45,7 @@ export default function BoardPage() {
             setShowUserDialog(true);
         }
 
-        // Initialize Socket.io connection with reconnection options
+        // Socket.io接続の初期化（再接続オプション付き）
         socket = io({
             reconnection: true,
             reconnectionDelay: 1000,
@@ -56,7 +58,7 @@ export default function BoardPage() {
             setIsConnected(true);
             socket.emit("join-board", boardId);
 
-            // Send user info if username is set
+            // ユーザー名が設定されていれば送信
             const currentUsername = localStorage.getItem('brainstorming-username');
             if (currentUsername) {
                 socket.emit("user-join", { boardId, username: currentUsername });
@@ -70,7 +72,7 @@ export default function BoardPage() {
 
         socket.on("note-added", (note) => {
             setNotes((prev) => {
-                // Prevent duplicate - check if note with this ID already exists
+                // 重複防止 - 既に同じIDの付箋があるかチェック
                 if (prev.some(n => n.id === note.id)) {
                     return prev;
                 }
@@ -92,7 +94,7 @@ export default function BoardPage() {
             setLines((prev) => [...prev, line]);
         });
 
-        // User events
+        // ユーザーイベント
         socket.on("users-list", (usersList) => {
             setParticipants(usersList);
         });
@@ -115,11 +117,11 @@ export default function BoardPage() {
         };
     }, [boardId]);
 
-    // Scroll to center on initial load
+    // 初期ロード時に中央へスクロール
     useEffect(() => {
         const container = boardContainerRef.current;
         if (container) {
-            // Wait a bit for layout
+            // レイアウト安定待ち
             setTimeout(() => {
                 const scrollX = (4000 - container.clientWidth) / 2;
                 const scrollY = (4000 - container.clientHeight) / 2;
@@ -146,18 +148,18 @@ export default function BoardPage() {
         localStorage.setItem('brainstorming-username', newUsername);
         setShowUserDialog(false);
 
-        // Send user-join event to server
+        // ユーザー参加イベントを送信
         if (socket && socket.connected) {
             socket.emit("user-join", { boardId, username: newUsername });
         }
     };
 
-    const addNote = () => {
-        // Generate more unique ID with timestamp + random
+    const addNote = (initialText = "") => {
+        // タイムスタンプとランダム値でユニークIDを生成
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
 
-        // Position new notes near the bottom center of the CURRENT VIEWPORT
+        // 現在のビューポートの下部中央付近に新しい付箋を配置
         const container = boardContainerRef.current;
         if (!container) return;
 
@@ -166,16 +168,16 @@ export default function BoardPage() {
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
 
-        // Calculate center x relative to the board
-        const centerX = scrollLeft + (viewportWidth / 2) - 100; // Center minus half note width
+        // ボード相対の中央X座標
+        const centerX = scrollLeft + (viewportWidth / 2) - 100; // 中央から付箋幅の半分を引く
 
-        // Calculate bottom y relative to the board (near toolbar)
-        // Toolbar is at bottom 20px + padding ~50px. Let's place it 200px from bottom.
+        // ボード相対の下部Y座標（ツールバー付近）
+        // ツールバーは下部20px + パディング約50px。下から300pxの位置に配置。
         const bottomY = scrollTop + viewportHeight - 300;
 
         const newNote = {
             id: `${timestamp}-${random}`,
-            text: "",
+            text: initialText,
             x: centerX + Math.random() * 20 - 10,
             y: bottomY + Math.random() * 20 - 10,
             color: color,
@@ -183,9 +185,14 @@ export default function BoardPage() {
             author: username,
             createdAt: Date.now()
         };
-        // Optimistic update
+        // 楽観的更新
         setNotes((prev) => [...prev, newNote]);
         socket.emit("add-note", { boardId, note: newNote });
+    };
+
+    const handleNoteSubmit = (text) => {
+        addNote(text);
+        setShowNoteDialog(false);
     };
 
     const notesRef = useRef(notes);
@@ -220,17 +227,15 @@ export default function BoardPage() {
             }
         }
 
-        // Logic for restoring from trash (logical deletion recovery)
+        // ゴミ箱からの復元ロジック（論理削除からの回復）
         if (originalNote && originalNote.groupId === 'trash') {
             const isMoved = updatedNote.x !== originalNote.x || updatedNote.y !== originalNote.y;
             const isColorChanged = updatedNote.color !== TRASH_COLOR;
 
             if (isMoved || isColorChanged) {
-                // Restore from trash if moved or color changed
+                // 移動または色変更でゴミ箱から復元
                 updatedNote.groupId = null;
-                // If it was only moved but color is still gray, keep it gray unless user changed it?
-                // Spec says "manually change color AND move". Let's assume ANY action restores it.
-                // If color changed, it's already updated in updatedNote.color
+                // 色が変更された場合は updatedNote.color に反映済み
             }
         }
 
@@ -241,7 +246,7 @@ export default function BoardPage() {
             });
         });
 
-        // Debounce: only send to server after 100ms of no updates
+        // デバウンス: 100ms更新がない場合のみサーバーに送信
         if (updateTimeout.current) {
             clearTimeout(updateTimeout.current);
         }
@@ -259,7 +264,7 @@ export default function BoardPage() {
     };
 
     const deleteNote = (noteId) => {
-        // Logical deletion: Move to trash area and change color
+        // 論理削除: ゴミ箱エリアに移動し色を変更
         const noteToDelete = notes.find(n => n.id === noteId);
         if (!noteToDelete) return;
 
@@ -270,10 +275,10 @@ export default function BoardPage() {
             groupId: 'trash',
             x: TRASH_AREA.x + offset,
             y: TRASH_AREA.y + offset,
-            pinned: false // Unpin if pinned
+            pinned: false // ピン留め解除
         };
 
-        // Optimistic update
+        // 楽観的更新
         setNotes((prev) => prev.map(n => n.id === noteId ? trashNote : n));
         socket.emit("update-note", { boardId, note: trashNote });
     };
@@ -309,7 +314,7 @@ export default function BoardPage() {
                 if (boardData.notes) setNotes(boardData.notes);
                 if (boardData.lines) setLines(boardData.lines);
 
-                // Emit to server to sync with other clients
+                // サーバーに送信して他クライアントと同期
                 boardData.notes?.forEach(note => {
                     socket.emit("add-note", { boardId, note });
                 });
@@ -326,7 +331,7 @@ export default function BoardPage() {
     const handleJumpToNote = (note) => {
         const container = boardContainerRef.current;
         if (container) {
-            // Calculate scroll position to center the note
+            // 付箋を中央に表示するためのスクロール位置を計算
             const noteX = note.x * scale;
             const noteY = note.y * scale;
             const centerX = noteX - (container.clientWidth / 2) + 100;
@@ -338,7 +343,7 @@ export default function BoardPage() {
                 behavior: 'smooth'
             });
 
-            // Highlight effect
+            // ハイライト効果
             setTimeout(() => {
                 const noteElement = document.querySelector(`[data-note-id="${note.id}"]`);
                 if (noteElement) {
@@ -352,16 +357,16 @@ export default function BoardPage() {
     const handleGroupNotes = (noteIds) => {
         const groupId = `group-${Date.now()}`;
 
-        // Calculate center position from selected notes
+        // 選択された付箋の中心位置を計算
         const selectedNotes = notes.filter(n => noteIds.includes(n.id));
         if (selectedNotes.length === 0) return;
 
         const centerX = selectedNotes.reduce((sum, n) => sum + n.x, 0) / selectedNotes.length;
         const centerY = selectedNotes.reduce((sum, n) => sum + n.y, 0) / selectedNotes.length;
 
-        // Arrange notes in a pile (slightly overlapped)
+        // 山積みに配置（少しずらす）
         const updatedNotes = selectedNotes.map((note, index) => {
-            // Offset each note slightly to create a messy pile effect
+            // 雑多な感じを出すために少しオフセット
             const offset = index * 10;
             const totalOffset = (selectedNotes.length - 1) * 10 / 2;
 
@@ -383,7 +388,7 @@ export default function BoardPage() {
             })
         );
 
-        // Update on server
+        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -408,7 +413,7 @@ export default function BoardPage() {
             })
         );
 
-        // Update on server
+        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -421,8 +426,8 @@ export default function BoardPage() {
     const scrollStart = useRef({ left: 0, top: 0 });
 
     const handleMouseDown = (e) => {
-        // Only drag if clicking on the container or canvas directly (not notes)
-        // Check if the event target is within a sticky note using data attribute
+        // コンテナまたはキャンバスを直接クリックした場合のみドラッグ（付箋以外）
+        // data属性を使って付箋内かどうか判定
         const isClickingNote = e.target.closest('[data-sticky-note]');
 
         if (!isClickingNote) {
@@ -475,7 +480,7 @@ export default function BoardPage() {
             </div>
 
             <Toolbar
-                onAddNote={addNote}
+                onAddNote={() => setShowNoteDialog(true)}
                 color={color}
                 setColor={setColor}
                 scale={scale}
@@ -517,6 +522,13 @@ export default function BoardPage() {
 
             {showUserDialog && (
                 <UserDialog onSubmit={handleUserSubmit} />
+            )}
+
+            {showNoteDialog && (
+                <NoteInputDialog
+                    onSubmit={handleNoteSubmit}
+                    onCancel={() => setShowNoteDialog(false)}
+                />
             )}
         </div>
     );

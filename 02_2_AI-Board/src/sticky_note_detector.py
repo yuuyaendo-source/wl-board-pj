@@ -4,9 +4,16 @@ import requests
 import time
 import os
 import datetime
+import base64
+import sys
 
-# Configuration
-API_URL = "http://localhost:5000/api/upload"
+# ai_avatarをインポートするために親ディレクトリをパスに追加
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from webapp.ai_avatar import extract_text_from_image
+
+# 設定
+WEB_APP_API_URL = "http://localhost:3000/api/sticky_notes"
+BOARD_ID = "odgeqgf"  # 既存のボードID（環境変数から取得可能にする）
 DEBOUNCE_SECONDS = 3.0
 TEMP_DIR = "temp_captures"
 
@@ -24,7 +31,7 @@ def main():
         print("カメラを開けませんでした。")
         return
 
-    # 初期値設定
+    # 初期値設定（HSV色空間）
     h_min, h_max = 20, 40
     s_min, s_max = 100, 255
     v_min, v_max = 100, 255
@@ -104,15 +111,50 @@ def main():
                         
                         try:
                             cv2.imwrite(filepath, roi)
-                            # Webアプリへのアップロード (例外処理付き)
+                            
+                            # テキスト抽出（Gemini API使用）
+                            text = extract_text_from_image(filepath)
+                            if not text:
+                                text = "(テキスト抽出できませんでした)"
+                            
+                            # 画像をBase64エンコード
+                            with open(filepath, 'rb') as img_file:
+                                img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+                                image_url = f"data:image/jpeg;base64,{img_base64}"
+                            
+                            # WebアプリのAPIに直接送信
+                            note_id = f"cam-{int(time.time() * 1000)}"
+                            note_data = {
+                                "boardId": BOARD_ID,
+                                "note": {
+                                    "id": note_id,
+                                    "text": text,
+                                    "x": float(x),
+                                    "y": float(y),
+                                    "color": "#ffeb3b",  # 黄色固定
+                                    "pinned": False,
+                                    "author": "Real Cam",
+                                    "createdAt": int(time.time() * 1000),
+                                    "imageUrl": image_url
+                                }
+                            }
+                            
                             try:
-                                with open(filepath, 'rb') as f:
-                                    requests.post(API_URL, files={'file': f}, data={'x': x, 'y': y}, timeout=1)
-                                    print(f"Uploaded: {filename}")
+                                response = requests.post(
+                                    WEB_APP_API_URL,
+                                    json=note_data,
+                                    headers={'Content-Type': 'application/json'},
+                                    timeout=5
+                                )
+                                if response.status_code == 200:
+                                    print(f"Note sent to Web App: {note_id} - Text: {text[:50]}")
                                     last_upload_time = current_time
                                     cv2.putText(frame, "UPLOADED!", (x, y + h + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                            except requests.exceptions.RequestException:
-                                pass # サーバーが起動していなくてもエラーで止めない
+                                else:
+                                    print(f"API Error: {response.status_code} - {response.text}")
+                            except requests.exceptions.RequestException as e:
+                                print(f"Request error: {e}")
+                                # サーバーが起動していなくてもエラーで止めない
                         except Exception as e:
                             print(f"Error: {e}")
 

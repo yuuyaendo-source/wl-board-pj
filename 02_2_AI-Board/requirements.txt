@@ -6,3 +6,5 @@ eventlet
 requests
 google-generativeai
 python-dotenv
+python-socketio[client]
+python-osc
