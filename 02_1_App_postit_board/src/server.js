@@ -1,4 +1,7 @@
 // サーバー設定
+// Next.js + Express + Socket.IO を組み合わせたWebアプリケーションサーバー
+// 役割: フロントエンドの配信、Socket.IOによるリアルタイム通信、APIエンドポイントの提供
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -21,9 +24,11 @@ app.prepare().then(() => {
     const httpServer = http.createServer(server);
     const io = new Server(httpServer);
 
+    // リクエストボディのサイズ制限を緩和（画像データ受信のため）
+    server.use(express.json({ limit: '50mb' }));
+    server.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
     // CORS設定（Python側からのリクエストを許可）
-    server.use(express.json());
-    server.use(express.urlencoded({ extended: true }));
     server.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -45,9 +50,9 @@ app.prepare().then(() => {
     }
 
     // データ保存処理（デバウンス付き）
+    // 頻繁なディスク書き込みを防ぐため、最後の更新から500ms待ってから保存する
     let saveTimeout = null;
     const saveBoards = () => {
-        // デバウンス: 500ms以内に連続して更新があった場合は保存しない
         if (saveTimeout) {
             clearTimeout(saveTimeout);
         }
@@ -125,9 +130,10 @@ app.prepare().then(() => {
                     saveBoards();
 
                     // AI-Board (Python) に通知 (Real Cam以外の場合)
+                    // これにより、Webアプリで作成・編集した付箋にもAIがコメントする
                     if (note.author !== 'Real Cam') {
                         try {
-                            // Node.js 18+ has native fetch
+                            // Pythonサーバーへ通知
                             fetch('http://localhost:5000/api/receive_note', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -188,6 +194,7 @@ app.prepare().then(() => {
     });
 
     // REST API: 外部から付箋を追加するエンドポイント（Python側から呼び出し）
+    // AI-Board (sticky_note_detector.py) が検知した付箋を受け取る
     server.post('/api/sticky_notes', (req, res) => {
         try {
             const { boardId, note } = req.body;
@@ -207,6 +214,24 @@ app.prepare().then(() => {
 
             // Socket.IOで全クライアントに通知
             io.to(boardId).emit('note-added', note);
+
+            // AI-Board (Python) に通知してAIコメントを生成させる
+            // 循環呼び出しにならないよう、authorが 'Real Cam' の場合のみ通知
+            if (note.author === 'Real Cam') {
+                 try {
+                     fetch('http://localhost:5000/api/receive_note', {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({
+                             id: note.id,
+                             text: note.text,
+                             author: note.author
+                         })
+                     }).catch(err => console.error('Failed to notify AI-Board:', err.message));
+                 } catch (e) {
+                     console.error('Error notifying AI-Board:', e);
+                 }
+            }
 
             console.log(`Note added via API: ${note.id} to board ${boardId}`);
             res.json({ success: true, note });

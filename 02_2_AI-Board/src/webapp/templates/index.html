@@ -157,6 +157,11 @@
             createStickyNote(data);
         });
 
+        socket.on('new_mobile_note', (data) => {
+            console.log('New mobile note received:', data);
+            createStickyNote(data);
+        });
+
         socket.on('new_text_note', (data) => {
             console.log('New text note received:', data);
             createTextStickyNote(data);

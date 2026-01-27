@@ -75,21 +75,25 @@ def extract_text_from_image(image_path):
         return ""
 
     try:
+        print(f"Extracting text from: {image_path}", flush=True)
         # ファイルをアップロード
         sample_file = genai.upload_file(path=image_path, display_name="Sticky Note")
         
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05")
         
         # 画像からテキストを抽出
+        print("Calling Gemini API for text extraction...", flush=True)
         response = model.generate_content([
             sample_file,
             "この付箋画像に書かれているテキストを正確に抽出してください。テキストのみを返してください。"
         ])
         
-        return response.text.strip()
+        text = response.text.strip()
+        print(f"Extracted text: {text}", flush=True)
+        return text
     except Exception as e:
-        print(f"Text extraction error: {e}")
+        print(f"Text extraction error: {e}", flush=True)
         return ""
 
 def generate_comment(image_path):
@@ -101,7 +105,8 @@ def generate_comment(image_path):
         sample_file = genai.upload_file(path=image_path, display_name="Sticky Note")
         
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite", generation_config={"response_mime_type": "application/json"})
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05", generation_config={"response_mime_type": "application/json"})
+
         
         # コンテンツ生成
         response = model.generate_content([SYSTEM_PROMPT, sample_file, "この付箋になんて書いてある？これについて一言コメントして。"])
@@ -123,7 +128,8 @@ def generate_comment_from_text(text):
 
     try:
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite", generation_config={"response_mime_type": "application/json"})
+        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05", generation_config={"response_mime_type": "application/json"})
+
         
         # コンテンツ生成
         prompt = f"{SYSTEM_PROMPT}\n\nユーザーがWebアプリから以下の付箋を貼りました：\n「{text}」\n\nこれについて一言コメントして。"
