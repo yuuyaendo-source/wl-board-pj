@@ -29,5 +29,5 @@ Write-Host "`nサーバーを起動しています..." -ForegroundColor Green
 Write-Host "ブラウザで http://localhost:5000 を開いてください" -ForegroundColor Yellow
 Write-Host "終了するには Ctrl+C を押してください`n" -ForegroundColor Gray
 
-Set-Location "src\webapp"
+Set-Location "src\"
 & $pythonCmd app.py

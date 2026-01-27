@@ -11,6 +11,8 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
 
+    const isLarge = note.ratioW && note.ratioW >= 0.2;
+
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e); // Propagate to parent for line drawing
         if (e.defaultPrevented || e.altKey) return; // Don't drag if line drawing
@@ -114,7 +116,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         <div
             ref={noteRef}
             data-sticky-note="true"
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''}`}
             style={{
                 left: note.x,
                 top: note.y,

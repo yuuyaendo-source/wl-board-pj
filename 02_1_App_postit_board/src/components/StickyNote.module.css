@@ -20,6 +20,16 @@
     box-shadow: 0 0 0 3px var(--primary, #79dc89);
 }
 
+.note.large {
+    width: 320px;
+    height: 320px;
+    font-size: 1.5rem;
+}
+
+.note.large .textarea {
+    font-size: 1.5rem;
+}
+
 .pinButton,
 .colorButton,
 .deleteButton {
