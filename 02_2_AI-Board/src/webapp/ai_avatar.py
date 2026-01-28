@@ -80,7 +80,8 @@ def extract_text_from_image(image_path):
         sample_file = genai.upload_file(path=image_path, display_name="Sticky Note")
         
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05")
+        # ※ previewモデルは404になることがあるため、安定版のgemini-2.5-flash-liteを利用する
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
         
         # 画像からテキストを抽出
         print("Calling Gemini API for text extraction...", flush=True)
@@ -105,7 +106,8 @@ def generate_comment(image_path):
         sample_file = genai.upload_file(path=image_path, display_name="Sticky Note")
         
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05", generation_config={"response_mime_type": "application/json"})
+        # ※ previewモデルは404になることがあるため、安定版のgemini-2.5-flash-liteを利用する
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite", generation_config={"response_mime_type": "application/json"})
 
         
         # コンテンツ生成
@@ -128,7 +130,8 @@ def generate_comment_from_text(text):
 
     try:
         # モデル作成
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash-lite-preview-02-05", generation_config={"response_mime_type": "application/json"})
+        # ※ previewモデルは404になることがあるため、安定版のgemini-2.5-flash-liteを利用する
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite", generation_config={"response_mime_type": "application/json"})
 
         
         # コンテンツ生成

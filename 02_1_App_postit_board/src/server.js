@@ -169,6 +169,31 @@ app.prepare().then(() => {
             }
         });
 
+        // ボード全体をクリア（付箋と線を全削除）
+        // クライアントからの「clear-board」イベントでトリガーされる
+        socket.on('clear-board', (boardId) => {
+            if (boards[boardId]) {
+                boards[boardId].notes = [];
+                boards[boardId].lines = [];
+                saveBoards();
+
+                // 同じボードに参加している全クライアントへ通知
+                io.to(boardId).emit('board-cleared');
+                console.log(`Board ${boardId} cleared by socket event.`);
+
+                // AI-Board 側にもクリアを通知（AI-Board が起動している場合）
+                try {
+                    fetch('http://127.0.0.1:5000/api/clear_board', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ boardId })
+                    }).catch(err => console.error('Failed to notify AI-Board clear:', err.message));
+                } catch (e) {
+                    console.error('Error notifying AI-Board clear:', e);
+                }
+            }
+        });
+
         // 切断処理
         socket.on('disconnect', () => {
             console.log('Client disconnected:', socket.id);
@@ -238,6 +263,43 @@ app.prepare().then(() => {
         } catch (error) {
             console.error('Error adding note via API:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // REST API: 特定のボードの全付箋（付箋＋線）を削除するエンドポイント
+    // Webクライアントや他システム（AI-Boardなど）から呼び出し可能
+    server.post('/api/boards/:id/clear', (req, res) => {
+        try {
+            const boardId = req.params.id;
+
+            if (!boards[boardId]) {
+                return res.status(404).json({ error: `Board ${boardId} not found` });
+            }
+
+            // メモリ上のデータをクリア
+            boards[boardId].notes = [];
+            boards[boardId].lines = [];
+            saveBoards();
+
+            // Socket.IO でボード参加者に通知
+            io.to(boardId).emit('board-cleared');
+            console.log(`Board ${boardId} cleared via REST API.`);
+
+            // AI-Board 側にもクリアを通知（AI-Board が起動している場合）
+            try {
+                fetch('http://127.0.0.1:5000/api/clear_board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ boardId })
+                }).catch(err => console.error('Failed to notify AI-Board clear:', err.message));
+            } catch (e) {
+                console.error('Error notifying AI-Board clear:', e);
+            }
+
+            return res.json({ success: true, message: `Board ${boardId} cleared.` });
+        } catch (error) {
+            console.error('Error clearing board via REST API:', error);
+            return res.status(500).json({ error: 'Internal server error' });
         }
     });
 

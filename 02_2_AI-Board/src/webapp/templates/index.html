@@ -184,6 +184,17 @@
             }, 10000);
         });
 
+        // Webアプリ側でボード全削除が行われたときに、
+        // AI-Board の画面上の付箋とコメントを全てクリアするイベント
+        socket.on('clear_all_notes', function () {
+            console.log("Clearing all notes from AI-Board UI.");
+            // キャンバス上の付箋を全削除
+            canvas.innerHTML = '';
+            // コメント表示もリセット
+            aiText.innerText = '...';
+            aiChatBox.style.display = 'none';
+        });
+
         function createStickyNote(data) {
             const noteDiv = document.createElement('div');
             noteDiv.className = 'sticky-note';

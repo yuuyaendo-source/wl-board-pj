@@ -94,6 +94,13 @@ export default function BoardPage() {
             setLines((prev) => [...prev, line]);
         });
 
+        // ボード全削除時のイベント（サーバーからの通知）
+        socket.on("board-cleared", () => {
+            console.log("Board cleared by server.");
+            setNotes([]);
+            setLines([]);
+        });
+
         // ユーザーイベント
         socket.on("users-list", (usersList) => {
             setParticipants(usersList);
@@ -113,6 +120,16 @@ export default function BoardPage() {
         });
 
         return () => {
+            socket.off("init-board");
+            socket.off("note-added");
+            socket.off("note-updated");
+            socket.off("note-deleted");
+            socket.off("line-added");
+            socket.off("board-cleared");
+            socket.off("users-list");
+            socket.off("user-joined");
+            socket.off("user-left");
+            socket.off("disconnect");
             socket.disconnect();
         };
     }, [boardId]);
@@ -421,6 +438,35 @@ export default function BoardPage() {
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
     };
 
+    // ボード全削除処理
+    const handleClearAllNotes = async () => {
+        if (!boardId) return;
+        const confirmed = window.confirm("本当にこのボード上のすべての付箋と線を削除しますか？この操作は取り消せません。");
+        if (!confirmed) return;
+
+        try {
+            // REST API経由でサーバーに削除を依頼
+            const response = await fetch(`/api/boards/${boardId}/clear`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                console.log(data.message);
+                // 念のためローカル状態も即時クリア
+                setNotes([]);
+                setLines([]);
+            } else {
+                console.error('Failed to clear board:', data.error || response.statusText);
+                alert('ボードのクリアに失敗しました。');
+            }
+        } catch (error) {
+            console.error('Error clearing board:', error);
+            alert('ボードのクリア中にエラーが発生しました。');
+        }
+    };
+
     const [isDraggingBoard, setIsDraggingBoard] = useState(false);
     const dragStart = useRef({ x: 0, y: 0 });
     const scrollStart = useRef({ left: 0, top: 0 });
@@ -490,6 +536,7 @@ export default function BoardPage() {
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
                 onCenter={handleCenter}
                 onToggleParticipants={() => setShowParticipantsList(!showParticipantsList)}
+                onClearAllNotes={handleClearAllNotes}
             />
 
             <div className={styles.canvasWrapper}>

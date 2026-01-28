@@ -159,6 +159,9 @@ def upload_file():
 # 付箋ごとの最終コメント時間を記録（レート制限用）
 last_comment_time = {}
 
+# AI-Board 内部で保持しているモバイル付箋などの状態（必要に応じて拡張）
+mobile_notes_data = {}
+
 @app.route('/api/receive_note', methods=['POST'])
 def receive_note():
     """
@@ -330,6 +333,32 @@ def upload_image_mobile():
                 socketio.start_background_task(generate_and_notify_mobile)
 
         return jsonify({'message': f'Processed {processed_count} notes', 'count': processed_count}), 200
+
+
+@app.route('/api/clear_board', methods=['POST'])
+def clear_board():
+    """
+    Webアプリ(Postit_board)からのリクエストで、
+    AI-Board 側の表示中付箋やコメント履歴をクリアするエンドポイント。
+    - 内部状態（mobile_notes_data, last_comment_time）をリセット
+    - フロントエンドに clear_all_notes イベントを送出して画面を初期化
+    """
+    global mobile_notes_data, last_comment_time
+
+    try:
+        board_id = request.json.get('boardId') if request.is_json else None
+    except Exception:
+        board_id = None
+
+    print(f"Received clear request from Web App. boardId={board_id}", flush=True)
+
+    mobile_notes_data = {}
+    last_comment_time = {}
+
+    # フロントエンドに全削除を通知
+    socketio.emit('clear_all_notes')
+
+    return jsonify({'message': 'AI-Board cleared successfully', 'boardId': board_id}), 200
 
 if __name__ == '__main__':
     print("Starting Flask Server...")

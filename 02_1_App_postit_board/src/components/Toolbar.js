@@ -13,7 +13,19 @@ const COLORS = [
     "#ffffff"  // White
 ];
 
-export default function Toolbar({ onAddNote, color, setColor, scale, setScale, onDownload, onUpload, onToggleCommentPanel, onCenter, onToggleParticipants }) {
+export default function Toolbar({
+    onAddNote,
+    color,
+    setColor,
+    scale,
+    setScale,
+    onDownload,
+    onUpload,
+    onToggleCommentPanel,
+    onCenter,
+    onToggleParticipants,
+    onClearAllNotes
+}) {
     const fileInputRef = useRef(null);
 
     const handleFileUpload = (e) => {
@@ -83,6 +95,18 @@ export default function Toolbar({ onAddNote, color, setColor, scale, setScale, o
 
             <div className={styles.group}>
                 <button onClick={onToggleParticipants} title="参加者リスト">👥</button>
+            </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.group}>
+                <button
+                    onClick={onClearAllNotes}
+                    title="このボード上の全ての付箋と線を削除"
+                    className={styles.deleteButton}
+                >
+                    🗑️ 全削除
+                </button>
             </div>
         </div>
     );
