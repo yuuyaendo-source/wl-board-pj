@@ -233,16 +233,19 @@ app.prepare().then(() => {
                 boards[boardId] = { notes: [], lines: [] };
             }
 
-            // 付箋を追加
-            boards[boardId].notes.push(note);
+            // 同一IDの付箋が既にあれば更新、なければ追加（無限増殖防止）
+            const existingIndex = boards[boardId].notes.findIndex((n) => n.id === note.id);
+            if (existingIndex >= 0) {
+                boards[boardId].notes[existingIndex] = note;
+                io.to(boardId).emit('note-updated', note);
+            } else {
+                boards[boardId].notes.push(note);
+                io.to(boardId).emit('note-added', note);
+            }
             saveBoards();
 
-            // Socket.IOで全クライアントに通知
-            io.to(boardId).emit('note-added', note);
-
-            // AI-Board (Python) に通知してAIコメントを生成させる
-            // 循環呼び出しにならないよう、authorが 'Real Cam' の場合のみ通知
-            if (note.author === 'Real Cam') {
+            // AI-Board (Python) に通知してAIコメントを生成させる（新規追加時のみ。更新時はコメント重複を防ぐ）
+            if (note.author === 'Real Cam' && existingIndex < 0) {
                  try {
                      fetch('http://localhost:5000/api/receive_note', {
                          method: 'POST',
@@ -258,7 +261,7 @@ app.prepare().then(() => {
                  }
             }
 
-            console.log(`Note added via API: ${note.id} to board ${boardId}`);
+            console.log(`Note ${existingIndex >= 0 ? 'updated' : 'added'} via API: ${note.id} to board ${boardId}`);
             res.json({ success: true, note });
         } catch (error) {
             console.error('Error adding note via API:', error);

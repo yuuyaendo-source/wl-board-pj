@@ -3,22 +3,9 @@ globalThis.__BUILD_MANIFEST = {
     "/_app": []
   },
   "devFiles": [],
-  "polyfillFiles": [
-    "static/chunks/fcd99_next_dist_build_polyfills_polyfill-nomodule.js"
-  ],
+  "polyfillFiles": [],
   "lowPriorityFiles": [],
-  "rootMainFiles": [
-    "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_c936c23d._.js",
-    "static/chunks/fcd99_next_dist_compiled_react-dom_aea8b017._.js",
-    "static/chunks/fcd99_next_dist_compiled_react-server-dom-turbopack_381ec80c._.js",
-    "static/chunks/fcd99_next_dist_compiled_next-devtools_index_0ab44b7f.js",
-    "static/chunks/fcd99_next_dist_compiled_9a224191._.js",
-    "static/chunks/fcd99_next_dist_client_8404efe2._.js",
-    "static/chunks/fcd99_next_dist_6994d30d._.js",
-    "static/chunks/fcd99_@swc_helpers_cjs_4b229f02._.js",
-    "static/chunks/02_Projects_02_1_App_postit_board_src_a0ff3932._.js",
-    "static/chunks/turbopack-02_Projects_02_1_App_postit_board_src_429b3b2e._.js"
-  ]
+  "rootMainFiles": []
 };
 globalThis.__BUILD_MANIFEST.lowPriorityFiles = [
 "/static/" + process.env.__NEXT_BUILD_ID + "/_buildManifest.js",

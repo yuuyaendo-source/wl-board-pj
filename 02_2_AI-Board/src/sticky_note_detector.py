@@ -10,6 +10,14 @@ Webカメラの映像から黄色い付箋を検出し、その位置と画像�
 3. 付箋のトラッキング（ID管理、重複送信防止）
 4. 検出した付箋画像の切り出しとWebアプリへのアップロード
 5. 設定ファイル (config.json) の読み書き
+
+パフォーマンス（2層構造）:
+- データ用(Original): 元解像度の画像。OCR用切り出し・座標計算のベース。
+- 表示・調整用(Preview): 幅960pxにリサイズした軽量フレーム。HSVプレビュー・スライダー・四隅クリックはこちらで処理し、取得した座標は元解像度にスケールバックする。
+
+非同期解析（改善指示書3）:
+- メインスレッド: カメラ取得・HSV・描画・マウスに専念。付箋検知時は RequestQueue に投入するだけ（待機しない）。
+- ワーカースレッド: キューを監視し、OCR -> API 送信を実行。解析中は is_processing で排他し、UI に「解析中...」を表示する。
 """
 
 import cv2
@@ -22,10 +30,21 @@ import base64
 import sys
 import math
 import json
+import threading
+import queue
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 # ai_avatarをインポートするために親ディレクトリをパスに追加
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from webapp.ai_avatar import extract_text_from_image
+
+# 表示・調整用フレームの幅（軽量処理用）
+PREVIEW_WIDTH = 960
+
 
 def nothing(x):
     """トラックバー用のダミー関数"""
@@ -50,9 +69,24 @@ class StickyNoteDetector:
     付箋検出・トラッキング・アップロードを行うメインクラス
     """
     def __init__(self):
+        # .env の読み込み（02_2_AI-Board ルートを参照）
+        self._root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        if load_dotenv:
+            env_path = os.path.join(self._root_dir, '.env')
+            load_dotenv(env_path)
+
         # 設定ファイルの読み込み
         self.CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
         self.load_config()
+
+        # カメラソース: .env の RTSP_URL があれば使用、なければ 0 (Webカメラ)
+        rtsp_url = os.environ.get('RTSP_URL', '').strip()
+        self.camera_source = rtsp_url if rtsp_url else 0
+
+        # 付箋検知の最小面積: .env の MIN_AREA で上書き、なければ config の detection.min_area、未設定なら解像度で自動調整
+        env_min = os.environ.get('MIN_AREA', '').strip()
+        if env_min and env_min.isdigit():
+            self.min_area = int(env_min)
 
         self.WEB_APP_API_URL = "http://localhost:3000/api/sticky_notes"
         self.TEMP_DIR = "temp_captures"
@@ -68,6 +102,17 @@ class StickyNoteDetector:
         self.is_calibrating = False
         self.target_width = 1920
         self.target_height = 1080
+        # プレビュー⇔元解像度のスケール用（mouse_callbackで使用）
+        self._last_original_width = None
+        self._last_original_height = None
+        self._last_preview_width = None
+        self._last_preview_height = None
+
+        # 解析処理の非同期化（改善指示書3）
+        self._request_queue = queue.Queue()
+        self._is_processing = False
+        self._processing_lock = threading.Lock()
+        self._worker_stop = threading.Event()
 
     def load_config(self):
         """config.jsonから設定を読み込む。失敗した場合はデフォルト値を使用。"""
@@ -78,10 +123,10 @@ class StickyNoteDetector:
                     self.BOARD_ID = config.get('board_id', 'default_board')
                     hsv = config.get('hsv', {})
                     self.h_min = hsv.get('h_min', 20)
-                    self.h_max = hsv.get('h_max', 40)
-                    self.s_min = hsv.get('s_min', 100)
-                    self.s_max = hsv.get('s_max', 255)
-                    self.v_min = hsv.get('v_min', 100)
+                    self.h_max = hsv.get('h_max', 46)
+                    self.s_min = hsv.get('s_min', 0)
+                    self.s_max = hsv.get('s_max', 50)
+                    self.v_min = hsv.get('v_min', 0)
                     self.v_max = hsv.get('v_max', 255)
                     
                     tracking = config.get('tracking', {})
@@ -89,6 +134,9 @@ class StickyNoteDetector:
                     self.UPLOAD_INTERVAL = tracking.get('upload_interval', 2.0)
                     self.STABLE_THRESHOLD = tracking.get('stable_threshold', 5)
                     self.DELETE_TIMEOUT = tracking.get('delete_timeout', 2.0)
+                    detection = config.get('detection', {})
+                    _min = detection.get('min_area')
+                    self.min_area = int(_min) if _min is not None else None
                     print("Config loaded.")
             except Exception as e:
                 print(f"Error loading config: {e}")
@@ -99,13 +147,14 @@ class StickyNoteDetector:
     def set_default_config(self):
         """デフォルト設定を適用"""
         self.BOARD_ID = "default_board"
-        self.h_min, self.h_max = 20, 40
-        self.s_min, self.s_max = 100, 255
-        self.v_min, self.v_max = 100, 255
+        self.h_min, self.h_max = 20, 46
+        self.s_min, self.s_max = 0, 50
+        self.v_min, self.v_max = 0, 255
         self.TRACKING_DISTANCE_THRESHOLD = 50.0
         self.UPLOAD_INTERVAL = 2.0
         self.STABLE_THRESHOLD = 5
         self.DELETE_TIMEOUT = 2.0
+        self.min_area = None  # None = 解像度に応じて自動調整
 
     def save_config(self):
         """現在の設定をconfig.jsonに保存"""
@@ -121,6 +170,9 @@ class StickyNoteDetector:
                 "upload_interval": self.UPLOAD_INTERVAL,
                 "stable_threshold": self.STABLE_THRESHOLD,
                 "delete_timeout": self.DELETE_TIMEOUT
+            },
+            "detection": {
+                "min_area": self.min_area
             }
         }
         try:
@@ -159,12 +211,20 @@ class StickyNoteDetector:
             print("無効な入力です。")
 
     def mouse_callback(self, event, x, y, flags, param):
-        """マウスイベント処理：キャリブレーションポイントの指定"""
+        """マウスイベント処理：プレビュー上でクリックし、元解像度にスケールしてキャリブレーションポイントを指定"""
         if event == cv2.EVENT_LBUTTONDOWN and self.is_calibrating:
             if len(self.calibration_points) < 4:
-                self.calibration_points.append([x, y])
-                print(f"Calibration Point {len(self.calibration_points)}: ({x}, {y})")
-                
+                # 軽量フレーム上の座標を元解像度にスケールバック
+                if (self._last_original_width and self._last_original_height and
+                        self._last_preview_width and self._last_preview_height):
+                    orig_x = x * (self._last_original_width / self._last_preview_width)
+                    orig_y = y * (self._last_original_height / self._last_preview_height)
+                    self.calibration_points.append([orig_x, orig_y])
+                    print(f"Calibration Point {len(self.calibration_points)}: preview({x},{y}) -> original({orig_x:.0f},{orig_y:.0f})")
+                else:
+                    self.calibration_points.append([x, y])
+                    print(f"Calibration Point {len(self.calibration_points)}: ({x}, {y})")
+
                 if len(self.calibration_points) == 4:
                     self.calculate_homography()
                     self.is_calibrating = False
@@ -182,6 +242,17 @@ class StickyNoteDetector:
         ])
         self.homography_matrix = cv2.getPerspectiveTransform(pts_src, pts_dst)
 
+    def _get_min_area(self, frame):
+        """
+        付箋検知の最小面積を返す。
+        self.min_area が設定されていればその値、なければ解像度に応じて自動調整（基準 640x480 で 2000）。
+        """
+        if self.min_area is not None:
+            return self.min_area
+        h, w = frame.shape[:2]
+        ref_area = 640 * 480
+        return max(500, int(2000 * (w * h) / ref_area))
+
     def detect_from_image(self, image):
         """
         静止画から付箋を検知して切り出す（スマホアップロード用）
@@ -198,11 +269,11 @@ class StickyNoteDetector:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+        min_area = self._get_min_area(image)
         detected_notes = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 2000: # 面積閾値（小さすぎるノイズを除外）
+            if area > min_area:
                 x, y, w, h = cv2.boundingRect(contour)
                 roi = image[y:y+h, x:x+w]
                 if roi.size > 0:
@@ -212,42 +283,98 @@ class StickyNoteDetector:
                     })
         return detected_notes
 
-    def detect_and_track(self, frame):
-        """
-        フレームごとの検知とトラッキング処理
-        """
-        # 1. 画像処理（射影変換 -> HSV変換 -> マスク作成）
-        if self.homography_matrix is not None:
-            processed_frame = cv2.warpPerspective(frame, self.homography_matrix, (self.target_width, self.target_height))
-        else:
-            processed_frame = frame.copy()
+    def _is_processing_analysis(self):
+        """解析中かどうか（メインスレッドがUI表示に使用）。排他制御付き。"""
+        with self._processing_lock:
+            return self._is_processing
 
-        hsv = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2HSV)
+    def _worker_loop(self):
+        """
+        ワーカースレッド：RequestQueue を監視し、キューに画像が入ったら
+        OCR -> API 送信などの重い処理を実行する。
+        """
+        while not self._worker_stop.is_set():
+            try:
+                item = self._request_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            note_obj, roi_image, x, y, w, h, frame_shape = item
+            with self._processing_lock:
+                self._is_processing = True
+            try:
+                self.upload_note(note_obj, roi_image, x, y, w, h, frame_shape)
+            finally:
+                with self._processing_lock:
+                    self._is_processing = False
+            self._request_queue.task_done()
+
+    def _build_preview_layers(self, original_frame):
+        """
+        2層構造を構築する。
+        - データ用: 元解像度（または射影変換後）のフレーム。OCR用切り出し・座標計算のベース。
+        - 表示・調整用: 幅 PREVIEW_WIDTH にリサイズした軽量フレーム。HSVプレビュー・描画用。
+        Returns: (work_frame, full_res_frame, scale_x, scale_y)
+        """
+        h_orig, w_orig = original_frame.shape[:2]
+        scale_resize = w_orig / PREVIEW_WIDTH
+        preview_h = int(h_orig / scale_resize)
+        preview_frame = cv2.resize(original_frame, (PREVIEW_WIDTH, preview_h))
+
+        if self.homography_matrix is not None:
+            warped_original = cv2.warpPerspective(
+                original_frame, self.homography_matrix,
+                (self.target_width, self.target_height)
+            )
+            warped_preview_h = int(self.target_height * PREVIEW_WIDTH / self.target_width)
+            work_frame = cv2.resize(warped_original, (PREVIEW_WIDTH, warped_preview_h))
+            full_res_frame = warped_original
+            scale_x = full_res_frame.shape[1] / work_frame.shape[1]
+            scale_y = full_res_frame.shape[0] / work_frame.shape[0]
+        else:
+            work_frame = preview_frame.copy()
+            full_res_frame = original_frame
+            scale_x = w_orig / work_frame.shape[1]
+            scale_y = h_orig / work_frame.shape[0]
+
+        return work_frame, full_res_frame, scale_x, scale_y
+
+    def detect_and_track(self, original_frame):
+        """
+        フレームごとの検知とトラッキング処理。
+        表示・調整は軽量フレーム（Preview）で行い、OCR用切り出しは元解像度（Full Res）から行う。
+        """
+        # 1. 2層構造を構築（軽量フレーム + 元解像度フレーム）
+        work_frame, full_res_frame, scale_x, scale_y = self._build_preview_layers(original_frame)
+
+        # 2. 軽量フレーム上でHSV・マスク・輪郭検出（パフォーマンス改善）
+        hsv = cv2.cvtColor(work_frame, cv2.COLOR_BGR2HSV)
         lower_bound = np.array([self.h_min, self.s_min, self.v_min])
         upper_bound = np.array([self.h_max, self.s_max, self.v_max])
         mask = cv2.inRange(hsv, lower_bound, upper_bound)
-        
+
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        min_area = self._get_min_area(work_frame)
 
-        # 2. 現在のフレームでの検知リスト作成
+        # 3. 現在のフレームでの検知リスト作成（座標は軽量フレーム上）
         current_detections = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 2000:
+            if area > min_area:
                 x, y, w, h = cv2.boundingRect(contour)
                 center_x = x + w / 2
                 center_y = y + h / 2
                 current_detections.append({'x': x, 'y': y, 'w': w, 'h': h, 'cx': center_x, 'cy': center_y, 'contour': contour})
 
-        # 3. トラッキング処理（既存の付箋と紐付け）
+        # 4. トラッキング処理（既存の付箋と紐付け）。描画は軽量フレーム上。
         current_time = time.time()
         matched_indices = set()
-        
-        # 既存の追跡対象とのマッチング
+
         for note in self.tracked_notes:
             min_dist = float('inf')
             match_idx = -1
@@ -255,15 +382,12 @@ class StickyNoteDetector:
             for i, detection in enumerate(current_detections):
                 if i in matched_indices:
                     continue
-                
-                # 距離計算
                 dist = math.sqrt((note.center_x - detection['cx'])**2 + (note.center_y - detection['cy'])**2)
                 if dist < min_dist:
                     min_dist = dist
                     match_idx = i
 
             if match_idx != -1 and min_dist < self.TRACKING_DISTANCE_THRESHOLD:
-                # マッチした場合：位置更新
                 det = current_detections[match_idx]
                 note.center_x = det['cx']
                 note.center_y = det['cy']
@@ -272,32 +396,35 @@ class StickyNoteDetector:
                 note.last_seen = current_time
                 note.stable_counter = min(note.stable_counter + 1, 100)
                 matched_indices.add(match_idx)
-                
-                # 描画
-                cv2.rectangle(processed_frame, (det['x'], det['y']), (det['x'] + det['w'], det['y'] + det['h']), (0, 255, 0), 2)
-                cv2.putText(processed_frame, f"ID:{note.id}", (det['x'], det['y'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                # アップロード判定（安定して検知されており、かつ前回のアップロードから時間が経過している場合）
+                cv2.rectangle(work_frame, (det['x'], det['y']), (det['x'] + det['w'], det['y'] + det['h']), (0, 255, 0), 2)
+                cv2.putText(work_frame, f"ID:{note.id}", (det['x'], det['y'] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+                # アップロード時：解析中でなければキューに投入するだけ（非同期、待機しない）
+                # 同一付箋の連続投入を防ぐため、投入直後に last_upload を更新する
                 if note.stable_counter >= self.STABLE_THRESHOLD and (current_time - note.last_upload > self.UPLOAD_INTERVAL):
-                    roi = processed_frame[det['y']:det['y']+det['h'], det['x']:det['x']+det['w']]
-                    if roi.size > 0:
-                        self.upload_note(note, roi, det['x'], det['y'], det['w'], det['h'], processed_frame.shape)
+                    if not self._is_processing_analysis():
+                        ox = int(det['x'] * scale_x)
+                        oy = int(det['y'] * scale_y)
+                        ow = int(det['w'] * scale_x)
+                        oh = int(det['h'] * scale_y)
+                        if ow > 0 and oh > 0:
+                            roi = full_res_frame[oy:oy+oh, ox:ox+ow]
+                            if roi.size > 0:
+                                self._request_queue.put((
+                                    note, roi.copy(), ox, oy, ow, oh, full_res_frame.shape
+                                ))
+                                note.last_upload = current_time  # クールダウン開始（同じ付箋の連続投入防止）
 
-        # マッチしなかった検知：新規登録候補
         for i, detection in enumerate(current_detections):
             if i not in matched_indices:
-                # 新規ID発行
                 new_id = f"cam-{int(time.time() * 1000)}-{i}"
                 new_note = TrackedNote(new_id, detection['cx'], detection['cy'], detection['w'], detection['h'])
                 self.tracked_notes.append(new_note)
-                
-                # 新規検知の描画（黄色）
-                cv2.rectangle(processed_frame, (detection['x'], detection['y']), (detection['x'] + detection['w'], detection['y'] + detection['h']), (0, 255, 255), 2)
+                cv2.rectangle(work_frame, (detection['x'], detection['y']), (detection['x'] + detection['w'], detection['y'] + detection['h']), (0, 255, 255), 2)
 
-        # 4. ロストした付箋の削除
         self.tracked_notes = [n for n in self.tracked_notes if current_time - n.last_seen < self.DELETE_TIMEOUT]
 
-        # 画面にHSV情報を表示
         info_text = [
             f"Board: {self.BOARD_ID}",
             f"H: {self.h_min}-{self.h_max}",
@@ -306,9 +433,9 @@ class StickyNoteDetector:
             "[S]ave Config"
         ]
         for i, text in enumerate(info_text):
-            cv2.putText(processed_frame, text, (10, 30 + i * 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(work_frame, text, (10, 30 + i * 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        return processed_frame, mask
+        return work_frame, mask
 
     def upload_note(self, note_obj, roi_image, x, y, w, h, frame_shape):
         """
@@ -376,7 +503,19 @@ class StickyNoteDetector:
 
     def run(self):
         """メインループ"""
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        # RTSP URL の場合は文字列で開く、Webカメラの場合は 0 + CAP_DSHOW
+        if isinstance(self.camera_source, str):
+            cap = cv2.VideoCapture(self.camera_source)
+            print(f"Camera: RTSP URL (RTSP_URL from .env)")
+            # RTSP のストリームタイムアウトを延長（OpenCV が対応している場合）
+            try:
+                cap_open_timeout = getattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC", 37)
+                cap.set(cap_open_timeout, 60000)  # 60秒
+            except Exception:
+                pass
+        else:
+            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            print("Camera: Web camera (ID 0)")
         if not cap.isOpened():
             print("Camera open failed.")
             return
@@ -397,12 +536,18 @@ class StickyNoteDetector:
         print("開始: 'q'で終了, 'c'でキャリブレーション, 'S'で設定保存")
         print("キー操作: u/j(Hmin), i/k(Hmax), o/l(Smin), p/;(Smax), [/'](Vmin), ]/\\(Vmax)")
 
+        # ワーカースレッド起動（解析処理を非同期で実行）
+        worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        worker_thread.start()
+
         while True:
-            ret, frame = cap.read()
+            ret, original_frame = cap.read()
             if not ret:
                 break
 
-            # トラックバーの値を取得（ユーザーがスライダーを動かしたかもしれないので）
+            # 元解像度を保持（mouse_callbackでのスケールバック用）
+            self._last_original_height, self._last_original_width = original_frame.shape[:2]
+
             self.h_min = cv2.getTrackbarPos('Hue Min', 'Sticky Note Detector')
             self.h_max = cv2.getTrackbarPos('Hue Max', 'Sticky Note Detector')
             self.s_min = cv2.getTrackbarPos('Sat Min', 'Sticky Note Detector')
@@ -410,20 +555,34 @@ class StickyNoteDetector:
             self.v_min = cv2.getTrackbarPos('Val Min', 'Sticky Note Detector')
             self.v_max = cv2.getTrackbarPos('Val Max', 'Sticky Note Detector')
 
-            processed_frame, mask = self.detect_and_track(frame)
+            # 表示用は軽量フレーム（Preview）で処理し、imshow も軽量フレームのみ
+            processed_frame, mask = self.detect_and_track(original_frame)
+            self._last_preview_height, self._last_preview_width = processed_frame.shape[:2]
 
-            # キャリブレーション点描画
-            if self.is_calibrating:
+            # 解析中ステータス表示（ワーカーが処理中は画面隅に表示）
+            if self._is_processing_analysis():
+                cv2.putText(
+                    processed_frame, "解析中...",
+                    (processed_frame.shape[1] - 150, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2
+                )
+
+            # キャリブレーション点描画（保存座標は元解像度のため、表示用にプレビュー座標へ変換）
+            if self.is_calibrating and self._last_original_width and self._last_original_height:
                 for pt in self.calibration_points:
-                    cv2.circle(processed_frame, tuple(pt), 5, (0, 0, 255), -1)
+                    px = int(pt[0] * self._last_preview_width / self._last_original_width)
+                    py = int(pt[1] * self._last_preview_height / self._last_original_height)
+                    cv2.circle(processed_frame, (px, py), 5, (0, 0, 255), -1)
 
             cv2.imshow('Sticky Note Detector', processed_frame)
             cv2.imshow('Mask Debug', mask)
 
             key = cv2.waitKey(1) & 0xFF
-            
+
             # キー操作による微調整
             if key == ord('q'):
+                self._worker_stop.set()
+                self._request_queue.put(None)
                 break
             elif key == ord('c'):
                 self.is_calibrating = True
@@ -458,6 +617,7 @@ class StickyNoteDetector:
             for name, val in updates:
                 cv2.setTrackbarPos(name, 'Sticky Note Detector', val)
 
+        worker_thread.join(timeout=2.0)
         cap.release()
         cv2.destroyAllWindows()
 
