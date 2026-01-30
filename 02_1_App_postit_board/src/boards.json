@@ -1,6 +1,17 @@
 {
   "board_20260125": {
-    "notes": [],
+    "notes": [
+      {
+        "id": "mkzbnoq3-btlvaklcx",
+        "text": "リン子さん表示テスト",
+        "x": 1577.71875,
+        "y": 1620.875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769683153899
+      }
+    ],
     "lines": []
   }
 }

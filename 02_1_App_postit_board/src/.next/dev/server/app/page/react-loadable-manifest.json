@@ -1,1 +1,17 @@
-{}
+{
+  "[project]/02_Projects/02_1_App_postit_board/src/components/AvatarCanvas.jsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/02_Projects/02_1_App_postit_board/src/components/AvatarCanvas.jsx [app-client] (ecmascript, next/dynamic entry)",
+    "files": [
+      "static/chunks/fcd99_three_build_three_core_96f87d36.js",
+      "static/chunks/fcd99_three_build_three_module_fdd3222e.js",
+      "static/chunks/fcd99_three_build_three_module_ca2e0c83.js",
+      "static/chunks/fcd99_three_examples_jsm_dd5e2306._.js",
+      "static/chunks/fcd99_@react-three_fiber_dist_361db66b._.js",
+      "static/chunks/fcd99_@pixiv_three-vrm_lib_three-vrm_module_de84ad64.js",
+      "static/chunks/fcd99_52e9c12e._.js",
+      "static/chunks/02_Projects_02_1_App_postit_board_src_components_48be8bd5._.js",
+      "static/chunks/02_Projects_02_1_App_postit_board_src_components_AvatarCanvas_module_17d542c8.css",
+      "static/chunks/02_Projects_02_1_App_postit_board_src_components_AvatarCanvas_jsx_66d30057._.js"
+    ]
+  }
+}

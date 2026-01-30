@@ -5,6 +5,7 @@ flask-socketio
 eventlet
 requests
 google-genai
+google-generativeai
 python-dotenv
 python-socketio[client]
 python-osc

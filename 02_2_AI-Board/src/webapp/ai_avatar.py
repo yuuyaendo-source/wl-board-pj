@@ -3,31 +3,61 @@ import json
 from dotenv import load_dotenv
 from pythonosc import udp_client
 
-# 環境変数の読み込み
-load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+# .env のパス（プロジェクトルート 02_2_AI-Board）
+_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 # 新しい google-genai を優先、失敗時は古い google-generativeai にフォールバック
 _use_new_sdk = False
-client = None
+_genai_module = None  # genai (new SDK)
 _genai_legacy = None
 _types = None
 
 try:
-    from google import genai
+    from google import genai as _genai_module
     from google.genai import types as _types_new
-    client = genai.Client(api_key=api_key) if api_key else None
-    _use_new_sdk = client is not None
+    _use_new_sdk = True
     _types = _types_new
 except ImportError:
     try:
         import google.generativeai as _genai_legacy
-        if api_key:
-            _genai_legacy.configure(api_key=api_key)
         _types = None
     except ImportError:
         pass
+
+
+def _ensure_env():
+    """実行時に .env を読み込む（起動時の cwd に依存しない）"""
+    load_dotenv(_env_path)
+
+
+def _get_api_key():
+    """実行時に API キーを取得する"""
+    _ensure_env()
+    return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+
+
+_client_lazy = None
+
+
+def _get_client():
+    """実行時にクライアントを取得する（必要なら作成）"""
+    global _client_lazy
+    key = _get_api_key()
+    if not key or not _use_new_sdk or _genai_module is None:
+        return None
+    if _client_lazy is None:
+        try:
+            _client_lazy = _genai_module.Client(api_key=key)
+        except Exception as e:
+            print(f"Gemini Client init error: {e}", flush=True)
+            return None
+    return _client_lazy
+
+
+def _ensure_legacy_configured():
+    """Legacy SDK 利用時に API キーを設定する"""
+    if _genai_legacy and _get_api_key():
+        _genai_legacy.configure(api_key=_get_api_key())
 
 # OSCクライアント設定
 # VMagicMirrorのデフォルトポートは9000（設定を確認してください）
@@ -89,17 +119,21 @@ def send_osc_emotion(emotion):
 
 
 def _has_genai():
-    """利用可能な Gemini SDK があるか"""
-    return (_use_new_sdk and client) or _genai_legacy
+    """利用可能な Gemini SDK と API キーがあるか"""
+    key = _get_api_key()
+    if not key:
+        return False
+    return (_use_new_sdk and _get_client()) or _genai_legacy
 
 
 def extract_text_from_image(image_path):
     """付箋画像からテキストを抽出する"""
-    if not api_key or not _has_genai():
+    if not _get_api_key() or not _has_genai():
         return ""
 
     try:
         print(f"Extracting text from: {image_path}", flush=True)
+        client = _get_client()
         if _use_new_sdk and client:
             myfile = client.files.upload(file=image_path)
             response = client.models.generate_content(
@@ -108,6 +142,7 @@ def extract_text_from_image(image_path):
             )
             text = response.text.strip()
         else:
+            _ensure_legacy_configured()
             sample_file = _genai_legacy.upload_file(path=image_path, display_name="Sticky Note")
             model = _genai_legacy.GenerativeModel(model_name=GEMINI_MODEL_LEGACY)
             response = model.generate_content([
@@ -123,10 +158,11 @@ def extract_text_from_image(image_path):
 
 
 def generate_comment(image_path):
-    if not api_key or not _has_genai():
+    if not _get_api_key() or not _has_genai():
         return "エラー：Gemini APIキーが設定されてへんで。管理者呼んできてや。"
 
     try:
+        client = _get_client()
         if _use_new_sdk and client:
             myfile = client.files.upload(file=image_path)
             response = client.models.generate_content(
@@ -135,6 +171,7 @@ def generate_comment(image_path):
                 config=_types.GenerateContentConfig(response_mime_type="application/json"),
             )
         else:
+            _ensure_legacy_configured()
             sample_file = _genai_legacy.upload_file(path=image_path, display_name="Sticky Note")
             model = _genai_legacy.GenerativeModel(
                 model_name=GEMINI_MODEL_LEGACY,
@@ -152,11 +189,12 @@ def generate_comment(image_path):
 
 
 def generate_comment_from_text(text):
-    if not api_key or not _has_genai():
+    if not _get_api_key() or not _has_genai():
         return "エラー：Gemini APIキーが設定されてへんで。"
 
     try:
         prompt = f"{SYSTEM_PROMPT}\n\nユーザーがWebアプリから以下の付箋を貼りました：\n「{text}」\n\nこれについて一言コメントして。"
+        client = _get_client()
         if _use_new_sdk and client:
             response = client.models.generate_content(
                 model=GEMINI_MODEL_NEW,
@@ -164,6 +202,7 @@ def generate_comment_from_text(text):
                 config=_types.GenerateContentConfig(response_mime_type="application/json"),
             )
         else:
+            _ensure_legacy_configured()
             model = _genai_legacy.GenerativeModel(
                 model_name=GEMINI_MODEL_LEGACY,
                 generation_config={"response_mime_type": "application/json"}

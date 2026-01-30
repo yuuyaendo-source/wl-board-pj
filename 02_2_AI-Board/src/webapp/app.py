@@ -15,6 +15,12 @@ Flaskベースのバックエンドサーバーです。
 
 import os
 import json
+
+# .env をプロジェクトルート (02_2_AI-Board) から読み込む（ai_avatar より前に実行）
+from dotenv import load_dotenv
+_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(_env_path)
+
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 import ai_avatar
