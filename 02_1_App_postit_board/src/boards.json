@@ -4,12 +4,84 @@
       {
         "id": "mkzbnoq3-btlvaklcx",
         "text": "リン子さん表示テスト",
-        "x": 1577.71875,
-        "y": 1620.875,
+        "x": 1326.7187957763672,
+        "y": 1715.8750457763672,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "test",
         "createdAt": 1769683153899
+      },
+      {
+        "id": "ml0sfpaq-lx0grb19v",
+        "text": "test",
+        "x": 1722.4688415527344,
+        "y": 1681.1979675292969,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769771801042
+      },
+      {
+        "id": "ml1yukdh-tdvkomj4m",
+        "text": "ラーメン大好き麻子さん",
+        "x": 1975.5313415527344,
+        "y": 1712.604248046875,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769843038373
+      },
+      {
+        "id": "ml1yvhwd-wwsmvyi10",
+        "text": "アプリのテスト中",
+        "x": 1783.229248046875,
+        "y": 1971.0521850585938,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1769843081821
+      },
+      {
+        "id": "cam-1769843235895-1",
+        "text": "(画像にテキストは認識できませんでした。)",
+        "x": 3633.3333333333335,
+        "y": 1792.5925925925926,
+        "normalizedX": 0.9083333333333333,
+        "normalizedY": 0.44814814814814813,
+        "ratioW": 0.09166666666666666,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "Real Cam",
+        "createdAt": 1769843241677,
+        "imageUrl": "data:image/jpeg;base64,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"
+      },
+      {
+        "id": "cam-1769843253886-0",
+        "text": "申し訳ありませんが、ご提供いただいた画像はすべて真っ黒で、そこからテキストを抽出することはできません。付箋に書かれているテキストを正確に抽出するには、テキストが鮮明に写っている画像が必要です。",
+        "x": 3866.6666666666665,
+        "y": 3251.851851851852,
+        "normalizedX": 0.9666666666666667,
+        "normalizedY": 0.812962962962963,
+        "ratioW": 0.03333333333333333,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "Real Cam",
+        "createdAt": 1769843261205,
+        "imageUrl": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCADKAEADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD8L6KQsAcGk3j0NN7mY6im7x6GjzPakA6mP96l8z2ppOTmmnYAoooq07gK/X8KShmzzim+Z7VD3AdRTN59BRvPoKQD6KZvPoKN59BQA+jrSKcilqogIT8ufamUA5GTRSe4BRRRSAKMj1oqNup+tAEgYA5BFPDKRnNQU4fc/CmnYBV6D6UtIvQfSloe4BRRRSAKjbqfrUlRt1P1oAKcPufhTacPufhQAq9B9KWm7x6Ubx6Gm9wHUU0yDsKPM9qQDqjbqfrTvM9qYXGeTQAtOH3Pwpm9fWnr/q/woAj8z2o8z2ptFADvM9qPM9qbRQA7zD2FN60UUAFSKx2YqOnqMKKAGUUUUAFFFFABRRRQAU9eg+lMp69B9KAGUUUUAFFFFABRRRQAU4OAMU2igAooooAKKKKACiiigAooooAKKXYfUUvl+9AWY2ineX70eX70DsxtFO8v3ppOBmgQUU3zPajzPagCaiiig0CiiigAqJ/umpScDNRP900ES3GUAZOKKF6j60CLFFFFBoFFFFACN0P0qN/umpG6H6VG/wB00ES3GUL1H1ooXqPrQIsA5GaKRPuiloNAooooARuh+lMIyMUrk5IzSUEN3G7B6mlCAHNLRQI//9k="
+      }
+    ],
+    "lines": []
+  },
+  "odgeqgf": {
+    "notes": [
+      {
+        "id": "test-1769770145",
+        "text": "テスト送信成功！\nカメラは起動できませんでしたが、\nサーバー間通信は正常です。",
+        "x": 2000,
+        "y": 2000,
+        "color": "#81d4fa",
+        "author": "System Test",
+        "createdAt": 1769770145207
       }
     ],
     "lines": []

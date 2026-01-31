@@ -164,7 +164,8 @@
     </div>
 
     <div id="branding">
-        <div id="unmute-btn" style="pointer-events: auto; cursor: pointer; background: #00ff00; color: black; padding: 5px 10px; border-radius: 5px; margin-right: 10px; display: inline-block;">
+        <div id="unmute-btn"
+            style="pointer-events: auto; cursor: pointer; background: #00ff00; color: black; padding: 5px 10px; border-radius: 5px; margin-right: 10px; display: inline-block;">
             🔊 Enable Audio
         </div>
         <span class="online-status"></span> AI-Board System Online | AI: Active
@@ -180,13 +181,77 @@
     }
     </script>
     <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin } from '@pixiv/three-vrm';
+
+        let currentVrm = null;
+        let mixer = null;
+        const clock = new THREE.Clock(); // Instantiate Clock for delta time
+
+        // === Audio Analysis Setup ===
+        let audioContext = null;
+        let analyser = null;
+        let dataArray = null;
+        let isSpeaking = false;
+
+        // Initialize Audio Context (must be called after user interaction)
+        window.initAudioContext = () => {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                console.log("AudioContext initialized");
+            } else if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        };
+
+        // Connect Audio Element to Analyser
+        window.connectAudioToAnalyser = (audioElement) => {
+            if (!audioContext) return;
+            const source = audioContext.createMediaElementSource(audioElement);
+            source.connect(analyser);
+            analyser.connect(audioContext.destination);
+            isSpeaking = true;
+
+            audioElement.onended = () => {
+                isSpeaking = false;
+                setEmote('NEUTRAL'); // Reset expression
+            };
+        };
+
+        // === Expression Control ===
+        window.setEmote = (tagName) => {
+            if (!currentVrm) return;
+            const emotion = tagName ? tagName.toUpperCase() : 'NEUTRAL';
+            console.log(`Setting Emote: ${emotion}`);
+
+            // Reset all emotions first (simplified approach)
+            currentVrm.expressionManager.setValue('happy', 0);
+            currentVrm.expressionManager.setValue('sad', 0);
+            currentVrm.expressionManager.setValue('angry', 0);
+            currentVrm.expressionManager.setValue('surprised', 0);
+            currentVrm.expressionManager.setValue('neutral', 0);
+
+            if (emotion.includes('JOY') || emotion.includes('FUN')) {
+                currentVrm.expressionManager.setValue('happy', 1.0);
+            } else if (emotion.includes('SORROW') || emotion.includes('SAD')) {
+                currentVrm.expressionManager.setValue('sad', 1.0);
+            } else if (emotion.includes('ANGRY')) {
+                currentVrm.expressionManager.setValue('angry', 1.0);
+            } else if (emotion.includes('SURPRISE')) {
+                currentVrm.expressionManager.setValue('surprised', 1.0);
+            } else {
+                currentVrm.expressionManager.setValue('neutral', 1.0);
+            }
+        };
+
         (async function () {
             const container = document.getElementById('avatar-container');
             const loadingEl = document.getElementById('avatar-loading');
-
-            const THREE = await import('three');
-            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-            const { VRMLoaderPlugin } = await import('@pixiv/three-vrm');
 
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(30, 280 / 360, 0.1, 20);
@@ -214,9 +279,22 @@
                 const gltf = await loader.loadAsync('/static/avatar.vrm');
                 const vrm = gltf.userData.vrm;
                 if (vrm && vrm.scene) {
-                    vrm.scene.rotation.y = -1;
+                    currentVrm = vrm; // Store reference
+                    // Rotate 180 deg to face the camera (assuming camera is at +Z looking at origin)
+                    vrm.scene.rotation.y = Math.PI;
                     scene.add(vrm.scene);
+
+                    // Initial Pose: Arms down (Relaxed from T-pose)
+                    const humanoid = vrm.humanoid;
+                    if (humanoid) {
+                        const lArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+                        const rArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+                        if (lArm) lArm.rotation.z = Math.PI / 3; // ~60 deg down
+                        if (rArm) rArm.rotation.z = -Math.PI / 3;
+                    }
+
                     if (loadingEl) loadingEl.style.display = 'none';
+                    console.log("VRM Loaded");
                 } else {
                     if (loadingEl) loadingEl.textContent = 'アバターの形式を読み取れませんでした';
                 }
@@ -225,8 +303,74 @@
                 if (loadingEl) loadingEl.textContent = 'アバターの読み込みに失敗しました';
             }
 
+            // Animation State
+            let blinkTimer = 0;
+            let nextBlinkTime = 3; // seconds
+            let isBlinking = false;
+            let blinkDuration = 0.1; // seconds
+
             function animate() {
                 requestAnimationFrame(animate);
+
+                const deltaTime = clock.getDelta();
+                const elapsedTime = clock.elapsedTime;
+
+                if (currentVrm) {
+                    // 1. Breathing Motion (Spine & Head sway)
+                    const s = Math.sin(elapsedTime * 1.0); // 1Hz breath
+                    const humanoid = currentVrm.humanoid;
+                    if (humanoid) {
+                        const spine = humanoid.getNormalizedBoneNode('spine');
+                        const head = humanoid.getNormalizedBoneNode('head');
+                        if (spine) {
+                            spine.rotation.x = s * 0.02;
+                            spine.rotation.y = Math.sin(elapsedTime * 0.5) * 0.02;
+                        }
+                        if (head) {
+                            head.rotation.x = -s * 0.01; // Counter-rotate head to keep looking forward
+                        }
+                    }
+
+                    // 2. Blinking Logic
+                    blinkTimer += deltaTime;
+                    if (blinkTimer > nextBlinkTime && !isBlinking) {
+                        isBlinking = true;
+                        blinkTimer = 0;
+                    }
+
+                    if (isBlinking) {
+                        // Simple open-close curve
+                        const t = blinkTimer / blinkDuration; // 0 to 1
+                        let blinkVal = 0;
+                        if (t < 0.5) blinkVal = t * 2; // Closing
+                        else blinkVal = (1 - t) * 2;   // Opening
+
+                        if (t >= 1) {
+                            blinkVal = 0;
+                            isBlinking = false;
+                            nextBlinkTime = 2 + Math.random() * 4; // Random interval 2-6s
+                            blinkTimer = 0;
+                        }
+                        currentVrm.expressionManager.setValue('blink', blinkVal);
+                    }
+
+                    // 3. Lip Sync logic (Existing)
+                    if (isSpeaking && analyser && dataArray) {
+                        analyser.getByteFrequencyData(dataArray);
+                        let sum = 0;
+                        for (let i = 0; i < dataArray.length; i++) {
+                            sum += dataArray[i];
+                        }
+                        const average = sum / dataArray.length;
+                        const volume = Math.min(1.0, (average / 50));
+                        currentVrm.expressionManager.setValue('aa', volume);
+                    } else if (!isSpeaking) {
+                        currentVrm.expressionManager.setValue('aa', 0);
+                    }
+
+                    currentVrm.update(deltaTime);
+                }
+
                 renderer.render(scene, camera);
             }
             animate();
@@ -242,8 +386,9 @@
         // Unmute logic
         unmuteBtn.addEventListener('click', () => {
             const audio = new Audio();
-            audio.play().catch(() => {}); // Try to play silence
+            audio.play().catch(() => { }); // Try to play silence
             unmuteBtn.style.display = 'none';
+            if (window.initAudioContext) window.initAudioContext();
         });
 
         socket.on('connect', () => {
@@ -267,12 +412,30 @@
 
         socket.on('ai_comment', (data) => {
             console.log('AI Comment:', data);
-            aiText.innerText = data.comment;
+
+            // Extract emotion tag (e.g., [JOY])
+            const tagMatch = data.comment.match(/^\[([A-Z]+)\]/);
+            const tag = tagMatch ? tagMatch[1] : 'NEUTRAL';
+
+            // Remove tag for display
+            const displayText = data.comment.replace(/^\[[A-Z]+\]\s*/, '');
+
+            aiText.innerText = displayText;
             aiChatBox.style.display = 'block';
 
-            // Play Audio
+            // Set Expression
+            if (window.setEmote) window.setEmote(tag);
+
+            // Play Audio with Lip Sync
             if (data.audio_url) {
                 const audio = new Audio(data.audio_url);
+                audio.crossOrigin = "anonymous"; // Important for Web Audio API if CDN used (local is fine usually)
+
+                // Needs to wait for metadata or can connect immediately
+                if (window.connectAudioToAnalyser) {
+                    window.connectAudioToAnalyser(audio);
+                }
+
                 audio.play().catch(e => console.error("Audio playback failed:", e));
             }
 
@@ -324,7 +487,7 @@
         function createTextStickyNote(data) {
             // Check if note already exists
             let noteDiv = document.getElementById('note-' + data.id);
-            
+
             if (noteDiv) {
                 // Update existing note
                 const textSpan = noteDiv.querySelector('.note-text');
@@ -336,7 +499,7 @@
             noteDiv = document.createElement('div');
             noteDiv.id = 'note-' + data.id;
             noteDiv.className = 'sticky-note';
-            
+
             const randomX = Math.random() * (window.innerWidth - 200);
             const randomY = Math.random() * (window.innerHeight - 200);
 

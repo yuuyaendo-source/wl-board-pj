@@ -182,7 +182,7 @@ def generate_comment(image_path):
         comment = result.get("comment", "")
         emotion = result.get("emotion", "Neutral")
         send_osc_emotion(emotion)
-        return comment
+        return f"[{emotion}] {comment}"
     except Exception as e:
         print(f"Gemini API Error: {e}")
         return "なんや調子悪いわ。もう一回頼むわ。"
@@ -212,7 +212,7 @@ def generate_comment_from_text(text):
         comment = result.get("comment", "")
         emotion = result.get("emotion", "Neutral")
         send_osc_emotion(emotion)
-        return comment
+        return f"[{emotion}] {comment}"
     except Exception as e:
         print(f"Gemini API Error: {e}")
         return "なんや調子悪いわ。"
