@@ -146,6 +146,106 @@
             color: #888;
             background: rgba(0, 0, 0, 0.3);
         }
+
+        /* Mode Switcher Styles */
+        #mode-switcher {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #333;
+            border-radius: 30px;
+            padding: 5px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: none;
+            color: #aaa;
+            padding: 8px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .mode-btn.active {
+            color: #000;
+            background: #00ffcc;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+        }
+
+
+        /* Settings Panel Styles */
+        #settings-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 220px !important;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.85rem;
+            z-index: 9999;
+            overflow: visible;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s;
+        }
+
+        #settings-panel:not(:hover) {
+            opacity: 0.7;
+        }
+
+        .settings-header {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .settings-content {
+            padding: 10px 15px;
+            display: none;
+        }
+
+        .settings-content.open {
+            display: block;
+        }
+
+        .setting-item {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .setting-item label {
+            color: #ccc;
+        }
+
+        .setting-item input[type="range"] {
+            width: 100px;
+            accent-color: #00ffcc;
+        }
+
+        .setting-item input[type="checkbox"] {
+            accent-color: #00ffcc;
+            transform: scale(1.2);
+        }
     </style>
 </head>
 
@@ -171,6 +271,57 @@
         <span class="online-status"></span> AI-Board System Online | AI: Active
     </div>
 
+    <!-- Mode Switcher -->
+    <div id="mode-switcher">
+        <button class="mode-btn active" data-mode="ai-board">AI-Board</button>
+        <button class="mode-btn" data-mode="reception">Reception</button>
+        <button class="mode-btn" data-mode="personal">Personal</button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel">
+        <div class="settings-header">Avatar Settings <span id="toggle-settings">▼</span></div>
+        <div class="settings-content" id="settings-content">
+            <div class="setting-item">
+                <label>Visible</label>
+                <input type="checkbox" id="avatar-visible-toggle" checked>
+            </div>
+            <div class="setting-item">
+                <label>Scale</label>
+                <input type="range" id="avatar-scale" min="0.1" max="3.0" step="0.1" value="1.0">
+            </div>
+            <div class="setting-item">
+                <label>Pos X</label>
+                <input type="range" id="avatar-x" min="-3.0" max="3.0" step="0.1" value="0.0">
+            </div>
+            <div class="setting-item">
+                <label>Pos Y</label>
+                <input type="range" id="avatar-y" min="-3.0" max="3.0" step="0.1" value="-1.4">
+            </div>
+            <div class="setting-item">
+                <label>Pos Z</label>
+                <input type="range" id="avatar-z" min="-3.0" max="3.0" step="0.1" value="0.0">
+            </div>
+            <div class="setting-item">
+                <label>Rot Y</label>
+                <input type="range" id="avatar-rot-y" min="-3.14" max="3.14" step="0.1" value="3.14">
+            </div>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0;">
+            <div class="setting-item">
+                <label>Win Scale</label>
+                <input type="range" id="win-scale" min="0.5" max="2.0" step="0.1" value="1.0">
+            </div>
+            <div class="setting-item">
+                <label>Win X</label>
+                <input type="range" id="win-x" min="-500" max="500" step="10" value="0">
+            </div>
+            <div class="setting-item">
+                <label>Win Y</label>
+                <input type="range" id="win-y" min="-500" max="500" step="10" value="0">
+            </div>
+        </div>
+    </div>
+
     <script type="importmap">
     {
         "imports": {
@@ -186,8 +337,25 @@
         import { VRMLoaderPlugin } from '@pixiv/three-vrm';
 
         let currentVrm = null;
-        let mixer = null;
-        const clock = new THREE.Clock(); // Instantiate Clock for delta time
+        // ... (existing vars) ...
+        const clock = new THREE.Clock();
+
+        // Window Control State
+        let winState = {
+            scale: 1.0,
+            x: 0,
+            y: 0
+        };
+
+        function updateWindowTransform() {
+            const container = document.getElementById('avatar-container');
+            // Assuming default is bottom:0, right:0
+            // We use transform to move it relative to that anchor
+            container.style.transform = `translate(${winState.x * -1}px, ${winState.y * -1}px) scale(${winState.scale})`;
+            container.style.transformOrigin = 'bottom right';
+        }
+
+        // ... (rest of imports) ...
 
         // === Audio Analysis Setup ===
         let audioContext = null;
@@ -195,7 +363,7 @@
         let dataArray = null;
         let isSpeaking = false;
 
-        // Initialize Audio Context (must be called after user interaction)
+        // Initialize Audio Context
         window.initAudioContext = () => {
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -219,7 +387,7 @@
 
             audioElement.onended = () => {
                 isSpeaking = false;
-                setEmote('NEUTRAL'); // Reset expression
+                setEmote('NEUTRAL');
             };
         };
 
@@ -229,7 +397,7 @@
             const emotion = tagName ? tagName.toUpperCase() : 'NEUTRAL';
             console.log(`Setting Emote: ${emotion}`);
 
-            // Reset all emotions first (simplified approach)
+            // Reset all emotions
             currentVrm.expressionManager.setValue('happy', 0);
             currentVrm.expressionManager.setValue('sad', 0);
             currentVrm.expressionManager.setValue('angry', 0);
@@ -303,6 +471,108 @@
                 if (loadingEl) loadingEl.textContent = 'アバターの読み込みに失敗しました';
             }
 
+            // === UI Control Links (Phase 1) ===
+            const settingsHeader = document.querySelector('.settings-header');
+            const settingsContent = document.getElementById('settings-content');
+            const toggleIcon = document.getElementById('toggle-settings');
+
+            if (settingsHeader && settingsContent && toggleIcon) {
+                settingsHeader.addEventListener('click', () => {
+                    const isOpen = settingsContent.style.display === 'block';
+                    settingsContent.style.display = isOpen ? 'none' : 'block';
+                    toggleIcon.innerText = isOpen ? '▼' : '▲';
+                });
+            }
+
+            // Avatar Controls
+            const visibleToggle = document.getElementById('avatar-visible-toggle');
+            const scaleInput = document.getElementById('avatar-scale');
+            const xInput = document.getElementById('avatar-x');
+            const yInput = document.getElementById('avatar-y');
+            const zInput = document.getElementById('avatar-z');
+            const rotYInput = document.getElementById('avatar-rot-y'); // NEW
+            const winScaleInput = document.getElementById('win-scale'); // NEW
+            const winXInput = document.getElementById('win-x'); // NEW
+            const winYInput = document.getElementById('win-y'); // NEW
+
+            visibleToggle.addEventListener('change', (e) => {
+                const container = document.getElementById('avatar-container');
+                container.style.display = e.target.checked ? 'block' : 'none';
+            });
+
+            scaleInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    const s = parseFloat(e.target.value);
+                    currentVrm.scene.scale.set(s, s, s);
+                }
+            });
+
+            xInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.position.x = parseFloat(e.target.value);
+                }
+            });
+
+            yInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.position.y = parseFloat(e.target.value);
+                }
+            });
+
+            zInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.position.z = parseFloat(e.target.value);
+                }
+            });
+
+            // New Listeners
+            rotYInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.rotation.y = parseFloat(e.target.value);
+                }
+            });
+
+            winScaleInput.addEventListener('input', (e) => {
+                winState.scale = parseFloat(e.target.value);
+                updateWindowTransform();
+            });
+
+            winXInput.addEventListener('input', (e) => {
+                winState.x = parseFloat(e.target.value);
+                updateWindowTransform();
+            });
+
+            winYInput.addEventListener('input', (e) => {
+                winState.y = parseFloat(e.target.value);
+                updateWindowTransform();
+            });
+
+            // ... (rest of script) ...
+
+
+            // Mode Switching
+            const modeBtns = document.querySelectorAll('.mode-btn');
+            window.currentMode = 'ai-board'; // 'ai-board', 'reception', 'personal'
+
+            modeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modeBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const mode = btn.dataset.mode;
+                    window.currentMode = mode;
+                    console.log("Mode switched to:", mode);
+
+                    // Mode-specific reset logic
+                    if (mode === 'ai-board') {
+                        // Ensure auto-animations are active
+                        setEmote('NEUTRAL');
+                    } else if (mode === 'reception') {
+                        // Placeholder for tracking initialization
+                        console.log("Reception mode selected (Tracking not implemented yet)");
+                    }
+                });
+            });
+
             // Animation State
             let blinkTimer = 0;
             let nextBlinkTime = 3; // seconds
@@ -316,18 +586,21 @@
                 const elapsedTime = clock.elapsedTime;
 
                 if (currentVrm) {
-                    // 1. Breathing Motion (Spine & Head sway)
-                    const s = Math.sin(elapsedTime * 1.0); // 1Hz breath
-                    const humanoid = currentVrm.humanoid;
-                    if (humanoid) {
-                        const spine = humanoid.getNormalizedBoneNode('spine');
-                        const head = humanoid.getNormalizedBoneNode('head');
-                        if (spine) {
-                            spine.rotation.x = s * 0.02;
-                            spine.rotation.y = Math.sin(elapsedTime * 0.5) * 0.02;
-                        }
-                        if (head) {
-                            head.rotation.x = -s * 0.01; // Counter-rotate head to keep looking forward
+                    // 1. Breathing Motion (Spine & Head sway) - Self Animation Mode Only
+                    // If tracking is implemented later, we'll likely disable this in 'reception' mode
+                    if (window.currentMode === 'ai-board' || window.currentMode === 'personal') {
+                        const s = Math.sin(elapsedTime * 1.0); // 1Hz breath
+                        const humanoid = currentVrm.humanoid;
+                        if (humanoid) {
+                            const spine = humanoid.getNormalizedBoneNode('spine');
+                            const head = humanoid.getNormalizedBoneNode('head');
+                            if (spine) {
+                                spine.rotation.x = s * 0.02;
+                                spine.rotation.y = Math.sin(elapsedTime * 0.5) * 0.02;
+                            }
+                            if (head) {
+                                head.rotation.x = -s * 0.01;
+                            }
                         }
                     }
 
