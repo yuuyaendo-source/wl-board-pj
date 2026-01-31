@@ -225,10 +225,14 @@ voicevox_url = os.getenv("VOICEVOX_URL", "http://localhost:50021")
 speaker_id = os.getenv("VOICEVOX_SPEAKER_ID", "3")
 
 
+import re
+
 def generate_voice(text, output_dir):
-    print(f"Generating voice for: {text[:20]}...", flush=True)
+    # Strip emotion tag (e.g. [Anger] ...) for speech generation
+    clean_text = re.sub(r'^\[.*?\]\s*', '', text)
+    print(f"Generating voice for: {clean_text[:20]}...", flush=True)
     try:
-        query_payload = {'text': text, 'speaker': speaker_id}
+        query_payload = {'text': clean_text, 'speaker': speaker_id}
         print(f"Sending query to {voicevox_url}/audio_query", flush=True)
         query_response = requests.post(f"{voicevox_url}/audio_query", params=query_payload)
         if query_response.status_code != 200:

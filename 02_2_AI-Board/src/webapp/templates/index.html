@@ -457,8 +457,8 @@
                     if (humanoid) {
                         const lArm = humanoid.getNormalizedBoneNode('leftUpperArm');
                         const rArm = humanoid.getNormalizedBoneNode('rightUpperArm');
-                        if (lArm) lArm.rotation.z = Math.PI / 3; // ~60 deg down
-                        if (rArm) rArm.rotation.z = -Math.PI / 3;
+                        if (lArm) lArm.rotation.z = Math.PI / 2.3; // ~78 deg down (closer to body)
+                        if (rArm) rArm.rotation.z = -Math.PI / 2.3;
                     }
 
                     if (loadingEl) loadingEl.style.display = 'none';
@@ -575,9 +575,17 @@
 
             // Animation State
             let blinkTimer = 0;
-            let nextBlinkTime = 3; // seconds
+            let nextBlinkTime = 3;
             let isBlinking = false;
-            let blinkDuration = 0.1; // seconds
+            let blinkDuration = 0.1;
+
+            // Autonomous Motion State
+            const lookAtTargetObj = new THREE.Object3D();
+            lookAtTargetObj.position.set(0, 1.5, 5); // Default
+            scene.add(lookAtTargetObj);
+
+            let lookTimer = 0;
+            let nextLookTime = 2.0;
 
             function animate() {
                 requestAnimationFrame(animate);
@@ -586,20 +594,51 @@
                 const elapsedTime = clock.elapsedTime;
 
                 if (currentVrm) {
-                    // 1. Breathing Motion (Spine & Head sway) - Self Animation Mode Only
-                    // If tracking is implemented later, we'll likely disable this in 'reception' mode
+                    // Setup LookAt Target if not set
+                    if (currentVrm.lookAt && currentVrm.lookAt.target !== lookAtTargetObj) {
+                        currentVrm.lookAt.target = lookAtTargetObj;
+                    }
+
+                    // 1. Autonomous Motion (Only in AI-Board / Personal Mode)
                     if (window.currentMode === 'ai-board' || window.currentMode === 'personal') {
-                        const s = Math.sin(elapsedTime * 1.0); // 1Hz breath
                         const humanoid = currentVrm.humanoid;
+
+                        // A. Breathing & Idle Sway
+                        const breath = Math.sin(elapsedTime * 0.8);
                         if (humanoid) {
                             const spine = humanoid.getNormalizedBoneNode('spine');
                             const head = humanoid.getNormalizedBoneNode('head');
+
                             if (spine) {
-                                spine.rotation.x = s * 0.02;
-                                spine.rotation.y = Math.sin(elapsedTime * 0.5) * 0.02;
+                                spine.rotation.x = breath * 0.02;
+                                spine.rotation.y = Math.sin(elapsedTime * 0.4) * 0.02;
                             }
-                            if (head) {
-                                head.rotation.x = -s * 0.01;
+
+                            // B. Speaking Gestures (Hands)
+                            if (isSpeaking) {
+                                const lArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+                                const rArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+                                const gestureSpeed = 4.0;
+                                const gestureAmp = 0.1;
+
+                                if (lArm) lArm.rotation.z = (Math.PI / 3) + Math.sin(elapsedTime * gestureSpeed) * gestureAmp;
+                                if (rArm) rArm.rotation.z = (-Math.PI / 3) - Math.sin(elapsedTime * gestureSpeed + 1) * gestureAmp;
+                            }
+                        }
+
+                        // C. Random Gaze (Looking around)
+                        lookTimer += deltaTime;
+                        if (lookTimer > nextLookTime) {
+                            lookTimer = 0;
+                            nextLookTime = 1.0 + Math.random() * 3.0; // Change gaze every 1-4s
+
+                            // 70% chance to look at camera (approx 0, 1.5, 5), 30% random
+                            if (Math.random() < 0.7) {
+                                lookAtTargetObj.position.set(0, 1.5, 5);
+                            } else {
+                                const rx = (Math.random() - 0.5) * 2.0; // -1 to 1
+                                const ry = 1.5 + (Math.random() - 0.5) * 1.0;
+                                lookAtTargetObj.position.set(rx, ry, 5);
                             }
                         }
                     }
@@ -612,28 +651,25 @@
                     }
 
                     if (isBlinking) {
-                        // Simple open-close curve
-                        const t = blinkTimer / blinkDuration; // 0 to 1
+                        const t = blinkTimer / blinkDuration;
                         let blinkVal = 0;
-                        if (t < 0.5) blinkVal = t * 2; // Closing
-                        else blinkVal = (1 - t) * 2;   // Opening
+                        if (t < 0.5) blinkVal = t * 2;
+                        else blinkVal = (1 - t) * 2;
 
                         if (t >= 1) {
                             blinkVal = 0;
                             isBlinking = false;
-                            nextBlinkTime = 2 + Math.random() * 4; // Random interval 2-6s
+                            nextBlinkTime = 2 + Math.random() * 4;
                             blinkTimer = 0;
                         }
                         currentVrm.expressionManager.setValue('blink', blinkVal);
                     }
 
-                    // 3. Lip Sync logic (Existing)
+                    // 3. Lip Sync logic
                     if (isSpeaking && analyser && dataArray) {
                         analyser.getByteFrequencyData(dataArray);
                         let sum = 0;
-                        for (let i = 0; i < dataArray.length; i++) {
-                            sum += dataArray[i];
-                        }
+                        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
                         const average = sum / dataArray.length;
                         const volume = Math.min(1.0, (average / 50));
                         currentVrm.expressionManager.setValue('aa', volume);
