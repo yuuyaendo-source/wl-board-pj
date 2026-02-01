@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 _env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 load_dotenv(_env_path)
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO
 import ai_avatar
 import requests
@@ -37,6 +37,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # 親ディレクトリをパスに追加して sticky_note_detector をインポート可能にする
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from sticky_note_detector import StickyNoteDetector
+import face_registry_storage as face_registry
 
 # 設定
 # BOARD_APP_URL = "http://localhost:3000"
@@ -67,10 +68,119 @@ VOICE_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'voices')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(VOICE_FOLDER, exist_ok=True)
 
+# 自動パーソナル切替用: /camera_stream の映像ソース（.env の RTSP_URL、未設定なら Webカメラ 0）
+CAMERA_SOURCE_FOR_DETECTION = os.environ.get('RTSP_URL', '').strip() or 0
+
+
+def _generate_mjpeg():
+    """ネットワークカメラ（RTSP）または Webカメラの MJPEG ストリームを生成"""
+    cap = None
+    try:
+        cap = cv2.VideoCapture(CAMERA_SOURCE_FOR_DETECTION)
+        if not cap.isOpened():
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + b'' + b'\r\n')
+            return
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            _, jpeg = cv2.imencode('.jpg', frame)
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+    finally:
+        if cap is not None:
+            cap.release()
+
+
+@app.route('/camera_stream')
+def camera_stream():
+    """
+    自動パーソナル切替（エントランス用）: ネットワークカメラの MJPEG ストリーム。
+    .env の RTSP_URL が設定されていれば RTSP、未設定なら Webカメラ (0)。
+    ブラウザの img で表示し、顔検知の入力に利用する。
+    """
+    return Response(
+        _generate_mjpeg(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
 @app.route('/')
 def index():
     """AI-Boardのステータス表示用ページ"""
     return render_template('index.html')
+
+
+@app.route('/manager')
+def manager():
+    """名前・顔の管理画面（特定の人物が利用）"""
+    return render_template('manager.html')
+
+
+# --- 顔・名前登録 API（将来 S3 等に差し替え可能なストレージ抽象の上で動作） ---
+
+@app.route('/api/face_registry', methods=['GET'])
+def api_face_registry_list():
+    """登録者一覧（id, name のみ）"""
+    try:
+        persons = face_registry.list_persons()
+        return jsonify({'persons': persons})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/face_registry/<person_id>', methods=['GET'])
+def api_face_registry_get(person_id):
+    """1件取得（照合用に faceData を含む）"""
+    try:
+        person = face_registry.get_person(person_id, include_face=True)
+        if person is None:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify(person)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/face_registry', methods=['POST'])
+def api_face_registry_create():
+    """名前のみで新規登録（管理者用）"""
+    try:
+        body = request.get_json() or {}
+        name = (body.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'name is required'}), 400
+        person = face_registry.create_person(name)
+        return jsonify(person), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/face_registry/<person_id>', methods=['PUT'])
+def api_face_registry_update_face(person_id):
+    """指定 id の顔データを登録・更新（管理者用）"""
+    try:
+        body = request.get_json() or {}
+        face_data = body.get('faceData')
+        if face_data is None:
+            return jsonify({'error': 'faceData is required'}), 400
+        ok = face_registry.update_face(person_id, face_data)
+        if not ok:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/face_registry/<person_id>', methods=['DELETE'])
+def api_face_registry_delete(person_id):
+    """指定 id を削除（管理者用）"""
+    try:
+        ok = face_registry.delete_person(person_id)
+        if not ok:
+            return jsonify({'error': 'Not found'}), 404
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -366,7 +476,117 @@ def clear_board():
 
     return jsonify({'message': 'AI-Board cleared successfully', 'boardId': board_id}), 200
 
+
+# ============================================================
+# Remote Reception Mode (WebRTC & Tracking)
+# ============================================================
+
+@app.route('/operator')
+def operator():
+    """受付オペレーター用ページ"""
+    return render_template('operator.html')
+
+
+@socketio.on('webrtc-signal')
+def handle_webrtc_signal(data):
+    """
+    WebRTCシグナリング中継
+    オペレーターとディスプレイ間のWebRTC接続を仲介
+    """
+    print(f"WebRTC signal from {data.get('from')}", flush=True)
+    # 送信元以外の全クライアントにブロードキャスト（skip_sid は python-socketio の API）
+    socketio.emit('webrtc-signal', data, skip_sid=request.sid)
+
+
+# トラッキング受信ログ用（10秒に1回＋初回のみ face のキーを出力）
+_tracking_log_last = 0
+_tracking_face_logged = False
+
+@socketio.on('tracking_data')
+def handle_tracking_data(data):
+    """
+    トラッキングデータ配信
+    オペレーターからのトラッキングデータをディスプレイにブロードキャスト
+    """
+    global _tracking_log_last, _tracking_face_logged
+    import time
+    now = time.time()
+    if now - _tracking_log_last > 10.0:
+        _tracking_log_last = now
+        has_pose = bool(data and data.get('pose'))
+        has_face = bool(data and data.get('face'))
+        print(f"[tracking_data] received from operator, relaying (pose={has_pose}, face={has_face})", flush=True)
+    # 初回のみ: face のキーを出力（ディスプレイで表情が動かないときの切り分け用）
+    if data and data.get('face') and not _tracking_face_logged:
+        _tracking_face_logged = True
+        face = data.get('face')
+        keys = list(face.keys()) if isinstance(face, dict) else []
+        eye_keys = list(face.get('eye', {}).keys()) if isinstance(face.get('eye'), dict) else []
+        mouth_keys = list(face.get('mouth', {}).keys()) if isinstance(face.get('mouth'), dict) else []
+        print(f"[tracking_data] face keys: {keys}, eye: {eye_keys}, mouth: {mouth_keys}", flush=True)
+    # 送信元を除く全クライアントに配信（skip_sid は python-socketio の API）
+    socketio.emit('tracking_data', data, skip_sid=request.sid)
+
+
+
+
+
+
+def _get_local_ips():
+    """このPCのローカルIPアドレス一覧を取得（遠隔アクセス用URL表示用）"""
+    import socket
+    ips = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.append(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = info[4][0]
+            if addr != "127.0.0.1" and addr not in ips:
+                ips.append(addr)
+    except Exception:
+        pass
+    return ips if ips else ["(取得できません)"]
+
+
 if __name__ == '__main__':
     print("Starting Flask Server...")
-    # 全インターフェースでリッスン
-    socketio.run(app, host='0.0.0.0', port=5000)
+    local_ips = _get_local_ips()
+    
+    # Check for SSL certificate files
+    cert_file = os.path.join(os.path.dirname(__file__), 'cert.pem')
+    key_file = os.path.join(os.path.dirname(__file__), 'key.pem')
+    
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        print("✅ SSL certificates found. Starting HTTPS server...")
+        print(f"   Local:  https://localhost:5000  or  https://127.0.0.1:5000")
+        for ip in local_ips:
+            if ip != "(取得できません)":
+                print(f"   Remote: https://{ip}:5000  (受付オペレーター: https://{ip}:5000/operator)")
+        print("   ⚠️  Self-signed cert: Browser → 'Advanced' → 'Proceed to ... (unsafe)'")
+        print("")
+        print("   📌 遠隔PCから接続できない場合: Windowsファイアウォールでポート5000を許可してください。")
+        print("      例: プロジェクトルートで .\\scripts\\allow_firewall_port_5000.ps1 を管理者PowerShellで実行")
+        
+        socketio.run(app, 
+                    host='0.0.0.0', 
+                    port=5000,
+                    ssl_context=(cert_file, key_file))
+    else:
+        print("⚠️  SSL certificates not found. Starting HTTP server...")
+        print(f"   Local:  http://localhost:5000  or  http://127.0.0.1:5000")
+        for ip in local_ips:
+            if ip != "(取得できません)":
+                print(f"   Remote: http://{ip}:5000  (受付オペレーター: http://{ip}:5000/operator)")
+        print("   遠隔アクセス用HTTPS: python src/webapp/generate_cert.py を実行後、再起動")
+        print("")
+        print("   📌 遠隔PCから接続できない場合: Windowsファイアウォールでポート5000を許可してください。")
+        print("      例: プロジェクトルートで .\\scripts\\allow_firewall_port_5000.ps1 を管理者PowerShellで実行")
+        socketio.run(app, host='0.0.0.0', port=5000)
+
+
+

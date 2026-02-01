@@ -5,5 +5,6 @@ __pycache__/
 temp_captures/
 src/webapp/static/captures/
 src/webapp/static/voices/
+src/webapp/data/
 models_list.txt
 models.txt

@@ -4,16 +4,32 @@
 <head>
     <meta charset="UTF-8">
     <title>AI-Board</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <!-- MediaPipe & Kalidokit for Reception Mode (Face Tracking) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/kalidokit@1.1.4/dist/kalidokit.umd.js"></script>
     <style>
         body {
             background-color: #121212;
-            /* Dark Mode Background */
+            /* AI-Board 既定 */
             color: #ffffff;
             margin: 0;
             overflow: hidden;
-            /* Canvas style */
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.4s ease;
+        }
+        /* 受付モード時: 青系の暗い背景 */
+        body[data-mode="reception"] {
+            background-color: #0d1a24;
+        }
+        /* パーソナルモード時: 紫系の暗い背景 */
+        body[data-mode="personal"] {
+            background-color: #1a151f;
         }
 
         #canvas {
@@ -220,6 +236,8 @@
         .settings-content {
             padding: 10px 15px;
             display: none;
+            overflow-x: hidden;
+            min-width: 0;
         }
 
         .settings-content.open {
@@ -246,10 +264,114 @@
             accent-color: #00ffcc;
             transform: scale(1.2);
         }
+
+        .setting-item select {
+            max-width: 100%;
+            min-width: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+        }
+        .setting-item.setting-item--stacked {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+        }
+        .setting-item.setting-item--stacked label {
+            margin-bottom: 0;
+        }
+        .setting-item.setting-item--stacked select {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* パーソナルモード画面 */
+        #personal-mode-panel {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 420px;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #00ffcc;
+            border-radius: 16px;
+            color: #fff;
+            text-align: center;
+            z-index: 100;
+            box-shadow: 0 0 24px rgba(0, 255, 204, 0.2);
+        }
+        #personal-mode-panel.visible {
+            display: block;
+        }
+        #personal-mode-panel h2 {
+            margin: 0 0 16px;
+            color: #00ffcc;
+            font-size: 1.4rem;
+        }
+        #personal-mode-panel p {
+            margin: 8px 0;
+            color: #ccc;
+            font-size: 0.95rem;
+        }
+        #personal-mode-panel .note {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #333;
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        /* 自動パーソナル切替の状態表示（SASE/リモート環境での原因切り分け用） */
+        .auto-personal-status {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            z-index: 99;
+            pointer-events: none;
+            max-width: 90%;
+            text-align: center;
+        }
+        .auto-personal-status.ok { background: rgba(0, 200, 120, 0.25); border: 1px solid #00c878; color: #a0ffd0; }
+        .auto-personal-status.warn { background: rgba(255, 180, 0, 0.25); border: 1px solid #ffb400; color: #ffe080; }
+        .auto-personal-status.err { background: rgba(220, 60, 60, 0.25); border: 1px solid #dc3c3c; color: #ffa0a0; }
+
+        /* 名前・顔照合パネル */
+        .personal-verify-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 380px;
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ffcc;
+            border-radius: 16px;
+            color: #fff;
+            z-index: 101;
+            box-shadow: 0 0 24px rgba(0, 255, 204, 0.2);
+        }
+        .personal-verify-panel h2 { margin: 0 0 12px; color: #00ffcc; font-size: 1.2rem; }
+        .personal-verify-panel p { margin: 8px 0; color: #ccc; font-size: 0.9rem; }
+        .personal-verify-msg { min-height: 1.2em; color: #ffa0a0; font-size: 0.85rem; }
+        .personal-verify-btns { display: flex; gap: 10px; margin-top: 16px; }
+        .personal-verify-btns button { padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; }
+        .personal-verify-btns button:first-child { background: #00ffcc; color: #000; font-weight: bold; }
+        .personal-verify-btns button.secondary { background: #555; color: #fff; }
     </style>
 </head>
 
-<body>
+<body data-mode="ai-board">
     <div id="canvas">
         <!-- Sticky notes will be injected here -->
     </div>
@@ -263,6 +385,15 @@
         <div id="avatar-loading">アバター読み込み中...</div>
     </div>
 
+    <!-- Hidden video for webcam (Local Reception Mode - deprecated / 自動切替でこのPCのカメラ時) -->
+    <video id="webcam-input" style="display: none;" playsinline></video>
+    <!-- 自動切替でネットワークカメラ時: MJPEG を img で受信し canvas に描画して顔検知 -->
+    <img id="network-camera-img" alt="" style="display: none;" crossorigin="anonymous">
+    <canvas id="network-camera-canvas" width="320" height="240" style="display: none;"></canvas>
+
+    <!-- Remote audio from operator -->
+    <audio id="operator-audio" autoplay style="display: none;"></audio>
+
     <div id="branding">
         <div id="unmute-btn"
             style="pointer-events: auto; cursor: pointer; background: #00ff00; color: black; padding: 5px 10px; border-radius: 5px; margin-right: 10px; display: inline-block;">
@@ -271,11 +402,36 @@
         <span class="online-status"></span> AI-Board System Online | AI: Active
     </div>
 
-    <!-- Mode Switcher -->
-    <div id="mode-switcher">
-        <button class="mode-btn active" data-mode="ai-board">AI-Board</button>
-        <button class="mode-btn" data-mode="reception">Reception</button>
-        <button class="mode-btn" data-mode="personal">Personal</button>
+    <!-- Mode Switcher: 受付モード / AIボードモード / パーソナルモード -->
+    <div id="mode-switcher" role="group" aria-label="モード切替">
+        <button class="mode-btn active" data-mode="ai-board" title="AIボードモード">AI-Board</button>
+        <button class="mode-btn" data-mode="reception" title="受付モード">Reception</button>
+        <button class="mode-btn" data-mode="personal" title="パーソナルモード">Personal</button>
+    </div>
+    <!-- 自動パーソナル切替の状態（ON時のみ表示・原因切り分け用） -->
+    <div id="auto-personal-status" class="auto-personal-status" aria-live="polite" style="display: none;"></div>
+
+    <!-- 名前・顔照合パネル（Personal 任意切替時、登録がある場合のみ表示） -->
+    <div id="personal-verify-panel" class="personal-verify-panel" aria-hidden="true" style="display: none;">
+        <h2>名前と顔の照合</h2>
+        <p>パーソナルモードに切り替えるには、名前を選びカメラで顔を照合してください。</p>
+        <div class="setting-item setting-item--stacked">
+            <label for="personal-verify-name">名前</label>
+            <select id="personal-verify-name"><option value="">選択してください</option></select>
+        </div>
+        <p id="personal-verify-msg" class="personal-verify-msg"></p>
+        <div class="personal-verify-btns">
+            <button type="button" id="personal-verify-do">照合してパーソナルに切替</button>
+            <button type="button" id="personal-verify-cancel" class="secondary">キャンセル</button>
+        </div>
+    </div>
+
+    <!-- パーソナルモード画面（Personal 選択時のみ表示） -->
+    <div id="personal-mode-panel" aria-hidden="true">
+        <h2>パーソナルモード</h2>
+        <p>機能は今後追加します。</p>
+        <p class="note">・自動切替: 設定で「自動でパーソナルに切替（人を検知）」をONにすると、AI-Board表示中にカメラで人を検知すると自動でパーソナルモードになります。<br>
+        ・任意切り替え時の名前と顔の一致確認 … 今後対応予定</p>
     </div>
 
     <!-- Settings Panel -->
@@ -319,6 +475,19 @@
                 <label>Win Y</label>
                 <input type="range" id="win-y" min="-500" max="500" step="10" value="0">
             </div>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0;">
+            <div class="setting-item setting-item--stacked">
+                <label for="auto-personal-camera-source">自動切替のカメラ</label>
+                <select id="auto-personal-camera-source" title="エントランスのモニターではネットワークカメラを選ぶ">
+                    <option value="local">このPCのカメラ</option>
+                    <option value="network">ネットワークカメラ（エントランス用）</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label for="auto-personal-toggle">自動でパーソナルに切替（人を検知）</label>
+                <input type="checkbox" id="auto-personal-toggle">
+            </div>
+            <p id="auto-personal-hint" class="setting-hint" style="display:none; margin:4px 0 0; font-size:0.75rem; color:#888;">※このPCのカメラ時はカメラ許可・Chrome推奨。エントランスはネットワークカメラを選択。</p>
         </div>
     </div>
 
@@ -448,6 +617,7 @@
                 const vrm = gltf.userData.vrm;
                 if (vrm && vrm.scene) {
                     currentVrm = vrm; // Store reference
+                    window.currentVrm = vrm; // 切り分け・デバッグ用（コンソールで確認可能）
                     // Rotate 180 deg to face the camera (assuming camera is at +Z looking at origin)
                     vrm.scene.rotation.y = Math.PI;
                     scene.add(vrm.scene);
@@ -462,12 +632,19 @@
                     }
 
                     if (loadingEl) loadingEl.style.display = 'none';
-                    console.log("VRM Loaded");
+                    console.log("VRM Loaded (window.currentVrm で確認可)");
+                    // レセプション用: このVRMが持つ表情名をログ（blink/aa が無いと表情が動かない）
+                    if (vrm.expressionManager) {
+                        const em = vrm.expressionManager;
+                        const names = (em._expressionMap && Object.keys(em._expressionMap)) || (em.expressions && Object.keys(em.expressions)) || [];
+                        if (names.length) console.log("VRM expressions:", names);
+                    }
                 } else {
                     if (loadingEl) loadingEl.textContent = 'アバターの形式を読み取れませんでした';
                 }
             } catch (err) {
                 console.error('VRM load error:', err);
+                window.currentVrm = null;
                 if (loadingEl) loadingEl.textContent = 'アバターの読み込みに失敗しました';
             }
 
@@ -552,26 +729,631 @@
 
             // Mode Switching
             const modeBtns = document.querySelectorAll('.mode-btn');
+            const personalPanel = document.getElementById('personal-mode-panel');
             window.currentMode = 'ai-board'; // 'ai-board', 'reception', 'personal'
+
+            function setPersonalPanelVisible(visible) {
+                if (!personalPanel) return;
+                if (visible) {
+                    personalPanel.classList.add('visible');
+                    personalPanel.setAttribute('aria-hidden', 'false');
+                } else {
+                    personalPanel.classList.remove('visible');
+                    personalPanel.setAttribute('aria-hidden', 'true');
+                }
+            }
+
+            /** モード切替を一括適用（手動・自動切替の両方から利用） */
+            function switchToMode(mode) {
+                if (mode !== 'personal') {
+                    const p = document.getElementById('personal-verify-panel');
+                    if (p && p.style.display === 'block') p.style.display = 'none';
+                }
+                modeBtns.forEach(b => {
+                    b.classList.toggle('active', b.dataset.mode === mode);
+                });
+                window.currentMode = mode;
+                document.body.setAttribute('data-mode', mode);
+                setPersonalPanelVisible(mode === 'personal');
+                if (mode === 'ai-board') {
+                    stopRemoteReceptionMode();
+                    setEmote('NEUTRAL');
+                } else if (mode === 'reception') {
+                    startRemoteReceptionMode();
+                } else if (mode === 'personal') {
+                    stopRemoteReceptionMode();
+                }
+                stopAutoPersonalDetection();
+                if (mode === 'ai-board' && isAutoPersonalEnabled()) {
+                    startAutoPersonalDetection();
+                }
+                console.log("Mode switched to:", mode);
+            }
+
+            // --- 自動パーソナル切替（人検知） ---
+            const AUTO_PERSONAL_STORAGE_KEY = 'ai-board-auto-personal';
+            const AUTO_PERSONAL_FACE_SEC = 2;
+            const AUTO_PERSONAL_POLL_MS = 200;
+            let autoPersonalDetectionTimer = null;
+            let autoPersonalStream = null;
+            let autoPersonalFaceCount = 0;
+            const videoForDetection = document.getElementById('webcam-input');
+            const networkImg = document.getElementById('network-camera-img');
+            const networkCanvas = document.getElementById('network-camera-canvas');
+            const networkCtx = networkCanvas ? networkCanvas.getContext('2d') : null;
+            const autoPersonalStatusEl = document.getElementById('auto-personal-status');
+
+            function getCameraSource() {
+                const el = document.getElementById('auto-personal-camera-source');
+                return (el && el.value) || 'local';
+            }
+            function getCameraStreamUrl() {
+                return window.location.origin + '/camera_stream';
+            }
+
+            function setAutoPersonalStatus(text, type) {
+                if (!autoPersonalStatusEl) return;
+                autoPersonalStatusEl.textContent = text;
+                autoPersonalStatusEl.className = 'auto-personal-status ' + (type || 'ok');
+                autoPersonalStatusEl.style.display = text ? 'block' : 'none';
+            }
+
+            function isAutoPersonalEnabled() {
+                const el = document.getElementById('auto-personal-toggle');
+                return el && el.checked;
+            }
+
+            function startAutoPersonalDetection() {
+                if (autoPersonalDetectionTimer) return;
+                if (window.currentMode !== 'ai-board') return;
+                if (!isAutoPersonalEnabled()) { setAutoPersonalStatus('', ''); return; }
+
+                if (getCameraSource() === 'network') {
+                    setAutoPersonalStatus('自動切替: ネットワークカメラに接続中…', 'warn');
+                    if (!networkImg || !networkCanvas || !networkCtx) {
+                        setAutoPersonalStatus('自動切替: ネットワークカメラ用の要素がありません', 'err');
+                        return;
+                    }
+                    networkImg.onload = function onFirstFrame() {
+                        networkImg.onload = null;
+                        networkImg.onerror = null;
+                        setAutoPersonalStatus('自動切替: 検知中（顔が約2秒映るとパーソナルに切替）', 'ok');
+                        if ('FaceDetector' in window) {
+                            runChromeFaceDetectorForNetwork();
+                        } else {
+                            setAutoPersonalStatus('自動切替: MediaPipeで検知を準備中…', 'warn');
+                            runMediaPipeFaceDetectorForNetwork();
+                        }
+                    };
+                    networkImg.onerror = function() {
+                        setAutoPersonalStatus('自動切替: ネットワークカメラに接続できませんでした（RTSP_URL・サーバを確認）', 'err');
+                    };
+                    networkImg.src = getCameraStreamUrl();
+                    return;
+                }
+
+                setAutoPersonalStatus('自動切替: カメラ取得中…', 'warn');
+                navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } }).then(stream => {
+                    autoPersonalStream = stream;
+                    if (videoForDetection) {
+                        videoForDetection.srcObject = stream;
+                        videoForDetection.play().catch(() => {});
+                    }
+                    if ('FaceDetector' in window) {
+                        runChromeFaceDetector();
+                    } else {
+                        setAutoPersonalStatus('自動切替: MediaPipeで検知を準備中…', 'warn');
+                        console.warn('自動パーソナル切替: Face Detector API が利用できないため MediaPipe で検知を試行します');
+                        runMediaPipeFaceDetector();
+                    }
+                }).catch(err => {
+                    setAutoPersonalStatus('自動切替: カメラ取得失敗（許可・HTTPS・SASE/ファイアウォールを確認）', 'err');
+                    console.warn('自動パーソナル切替: カメラ取得に失敗しました', err);
+                });
+            }
+
+            function runChromeFaceDetector() {
+                const faceDetector = new FaceDetector({ fastMode: true });
+                setAutoPersonalStatus('自動切替: 検知中（顔が約2秒映るとパーソナルに切替）', 'ok');
+                let lastRun = 0;
+                function tick() {
+                    autoPersonalDetectionTimer = setTimeout(tick, AUTO_PERSONAL_POLL_MS);
+                    if (window.currentMode !== 'ai-board') return;
+                    if (!videoForDetection || videoForDetection.readyState < 2) return;
+                    const now = Date.now();
+                    if (now - lastRun < AUTO_PERSONAL_POLL_MS) return;
+                    lastRun = now;
+                    faceDetector.detect(videoForDetection).then(faces => {
+                        if (faces.length > 0) {
+                            autoPersonalFaceCount++;
+                            const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
+                            if (autoPersonalFaceCount >= need) {
+                                stopAutoPersonalDetection();
+                                switchToMode('personal');
+                            }
+                        } else {
+                            autoPersonalFaceCount = 0;
+                        }
+                    }).catch(() => { autoPersonalFaceCount = 0; });
+                }
+                tick();
+            }
+
+            function runChromeFaceDetectorForNetwork() {
+                const faceDetector = new FaceDetector({ fastMode: true });
+                let lastRun = 0;
+                function tick() {
+                    autoPersonalDetectionTimer = setTimeout(tick, AUTO_PERSONAL_POLL_MS);
+                    if (window.currentMode !== 'ai-board') return;
+                    if (!networkImg || !networkCanvas || !networkCtx) return;
+                    if (!networkImg.complete || !networkImg.naturalWidth) return;
+                    const now = Date.now();
+                    if (now - lastRun < AUTO_PERSONAL_POLL_MS) return;
+                    lastRun = now;
+                    networkCanvas.width = networkImg.naturalWidth;
+                    networkCanvas.height = networkImg.naturalHeight;
+                    networkCtx.drawImage(networkImg, 0, 0);
+                    faceDetector.detect(networkCanvas).then(faces => {
+                        if (faces.length > 0) {
+                            autoPersonalFaceCount++;
+                            const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
+                            if (autoPersonalFaceCount >= need) {
+                                stopAutoPersonalDetection();
+                                switchToMode('personal');
+                            }
+                        } else {
+                            autoPersonalFaceCount = 0;
+                        }
+                    }).catch(() => { autoPersonalFaceCount = 0; });
+                }
+                tick();
+            }
+
+            async function runMediaPipeFaceDetector() {
+                try {
+                    const wasmPath = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+                    const modelPath = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+                    const mod = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+                    const FaceDetector = mod.FaceDetector || (mod.default && mod.default.FaceDetector);
+                    const FilesetResolver = mod.FilesetResolver || (mod.default && mod.default.FilesetResolver);
+                    if (!FaceDetector || !FilesetResolver) {
+                        setAutoPersonalStatus('自動切替: MediaPipe の読み込みに失敗しました', 'err');
+                        return;
+                    }
+                    const vision = await FilesetResolver.forVisionTasks(wasmPath);
+                    const faceDetector = await FaceDetector.createFromModelPath(vision, modelPath);
+                    await faceDetector.setOptions({ runningMode: 'VIDEO' });
+                    setAutoPersonalStatus('自動切替: 検知中（顔が約2秒映るとパーソナルに切替）', 'ok');
+                    let lastRun = 0;
+                    let videoTimestamp = 0;
+                    function tick() {
+                        autoPersonalDetectionTimer = setTimeout(tick, AUTO_PERSONAL_POLL_MS);
+                        if (window.currentMode !== 'ai-board') return;
+                        if (!videoForDetection || videoForDetection.readyState < 2) return;
+                        const now = Date.now();
+                        if (now - lastRun < AUTO_PERSONAL_POLL_MS) return;
+                        lastRun = now;
+                        videoTimestamp += AUTO_PERSONAL_POLL_MS;
+                        try {
+                            const detections = faceDetector.detectForVideo(videoForDetection, videoTimestamp);
+                            const faces = (detections && detections.detections) ? detections.detections : [];
+                            if (faces.length > 0) {
+                                autoPersonalFaceCount++;
+                                const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
+                                if (autoPersonalFaceCount >= need) {
+                                    stopAutoPersonalDetection();
+                                    switchToMode('personal');
+                                }
+                            } else {
+                                autoPersonalFaceCount = 0;
+                            }
+                        } catch (e) {
+                            autoPersonalFaceCount = 0;
+                        }
+                    }
+                    tick();
+                } catch (err) {
+                    setAutoPersonalStatus('自動切替: MediaPipe で検知できませんでした（SASE/ネットワーク制限の可能性）', 'err');
+                    console.warn('自動パーソナル切替: MediaPipe の初期化に失敗しました', err);
+                }
+            }
+
+            async function runMediaPipeFaceDetectorForNetwork() {
+                try {
+                    const wasmPath = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+                    const modelPath = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
+                    const mod = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+                    const FaceDetector = mod.FaceDetector || (mod.default && mod.default.FaceDetector);
+                    const FilesetResolver = mod.FilesetResolver || (mod.default && mod.default.FilesetResolver);
+                    if (!FaceDetector || !FilesetResolver) {
+                        setAutoPersonalStatus('自動切替: MediaPipe の読み込みに失敗しました', 'err');
+                        return;
+                    }
+                    const vision = await FilesetResolver.forVisionTasks(wasmPath);
+                    const faceDetector = await FaceDetector.createFromModelPath(vision, modelPath);
+                    await faceDetector.setOptions({ runningMode: 'IMAGE' });
+                    setAutoPersonalStatus('自動切替: 検知中（顔が約2秒映るとパーソナルに切替）', 'ok');
+                    let lastRun = 0;
+                    function tick() {
+                        autoPersonalDetectionTimer = setTimeout(tick, AUTO_PERSONAL_POLL_MS);
+                        if (window.currentMode !== 'ai-board') return;
+                        if (!networkImg || !networkCanvas || !networkCtx) return;
+                        if (!networkImg.complete || !networkImg.naturalWidth) return;
+                        const now = Date.now();
+                        if (now - lastRun < AUTO_PERSONAL_POLL_MS) return;
+                        lastRun = now;
+                        networkCanvas.width = networkImg.naturalWidth;
+                        networkCanvas.height = networkImg.naturalHeight;
+                        networkCtx.drawImage(networkImg, 0, 0);
+                        try {
+                            const detections = faceDetector.detect(networkCanvas);
+                            const faces = (detections && detections.detections) ? detections.detections : [];
+                            if (faces.length > 0) {
+                                autoPersonalFaceCount++;
+                                const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
+                                if (autoPersonalFaceCount >= need) {
+                                    stopAutoPersonalDetection();
+                                    switchToMode('personal');
+                                }
+                            } else {
+                                autoPersonalFaceCount = 0;
+                            }
+                        } catch (e) {
+                            autoPersonalFaceCount = 0;
+                        }
+                    }
+                    tick();
+                } catch (err) {
+                    setAutoPersonalStatus('自動切替: MediaPipe で検知できませんでした', 'err');
+                    console.warn('自動パーソナル切替: MediaPipe の初期化に失敗しました', err);
+                }
+            }
+
+            function stopAutoPersonalDetection() {
+                if (autoPersonalDetectionTimer) {
+                    clearTimeout(autoPersonalDetectionTimer);
+                    autoPersonalDetectionTimer = null;
+                }
+                if (autoPersonalStream) {
+                    autoPersonalStream.getTracks().forEach(t => t.stop());
+                    autoPersonalStream = null;
+                }
+                if (videoForDetection && videoForDetection.srcObject) {
+                    videoForDetection.srcObject = null;
+                }
+                if (networkImg && networkImg.src) {
+                    networkImg.src = '';
+                }
+                autoPersonalFaceCount = 0;
+                if (!isAutoPersonalEnabled() || window.currentMode !== 'ai-board') {
+                    setAutoPersonalStatus('', '');
+                }
+            }
+
+            // 自動パーソナル: 設定の読み込みとチェックボックス・カメラソース連動
+            const AUTO_PERSONAL_CAMERA_STORAGE_KEY = 'ai-board-auto-personal-camera';
+            const autoPersonalToggle = document.getElementById('auto-personal-toggle');
+            const autoPersonalCameraSource = document.getElementById('auto-personal-camera-source');
+            const autoPersonalHint = document.getElementById('auto-personal-hint');
+            if (autoPersonalCameraSource) {
+                try {
+                    const saved = localStorage.getItem(AUTO_PERSONAL_CAMERA_STORAGE_KEY);
+                    if (saved === 'network' || saved === 'local') autoPersonalCameraSource.value = saved;
+                } catch (e) {}
+                autoPersonalCameraSource.addEventListener('change', () => {
+                    try {
+                        localStorage.setItem(AUTO_PERSONAL_CAMERA_STORAGE_KEY, autoPersonalCameraSource.value);
+                    } catch (e) {}
+                    if (window.currentMode === 'ai-board' && isAutoPersonalEnabled()) {
+                        stopAutoPersonalDetection();
+                        startAutoPersonalDetection();
+                    }
+                });
+            }
+            if (autoPersonalToggle) {
+                try {
+                    autoPersonalToggle.checked = localStorage.getItem(AUTO_PERSONAL_STORAGE_KEY) === '1';
+                } catch (e) {}
+                if (autoPersonalHint) autoPersonalHint.style.display = 'block';
+                autoPersonalToggle.addEventListener('change', () => {
+                    try {
+                        localStorage.setItem(AUTO_PERSONAL_STORAGE_KEY, autoPersonalToggle.checked ? '1' : '0');
+                    } catch (e) {}
+                    if (window.currentMode === 'ai-board') {
+                        if (autoPersonalToggle.checked) startAutoPersonalDetection();
+                        else stopAutoPersonalDetection();
+                    }
+                });
+            }
+
+            // Remote Reception Mode State
+            let displayPeer = null;
+            let isRemoteReceptionActive = false;
+
+            function startRemoteReceptionMode() {
+                if (isRemoteReceptionActive) return;
+                console.log("Waiting for operator connection...");
+
+                // 目を開いた状態で開始（トラッキングデータが届くまで）
+                if (currentVrm && currentVrm.expressionManager) {
+                    currentVrm.expressionManager.setValue('blink', 0);
+                    currentVrm.expressionManager.setValue('blinkLeft', 0);
+                    currentVrm.expressionManager.setValue('blinkRight', 0);
+                }
+
+                // Create WebRTC peer (non-initiator, waiting for operator)
+                const localStream = new MediaStream();
+                // Add silent audio track for bidirectional audio
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const dst = oscillator.connect(audioContext.createMediaStreamDestination());
+                const silentTrack = dst.stream.getAudioTracks()[0];
+                localStream.addTrack(silentTrack);
+                oscillator.start();
+
+                displayPeer = new SimplePeer({
+                    initiator: false,
+                    stream: localStream,
+                    trickle: false
+                });
+
+                displayPeer.on('signal', (signal) => {
+                    socket.emit('webrtc-signal', { from: 'display', signal });
+                });
+
+                displayPeer.on('stream', (stream) => {
+                    const operatorAudio = document.getElementById('operator-audio');
+                    operatorAudio.srcObject = stream;
+                    console.log('Operator audio stream received');
+                });
+
+                displayPeer.on('error', (err) => {
+                    console.error('WebRTC error:', err);
+                });
+
+                isRemoteReceptionActive = true;
+            }
+
+            function stopRemoteReceptionMode() {
+                if (!isRemoteReceptionActive) return;
+                console.log("Stopping Remote Reception Mode...");
+
+                if (displayPeer) {
+                    displayPeer.destroy();
+                    displayPeer = null;
+                }
+
+                const operatorAudio = document.getElementById('operator-audio');
+                if (operatorAudio.srcObject) {
+                    operatorAudio.srcObject = null;
+                }
+
+                isRemoteReceptionActive = false;
+            }
+
+            let _lastTrackingLog = 0;
+            let _lastDataLog = 0;
+            function applyTrackingData(data) {
+                if (!currentVrm || window.currentMode !== 'reception') return;
+
+                const now = Date.now();
+                if (now - _lastTrackingLog > 3000) {
+                    console.log('Reception: tracking_data received', data && { hasPose: !!data.pose, hasFace: !!data.face });
+                    _lastTrackingLog = now;
+                }
+                // カメラ送信データの実体を一度だけログ（切り分け用）
+                if (data && (data.pose || data.face) && now - _lastDataLog > 5000) {
+                    _lastDataLog = now;
+                    console.log('Reception: data sample', JSON.stringify({
+                        poseKeys: data.pose ? Object.keys(data.pose) : [],
+                        face: data.face ? { eye: data.face.eye, mouth: data.face.mouth } : null
+                    }));
+                }
+
+                try {
+                    const { pose, face } = data || {};
+
+                    // Apply Pose (Kalidokit: { Spine: { x,y,z } } or { Spine: { rotation: { x,y,z } } })
+                    if (pose && typeof pose === 'object') {
+                        const humanoid = currentVrm.humanoid;
+                        if (humanoid) {
+                            Object.keys(pose).forEach(boneName => {
+                                try {
+                                    const raw = pose[boneName];
+                                    if (!raw || typeof raw !== 'object') return;
+
+                                    const rot = raw.rotation && typeof raw.rotation === 'object'
+                                        ? raw.rotation
+                                        : raw;
+                                    if (rot.x === undefined && rot.y === undefined && rot.z === undefined) return;
+
+                                    const vrmBoneName = boneName.charAt(0).toLowerCase() + boneName.slice(1);
+                                    const bone = humanoid.getNormalizedBoneNode(vrmBoneName);
+                                    if (!bone) return;
+
+                                    if (rot.x !== undefined) bone.rotation.x = rot.x;
+                                    if (rot.y !== undefined) bone.rotation.y = rot.y;
+                                    if (rot.z !== undefined) bone.rotation.z = rot.z;
+                                } catch (e) {
+                                    console.warn('applyTrackingData pose bone:', boneName, e);
+                                }
+                            });
+                        }
+                    }
+
+                    // Apply Face (Kalidokit: eye = openness 0=closed, 1=open. キーは .l/.r または .left/.right の両対応)
+                    if (face && currentVrm.expressionManager) {
+                        const expr = currentVrm.expressionManager;
+                        if (face.eye) {
+                            const openL = typeof face.eye.l === 'number' ? face.eye.l : (typeof face.eye.left === 'number' ? face.eye.left : 0);
+                            const openR = typeof face.eye.r === 'number' ? face.eye.r : (typeof face.eye.right === 'number' ? face.eye.right : 0);
+                            const blinkL = Math.max(0, Math.min(1, 1 - openL));
+                            const blinkR = Math.max(0, Math.min(1, 1 - openR));
+                            const blink = (blinkL + blinkR) / 2;
+                            try { expr.setValue('blink', blink); } catch (e) { /* VRMにない場合 */ }
+                            try { expr.setValue('blinkLeft', blinkL); } catch (e) { }
+                            try { expr.setValue('blinkRight', blinkR); } catch (e) { }
+                        }
+                        if (face.mouth) {
+                            // Kalidokit mouth.x は開き度（負=閉じ、正=開く）→ 0〜1 に正規化
+                            const mouthX = typeof face.mouth.x === 'number' ? face.mouth.x : (typeof face.mouth.open === 'number' ? face.mouth.open : 0);
+                            const aa = Math.max(0, Math.min(1, (mouthX + 1) / 2));
+                            try { expr.setValue('aa', aa); } catch (e) { }
+                            // mouth.shape (A,E,I,O,U) を口の形として適用（VRM の aa/ih/ee/oh/ou や あ/い/う/え/お など）
+                            const shape = face.mouth.shape;
+                            if (shape && typeof shape === 'object') {
+                                const visemeMap = [
+                                    ['A', 'aa'], ['E', 'ee'], ['I', 'ih'], ['O', 'oh'], ['U', 'ou']
+                                ];
+                                visemeMap.forEach(([key, name]) => {
+                                    const v = shape[key];
+                                    if (typeof v === 'number') {
+                                        const val = Math.max(0, Math.min(1, v));
+                                        try { expr.setValue(name, val); } catch (e) { }
+                                        try { expr.setValue(key, val); } catch (e) { }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('applyTrackingData error:', e);
+                }
+            }
+
+            // Expose to window for Socket.IO handlers
+            window.displayPeer = displayPeer;
+            window.applyTrackingData = applyTrackingData;
+
+            // Personal 任意切替時: 名前・顔登録があれば照合パネルを表示、なければそのまま切替
+            async function trySwitchToPersonal() {
+                try {
+                    const r = await fetch(window.location.origin + '/api/face_registry');
+                    const data = await r.json();
+                    const persons = (data.persons || []).filter(p => p.id && p.name);
+                    if (persons.length === 0) {
+                        switchToMode('personal');
+                        return;
+                    }
+                    const panel = document.getElementById('personal-verify-panel');
+                    const select = document.getElementById('personal-verify-name');
+                    const msg = document.getElementById('personal-verify-msg');
+                    if (!panel || !select) return;
+                    select.innerHTML = '<option value="">選択してください</option>' + persons.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+                    msg.textContent = '';
+                    panel.style.display = 'block';
+                    panel.setAttribute('aria-hidden', 'false');
+                } catch (e) {
+                    console.warn('名前・顔一覧の取得に失敗しました', e);
+                    switchToMode('personal');
+                }
+            }
+            function escapeHtml(s) {
+                const div = document.createElement('div');
+                div.textContent = s;
+                return div.innerHTML;
+            }
+            function hidePersonalVerifyPanel() {
+                const panel = document.getElementById('personal-verify-panel');
+                if (panel) {
+                    panel.style.display = 'none';
+                    panel.setAttribute('aria-hidden', 'true');
+                }
+            }
+            function simpleImageSimilarity(dataUrl1, dataUrl2, size = 32) {
+                return new Promise((resolve) => {
+                    const img1 = new Image();
+                    const img2 = new Image();
+                    img1.crossOrigin = img2.crossOrigin = 'anonymous';
+                    img1.onload = () => {
+                        img2.onload = () => {
+                            const c = document.createElement('canvas');
+                            c.width = size;
+                            c.height = size;
+                            const ctx = c.getContext('2d');
+                            ctx.drawImage(img1, 0, 0, size, size);
+                            const d1 = ctx.getImageData(0, 0, size, size).data;
+                            ctx.drawImage(img2, 0, 0, size, size);
+                            const d2 = ctx.getImageData(0, 0, size, size).data;
+                            let sum = 0, n = d1.length;
+                            for (let i = 0; i < n; i += 4) {
+                                const g1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
+                                const g2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
+                                sum += Math.abs(g1 - g2);
+                            }
+                            const mse = sum / (n / 4) / 255;
+                            resolve(1 - Math.min(1, mse));
+                        };
+                        img2.onerror = () => resolve(0);
+                        img2.src = dataUrl2;
+                    };
+                    img1.onerror = () => resolve(0);
+                    img1.src = dataUrl1;
+                });
+            }
+
+            document.getElementById('personal-verify-cancel')?.addEventListener('click', () => {
+                hidePersonalVerifyPanel();
+            });
+            document.getElementById('personal-verify-do')?.addEventListener('click', async () => {
+                const select = document.getElementById('personal-verify-name');
+                const msg = document.getElementById('personal-verify-msg');
+                const personId = select?.value;
+                if (!personId) {
+                    if (msg) msg.textContent = '名前を選択してください。';
+                    return;
+                }
+                try {
+                    msg.textContent = '照合中…';
+                    const r = await fetch(window.location.origin + '/api/face_registry/' + encodeURIComponent(personId));
+                    if (!r.ok) throw new Error('取得失敗');
+                    const person = await r.json();
+                    const storedFace = person.faceData;
+                    if (!storedFace) {
+                        msg.textContent = 'この名前には顔が登録されていません。';
+                        return;
+                    }
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
+                    await new Promise((res, rej) => {
+                        video.onloadeddata = res;
+                        video.onerror = rej;
+                        setTimeout(res, 500);
+                    });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
+                    stream.getTracks().forEach(t => t.stop());
+                    const currentFace = canvas.toDataURL('image/jpeg', 0.85);
+                    const similarity = await simpleImageSimilarity(storedFace, currentFace);
+                    if (similarity >= 0.5) {
+                        hidePersonalVerifyPanel();
+                        switchToMode('personal');
+                    } else {
+                        msg.textContent = '名前と顔が一致しません。もう一度お試しください。';
+                    }
+                } catch (e) {
+                    if (msg) msg.textContent = '照合に失敗しました: ' + (e.message || String(e));
+                }
+            });
 
             modeBtns.forEach(btn => {
                 btn.addEventListener('click', () => {
-                    modeBtns.forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    const mode = btn.dataset.mode;
-                    window.currentMode = mode;
-                    console.log("Mode switched to:", mode);
-
-                    // Mode-specific reset logic
-                    if (mode === 'ai-board') {
-                        // Ensure auto-animations are active
-                        setEmote('NEUTRAL');
-                    } else if (mode === 'reception') {
-                        // Placeholder for tracking initialization
-                        console.log("Reception mode selected (Tracking not implemented yet)");
+                    if (btn.dataset.mode === 'personal') {
+                        trySwitchToPersonal();
+                    } else {
+                        switchToMode(btn.dataset.mode);
                     }
                 });
             });
+
+            // 初期が AI-Board かつ「自動でパーソナルに切替」ON なら検知開始
+            if (window.currentMode === 'ai-board' && isAutoPersonalEnabled()) {
+                startAutoPersonalDetection();
+            }
 
             // Animation State
             let blinkTimer = 0;
@@ -643,26 +1425,28 @@
                         }
                     }
 
-                    // 2. Blinking Logic
-                    blinkTimer += deltaTime;
-                    if (blinkTimer > nextBlinkTime && !isBlinking) {
-                        isBlinking = true;
-                        blinkTimer = 0;
-                    }
-
-                    if (isBlinking) {
-                        const t = blinkTimer / blinkDuration;
-                        let blinkVal = 0;
-                        if (t < 0.5) blinkVal = t * 2;
-                        else blinkVal = (1 - t) * 2;
-
-                        if (t >= 1) {
-                            blinkVal = 0;
-                            isBlinking = false;
-                            nextBlinkTime = 2 + Math.random() * 4;
+                    // 2. Blinking Logic (自律まばたきは ai-board / personal のみ；reception はトラッキングで制御)
+                    if (window.currentMode === 'ai-board' || window.currentMode === 'personal') {
+                        blinkTimer += deltaTime;
+                        if (blinkTimer > nextBlinkTime && !isBlinking) {
+                            isBlinking = true;
                             blinkTimer = 0;
                         }
-                        currentVrm.expressionManager.setValue('blink', blinkVal);
+
+                        if (isBlinking) {
+                            const t = blinkTimer / blinkDuration;
+                            let blinkVal = 0;
+                            if (t < 0.5) blinkVal = t * 2;
+                            else blinkVal = (1 - t) * 2;
+
+                            if (t >= 1) {
+                                blinkVal = 0;
+                                isBlinking = false;
+                                nextBlinkTime = 2 + Math.random() * 4;
+                                blinkTimer = 0;
+                            }
+                            currentVrm.expressionManager.setValue('blink', blinkVal);
+                        }
                     }
 
                     // 3. Lip Sync logic
@@ -763,6 +1547,22 @@
             // コメント表示もリセット
             aiText.innerText = '...';
             aiChatBox.style.display = 'none';
+        });
+
+        // Remote Reception Mode: WebRTC Signaling
+        socket.on('webrtc-signal', (data) => {
+            if (data.from === 'operator' && window.displayPeer) {
+                window.displayPeer.signal(data.signal);
+            }
+        });
+
+        // Remote Reception Mode: Tracking Data（ディスプレイ側で Reception を選択し、オペレーターで「受付開始」が必要）
+        socket.on('tracking_data', (data) => {
+            if (window.applyTrackingData) {
+                window.applyTrackingData(data);
+            } else if (window.currentMode === 'reception') {
+                console.warn('Reception: applyTrackingData not ready (VRM may still be loading)');
+            }
         });
 
         function createStickyNote(data) {

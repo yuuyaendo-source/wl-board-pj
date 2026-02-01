@@ -9,6 +9,12 @@ const next = require('next');
 const fs = require('fs');
 const path = require('path');
 
+// AI-Board が HTTPS で動作している場合の接続先（自己証明書を許可するのは開発時のみ）
+const AI_BOARD_BASE = process.env.AI_BOARD_URL || 'https://127.0.0.1:5000';
+if (process.env.NODE_ENV !== 'production') {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 // 開発環境かどうかの判定
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
@@ -133,8 +139,8 @@ app.prepare().then(() => {
                     // これにより、Webアプリで作成・編集した付箋にもAIがコメントする
                     if (note.author !== 'Real Cam') {
                         try {
-                            // Pythonサーバーへ通知
-                            fetch('http://localhost:5000/api/receive_note', {
+                            // Pythonサーバーへ通知（HTTPS対応）
+                            fetch(`${AI_BOARD_BASE}/api/receive_note`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -181,9 +187,9 @@ app.prepare().then(() => {
                 io.to(boardId).emit('board-cleared');
                 console.log(`Board ${boardId} cleared by socket event.`);
 
-                // AI-Board 側にもクリアを通知（AI-Board が起動している場合）
+                // AI-Board 側にもクリアを通知（AI-Board が HTTPS の場合は https で呼ぶ）
                 try {
-                    fetch('http://127.0.0.1:5000/api/clear_board', {
+                    fetch(`${AI_BOARD_BASE}/api/clear_board`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ boardId })
@@ -247,7 +253,7 @@ app.prepare().then(() => {
             // AI-Board (Python) に通知してAIコメントを生成させる（新規追加時のみ。更新時はコメント重複を防ぐ）
             if (note.author === 'Real Cam' && existingIndex < 0) {
                  try {
-                     fetch('http://localhost:5000/api/receive_note', {
+                     fetch(`${AI_BOARD_BASE}/api/receive_note`, {
                          method: 'POST',
                          headers: { 'Content-Type': 'application/json' },
                          body: JSON.stringify({
@@ -288,9 +294,9 @@ app.prepare().then(() => {
             io.to(boardId).emit('board-cleared');
             console.log(`Board ${boardId} cleared via REST API.`);
 
-            // AI-Board 側にもクリアを通知（AI-Board が起動している場合）
+            // AI-Board 側にもクリアを通知（AI-Board が HTTPS の場合は https で呼ぶ）
             try {
-                fetch('http://127.0.0.1:5000/api/clear_board', {
+                fetch(`${AI_BOARD_BASE}/api/clear_board`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ boardId })

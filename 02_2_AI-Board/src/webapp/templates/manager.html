@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>名前・顔の管理 - AI-Board</title>
+    <style>
+        body { background: #1a1a1a; color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        h1 { color: #00ffcc; margin-bottom: 8px; }
+        .sub { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+        .add-form { display: flex; gap: 10px; margin-bottom: 24px; align-items: center; }
+        .add-form input { padding: 8px 12px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; width: 200px; }
+        .add-form button { padding: 8px 16px; border-radius: 6px; border: none; background: #00ffcc; color: #000; cursor: pointer; font-weight: bold; }
+        .add-form button:hover { background: #00ddb0; }
+        .list { max-width: 500px; }
+        .person { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; margin-bottom: 8px; border: 1px solid #333; }
+        .person .name { font-weight: bold; }
+        .person .meta { color: #888; font-size: 0.85rem; margin-top: 4px; }
+        .person .btns { display: flex; gap: 8px; }
+        .person button { padding: 6px 12px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; cursor: pointer; font-size: 0.85rem; }
+        .person button.primary { background: #00ffcc; color: #000; border: none; }
+        .person button.danger { background: #444; color: #ff8888; }
+        .person button:hover { opacity: 0.9; }
+        #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+        #modal.visible { display: flex; }
+        #modal video { max-width: 90vw; max-height: 50vh; border: 2px solid #00ffcc; border-radius: 8px; }
+        #modal .msg { color: #aaa; }
+        #modal button { padding: 10px 24px; border-radius: 8px; border: none; background: #00ffcc; color: #000; cursor: pointer; font-weight: bold; }
+        #modal button.secondary { background: #555; color: #fff; }
+        .empty { color: #888; padding: 24px; }
+    </style>
+</head>
+<body>
+    <h1>名前・顔の管理</h1>
+    <p class="sub">パーソナルモードの「名前と顔が一致した場合に有効」用。特定の管理者が登録・更新します。将来 S3 等へ移行可能な構成です。</p>
+
+    <div class="add-form">
+        <input type="text" id="new-name" placeholder="表示名" maxlength="64">
+        <button type="button" id="btn-add">名前を追加</button>
+    </div>
+
+    <div class="list" id="person-list"></div>
+
+    <div id="modal" aria-hidden="true">
+        <p class="msg" id="modal-msg">カメラを起動しています…</p>
+        <video id="modal-video" playsinline autoplay muted style="display:none;"></video>
+        <div id="modal-btns" style="display:none;">
+            <button type="button" id="modal-capture">撮影して登録</button>
+            <button type="button" id="modal-cancel" class="secondary">キャンセル</button>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin + '/api/face_registry';
+        const listEl = document.getElementById('person-list');
+        const newNameInput = document.getElementById('new-name');
+        const btnAdd = document.getElementById('btn-add');
+        const modal = document.getElementById('modal');
+        const modalMsg = document.getElementById('modal-msg');
+        const modalVideo = document.getElementById('modal-video');
+        const modalBtns = document.getElementById('modal-btns');
+        const modalCapture = document.getElementById('modal-capture');
+        const modalCancel = document.getElementById('modal-cancel');
+
+        let currentRegisterId = null;
+        let stream = null;
+
+        modal.classList.remove('visible');
+
+        function setModal(msg, showVideo, showBtns) {
+            modalMsg.textContent = msg || '';
+            modalVideo.style.display = showVideo ? 'block' : 'none';
+            modalBtns.style.display = showBtns ? 'flex' : 'none';
+        }
+
+        async function loadList() {
+            try {
+                const r = await fetch(API);
+                const data = await r.json();
+                const persons = data.persons || [];
+                if (persons.length === 0) {
+                    listEl.innerHTML = '<p class="empty">まだ登録がありません。名前を追加し、各名前に対して「顔を登録」してください。</p>';
+                    return;
+                }
+                listEl.innerHTML = persons.map(p => `
+                    <div class="person" data-id="${p.id}">
+                        <div>
+                            <span class="name">${escapeHtml(p.name)}</span>
+                            <div class="meta">${p.faceData ? '顔登録済み' : '顔未登録'}</div>
+                        </div>
+                        <div class="btns">
+                            <button type="button" class="primary btn-register-face" data-id="${p.id}">顔を登録</button>
+                            <button type="button" class="danger btn-delete" data-id="${p.id}">削除</button>
+                        </div>
+                    </div>
+                `).join('');
+                listEl.querySelectorAll('.btn-register-face').forEach(btn => btn.addEventListener('click', () => openRegisterFace(btn.dataset.id)));
+                listEl.querySelectorAll('.btn-delete').forEach(btn => btn.addEventListener('click', () => deletePerson(btn.dataset.id)));
+            } catch (e) {
+                listEl.innerHTML = '<p class="empty">一覧の取得に失敗しました: ' + escapeHtml(String(e)) + '</p>';
+            }
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+
+        btnAdd.addEventListener('click', async () => {
+            const name = newNameInput.value.trim();
+            if (!name) return;
+            try {
+                const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+                if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+                newNameInput.value = '';
+                await loadList();
+            } catch (e) {
+                alert('追加に失敗しました: ' + e.message);
+            }
+        });
+
+        async function deletePerson(id) {
+            if (!confirm('この登録を削除しますか？')) return;
+            try {
+                const r = await fetch(API + '/' + encodeURIComponent(id), { method: 'DELETE' });
+                if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+                await loadList();
+            } catch (e) {
+                alert('削除に失敗しました: ' + e.message);
+            }
+        }
+
+        function openRegisterFace(personId) {
+            currentRegisterId = personId;
+            modal.classList.add('visible');
+            modal.setAttribute('aria-hidden', 'false');
+            setModal('カメラを起動しています…', false, false);
+            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }).then(s => {
+                stream = s;
+                modalVideo.srcObject = s;
+                modalVideo.style.display = 'block';
+                setModal('顔を正面に向けて「撮影して登録」を押してください。', true, true);
+            }).catch(() => {
+                setModal('カメラにアクセスできませんでした。', false, true);
+            });
+        }
+
+        function closeModal() {
+            modal.classList.remove('visible');
+            modal.setAttribute('aria-hidden', 'true');
+            if (stream) {
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+            }
+            modalVideo.srcObject = null;
+            currentRegisterId = null;
+        }
+
+        modalCancel.addEventListener('click', closeModal);
+
+        modalCapture.addEventListener('click', async () => {
+            if (!currentRegisterId) return;
+            setModal('処理中…', true, false);
+            const video = modalVideo;
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+            let dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            try {
+                const r = await fetch(API + '/' + encodeURIComponent(currentRegisterId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ faceData: dataUrl })
+                });
+                if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+                closeModal();
+                await loadList();
+            } catch (e) {
+                setModal('登録に失敗しました: ' + e.message, true, true);
+            }
+        });
+
+        loadList();
+    </script>
+</body>
+</html>

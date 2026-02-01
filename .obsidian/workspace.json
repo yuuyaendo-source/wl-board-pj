@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/改善指示書6.md",
+                "file": "README.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "改善指示書6"
+              "title": "README"
             }
           }
         ]
@@ -184,5 +184,7 @@
     }
   },
   "active": "1a85c1d507909235",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "docs/開発ドキュメント/全体改善と一般リリース時の問題点.md"
+  ]
 }
