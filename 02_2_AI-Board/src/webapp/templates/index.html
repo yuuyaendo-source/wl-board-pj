@@ -146,16 +146,98 @@
             background: transparent;
         }
 
+        #avatar-container.canvas-ready {
+            pointer-events: auto;
+        }
+
+        /* ドラッグで位置変更（コンテナ上部の広いエリア） */
+        #avatar-drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            cursor: move;
+            pointer-events: auto;
+            z-index: 2;
+            background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, transparent 100%);
+            border-radius: 6px 6px 0 0;
+        }
+
+        #avatar-drag-handle::after {
+            content: '⋮⋮ ドラッグで移動';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255,255,255,0.8);
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        /* 枠のサイズ変更（右下角） */
+        #avatar-resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 28px;
+            height: 28px;
+            cursor: nwse-resize;
+            pointer-events: auto;
+            z-index: 2;
+            background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.45) 50%);
+        }
+
+        #avatar-resize-handle::after {
+            content: '';
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            width: 10px;
+            height: 10px;
+            border-right: 2px solid rgba(255,255,255,0.7);
+            border-bottom: 2px solid rgba(255,255,255,0.7);
+        }
+
+        /* アバターのサイズ変更（左下角） */
+        #avatar-resize-avatar-handle {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 28px;
+            height: 28px;
+            cursor: nesw-resize;
+            pointer-events: auto;
+            z-index: 2;
+            background: linear-gradient(225deg, transparent 50%, rgba(0,0,0,0.45) 50%);
+        }
+
+        #avatar-resize-avatar-handle::after {
+            content: '';
+            position: absolute;
+            bottom: 6px;
+            left: 6px;
+            width: 10px;
+            height: 10px;
+            border-left: 2px solid rgba(255,255,255,0.7);
+            border-bottom: 2px solid rgba(255,255,255,0.7);
+        }
+
         #avatar-container canvas {
             width: 100% !important;
             height: 100% !important;
             display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
         }
 
         #avatar-loading {
             position: absolute;
             inset: 0;
             display: flex;
+            z-index: 1;
             align-items: center;
             justify-content: center;
             font-size: 12px;
@@ -242,6 +324,13 @@
 
         .settings-content.open {
             display: block;
+        }
+
+        .settings-group-label {
+            font-size: 0.75rem;
+            color: #00ffcc;
+            margin: 8px 0 4px 0;
+            padding: 0;
         }
 
         .setting-item {
@@ -380,8 +469,11 @@
         <strong>リン子:</strong> <span id="ai-text">...</span>
     </div>
 
-    <!-- VRMアバター（右下・バストアップ表示） -->
+    <!-- VRMアバター（右下）上バーで移動・右下で枠サイズ・左下でアバターサイズ -->
     <div id="avatar-container">
+        <div id="avatar-drag-handle" title="ドラッグで位置変更"></div>
+        <div id="avatar-resize-handle" title="ドラッグで枠のサイズ変更"></div>
+        <div id="avatar-resize-avatar-handle" title="ドラッグでアバターのサイズ変更"></div>
         <div id="avatar-loading">アバター読み込み中...</div>
     </div>
 
@@ -443,36 +535,59 @@
                 <input type="checkbox" id="avatar-visible-toggle" checked>
             </div>
             <div class="setting-item">
-                <label>Scale</label>
+                <label>アバターのサイズ</label>
                 <input type="range" id="avatar-scale" min="0.1" max="3.0" step="0.1" value="1.0">
             </div>
+            <p class="settings-group-label">アバターの位置・向き（キャラの移動）</p>
             <div class="setting-item">
-                <label>Pos X</label>
-                <input type="range" id="avatar-x" min="-3.0" max="3.0" step="0.1" value="0.0">
+                <label>位置 X</label>
+                <input type="range" id="avatar-x" min="-3.0" max="3.0" step="0.1" value="0.0" title="アバターの左右">
             </div>
             <div class="setting-item">
-                <label>Pos Y</label>
-                <input type="range" id="avatar-y" min="-3.0" max="3.0" step="0.1" value="-1.4">
+                <label>位置 Y</label>
+                <input type="range" id="avatar-y" min="-3.0" max="3.0" step="0.1" value="-1.4" title="アバターの高さ">
             </div>
             <div class="setting-item">
-                <label>Pos Z</label>
-                <input type="range" id="avatar-z" min="-3.0" max="3.0" step="0.1" value="0.0">
+                <label>位置 Z</label>
+                <input type="range" id="avatar-z" min="-3.0" max="3.0" step="0.1" value="0.0" title="アバターの前後">
+            </div>
+            <div class="setting-item">
+                <label>Rot X</label>
+                <input type="range" id="avatar-rot-x" min="-3.14" max="3.14" step="0.1" value="0" title="前後の回転">
             </div>
             <div class="setting-item">
                 <label>Rot Y</label>
                 <input type="range" id="avatar-rot-y" min="-3.14" max="3.14" step="0.1" value="3.14">
             </div>
+            <div class="setting-item">
+                <label>Rot Z</label>
+                <input type="range" id="avatar-rot-z" min="-3.14" max="3.14" step="0.1" value="0">
+            </div>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0;">
+            <p class="settings-group-label">視点（カメラの位置・見る角度）</p>
+            <div class="setting-item">
+                <label>カメラ X</label>
+                <input type="range" id="camera-x" min="-3" max="3" step="0.1" value="0" title="カメラの左右">
+            </div>
+            <div class="setting-item">
+                <label>カメラ Y</label>
+                <input type="range" id="camera-y" min="-2" max="3" step="0.1" value="1.4" title="カメラの高さ（下げると正面寄り）">
+            </div>
+            <div class="setting-item">
+                <label>カメラ Z</label>
+                <input type="range" id="camera-z" min="0.5" max="4" step="0.1" value="1.3" title="カメラの距離（奥行き）">
+            </div>
             <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0;">
             <div class="setting-item">
-                <label>Win Scale</label>
+                <label>枠のサイズ</label>
                 <input type="range" id="win-scale" min="0.5" max="2.0" step="0.1" value="1.0">
             </div>
             <div class="setting-item">
-                <label>Win X</label>
+                <label>枠の位置 X</label>
                 <input type="range" id="win-x" min="-500" max="500" step="10" value="0">
             </div>
             <div class="setting-item">
-                <label>Win Y</label>
+                <label>枠の位置 Y</label>
                 <input type="range" id="win-y" min="-500" max="500" step="10" value="0">
             </div>
             <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.2); margin: 10px 0;">
@@ -589,17 +704,141 @@
         (async function () {
             const container = document.getElementById('avatar-container');
             const loadingEl = document.getElementById('avatar-loading');
+            window.currentMode = 'ai-board';
+            // 他スクリプトより先に届く tracking_data を保持（本実装は後で上書き）
+            window.applyTrackingData = function (data) { if (data && (data.pose || data.face)) window._lastTrackingData = data; };
+
+            // モード別アバター位置・サイズ用の入力参照（先に取得してVRM読込後・モード切替時に適用する）
+            const visibleToggle = document.getElementById('avatar-visible-toggle');
+            const scaleInput = document.getElementById('avatar-scale');
+            const xInput = document.getElementById('avatar-x');
+            const yInput = document.getElementById('avatar-y');
+            const zInput = document.getElementById('avatar-z');
+            const rotXInput = document.getElementById('avatar-rot-x');
+            const rotYInput = document.getElementById('avatar-rot-y');
+            const rotZInput = document.getElementById('avatar-rot-z');
+            const cameraXInput = document.getElementById('camera-x');
+            const cameraYInput = document.getElementById('camera-y');
+            const cameraZInput = document.getElementById('camera-z');
+            const winScaleInput = document.getElementById('win-scale');
+            const winXInput = document.getElementById('win-x');
+            const winYInput = document.getElementById('win-y');
+
+            const AVATAR_MODE_SETTINGS_KEY = 'ai-board-avatar-mode-settings';
+            // サーバーに保存された設定を読み込み（再起動後も維持）
+            try {
+                const r = await fetch('/api/avatar_mode_settings');
+                if (r.ok) {
+                    const data = await r.json();
+                    if (data && (data['ai-board'] || data['reception'] || data['personal'])) {
+                        localStorage.setItem(AVATAR_MODE_SETTINGS_KEY, JSON.stringify(data));
+                    }
+                }
+            } catch (_) {}
+
+            function defaultAvatarSettings() {
+                return { scale: 1.0, x: 0, y: -1.4, z: 0, rotX: 0, rotY: 3.14, rotZ: 0, cameraX: 0, cameraY: 1.4, cameraZ: 1.3, winScale: 1.0, winX: 0, winY: 0 };
+            }
+            function getAvatarModeSettings() {
+                try {
+                    const raw = localStorage.getItem(AVATAR_MODE_SETTINGS_KEY);
+                    if (raw) return JSON.parse(raw);
+                } catch (_) {}
+                return { 'ai-board': defaultAvatarSettings(), 'reception': defaultAvatarSettings(), 'personal': defaultAvatarSettings() };
+            }
+            function saveAvatarModeSettings(all) {
+                try {
+                    localStorage.setItem(AVATAR_MODE_SETTINGS_KEY, JSON.stringify(all));
+                    fetch('/api/avatar_mode_settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(all) }).catch(() => {});
+                } catch (_) {}
+            }
+            function applyAvatarSettingsToVrmAndUI(mode) {
+                const all = getAvatarModeSettings();
+                const s = all[mode] || defaultAvatarSettings();
+                const def = defaultAvatarSettings();
+                const num = (v, fallback) => (typeof v === 'number' && !isNaN(v) ? v : fallback);
+                const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+                // アバターの位置・向き（s.x / s.y / s.z / s.rotX / s.rotY / s.rotZ）
+                const scale = Math.max(0.1, Math.min(3, num(s.scale, def.scale)));
+                const x = clamp(num(s.x, def.x), -3, 3);
+                const y = clamp(num(s.y, def.y), -3, 3);
+                const z = clamp(num(s.z, def.z), -3, 3);
+                const rotX = num(s.rotX, def.rotX);
+                const rotY = num(s.rotY, def.rotY);
+                const rotZ = num(s.rotZ, def.rotZ);
+                // 視点（カメラの位置）は s.cameraX/Y/Z のみ使用（s.x/y/z とは別）
+                let cameraX = clamp(num(s.cameraX, def.cameraX), -3, 3);
+                let cameraY = clamp(num(s.cameraY, def.cameraY), -2, 3);
+                let cameraZ = clamp(num(s.cameraZ, def.cameraZ), 0.5, 4);
+                // 過去に pos と視点が同一保存されていた場合の補正：カメラがアバター位置と一致していたら視点をデフォルトに戻す
+                if (cameraX === x && cameraY === y && cameraZ === z) {
+                    cameraX = def.cameraX; cameraY = def.cameraY; cameraZ = def.cameraZ;
+                }
+                const winScale = Math.max(0.5, Math.min(2, num(s.winScale, def.winScale)));
+                const winX = num(s.winX, def.winX);
+                const winY = num(s.winY, def.winY);
+                if (scaleInput) scaleInput.value = scale;
+                if (xInput) xInput.value = x;
+                if (yInput) yInput.value = y;
+                if (zInput) zInput.value = z;
+                if (rotXInput) rotXInput.value = rotX;
+                if (rotYInput) rotYInput.value = rotY;
+                if (rotZInput) rotZInput.value = rotZ;
+                if (cameraXInput) cameraXInput.value = cameraX;
+                if (cameraYInput) cameraYInput.value = cameraY;
+                if (cameraZInput) cameraZInput.value = cameraZ;
+                if (winScaleInput) winScaleInput.value = winScale;
+                if (winXInput) winXInput.value = winX;
+                if (winYInput) winYInput.value = winY;
+                winState.scale = winScale; winState.x = winX; winState.y = winY;
+                updateWindowTransform();
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.scale.set(scale, scale, scale);
+                    currentVrm.scene.position.set(x, y, z);
+                    currentVrm.scene.rotation.x = rotX;
+                    currentVrm.scene.rotation.y = rotY;
+                    currentVrm.scene.rotation.z = rotZ;
+                }
+                if (window._avatarCameraRef) {
+                    window._avatarCameraRef.position.set(cameraX, cameraY, cameraZ);
+                }
+                if (container) container.style.display = 'block';
+            }
+            function saveCurrentModeAvatarSettings() {
+                const mode = window.currentMode || 'ai-board';
+                const all = getAvatarModeSettings();
+                const cur = all[mode] || defaultAvatarSettings();
+                // アバター: avatar-x/y/z, rot-y/z から取得
+                cur.scale = parseFloat(scaleInput?.value) ?? cur.scale;
+                cur.x = parseFloat(xInput?.value) ?? cur.x;
+                cur.y = parseFloat(yInput?.value) ?? cur.y;
+                cur.z = parseFloat(zInput?.value) ?? cur.z;
+                cur.rotX = (parseFloat(rotXInput?.value) != null && !isNaN(parseFloat(rotXInput.value))) ? parseFloat(rotXInput.value) : cur.rotX;
+                cur.rotY = (parseFloat(rotYInput?.value) != null && !isNaN(parseFloat(rotYInput.value))) ? parseFloat(rotYInput.value) : cur.rotY;
+                cur.rotZ = (parseFloat(rotZInput?.value) != null && !isNaN(parseFloat(rotZInput.value))) ? parseFloat(rotZInput.value) : cur.rotZ;
+                // 視点（カメラ）: camera-x/y/z から取得（pos とは別）
+                cur.cameraX = (parseFloat(cameraXInput?.value) != null && !isNaN(parseFloat(cameraXInput.value))) ? parseFloat(cameraXInput.value) : cur.cameraX;
+                cur.cameraY = (parseFloat(cameraYInput?.value) != null && !isNaN(parseFloat(cameraYInput.value))) ? parseFloat(cameraYInput.value) : cur.cameraY;
+                cur.cameraZ = (parseFloat(cameraZInput?.value) != null && !isNaN(parseFloat(cameraZInput.value))) ? parseFloat(cameraZInput.value) : cur.cameraZ;
+                cur.winScale = (parseFloat(winScaleInput?.value) != null && !isNaN(parseFloat(winScaleInput.value))) ? parseFloat(winScaleInput.value) : cur.winScale;
+                cur.winX = (parseFloat(winXInput?.value) != null && !isNaN(parseFloat(winXInput.value))) ? parseFloat(winXInput.value) : cur.winX;
+                cur.winY = (parseFloat(winYInput?.value) != null && !isNaN(parseFloat(winYInput.value))) ? parseFloat(winYInput.value) : cur.winY;
+                all[mode] = cur;
+                saveAvatarModeSettings(all);
+            }
 
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(30, 280 / 360, 0.1, 20);
             camera.position.set(0, 1.4, 1.3);
-            camera.lookAt(0, 1.4, 0);
+            camera.lookAt(0, -1.4, 0);
+            window._avatarCameraRef = camera;
 
             const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             renderer.setSize(280, 360);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setClearColor(0x000000, 0);
-            container.appendChild(renderer.domElement);
+            // canvas を先頭に挿入して背面に描画（ドラッグ・リサイズハンドルとローディングの下に表示）
+            container.insertBefore(renderer.domElement, container.firstChild);
 
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -639,6 +878,8 @@
                         const names = (em._expressionMap && Object.keys(em._expressionMap)) || (em.expressions && Object.keys(em.expressions)) || [];
                         if (names.length) console.log("VRM expressions:", names);
                     }
+                    if (container) container.classList.add('canvas-ready');
+                    applyAvatarSettingsToVrmAndUI(window.currentMode || 'ai-board');
                 } else {
                     if (loadingEl) loadingEl.textContent = 'アバターの形式を読み取れませんでした';
                 }
@@ -661,17 +902,7 @@
                 });
             }
 
-            // Avatar Controls
-            const visibleToggle = document.getElementById('avatar-visible-toggle');
-            const scaleInput = document.getElementById('avatar-scale');
-            const xInput = document.getElementById('avatar-x');
-            const yInput = document.getElementById('avatar-y');
-            const zInput = document.getElementById('avatar-z');
-            const rotYInput = document.getElementById('avatar-rot-y'); // NEW
-            const winScaleInput = document.getElementById('win-scale'); // NEW
-            const winXInput = document.getElementById('win-x'); // NEW
-            const winYInput = document.getElementById('win-y'); // NEW
-
+            // Avatar Controls（refs は上で取得済み）
             visibleToggle.addEventListener('change', (e) => {
                 const container = document.getElementById('avatar-container');
                 container.style.display = e.target.checked ? 'block' : 'none';
@@ -682,47 +913,137 @@
                     const s = parseFloat(e.target.value);
                     currentVrm.scene.scale.set(s, s, s);
                 }
+                saveCurrentModeAvatarSettings();
             });
 
             xInput.addEventListener('input', (e) => {
                 if (currentVrm && currentVrm.scene) {
                     currentVrm.scene.position.x = parseFloat(e.target.value);
                 }
+                saveCurrentModeAvatarSettings();
             });
 
             yInput.addEventListener('input', (e) => {
                 if (currentVrm && currentVrm.scene) {
                     currentVrm.scene.position.y = parseFloat(e.target.value);
                 }
+                saveCurrentModeAvatarSettings();
             });
 
             zInput.addEventListener('input', (e) => {
                 if (currentVrm && currentVrm.scene) {
                     currentVrm.scene.position.z = parseFloat(e.target.value);
                 }
+                saveCurrentModeAvatarSettings();
             });
 
-            // New Listeners
+            rotXInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.rotation.x = parseFloat(e.target.value);
+                }
+                saveCurrentModeAvatarSettings();
+            });
+
             rotYInput.addEventListener('input', (e) => {
                 if (currentVrm && currentVrm.scene) {
                     currentVrm.scene.rotation.y = parseFloat(e.target.value);
                 }
+                saveCurrentModeAvatarSettings();
             });
+
+            rotZInput.addEventListener('input', (e) => {
+                if (currentVrm && currentVrm.scene) {
+                    currentVrm.scene.rotation.z = parseFloat(e.target.value);
+                }
+                saveCurrentModeAvatarSettings();
+            });
+
+            function updateCameraPosition() {
+                const cam = window._avatarCameraRef;
+                if (!cam || !cameraXInput || !cameraYInput || !cameraZInput) return;
+                const cx = parseFloat(cameraXInput.value);
+                const cy = parseFloat(cameraYInput.value);
+                const cz = parseFloat(cameraZInput.value);
+                cam.position.set(cx, cy, cz);
+            }
+            cameraXInput.addEventListener('input', () => { updateCameraPosition(); saveCurrentModeAvatarSettings(); });
+            cameraYInput.addEventListener('input', () => { updateCameraPosition(); saveCurrentModeAvatarSettings(); });
+            cameraZInput.addEventListener('input', () => { updateCameraPosition(); saveCurrentModeAvatarSettings(); });
 
             winScaleInput.addEventListener('input', (e) => {
                 winState.scale = parseFloat(e.target.value);
                 updateWindowTransform();
+                saveCurrentModeAvatarSettings();
             });
 
             winXInput.addEventListener('input', (e) => {
                 winState.x = parseFloat(e.target.value);
                 updateWindowTransform();
+                saveCurrentModeAvatarSettings();
             });
 
             winYInput.addEventListener('input', (e) => {
                 winState.y = parseFloat(e.target.value);
                 updateWindowTransform();
+                saveCurrentModeAvatarSettings();
             });
+
+            // マウスドラッグで位置・枠サイズ・アバターサイズ
+            (function setupAvatarMouseControl() {
+                const dragHandle = document.getElementById('avatar-drag-handle');
+                const resizeHandle = document.getElementById('avatar-resize-handle');
+                const avatarResizeHandle = document.getElementById('avatar-resize-avatar-handle');
+                if (!dragHandle || !resizeHandle) return;
+                let dragStart = null;
+                let resizeStart = null;
+                let avatarResizeStart = null;
+
+                dragHandle.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    dragStart = { x: e.clientX - winState.x, y: e.clientY - winState.y };
+                });
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    resizeStart = { x: e.clientX, scale: winState.scale };
+                });
+                if (avatarResizeHandle) {
+                    avatarResizeHandle.addEventListener('mousedown', (e) => {
+                        if (e.button !== 0) return;
+                        avatarResizeStart = { x: e.clientX, scale: parseFloat(scaleInput?.value) || 1 };
+                    });
+                }
+
+                document.addEventListener('mousemove', (e) => {
+                    if (dragStart !== null) {
+                        winState.x = e.clientX - dragStart.x;
+                        winState.y = e.clientY - dragStart.y;
+                        updateWindowTransform();
+                        if (winXInput) winXInput.value = Math.round(winState.x);
+                        if (winYInput) winYInput.value = Math.round(winState.y);
+                        saveCurrentModeAvatarSettings();
+                    }
+                    if (resizeStart !== null) {
+                        const dx = e.clientX - resizeStart.x;
+                        const newScale = Math.min(2, Math.max(0.5, resizeStart.scale + dx * 0.01));
+                        winState.scale = newScale;
+                        updateWindowTransform();
+                        if (winScaleInput) winScaleInput.value = Math.round(newScale * 100) / 100;
+                        saveCurrentModeAvatarSettings();
+                    }
+                    if (avatarResizeStart !== null) {
+                        const dx = e.clientX - avatarResizeStart.x;
+                        const newScale = Math.min(3, Math.max(0.1, avatarResizeStart.scale + dx * 0.01));
+                        if (scaleInput) scaleInput.value = Math.round(newScale * 100) / 100;
+                        if (currentVrm && currentVrm.scene) currentVrm.scene.scale.set(newScale, newScale, newScale);
+                        saveCurrentModeAvatarSettings();
+                    }
+                });
+                document.addEventListener('mouseup', () => {
+                    dragStart = null;
+                    resizeStart = null;
+                    avatarResizeStart = null;
+                });
+            })();
 
             // ... (rest of script) ...
 
@@ -755,6 +1076,7 @@
                 window.currentMode = mode;
                 document.body.setAttribute('data-mode', mode);
                 setPersonalPanelVisible(mode === 'personal');
+                applyAvatarSettingsToVrmAndUI(mode);
                 if (mode === 'ai-board') {
                     stopRemoteReceptionMode();
                     setEmote('NEUTRAL');
@@ -1134,7 +1456,9 @@
             let _lastTrackingLog = 0;
             let _lastDataLog = 0;
             function applyTrackingData(data) {
-                if (!currentVrm || window.currentMode !== 'reception') return;
+                const mode = window.currentMode || 'ai-board';
+                if (!currentVrm || mode !== 'reception') return;
+                if (data && (data.pose || data.face)) window._lastTrackingData = data;
 
                 const now = Date.now();
                 if (now - _lastTrackingLog > 3000) {
@@ -1371,10 +1695,12 @@
 
             function animate() {
                 requestAnimationFrame(animate);
+                const mode = window.currentMode || 'ai-board';
 
                 const deltaTime = clock.getDelta();
                 const elapsedTime = clock.elapsedTime;
 
+                try {
                 if (currentVrm) {
                     // Setup LookAt Target if not set
                     if (currentVrm.lookAt && currentVrm.lookAt.target !== lookAtTargetObj) {
@@ -1382,7 +1708,7 @@
                     }
 
                     // 1. Autonomous Motion (Only in AI-Board / Personal Mode)
-                    if (window.currentMode === 'ai-board' || window.currentMode === 'personal') {
+                    if (mode === 'ai-board' || mode === 'personal') {
                         const humanoid = currentVrm.humanoid;
 
                         // A. Breathing & Idle Sway
@@ -1426,7 +1752,7 @@
                     }
 
                     // 2. Blinking Logic (自律まばたきは ai-board / personal のみ；reception はトラッキングで制御)
-                    if (window.currentMode === 'ai-board' || window.currentMode === 'personal') {
+                    if (mode === 'ai-board' || mode === 'personal') {
                         blinkTimer += deltaTime;
                         if (blinkTimer > nextBlinkTime && !isBlinking) {
                             isBlinking = true;
@@ -1462,6 +1788,14 @@
                     }
 
                     currentVrm.update(deltaTime);
+                }
+
+                // Reception: 前回のトラッキングを毎フレーム再適用（update で上書きされる場合の対策）
+                if (mode === 'reception' && window._lastTrackingData && window.applyTrackingData) {
+                    window.applyTrackingData(window._lastTrackingData);
+                }
+                } catch (e) {
+                    console.warn('animate error:', e);
                 }
 
                 renderer.render(scene, camera);

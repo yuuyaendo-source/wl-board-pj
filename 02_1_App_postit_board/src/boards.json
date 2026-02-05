@@ -2,24 +2,14 @@
   "board_20260125": {
     "notes": [
       {
-        "id": "ml2j39d7-zlfiwhpd0",
-        "text": "test",
-        "x": 1766.4375,
-        "y": 1629.8750457763672,
+        "id": "ml90tewl-uljczj3l7",
+        "text": "リン子さんのモーションテスト",
+        "x": 1565.265625,
+        "y": 1656.796875,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "test",
-        "createdAt": 1769877036331
-      },
-      {
-        "id": "ml2j5d6k-k31ttwpgy",
-        "text": "AIボードモードが機能しない",
-        "x": 2065.6666679382324,
-        "y": 1665.8646240234375,
-        "color": "#ffeb3b",
-        "pinned": false,
-        "author": "test",
-        "createdAt": 1769877134588
+        "createdAt": 1770269607093
       }
     ],
     "lines": []

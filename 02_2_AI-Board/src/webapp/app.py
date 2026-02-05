@@ -117,6 +117,46 @@ def manager():
     return render_template('manager.html')
 
 
+# --- アバター・視点のモード別設定（サーバーに保存して再起動後も維持） ---
+AVATAR_MODE_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'avatar_mode_settings.json')
+_avatar_settings_lock = threading.Lock()
+
+
+def _ensure_avatar_data_dir():
+    d = os.path.dirname(AVATAR_MODE_SETTINGS_FILE)
+    os.makedirs(d, exist_ok=True)
+
+
+@app.route('/api/avatar_mode_settings', methods=['GET'])
+def api_avatar_mode_settings_get():
+    """アバター・視点のモード別設定を取得（サーバーに保存されたファイルから）"""
+    try:
+        with _avatar_settings_lock:
+            if not os.path.exists(AVATAR_MODE_SETTINGS_FILE):
+                return jsonify({'error': 'Not found'}), 404
+            with open(AVATAR_MODE_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/avatar_mode_settings', methods=['PUT'])
+def api_avatar_mode_settings_put():
+    """アバター・視点のモード別設定を保存（サーバーにファイルで保存）"""
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({'error': 'JSON body required'}), 400
+        _ensure_avatar_data_dir()
+        with _avatar_settings_lock:
+            with open(AVATAR_MODE_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # --- 顔・名前登録 API（将来 S3 等に差し替え可能なストレージ抽象の上で動作） ---
 
 @app.route('/api/face_registry', methods=['GET'])
