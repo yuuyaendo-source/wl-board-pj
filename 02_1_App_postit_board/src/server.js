@@ -224,6 +224,28 @@ app.prepare().then(() => {
         });
     });
 
+    // REST API: ボードのサマリー取得（デスクトップアプリのポーリング用・新付箋お知らせ連携）
+    server.get('/api/boards/:id/summary', (req, res) => {
+        try {
+            const boardId = req.params.id;
+            if (!boards[boardId]) {
+                return res.status(404).json({ error: `Board ${boardId} not found` });
+            }
+            const notes = boards[boardId].notes || [];
+            const lastNoteAt = notes.length
+                ? Math.max(...notes.map((n) => n.createdAt || 0))
+                : 0;
+            return res.json({
+                boardId,
+                notesCount: notes.length,
+                lastNoteAt,
+            });
+        } catch (error) {
+            console.error('Error getting board summary:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
     // REST API: 外部から付箋を追加するエンドポイント（Python側から呼び出し）
     // AI-Board (sticky_note_detector.py) が検知した付箋を受け取る
     server.post('/api/sticky_notes', (req, res) => {

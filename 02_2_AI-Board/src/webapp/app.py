@@ -111,6 +111,19 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/personal')
+def personal():
+    """個人用パーソナルモード（デスクトップアプリから user 指定でアクセス）。モード切替UIは非表示でパーソナルのみ表示。"""
+    user_id = request.args.get('user', '').strip()
+    return render_template('index.html', personal_only=True, user_id=user_id)
+
+
+@app.route('/asakawa')
+def asakawa():
+    """デモ用: 浅川さんのパーソナルモード（顔検出・任意切替・デスクトップアプリで同じページに統一）。"""
+    return render_template('index.html', personal_only=True, user_id='asakawa')
+
+
 @app.route('/manager')
 def manager():
     """名前・顔の管理画面（特定の人物が利用）"""

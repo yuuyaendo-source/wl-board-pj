@@ -1,0 +1,14 @@
+{
+  "postit_board_id": "board_20260125",
+  "user_id": "hisas",
+  "personal_path": "asakawa",
+  "open_personal_on_start": true,
+  "avatar_visible": false,
+  "sound_enabled": false,
+  "toast_duration_sec": 8,
+  "postit_poll_interval_sec": 60,
+  "tray_click_action": "postit",
+  "toast_icon_path": "",
+  "ai_board_url": "http://127.0.0.1:5000/",
+  "postit_board_url": "http://127.0.0.1:3000/"
+}

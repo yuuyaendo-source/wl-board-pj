@@ -1,0 +1,9 @@
+# Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+# Python 3.10+
+pystray>=0.19.5
+Pillow>=10.0.0
+pywin32>=306
+winotify>=1.1.0
+win10toast-click>=0.1.2
+win10toast>=0.9
+requests>=2.31.0

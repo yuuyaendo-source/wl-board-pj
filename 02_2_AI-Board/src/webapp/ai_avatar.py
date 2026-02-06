@@ -222,7 +222,7 @@ import requests
 import uuid
 
 voicevox_url = os.getenv("VOICEVOX_URL", "http://localhost:50021")
-speaker_id = os.getenv("VOICEVOX_SPEAKER_ID", "3")
+speaker_id = os.getenv("VOICEVOX_SPEAKER_ID", "21")
 
 
 import re

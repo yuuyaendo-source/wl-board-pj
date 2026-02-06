@@ -461,6 +461,9 @@
 </head>
 
 <body data-mode="ai-board">
+    {% if personal_only %}
+    <script>window.PERSONAL_ONLY = true; window.PERSONAL_USER_ID = "{{ user_id | e }}";</script>
+    {% endif %}
     <div id="canvas">
         <!-- Sticky notes will be injected here -->
     </div>
@@ -1191,7 +1194,7 @@
                             const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
                             if (autoPersonalFaceCount >= need) {
                                 stopAutoPersonalDetection();
-                                switchToMode('personal');
+                                window.location.href = '/asakawa';
                             }
                         } else {
                             autoPersonalFaceCount = 0;
@@ -1221,7 +1224,7 @@
                             const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
                             if (autoPersonalFaceCount >= need) {
                                 stopAutoPersonalDetection();
-                                switchToMode('personal');
+                                window.location.href = '/asakawa';
                             }
                         } else {
                             autoPersonalFaceCount = 0;
@@ -1264,7 +1267,7 @@
                                 const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
                                 if (autoPersonalFaceCount >= need) {
                                     stopAutoPersonalDetection();
-                                    switchToMode('personal');
+                                    window.location.href = '/asakawa';
                                 }
                             } else {
                                 autoPersonalFaceCount = 0;
@@ -1315,7 +1318,7 @@
                                 const need = (AUTO_PERSONAL_FACE_SEC * 1000) / AUTO_PERSONAL_POLL_MS;
                                 if (autoPersonalFaceCount >= need) {
                                     stopAutoPersonalDetection();
-                                    switchToMode('personal');
+                                    window.location.href = '/asakawa';
                                 }
                             } else {
                                 autoPersonalFaceCount = 0;
@@ -1655,6 +1658,11 @@
                     const similarity = await simpleImageSimilarity(storedFace, currentFace);
                     if (similarity >= 0.5) {
                         hidePersonalVerifyPanel();
+                        var personName = (select.options[select.selectedIndex] && select.options[select.selectedIndex].textContent) ? select.options[select.selectedIndex].textContent.trim() : '';
+                        if (personName === '浅川') {
+                            window.location.href = '/asakawa';
+                            return;
+                        }
                         switchToMode('personal');
                     } else {
                         msg.textContent = '名前と顔が一致しません。もう一度お試しください。';
@@ -1673,6 +1681,13 @@
                     }
                 });
             });
+
+            // 個人用パーソナルモード（/personal?user=xxx）: モード切替を非表示にしてパーソナルに固定
+            if (window.PERSONAL_ONLY) {
+                var sw = document.getElementById('mode-switcher');
+                if (sw) sw.style.display = 'none';
+                switchToMode('personal');
+            }
 
             // 初期が AI-Board かつ「自動でパーソナルに切替」ON なら検知開始
             if (window.currentMode === 'ai-board' && isAutoPersonalEnabled()) {
