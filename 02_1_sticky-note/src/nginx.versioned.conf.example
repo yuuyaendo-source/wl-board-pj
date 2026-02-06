@@ -1,0 +1,82 @@
+# Nginx 設定例：同一サーバで旧版・新版を併存させる場合（wl-sticky-note）
+# ドメイン: wl-sticky-note.local  /  IP: 172.16.1.81
+# 旧版 v1: ポート80 → localhost:3000
+# 新版 v2: ポート8080 → localhost:3001
+#
+# 配置例: sudo cp nginx.versioned.conf.example /etc/nginx/sites-available/wl-sticky-note-versioned
+#         sudo ln -sf /etc/nginx/sites-available/wl-sticky-note-versioned /etc/nginx/sites-enabled/
+#         sudo nginx -t && sudo systemctl reload nginx
+
+# 旧版（前バージョン）: ポート 80 → 3000
+server {
+    listen 80;
+    server_name wl-sticky-note.local 172.16.1.81;
+
+    access_log /var/log/nginx/wl-sticky-note_v1_access.log;
+    error_log /var/log/nginx/wl-sticky-note_v1_error.log;
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /socket.io/ {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_connect_timeout 7d;
+        proxy_send_timeout 7d;
+        proxy_read_timeout 7d;
+    }
+}
+
+# 新版（新バージョン）: ポート 8080 → 3001
+server {
+    listen 8080;
+    server_name wl-sticky-note.local 172.16.1.81;
+
+    access_log /var/log/nginx/wl-sticky-note_v2_access.log;
+    error_log /var/log/nginx/wl-sticky-note_v2_error.log;
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /socket.io/ {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_connect_timeout 7d;
+        proxy_send_timeout 7d;
+        proxy_read_timeout 7d;
+    }
+}

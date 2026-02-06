@@ -1,9 +1,20 @@
 # -*- coding: utf-8 -*-
 """設定の読み込み（config.json + 環境変数）。"""
 import os
+import sys
 import json
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
+# exe 化（PyInstaller）時は exe と同じフォルダの config.json を読む
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(_BASE_DIR, "config.json")
+
+
+def get_app_base_dir():
+    """アプリのベースディレクトリ（exe 時は exe と同じフォルダ）。config.json・toast_icon の基準に使う。"""
+    return _BASE_DIR
 
 
 def _default_user_id():
@@ -15,7 +26,7 @@ def _get_defaults():
     return {
         "ai_board_url": "http://127.0.0.1:5000/",
         "postit_board_url": "http://127.0.0.1:3000/",
-        "postit_board_id": "board_20260125",  # 付箋ボードのボードID（新付箋お知らせのポーリング先・AI-Board config と揃える）
+        "postit_board_id": "wl",  # 付箋ボードのボードID。本番: http://wl-sticky-note.local/board/wl（AI-Board・Desktop連携先）
         "user_id": _default_user_id(),
         "personal_path": "asakawa",  # デモ用: パーソナルモードのパス（/asakawa でAIボード・デスクトップアプリ同一ページ）
         "open_personal_on_start": False,

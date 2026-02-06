@@ -9,7 +9,7 @@ $scriptPath = $PSScriptRoot
 if (-not $scriptPath) {
     $scriptPath = Get-Location
 }
-$webAppDir = Join-Path $scriptPath "02_1_App_postit_board\src"
+$webAppDir = Join-Path $scriptPath "02_1_sticky-note\src"
 $aiBoardDir = Join-Path $scriptPath "02_2_AI-Board"
 
 # Check paths
@@ -67,8 +67,8 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Servers Startup Complete" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Web App: http://localhost:3000" -ForegroundColor Yellow
-Write-Host "AI-Board:  http://localhost:5000" -ForegroundColor Yellow
+Write-Host "Local:  Web App http://localhost:3000  |  AI-Board http://localhost:5000" -ForegroundColor Yellow
+Write-Host "CATO:   Web App http://172.16.1.251:3000  |  AI-Board http://172.16.1.251:5000" -ForegroundColor Cyan
+Write-Host "  (from CATO-connected PCs, use 172.16.1.251 instead of localhost)" -ForegroundColor Gray
 Write-Host ""
-Write-Host "Each server is running in a separate window." -ForegroundColor Gray
-Write-Host "Press Ctrl+C in each window to stop." -ForegroundColor Gray
+Write-Host "Each server is running in a separate window. Press Ctrl+C in each to stop." -ForegroundColor Gray

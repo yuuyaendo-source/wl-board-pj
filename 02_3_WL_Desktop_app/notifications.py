@@ -34,19 +34,24 @@ def _get_toast_icon_path():
     config の toast_icon_path があればそれを使い、なければデフォルト（トレイと同じデザイン）を生成して返す。
     """
     try:
-        from config_loader import load_config, CONFIG_PATH
+        from config_loader import load_config, get_app_base_dir
         cfg = load_config()
         path = (cfg.get("toast_icon_path") or "").strip()
         if path:
+            base = get_app_base_dir()
             if not os.path.isabs(path):
-                path = os.path.join(os.path.dirname(CONFIG_PATH), path)
+                path = os.path.join(base, path)
             if os.path.isfile(path):
                 return os.path.abspath(path)
         path = ""
     except Exception:
         path = ""
-    # デフォルト: アプリと同じ緑の丸デザインの PNG を生成
-    app_dir = os.path.dirname(os.path.abspath(__file__))
+    # デフォルト: アプリと同じ緑の丸デザインの PNG を生成（exe 時は exe と同じフォルダ）
+    try:
+        from config_loader import get_app_base_dir
+        app_dir = get_app_base_dir()
+    except Exception:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
     default_path = os.path.join(app_dir, "toast_icon.png")
     if not os.path.isfile(default_path):
         try:

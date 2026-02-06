@@ -32,10 +32,35 @@ pip install -r requirements.txt
 python app.py
 ```
 
+## 配布について
+
+**会社ポリシーにより exe の直接実行が不可**なため、配布は次のいずれかとします。
+
+- **MSI 形式（推奨）** … Windows インストーラー（.msi）で配布。多くの企業ポリシーで許可され、インストール・アンインストールが標準で管理できる。`.\build_msi.ps1` でビルド。
+- **フォルダ＋起動手順** … 本フォルダを ZIP で配布し、メンバーに Python 3.10+ と `.\start_app.ps1` での起動を依頼する。
+
+## MSI ビルド（配布用）
+
+```powershell
+cd 02_3_WL_Desktop_app
+.\build_msi.ps1
+```
+
+- 要: Python 3.10+（cx_Freeze を自動インストール）
+- 出力: `dist\WonderRinko.msi`
+- 配布: MSI を渡し、メンバーはダブルクリックでインストール。インストール先の `config.json` はビルド時に同梱したものが使われるため、**ビルド前に本番用の config.json を置いておく**とよい。
+
 ## 設定
 
-- `config.json` … `user_id`、`personal_path`、`postit_board_id`、`postit_poll_interval_sec`、**`tray_click_action`**（トレイアイコンクリックで開く先）、**`toast_icon_path`**（トースト用アイコン。PNG/ICO の絶対パス。空ならデフォルト）、AIボードURL・付箋ボードURL、アバター・音声のON/OFFなど
+- `config.json` … `user_id`、`personal_path`、**`postit_board_id`**（本番: `wl` → 連携先 http://wl-sticky-note.local/board/wl）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL（本番: `http://wl-sticky-note.local/`）、アバター・音声のON/OFFなど
 - 環境変数 `WLINKO_USER_ID` でユーザーIDを指定可能。`AI_BOARD_URL`, `POSTIT_BOARD_URL` でURLを上書き可能（`.env` やシステム環境変数）
+
+## 配布方法
+
+- **MSI** … `.\build_msi.ps1` で `dist\WonderRinko.msi` を生成し配布。メンバーはインストーラーでインストール（Python 不要）。
+- **フォルダ＋起動手順** … 本フォルダを ZIP で配布。メンバーは Python 3.10+ を入れ、`.\start_app.ps1` で起動。本番向けの `config.json` を同梱するとよい。
+
+本番連携（http://wl-sticky-note.local/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
 
 ## 今後の拡張（開発プラン）
 

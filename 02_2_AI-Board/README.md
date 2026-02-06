@@ -191,10 +191,17 @@ python app.py
 | 項目 | 値 |
 |------|-----|
 | AIサーバーURL | http://localhost:5000 |
-| 付箋検知の API 送信先 | http://localhost:3000/api/sticky_notes（02_1 が起動していること） |
-| **Postit連携** | Postit (02_1) で http://localhost:3000 を開き「付箋ボードを開く」→ `board_20260125` を開く。`config.json` の `board_id` と同一にすること。 |
+| 付箋検知の API 送信先 | 開発: http://localhost:3000/api/sticky_notes。本番: `POSTIT_BOARD_URL=http://wl-sticky-note.local` で http://wl-sticky-note.local/api/sticky_notes に送信。 |
+| **Postit連携** | 本番連携先: **http://wl-sticky-note.local/board/wl**。`config.json` の `board_id` を `wl` にし、本番では環境変数 `POSTIT_BOARD_URL=http://wl-sticky-note.local` を設定する。 |
 | デフォルト HSV | H 20–46, S 0–50, V 0–255 |
 | 設定保存 | 付箋検知ウィンドウで `S` → `src/config.json` に保存 |
+
+---
+
+## 開発の進め方
+
+- **本番の sticky-note**（http://wl-sticky-note.local/board/wl）**との連携を確認しながら**開発する。`board_id`: `wl`、`POSTIT_BOARD_URL=http://wl-sticky-note.local` で本番に送信し、付箋・AIコメント連携を検証する。
+- 詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
 
 ---
 

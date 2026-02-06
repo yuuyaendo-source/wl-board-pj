@@ -1,7 +1,7 @@
 {
-  "postit_board_id": "board_20260125",
-  "user_id": "hisas",
-  "personal_path": "asakawa",
+  "postit_board_id": "wl",
+  "user_id": "xxxx",
+  "personal_path": "xxxx",
   "open_personal_on_start": true,
   "avatar_visible": false,
   "sound_enabled": false,
@@ -9,6 +9,6 @@
   "postit_poll_interval_sec": 60,
   "tray_click_action": "postit",
   "toast_icon_path": "",
-  "ai_board_url": "http://127.0.0.1:5000/",
-  "postit_board_url": "http://127.0.0.1:3000/"
+  "ai_board_url": "https://172.16.1.251:5000/",
+  "postit_board_url": "http://wl-sticky-note.local/"
 }

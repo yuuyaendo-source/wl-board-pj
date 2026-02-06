@@ -9,8 +9,9 @@
 | **02_1_App_postit_board** | 付箋掲示用Webアプリ（Next.js + Express + Socket.IO）。ポート3000で動作。AI-Board 連携用ボードへのリンクあり。 |
 | **02_2_AI-Board** | **[メイン]** AI搭載デジタルボード（Flask + Socket.IO）。ポート5000。HTTPS・3モード（AI-Board / Reception / Personal）・受付画面 (`/operator`)・名前・顔管理 (`/manager`) 対応。 |
 | **docs** | 共通ドキュメント。`改善議論.md`（音声・双方向設計）、`改善指示書6.md`（要件一覧）、`次の実装プラン.md`（優先順位）、`レセプション_トラッキング_切り分け.md`、`パーソナル_名前顔管理_設計.md` など。 |
-| **scripts** | `allow_firewall_port_5000.ps1` — 遠隔アクセス用にポート5000をファイアウォールで許可（管理者実行）。 |
-| **start_all_servers.ps1** | 両サーバーを一括起動するPowerShellスクリプト（推奨）。 |
+| **scripts** | `allow_firewall_port_3000.ps1`（付箋ボード）、`allow_firewall_port_5000.ps1`（AI-Board）— CATO/遠隔アクセス用にファイアウォールでポート許可（管理者実行）。 |
+| **start_all_servers.ps1** | 付箋ボード・AI-Board を一括起動。CATO 接続PCからは **http://172.16.1.251:3000** / **http://172.16.1.251:5000** でアクセス可能。 |
+| **docs/開発ドキュメント/開発環境_CATO.md** | CATO ネットワークでの開発環境（localhost = 172.16.1.251）の説明。 |
 
 ---
 

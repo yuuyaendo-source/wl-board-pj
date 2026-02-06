@@ -39,21 +39,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from sticky_note_detector import StickyNoteDetector
 import face_registry_storage as face_registry
 
-# 設定
-# BOARD_APP_URL = "http://localhost:3000"
-BOARD_APP_URL = "http://127.0.0.1:3000" # Pythonからのリクエスト用にIP指定に変更
+# 設定: 付箋ボード連携先。本番: POSTIT_BOARD_URL=http://wl-sticky-note.local
+BOARD_APP_URL = os.environ.get("POSTIT_BOARD_URL", "http://127.0.0.1:3000").strip().rstrip("/")
 
-# config.jsonから設定を読み込む
-# ボードIDを共有することで、Webアプリ上の正しいボードに付箋を送信できるようにする
+# config.jsonから設定を読み込む（board_id: 本番は wl → http://wl-sticky-note.local/board/wl）
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
 try:
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         config = json.load(f)
-        ACTIVE_BOARD_ID = config.get('board_id', 'odgeqgf')
+        ACTIVE_BOARD_ID = config.get('board_id', 'wl')
         print(f"Loaded board ID from config: {ACTIVE_BOARD_ID}")
 except Exception as e:
     print(f"Failed to load config.json: {e}")
-    ACTIVE_BOARD_ID = "odgeqgf"  # デフォルト値
+    ACTIVE_BOARD_ID = "wl"  # デフォルト（本番連携先）
 
 
 # Flaskアプリの初期化

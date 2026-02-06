@@ -42,6 +42,7 @@ def start_postit_poll(config_getter, on_new_notes):
     def poll_loop():
         last_notes_count = None
         last_note_at = None
+        first_poll = True
         while True:
             raw = config_getter().get("postit_poll_interval_sec")
             interval = int(raw) if raw is not None else 60
@@ -49,7 +50,10 @@ def start_postit_poll(config_getter, on_new_notes):
                 time.sleep(60)
                 continue
             interval = max(10, interval)  # 最低10秒で過負荷を防ぐ
-            time.sleep(interval)
+            # 初回は即ポーリングして現状を把握し、2回目以降は interval ごとにポーリング
+            if not first_poll:
+                time.sleep(interval)
+            first_poll = False
             cfg = config_getter()
             url = cfg.get("postit_board_url")
             board_id = (cfg.get("postit_board_id") or "").strip()

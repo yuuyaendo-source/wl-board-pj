@@ -88,7 +88,9 @@ class StickyNoteDetector:
         if env_min and env_min.isdigit():
             self.min_area = int(env_min)
 
-        self.WEB_APP_API_URL = "http://localhost:3000/api/sticky_notes"
+        # 本番: POSTIT_BOARD_URL=http://wl-sticky-note.local で連携先を指定
+        _base = os.environ.get("POSTIT_BOARD_URL", "http://localhost:3000").strip().rstrip("/")
+        self.WEB_APP_API_URL = f"{_base}/api/sticky_notes"
         self.TEMP_DIR = "temp_captures"
         
         self.tracked_notes = [] # TrackedNoteのリスト
@@ -146,7 +148,7 @@ class StickyNoteDetector:
 
     def set_default_config(self):
         """デフォルト設定を適用"""
-        self.BOARD_ID = "default_board"
+        self.BOARD_ID = "wl"  # 本番連携先: http://wl-sticky-note.local/board/wl
         self.h_min, self.h_max = 20, 46
         self.s_min, self.s_max = 0, 50
         self.v_min, self.v_max = 0, 255
