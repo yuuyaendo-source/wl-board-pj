@@ -1,33 +1,42 @@
+/* メニューバー: 縦幅を狭く・横幅を広く（付箋作成は横書きでコンパクトに） */
 .toolbar {
     position: fixed;
-    bottom: 20px;
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
     background: white;
-    padding: 10px 20px;
-    border-radius: 50px;
+    padding: 5px 28px;
+    min-width: 560px;
+    border-radius: 24px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     z-index: 100;
 }
 
 .group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
+/* 付箋作成: 横書きで1行表示（縦書きにならないように） */
 .addButton {
     background: var(--primary, #79dc89);
     color: white;
     border: none;
-    padding: 8px 16px;
-    border-radius: 20px;
+    padding: 6px 16px;
+    min-height: 32px;
+    min-width: 5em;
+    border-radius: 16px;
     font-weight: bold;
+    font-size: 0.95rem;
     cursor: pointer;
     transition: transform 0.1s;
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    white-space: nowrap;
 }
 
 .addButton:active {
@@ -35,8 +44,10 @@
 }
 
 .colorBtn {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
     border-radius: 50%;
     border: 2px solid #ddd;
     cursor: pointer;
@@ -48,8 +59,99 @@
     transform: scale(1.1);
 }
 
+/* テキストボタン: クリック範囲を広く */
+.textBtn {
+    padding: 10px 14px;
+    min-height: 36px;
+    min-width: 44px;
+    border: none;
+    border-radius: 12px;
+    background: #f0f0f0;
+    color: #333;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.textBtn:hover {
+    background: #e0e0e0;
+}
+
+.textBtn:active {
+    transform: scale(0.97);
+}
+
+.textBtn.delete {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.textBtn.delete:hover {
+    background: #ffcdd2;
+}
+
+/* 機能アイコン: クリックしやすい大きさ */
+.iconBtnWrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iconBtn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 12px;
+    background: #f0f0f0;
+    color: #333;
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.iconBtn:hover {
+    background: #e0e0e0;
+}
+
+.iconBtn:active {
+    transform: scale(0.95);
+}
+
+.iconBtn.delete {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.iconBtn.delete:hover {
+    background: #ffcdd2;
+}
+
+/* ホバーで半透明バックのテキストを表示 */
+.iconBtnWrap[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-6px);
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #fff;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 200;
+}
+
 .divider {
     width: 1px;
-    height: 24px;
+    height: 22px;
     background: #eee;
 }

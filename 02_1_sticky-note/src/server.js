@@ -50,6 +50,10 @@ app.prepare().then(() => {
     if (fs.existsSync(DATA_FILE)) {
         try {
             boards = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            // 既存ボードに name が無い場合は空文字を補完（ボード名保存対応）
+            for (const id of Object.keys(boards)) {
+                if (boards[id].name === undefined) boards[id].name = '';
+            }
         } catch (e) {
             console.error('Error loading boards:', e);
         }
@@ -83,11 +87,20 @@ app.prepare().then(() => {
             console.log(`Socket ${socket.id} joined board ${boardId}`);
 
             if (!boards[boardId]) {
-                boards[boardId] = { notes: [], lines: [] };
+                boards[boardId] = { notes: [], lines: [], name: '' };
                 saveBoards();
             }
 
             socket.emit('init-board', boards[boardId]);
+        });
+
+        // ボード名の変更（保存して参加者に配信）
+        socket.on('board-set-name', ({ boardId, name }) => {
+            if (!boards[boardId]) return;
+            const trimmed = (name || '').toString().trim().slice(0, 200);
+            boards[boardId].name = trimmed;
+            saveBoards();
+            io.to(boardId).emit('board-name-updated', { name: trimmed });
         });
 
         // ユーザー参加通知
@@ -222,6 +235,11 @@ app.prepare().then(() => {
                 }
             });
         });
+    });
+
+    // REST API: 死活確認（本番で /api/boards/wl/summary が 404 のとき、server.js が動いているか切り分け用）
+    server.get('/api/health', (req, res) => {
+        res.json({ ok: true, message: 'Express API is running' });
     });
 
     // REST API: ボードのサマリー取得（デスクトップアプリのポーリング用・新付箋お知らせ連携）

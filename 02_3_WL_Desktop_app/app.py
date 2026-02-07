@@ -4,6 +4,7 @@ Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
 社員PCに常駐し、お知らせとワンクリックDeep Linkで各ユーザーのパーソナルモードへ誘導する。
 """
 import sys
+import threading
 import warnings
 import webbrowser
 from urllib.parse import quote_plus
@@ -16,7 +17,7 @@ from PIL import Image, ImageDraw
 
 from config_loader import load_config, save_config
 import notifications
-from postit_poll import start_postit_poll
+from postit_poll import start_postit_poll, fetch_summary_with_error
 
 
 # メニューから参照するためグローバルに設定を保持
@@ -115,6 +116,36 @@ def quit_app(icon, item):
     icon.stop()
 
 
+def _test_postit_connection(*args):
+    """付箋ボードへの接続をテストし、結果をトーストで表示。"""
+    def do_test():
+        cfg = load_config()
+        url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
+        board_id = (cfg.get("postit_board_id") or "").strip()
+        if not url or not board_id:
+            notifications.show_toast(
+                "付箋ボード接続テスト",
+                "config.json の postit_board_url と postit_board_id を設定してください。",
+                duration_sec=5,
+            )
+            return
+        summary, err = fetch_summary_with_error(url, board_id)
+        if err:
+            notifications.show_toast(
+                "付箋ボード接続テスト",
+                "接続できません: " + err,
+                duration_sec=8,
+            )
+        else:
+            n = summary.get("notesCount", 0)
+            notifications.show_toast(
+                "付箋ボード接続テスト",
+                f"接続できました。付箋 {n} 件（通知は約1分間隔でチェックしています）",
+                duration_sec=5,
+            )
+    threading.Thread(target=do_test, daemon=True).start()
+
+
 def _set_tray_click_action(action):
     """トレイアイコンクリックで開く先を設定して保存。"""
     global _config
@@ -148,6 +179,7 @@ def build_menu(icon):
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("パーソナルモードを開く", open_personal_mode),
         pystray.MenuItem("最後のお知らせを開く", open_last_notification, enabled=True),
+        pystray.MenuItem("付箋ボード接続テスト", _test_postit_connection),
         pystray.MenuItem("テストお知らせ（付箋ボードURL付き）", lambda *_: notifications.show_toast(
             "テスト", "新しい付箋が投稿されました。", url=_config.get("postit_board_url"), duration_sec=5
         )),

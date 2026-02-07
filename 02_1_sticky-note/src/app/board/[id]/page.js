@@ -9,7 +9,6 @@ import Toolbar from "@/components/Toolbar";
 import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
-import ParticipantsList from "@/components/ParticipantsList";
 
 // 開発: localhost / 本番: wl-sticky-note.local または 172.16.1.81（同一オリジンなら空でOK）
 const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
@@ -32,8 +31,10 @@ export default function BoardPage() {
     const [showUserDialog, setShowUserDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [participants, setParticipants] = useState([]);
-    const [showParticipantsList, setShowParticipantsList] = useState(false);
     const boardContainerRef = useRef(null);
+    const nameSaveTimeoutRef = useRef(null);
+    const boardIdRef = useRef(boardId);
+    boardIdRef.current = boardId;
 
     useEffect(() => {
         if (!boardId) return;
@@ -69,6 +70,11 @@ export default function BoardPage() {
         socket.on("init-board", (data) => {
             setNotes(data.notes || []);
             setLines(data.lines || []);
+            setTitle((data.name !== undefined && data.name !== null) ? String(data.name) : "");
+        });
+
+        socket.on("board-name-updated", ({ name }) => {
+            setTitle(name != null ? String(name) : "");
         });
 
         socket.on("note-added", (note) => {
@@ -122,6 +128,7 @@ export default function BoardPage() {
 
         return () => {
             socket.off("init-board");
+            socket.off("board-name-updated");
             socket.off("note-added");
             socket.off("note-updated");
             socket.off("note-deleted");
@@ -282,23 +289,9 @@ export default function BoardPage() {
     };
 
     const deleteNote = (noteId) => {
-        // 論理削除: ゴミ箱エリアに移動し色を変更
-        const noteToDelete = notes.find(n => n.id === noteId);
-        if (!noteToDelete) return;
-
-        const offset = Math.random() * 20 - 10;
-        const trashNote = {
-            ...noteToDelete,
-            color: TRASH_COLOR,
-            groupId: 'trash',
-            x: TRASH_AREA.x + offset,
-            y: TRASH_AREA.y + offset,
-            pinned: false // ピン留め解除
-        };
-
-        // 楽観的更新
-        setNotes((prev) => prev.map(n => n.id === noteId ? trashNote : n));
-        socket.emit("update-note", { boardId, note: trashNote });
+        // ボードから付箋を削除（右下への移動ではなく削除）
+        setNotes((prev) => prev.filter((n) => n.id !== noteId));
+        socket.emit("delete-note", { boardId, noteId });
     };
 
     const handleDownload = () => {
@@ -517,7 +510,25 @@ export default function BoardPage() {
                 <input
                     type="text"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => {
+                        const v = e.target.value;
+                        setTitle(v);
+                        if (nameSaveTimeoutRef.current) clearTimeout(nameSaveTimeoutRef.current);
+                        nameSaveTimeoutRef.current = setTimeout(() => {
+                            if (socket && boardIdRef.current) {
+                                socket.emit("board-set-name", { boardId: boardIdRef.current, name: v });
+                            }
+                        }, 600);
+                    }}
+                    onBlur={() => {
+                        if (nameSaveTimeoutRef.current) {
+                            clearTimeout(nameSaveTimeoutRef.current);
+                            nameSaveTimeoutRef.current = null;
+                        }
+                        if (socket && boardIdRef.current) {
+                            socket.emit("board-set-name", { boardId: boardIdRef.current, name: title });
+                        }
+                    }}
                     placeholder="ボードタイトルを入力..."
                     className={styles.titleInput}
                 />
@@ -536,7 +547,6 @@ export default function BoardPage() {
                 onUpload={handleUpload}
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
                 onCenter={handleCenter}
-                onToggleParticipants={() => setShowParticipantsList(!showParticipantsList)}
                 onClearAllNotes={handleClearAllNotes}
             />
 
@@ -558,13 +568,6 @@ export default function BoardPage() {
                     onGroupNotes={handleGroupNotes}
                     onUngroupNotes={handleUngroupNotes}
                     onClose={() => setShowCommentPanel(false)}
-                />
-            )}
-
-            {showParticipantsList && (
-                <ParticipantsList
-                    participants={participants}
-                    onClose={() => setShowParticipantsList(false)}
                 />
             )}
 

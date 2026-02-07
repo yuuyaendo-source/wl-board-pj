@@ -33,6 +33,27 @@ def fetch_summary(postit_board_url, board_id):
     return None
 
 
+def fetch_summary_with_error(postit_board_url, board_id):
+    """
+    付箋ボードのサマリーを取得。戻り値は (summary_dict or None, error_message or None)。
+    接続テスト用。失敗時は理由を返す。
+    """
+    url = _postit_summary_url(postit_board_url, board_id)
+    try:
+        r = requests.get(url, timeout=POLL_TIMEOUT_SEC)
+        if r.status_code == 200:
+            return r.json(), None
+        if r.status_code == 404:
+            return None, "ボードが見つかりません(404)。board_id を確認してください。"
+        return None, f"HTTP {r.status_code}"
+    except requests.exceptions.Timeout:
+        return None, "タイムアウト。URL・ネットワークを確認してください。"
+    except requests.exceptions.ConnectionError as e:
+        return None, "接続できません。wl-sticky-note.local に到達できるか確認してください。"
+    except Exception as e:
+        return None, str(e) or "不明なエラー"
+
+
 def start_postit_poll(config_getter, on_new_notes):
     """
     付箋ボードをポーリングするスレッドを開始する（daemon）。
