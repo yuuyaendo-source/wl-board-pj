@@ -1,0 +1,14 @@
+{
+  "postit_board_id": "wl",
+  "postit_board_url": "http://wl-sticky-note.local/",
+  "ai_board_url": "https://172.16.1.251:5000/",
+  "user_id": "xxxx",
+  "personal_path": "asakawa",
+  "open_personal_on_start": true,
+  "avatar_visible": false,
+  "sound_enabled": false,
+  "toast_duration_sec": 8,
+  "postit_poll_interval_sec": 60,
+  "tray_click_action": "postit",
+  "toast_icon_path": ""
+}
