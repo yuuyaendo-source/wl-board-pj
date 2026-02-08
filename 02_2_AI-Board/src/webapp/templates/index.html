@@ -1852,11 +1852,26 @@
         })();
     </script>
     <script>
-        const socket = io();
+        // 付箋・AIコメントはSocket経由で届く。接続に失敗すると表示もリン子の反応もなし
+        const socket = io(window.location.origin, {
+            path: '/socket.io',
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 20,
+            reconnectionDelay: 1000
+        });
         const canvas = document.getElementById('canvas');
         const aiChatBox = document.getElementById('ai-chat-box');
         const aiText = document.getElementById('ai-text');
         const unmuteBtn = document.getElementById('unmute-btn');
+        const onlineStatusEl = document.querySelector('#branding .online-status');
+        function setSocketStatus(ok) {
+            if (onlineStatusEl) {
+                onlineStatusEl.textContent = ok ? 'Socket接続済 | ' : 'Socket未接続 | ';
+                onlineStatusEl.style.color = ok ? '#0f0' : '#f80';
+            }
+        }
+        setSocketStatus(false);
 
         // Unmute logic
         unmuteBtn.addEventListener('click', () => {
@@ -1867,7 +1882,16 @@
         });
 
         socket.on('connect', () => {
-            console.log('Connected to server');
+            console.log('Socket connected to server');
+            setSocketStatus(true);
+        });
+        socket.on('connect_error', (err) => {
+            console.error('Socket connect_error:', err.message);
+            setSocketStatus(false);
+        });
+        socket.on('disconnect', (reason) => {
+            console.warn('Socket disconnected:', reason);
+            setSocketStatus(false);
         });
 
         socket.on('new_note', (data) => {

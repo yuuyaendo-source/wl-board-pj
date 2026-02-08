@@ -2,6 +2,8 @@
 // Next.js + Express + Socket.IO を組み合わせたWebアプリケーションサーバー
 // 役割: フロントエンドの配信、Socket.IOによるリアルタイム通信、APIエンドポイントの提供
 
+require('dotenv').config(); // PM2 起動時も .env を読み込む（AI_BOARD_URL, AI_BOARD_INSECURE_SSL 等）
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -9,13 +11,15 @@ const next = require('next');
 const fs = require('fs');
 const path = require('path');
 
-// AI-Board 連携先（本番: AI_BOARD_URL に AI-Board の URL を設定。例: http://172.16.1.251:5000）
+// AI-Board 連携先（本番: .env に AI_BOARD_URL を設定。HTTPS の場合は https://172.16.1.251:5000）
 const AI_BOARD_BASE = (process.env.AI_BOARD_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
-// 付箋追加時に AI-Board へ通知するボードID（カンマ区切り。本番連携先: wl → http://wl-sticky-note.local/board/wl）
+// 付箋追加時に AI-Board へ通知するボードID（カンマ区切り。本番連携先: wl）
 const AI_BOARD_LINK_BOARD_IDS = (process.env.AI_BOARD_LINK_BOARD_IDS || 'wl').split(',').map(s => s.trim()).filter(Boolean);
-if (process.env.NODE_ENV !== 'production') {
+// AI-Board が自己証明書（HTTPS）のときは付箋ボードから fetch が失敗するため、明示的に許可する
+if (process.env.NODE_ENV !== 'production' || process.env.AI_BOARD_INSECURE_SSL === '1') {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 }
+console.log('AI-Board URL:', AI_BOARD_BASE, '(INSECURE_SSL=', process.env.AI_BOARD_INSECURE_SSL === '1', ')');
 
 // 開発環境かどうかの判定
 const dev = process.env.NODE_ENV !== 'production';

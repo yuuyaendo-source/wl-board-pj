@@ -207,6 +207,7 @@ python app.py
 
 ## 既知の制限・注意
 
+- **付箋・リン子が反応しない場合**: 付箋とAIコメントは **Socket.IO** でブラウザに届きます。AI-Board の画面（同じURLで開いたブラウザタブ）が **Socket接続済** である必要があります。画面下部の「Socket接続済」が緑で出ていれば受信できます。「Socket未接続」のときは、ブラウザのコンソール（F12）で `connect_error` が出ていないか確認し、AI-Board サーバの URL で開き直してください。付箋ボード側の `AI_BOARD_URL` は、その AI-Board サーバの URL（例: `http://172.16.1.251:5000`）にすること。
 - **RTSP 401 Unauthorized**: URL にユーザー名・パスワードを含める（`rtsp://user:pass@host:port/path`）。
 - **Stream timeout**: ネットワーク遅延やカメラ側の応答が遅いと 30 秒程度でタイムアウトすることがある。接続後は `CAP_PROP_OPEN_TIMEOUT_MSEC` を 60 秒に延長する処理を入れているが、読み取り側のタイムアウトは環境により変動する。
 - **google-genai**: Python 3.14 や一部環境では未対応のため、その場合は `google-generativeai` にフォールバックし、FutureWarning が表示される。

@@ -256,6 +256,7 @@ def upload_file():
         file.save(filepath)
         
         # AI-Boardクライアントに通知（画像表示用）
+        print(f"Emitting new_note to clients: filename={file.filename}", flush=True)
         socketio.emit('new_note', {
             'filename': file.filename,
             'x': x,
@@ -314,7 +315,7 @@ def upload_file():
             print(f"Audio Filename: {audio_filename}", flush=True)
             audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
             
-            print(f"Emitting ai_comment with Audio URL: {audio_url}", flush=True)
+            print(f"Emitting ai_comment to clients (upload flow), audio_url={audio_url}", flush=True)
             socketio.emit('ai_comment', {
                 'comment': comment,
                 'audio_url': audio_url
@@ -365,7 +366,8 @@ def receive_note():
         audio_filename = ai_avatar.generate_voice(comment, VOICE_FOLDER)
         audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
         
-        # フロントエンドに通知（音声再生用）
+        # フロントエンドに通知（音声再生用・リン子の反応）
+        print(f"Emitting ai_comment to clients (comment len={len(comment)})", flush=True)
         socketio.emit('ai_comment', {
             'comment': comment,
             'audio_url': audio_url
@@ -373,7 +375,8 @@ def receive_note():
         
     socketio.start_background_task(generate_and_notify)
     
-    # AI-Boardフロントエンドに付箋表示を通知
+    # AI-Boardフロントエンドに付箋表示を通知（付箋ボード連携・カメラ経由の付箋）
+    print(f"Emitting new_text_note to clients: id={note_id}, text={(text or '')[:50]}...", flush=True)
     socketio.emit('new_text_note', {
         'id': note_id,
         'text': text,
