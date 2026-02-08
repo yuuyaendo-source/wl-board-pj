@@ -53,6 +53,7 @@ except Exception as e:
     print(f"Failed to load config.json: {e}")
     ACTIVE_BOARD_ID = "wl"  # デフォルト（本番連携先）
 
+print(f"Postit board: {BOARD_APP_URL} (board_id={ACTIVE_BOARD_ID})", flush=True)
 
 # Flaskアプリの初期化
 app = Flask(__name__)

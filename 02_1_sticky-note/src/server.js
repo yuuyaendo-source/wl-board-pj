@@ -9,8 +9,10 @@ const next = require('next');
 const fs = require('fs');
 const path = require('path');
 
-// AI-Board が HTTPS で動作している場合の接続先（自己証明書を許可するのは開発時のみ）
-const AI_BOARD_BASE = process.env.AI_BOARD_URL || 'https://127.0.0.1:5000';
+// AI-Board 連携先（本番: AI_BOARD_URL に AI-Board の URL を設定。例: http://172.16.1.251:5000）
+const AI_BOARD_BASE = (process.env.AI_BOARD_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+// 付箋追加時に AI-Board へ通知するボードID（カンマ区切り。本番連携先: wl → http://wl-sticky-note.local/board/wl）
+const AI_BOARD_LINK_BOARD_IDS = (process.env.AI_BOARD_LINK_BOARD_IDS || 'wl').split(',').map(s => s.trim()).filter(Boolean);
 if (process.env.NODE_ENV !== 'production') {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 }
@@ -136,6 +138,23 @@ app.prepare().then(() => {
                 boards[boardId].notes.push(note);
                 io.to(boardId).emit('note-added', note);
                 saveBoards();
+
+                // 連携ボード（例: wl）で追加された付箋を AI-Board に通知（Web で追加→AI表示・AIコメント）
+                if (AI_BOARD_LINK_BOARD_IDS.includes(boardId) && note.author && note.author !== 'Real Cam') {
+                    try {
+                        fetch(`${AI_BOARD_BASE}/api/receive_note`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                id: note.id,
+                                text: note.text || '',
+                                author: note.author || 'Unknown'
+                            })
+                        }).catch(err => console.error('Failed to notify AI-Board (add-note):', err.message));
+                    } catch (e) {
+                        console.error('Error notifying AI-Board (add-note):', e);
+                    }
+                }
             }
         });
 

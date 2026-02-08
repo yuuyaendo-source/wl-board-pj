@@ -54,15 +54,28 @@ def fetch_summary_with_error(postit_board_url, board_id):
         return None, str(e) or "不明なエラー"
 
 
+def _get_poll_board_ids(cfg):
+    """
+    監視するボードIDのリストを返す。
+    postit_board_ids が非空リストならそれを使い、否则は postit_board_id のみのリスト。
+    """
+    ids = cfg.get("postit_board_ids")
+    if ids and isinstance(ids, list):
+        return [str(bid).strip() for bid in ids if str(bid).strip()]
+    single = (cfg.get("postit_board_id") or "").strip()
+    return [single] if single else []
+
+
 def start_postit_poll(config_getter, on_new_notes):
     """
     付箋ボードをポーリングするスレッドを開始する（daemon）。
+    複数ボードIDを監視し、いずれかに新付箋があれば on_new_notes を呼ぶ。
     config_getter: 現在の設定 dict を返す関数（例: lambda: _config）
     on_new_notes: 新付箋検知時に呼ぶ関数 (summary_dict, board_open_url) => None
     """
     def poll_loop():
-        last_notes_count = None
-        last_note_at = None
+        # ボードIDごとに前回の notesCount / lastNoteAt を保持
+        last_per_board = {}
         first_poll = True
         while True:
             raw = config_getter().get("postit_poll_interval_sec")
@@ -71,28 +84,29 @@ def start_postit_poll(config_getter, on_new_notes):
                 time.sleep(60)
                 continue
             interval = max(10, interval)  # 最低10秒で過負荷を防ぐ
-            # 初回は即ポーリングして現状を把握し、2回目以降は interval ごとにポーリング
             if not first_poll:
                 time.sleep(interval)
             first_poll = False
             cfg = config_getter()
-            url = cfg.get("postit_board_url")
-            board_id = (cfg.get("postit_board_id") or "").strip()
-            if not url or not board_id:
+            url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
+            board_ids = _get_poll_board_ids(cfg)
+            if not url or not board_ids:
                 continue
-            summary = fetch_summary(url, board_id)
-            if not summary:
-                continue
-            notes_count = summary.get("notesCount", 0)
-            note_at = summary.get("lastNoteAt", 0)
-            if last_notes_count is not None and (notes_count > last_notes_count or note_at > (last_note_at or 0)):
-                board_open_url = _postit_board_open_url(url, board_id)
-                try:
-                    on_new_notes(summary, board_open_url)
-                except Exception:
-                    pass
-            last_notes_count = notes_count
-            last_note_at = note_at if note_at else last_note_at
+            for board_id in board_ids:
+                summary = fetch_summary(url, board_id)
+                if not summary:
+                    continue
+                notes_count = summary.get("notesCount", 0)
+                note_at = summary.get("lastNoteAt", 0)
+                prev = last_per_board.get(board_id, (None, None))
+                last_count, last_at = prev
+                if last_count is not None and (notes_count > last_count or note_at > (last_at or 0)):
+                    board_open_url = _postit_board_open_url(url, board_id)
+                    try:
+                        on_new_notes(summary, board_open_url)
+                    except Exception:
+                        pass
+                last_per_board[board_id] = (notes_count, note_at if note_at else last_at)
 
     t = threading.Thread(target=poll_loop, daemon=True)
     t.start()

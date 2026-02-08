@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw
 from config_loader import load_config, save_config
 import notifications
 from postit_poll import start_postit_poll, fetch_summary_with_error
+import startup
 
 
 # メニューから参照するためグローバルに設定を保持
@@ -111,6 +112,24 @@ def toggle_sound(icon, item):
     )
 
 
+def toggle_startup(icon, item):
+    """PC起動時に自動で起動するかどうかをトグル。"""
+    if sys.platform != "win32":
+        notifications.show_toast("Wonder Rinko", "Windows のみ対応しています。", duration_sec=3)
+        return
+    currently = startup.is_startup_enabled()
+    ok = startup.set_startup_enabled(not currently)
+    if ok:
+        enabled = startup.is_startup_enabled()
+        notifications.show_toast(
+            "Wonder Rinko",
+            "PC起動時に自動で起動: " + ("ON" if enabled else "OFF"),
+            duration_sec=3,
+        )
+    else:
+        notifications.show_toast("Wonder Rinko", "設定の変更に失敗しました。", duration_sec=3)
+
+
 def quit_app(icon, item):
     """終了。"""
     icon.stop()
@@ -186,6 +205,7 @@ def build_menu(icon):
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("アバターを表示", toggle_avatar, checked=lambda *_: _config.get("avatar_visible", True)),
         pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
+        pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("終了", quit_app),
     )

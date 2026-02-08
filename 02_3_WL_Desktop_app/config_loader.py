@@ -26,7 +26,8 @@ def _get_defaults():
     return {
         "ai_board_url": "http://127.0.0.1:5000/",
         "postit_board_url": "http://127.0.0.1:3000/",
-        "postit_board_id": "wl",  # 付箋ボードのボードID。本番: http://wl-sticky-note.local/board/wl（AI-Board・Desktop連携先）
+        "postit_board_id": "wl",  # トレイクリックで開くデフォルトボード。本番: wl（AI-Board連携先）
+        "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
         "personal_path": "asakawa",  # デモ用: パーソナルモードのパス（/asakawa でAIボード・デスクトップアプリ同一ページ）
         "open_personal_on_start": False,
@@ -65,6 +66,8 @@ def save_config(cfg):
     out["user_id"] = cfg.get("user_id", defaults["user_id"])
     out["personal_path"] = cfg.get("personal_path", defaults.get("personal_path", ""))
     out["postit_board_id"] = cfg.get("postit_board_id", defaults.get("postit_board_id", ""))
+    if cfg.get("postit_board_ids") is not None:
+        out["postit_board_ids"] = cfg.get("postit_board_ids")
     out["postit_poll_interval_sec"] = cfg.get("postit_poll_interval_sec", defaults.get("postit_poll_interval_sec", 60))
     out["tray_click_action"] = cfg.get("tray_click_action", defaults.get("tray_click_action", "postit"))
     out["toast_icon_path"] = cfg.get("toast_icon_path", defaults.get("toast_icon_path", ""))

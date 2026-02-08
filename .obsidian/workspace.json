@@ -8,35 +8,20 @@
         "type": "tabs",
         "children": [
           {
-            "id": "3ac167f786d7d63f",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "DT_APP開発プラン_20260205"
-            }
-          },
-          {
             "id": "b76b697941adbaec",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_1_sticky-note/docs/本番連携の整理.md",
+                "file": "docs/開発・改善プラン/今後進めるべきプラン.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "本番連携の整理"
+              "title": "今後進めるべきプラン"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -109,17 +94,17 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "02_1_sticky-note/docs/本番連携の整理.md",
-                "collapseAll": false,
+                "file": "docs/開発・改善プラン/今後進めるべきプラン.md",
+                "collapseAll": true,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
                 "showSearch": false,
                 "searchQuery": "",
                 "backlinkCollapsed": false,
-                "unlinkedCollapsed": true
+                "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "本番連携の整理へのバックリンク"
+              "title": "今後進めるべきプランへのバックリンク"
             }
           },
           {
@@ -197,8 +182,11 @@
       "bases:Create new base": false
     }
   },
-  "active": "b76b697941adbaec",
+  "active": "906b5eebca5761c7",
   "lastOpenFiles": [
+    "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
+    "docs/開発・改善プラン/今後進めるべきプラン.md",
+    "02_1_sticky-note/docs/本番連携の整理.md",
     "02_3_WL_Desktop_app/dist/WonderRinko.msi",
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/parsers/__init__.pyc",
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/parsers/expat.pyc",
@@ -209,7 +197,6 @@
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/sax",
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/parsers",
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/etree",
-    "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/dom",
     "02_3_WL_Desktop_app/build/bdist.win-amd64/msi/toast_icon.png",
     "サーバー起動手順.md",
     "docs/開発ドキュメント/パーソナル_名前顔管理_設計.md",
@@ -217,7 +204,6 @@
     "docs/開発ドキュメント/開発全体像_20260205.md",
     "02_2_AI-Board/temp_captures/cam-1770279814882-0_20260205_172335.jpg",
     "02_3_WL_Desktop_app/README.md",
-    "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
     "docs/開発ドキュメント/新機能開発プラン_20260205.md",
     "docs/開発・改善プラン/改善指示書7.md",
     "docs/開発ドキュメント/全体改善と一般リリース時の問題点.md",

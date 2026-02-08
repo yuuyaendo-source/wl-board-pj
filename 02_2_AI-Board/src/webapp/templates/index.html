@@ -55,6 +55,25 @@
             border-radius: 3px;
         }
 
+        /* 付箋ボード連携の付箋：付箋の形ではなく文字のみ。ランダムに縦書き・横書き */
+        .board-linked-text {
+            position: absolute;
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            font-size: clamp(1rem, 2.5vw, 1.5rem);
+            white-space: pre-wrap;
+            word-break: break-word;
+            pointer-events: none;
+            animation: popIn 0.4s ease-out;
+        }
+        .board-linked-text.vertical {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+        .board-linked-text.horizontal {
+            writing-mode: horizontal-tb;
+        }
+
         @keyframes popIn {
             from {
                 transform: scale(0);
@@ -150,6 +169,21 @@
             pointer-events: auto;
         }
 
+        /* 位置調整の枠・ハンドルは調整時（Avatar Settings を開いているとき）のみ表示 */
+        #avatar-drag-handle,
+        #avatar-resize-handle,
+        #avatar-resize-avatar-handle {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        #avatar-container.adjusting #avatar-drag-handle,
+        #avatar-container.adjusting #avatar-resize-handle,
+        #avatar-container.adjusting #avatar-resize-avatar-handle {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         /* ドラッグで位置変更（コンテナ上部の広いエリア） */
         #avatar-drag-handle {
             position: absolute;
@@ -158,7 +192,6 @@
             right: 0;
             height: 64px;
             cursor: move;
-            pointer-events: auto;
             z-index: 2;
             background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, transparent 100%);
             border-radius: 6px 6px 0 0;
@@ -183,7 +216,6 @@
             width: 28px;
             height: 28px;
             cursor: nwse-resize;
-            pointer-events: auto;
             z-index: 2;
             background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.45) 50%);
         }
@@ -207,7 +239,6 @@
             width: 28px;
             height: 28px;
             cursor: nesw-resize;
-            pointer-events: auto;
             z-index: 2;
             background: linear-gradient(225deg, transparent 50%, rgba(0,0,0,0.45) 50%);
         }
@@ -902,6 +933,8 @@
                     const isOpen = settingsContent.style.display === 'block';
                     settingsContent.style.display = isOpen ? 'none' : 'block';
                     toggleIcon.innerText = isOpen ? '▼' : '▲';
+                    const avatarContainer = document.getElementById('avatar-container');
+                    if (avatarContainer) avatarContainer.classList.toggle('adjusting', !isOpen);
                 });
             }
 
@@ -1943,54 +1976,42 @@
         }
 
         function createTextStickyNote(data) {
-            // Check if note already exists
-            let noteDiv = document.getElementById('note-' + data.id);
-
-            if (noteDiv) {
-                // Update existing note
-                const textSpan = noteDiv.querySelector('.note-text');
+            // 付箋ボードから連携された付箋：付箋の形ではなく文字表示。ランダム位置・縦書き or 横書き
+            let el = document.getElementById('note-' + data.id);
+            if (el) {
+                const textSpan = el.querySelector('.note-text');
                 if (textSpan) textSpan.innerText = data.text;
                 return;
             }
 
-            // Create new note
-            noteDiv = document.createElement('div');
-            noteDiv.id = 'note-' + data.id;
-            noteDiv.className = 'sticky-note';
+            el = document.createElement('div');
+            el.id = 'note-' + data.id;
+            el.className = 'board-linked-text';
 
-            const randomX = Math.random() * (window.innerWidth - 200);
-            const randomY = Math.random() * (window.innerHeight - 200);
+            const maxW = Math.max(200, window.innerWidth - 100);
+            const maxH = Math.max(150, window.innerHeight - 100);
+            const randomX = Math.random() * maxW;
+            const randomY = Math.random() * maxH;
+            el.style.left = randomX + 'px';
+            el.style.top = randomY + 'px';
 
-            noteDiv.style.left = randomX + 'px';
-            noteDiv.style.top = randomY + 'px';
-            noteDiv.style.width = '200px';
-            noteDiv.style.minHeight = '100px';
-            noteDiv.style.backgroundColor = '#ffeb3b'; // Default yellow
-            noteDiv.style.padding = '10px';
-            noteDiv.style.color = '#000';
-            noteDiv.style.display = 'flex';
-            noteDiv.style.flexDirection = 'column';
-            noteDiv.style.justifyContent = 'center';
-            noteDiv.style.alignItems = 'center';
-            noteDiv.style.textAlign = 'center';
-            noteDiv.style.fontSize = '1.2rem';
-            noteDiv.style.wordBreak = 'break-word';
+            const isVertical = Math.random() < 0.5;
+            el.classList.add(isVertical ? 'vertical' : 'horizontal');
 
             const textSpan = document.createElement('span');
             textSpan.className = 'note-text';
             textSpan.innerText = data.text;
-            noteDiv.appendChild(textSpan);
+            el.appendChild(textSpan);
 
             if (data.author) {
                 const authorSpan = document.createElement('span');
-                authorSpan.innerText = `by ${data.author}`;
-                authorSpan.style.fontSize = '0.8rem';
-                authorSpan.style.marginTop = '5px';
-                authorSpan.style.color = '#555';
-                noteDiv.appendChild(authorSpan);
+                authorSpan.innerText = ' — ' + data.author;
+                authorSpan.style.opacity = '0.85';
+                authorSpan.style.fontSize = '0.85em';
+                el.appendChild(authorSpan);
             }
 
-            canvas.appendChild(noteDiv);
+            canvas.appendChild(el);
         }
     </script>
 </body>
