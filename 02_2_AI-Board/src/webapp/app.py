@@ -373,28 +373,37 @@ def receive_note():
     
     # 非同期でAIコメント生成
     def generate_and_notify():
-        # レート制限: 同じ付箋に対して短時間（例：10秒）に連続してコメントしない
-        current_time = time.time()
-        if note_id in last_comment_time and current_time - last_comment_time[note_id] < 10:
-            print(f"Skipping comment for note {note_id} (rate limited)")
-            return
+        comment = "(コメントを生成できませんでした)"
+        audio_url = None
+        try:
+            # レート制限: 同じ付箋に対して短時間（例：10秒）に連続してコメントしない
+            current_time = time.time()
+            if note_id in last_comment_time and current_time - last_comment_time[note_id] < 10:
+                print(f"Skipping comment for note {note_id} (rate limited)")
+                return
 
-        last_comment_time[note_id] = current_time
+            last_comment_time[note_id] = current_time
 
-        # Gemini APIでテキストに対するコメント生成
-        comment = ai_avatar.generate_comment_from_text(text)
-        print(f"AI Comment (from text): {comment}")
-        
-        # 音声生成 (VOICEVOX)
-        audio_filename = ai_avatar.generate_voice(comment, VOICE_FOLDER)
-        audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
-        
-        # フロントエンドに通知（音声再生用・リン子の反応）
-        socketio.emit('ai_comment', {
-            'comment': comment,
-            'audio_url': audio_url
-        })
-        
+            # Gemini APIでテキストに対するコメント生成
+            comment = ai_avatar.generate_comment_from_text(text)
+            if not comment:
+                comment = "ふむ、いい付箋ですね。"
+            print(f"AI Comment (from text): {comment}", flush=True)
+
+            # 音声生成 (VOICEVOX)
+            audio_filename = ai_avatar.generate_voice(comment, VOICE_FOLDER)
+            audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
+            if not audio_url:
+                print("VOICEVOX: 音声未生成（VOICEVOX が起動しているか確認してください）", flush=True)
+        except Exception as e:
+            print(f"generate_and_notify error: {e}", flush=True)
+        finally:
+            # 必ずフロントに通知（コメント表示・音声があれば再生）
+            socketio.emit('ai_comment', {
+                'comment': comment,
+                'audio_url': audio_url
+            })
+
     socketio.start_background_task(generate_and_notify)
     
     # AI-Boardフロントエンドに付箋表示を通知（付箋ボード連携・カメラ経由の付箋）

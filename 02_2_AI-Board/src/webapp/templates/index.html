@@ -2161,38 +2161,41 @@
         });
 
         socket.on('ai_comment', (data) => {
-            console.log('AI Comment:', data);
+            try {
+                if (!data) return;
+                const comment = (data.comment != null && data.comment !== '') ? String(data.comment) : '(コメントなし)';
+                console.log('AI Comment:', data);
 
-            // Extract emotion tag (e.g., [JOY])
-            const tagMatch = data.comment.match(/^\[([A-Z]+)\]/);
-            const tag = tagMatch ? tagMatch[1] : 'NEUTRAL';
+                // Extract emotion tag (e.g., [JOY])
+                const tagMatch = comment.match(/^\[([A-Z]+)\]/);
+                const tag = tagMatch ? tagMatch[1] : 'NEUTRAL';
 
-            // Remove tag for display
-            const displayText = data.comment.replace(/^\[[A-Z]+\]\s*/, '');
+                // Remove tag for display
+                const displayText = comment.replace(/^\[[A-Z]+\]\s*/, '').trim() || comment;
 
-            aiText.innerText = displayText;
-            aiChatBox.style.display = 'block';
+                aiText.innerText = displayText;
+                aiChatBox.style.display = 'block';
 
-            // Set Expression
-            if (window.setEmote) window.setEmote(tag);
+                // Set Expression
+                if (window.setEmote) window.setEmote(tag);
 
-            // Play Audio with Lip Sync
-            if (data.audio_url) {
-                const audio = new Audio(data.audio_url);
-                audio.crossOrigin = "anonymous"; // Important for Web Audio API if CDN used (local is fine usually)
-
-                // Needs to wait for metadata or can connect immediately
-                if (window.connectAudioToAnalyser) {
-                    window.connectAudioToAnalyser(audio);
+                // Play Audio with Lip Sync
+                if (data.audio_url) {
+                    const audio = new Audio(data.audio_url);
+                    audio.crossOrigin = "anonymous";
+                    if (window.connectAudioToAnalyser) {
+                        window.connectAudioToAnalyser(audio);
+                    }
+                    audio.play().catch(e => console.error("Audio playback failed:", e));
                 }
 
-                audio.play().catch(e => console.error("Audio playback failed:", e));
+                // Hide after 10 seconds
+                setTimeout(() => {
+                    aiChatBox.style.display = 'none';
+                }, 10000);
+            } catch (e) {
+                console.error('ai_comment handler error:', e);
             }
-
-            // Hide after 10 seconds
-            setTimeout(() => {
-                aiChatBox.style.display = 'none';
-            }, 10000);
         });
 
         // Webアプリ側でボード全削除が行われたときに、

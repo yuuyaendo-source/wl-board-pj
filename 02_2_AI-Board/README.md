@@ -42,9 +42,10 @@ AI-Board のバックエンド・付箋検知・AIアバター制御を担う Py
 
 | 機能 | 説明 |
 |------|------|
-| **REST API** | 付箋画像のアップロード（`/api/upload`）、付箋データの受信（`/api/sticky_notes`）。Webアプリ（02_1）と連携。 |
-| **Socket.IO** | コメント・音声ファイル情報をフロントへリアルタイム配信。 |
+| **REST API** | 付箋画像のアップロード（`/api/upload`）、付箋データの受信（`/api/receive_note`）。付箋ボード全件取得のプロキシ（`GET /api/board_notes`）。Webアプリ（02_1）と連携。 |
+| **Socket.IO** | コメント・音声ファイル情報（`ai_comment`）、付箋表示（`new_text_note`）、全削除（`clear_all_notes`）をフロントへリアルタイム配信。 |
 | **付箋の重複防止** | 既存IDの付箋は更新（`note-updated`）として扱い、新規のみ `note-added` で AI コメントをトリガー。 |
+| **リン子の音声** | 付箋受信時に Gemini でコメント生成 → VOICEVOX で音声合成 → `ai_comment` で必ずフロントに通知（音声生成失敗時もコメントは表示）。VOICEVOX 未起動時はログに「音声未生成」を出力。 |
 
 ### 2. AIアバター（`src/webapp/ai_avatar.py`）
 
@@ -67,14 +68,26 @@ AI-Board のバックエンド・付箋検知・AIアバター制御を担う Py
 | **非同期解析** | メインスレッドは描画・UI、ワーカーがキューで OCR → API 送信。解析中は「解析中...」表示と排他制御で同一付箋の連続送信を防止。 |
 | **重複防止** | キュー投入直後に `last_upload` を更新し、同一付箋の連続キュー投入を抑制。 |
 
-### 4. VRMアバター表示（画面右下）
+### 4. 付箋ボード連携の表示（ボード連携付箋）
+
+| 項目 | 仕様・技術 |
+|------|------------|
+| **表示数** | 同時表示は **10〜25 件**で変更可能（Avatar Settings の「付箋表示数」スライダー）。設定は localStorage に保存。 |
+| **視認性** | 各付箋は半透明背景・枠線・影・余白で塊として表示。横書きは 3 行で省略（`-webkit-line-clamp`）、縦書きは高さで制限。長文はホバーでツールチップ表示。 |
+| **全件取得** | 画面上部の「付箋を全件取得」ボタンで付箋ボードの付箋を全件取得（`GET /api/board_notes` → ボードの `GET /api/boards/:id/notes` をプロキシ）。リフレッシュで消えても再取得可能。 |
+| **ローテーション** | 全件取得後、付箋数が表示数を超える場合は **8 秒ごと**に表示ウィンドウを 1 件ずつスライドし、全件を順に表示。 |
+| **サイズ差** | ウィンドウ内で **新しい付箋を大きく**（scale 1.18）、古い付箋を小さく（0.88）表示。 |
+| **フェードアウト** | 付箋が消えるときは 0.4 秒の opacity・scale トランジション（`.fade-out`）で削除。 |
+| **リアルタイム** | Socket の `new_text_note` で届いた付箋は即時表示。ローテーション中は全件リストにマージし、次回ローテで表示。 |
+
+### 5. VRMアバター表示（画面右下）
 
 | 項目 | 内容 |
 |------|------|
 | **表示** | `templates/index.html` で Three.js + @pixiv/three-vrm を CDN 読み込みし、画面右下に VRM アバター（バストアップ）を表示。 |
 | **VRM ファイル** | `src/webapp/static/avatar.vrm` を配置すること。Webアプリ（02_1）の `public/avatar.vrm` をコピーして利用可能。 |
 
-### 5. 設定ファイル
+### 6. 設定ファイル
 
 | ファイル | 内容 |
 |----------|------|
@@ -193,6 +206,7 @@ python app.py
 | AIサーバーURL | http://localhost:5000 |
 | 付箋検知の API 送信先 | 開発: http://localhost:3000/api/sticky_notes。本番: `POSTIT_BOARD_URL=http://wl-sticky-note.local` で http://wl-sticky-note.local/api/sticky_notes に送信。 |
 | **Postit連携** | 本番連携先: **http://wl-sticky-note.local/board/wl**。`config.json` の `board_id` を `wl` にし、本番では環境変数 `POSTIT_BOARD_URL=http://wl-sticky-note.local` を設定する。 |
+| **全件取得API** | `GET /api/board_notes` … 付箋ボードの付箋を全件取得（CORS 回避のプロキシ）。ボード未実装・エラー時は `notes: []` で応答。 |
 | デフォルト HSV | H 20–46, S 0–50, V 0–255 |
 | 設定保存 | 付箋検知ウィンドウで `S` → `src/config.json` に保存 |
 

@@ -96,6 +96,7 @@ cd src
 |----------|------|------|
 | GET | `/api/health` | 死活確認（Express API 稼働確認用） |
 | GET | `/api/boards/:id/summary` | ボードのサマリー（付箋数・最終付箋時刻）。Desktopアプリのポーリング用 |
+| GET | `/api/boards/:id/notes` | **付箋全件取得**。`{ boardId, notes: [{ id, text, author, createdAt }] }` を返す。AI-Board の「付箋を全件取得」ボタン用。 |
 | POST | `/api/sticky_notes` | 付箋を追加・更新。AI-Board のカメラ検知付箋送信用 |
 | POST | `/api/boards/:id/clear` | 指定ボードの付箋・線を全削除 |
 
@@ -106,7 +107,7 @@ cd src
 
 ## 関連アプリ
 
-- **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント生成
+- **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント・音声生成。また `GET /api/boards/:id/notes` で付箋を全件取得し、ローテーション表示する「付箋を全件取得」ボタンを提供。
 - **Wonder Rinko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
 
 ---
