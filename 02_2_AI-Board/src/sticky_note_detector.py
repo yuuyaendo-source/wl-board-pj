@@ -38,8 +38,10 @@ try:
 except ImportError:
     load_dotenv = None
 
-# ai_avatarをインポートするために親ディレクトリをパスに追加
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# ai_avatar をインポートするために src をパスに追加（webapp は src 直下にある）
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 from webapp.ai_avatar import extract_text_from_image
 
 # 表示・調整用フレームの幅（軽量処理用）
@@ -624,5 +626,17 @@ class StickyNoteDetector:
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    detector = StickyNoteDetector()
-    detector.run()
+    # どこから実行しても src をカレントにする（config.json / .env のパスを安定させる）
+    _main_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(_main_dir)
+    if _main_dir not in sys.path:
+        sys.path.insert(0, _main_dir)
+    try:
+        print("Sticky Note Detector を起動しています...", flush=True)
+        detector = StickyNoteDetector()
+        detector.run()
+    except Exception as e:
+        print(f"起動エラー: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

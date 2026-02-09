@@ -169,6 +169,31 @@ def api_avatar_mode_settings_put():
         return jsonify({'error': str(e)}), 500
 
 
+# --- 付箋ボード全件取得（AI-Board の「全件取得」ボタン用・CORS回避のプロキシ） ---
+
+@app.route('/api/board_notes', methods=['GET'])
+def api_board_notes():
+    """付箋ボードの付箋を全件取得（ボードサーバーへプロキシ）。ボード未実装時は notes:[] で応答。"""
+    try:
+        url = f"{BOARD_APP_URL}/api/boards/{ACTIVE_BOARD_ID}/notes"
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200:
+            print(f"Board notes fetch: status {r.status_code}", flush=True)
+            return jsonify({'error': f'Board returned {r.status_code}', 'notes': []}), 502
+        try:
+            data = r.json()
+        except (ValueError, TypeError) as e:
+            print(f"Board notes fetch: invalid JSON from board: {e}", flush=True)
+            return jsonify({'error': 'Invalid response from board', 'notes': []}), 502
+        return jsonify(data if isinstance(data, dict) else {'notes': data if isinstance(data, list) else []})
+    except requests.RequestException as e:
+        print(f"Board notes fetch error: {e}", flush=True)
+        return jsonify({'error': str(e), 'notes': []}), 502
+    except Exception as e:
+        print(f"Board notes fetch unexpected error: {e}", flush=True)
+        return jsonify({'error': str(e), 'notes': []}), 500
+
+
 # --- 顔・名前登録 API（将来 S3 等に差し替え可能なストレージ抽象の上で動作） ---
 
 @app.route('/api/face_registry', methods=['GET'])
@@ -256,7 +281,6 @@ def upload_file():
         file.save(filepath)
         
         # AI-Boardクライアントに通知（画像表示用）
-        print(f"Emitting new_note to clients: filename={file.filename}", flush=True)
         socketio.emit('new_note', {
             'filename': file.filename,
             'x': x,
@@ -315,7 +339,6 @@ def upload_file():
             print(f"Audio Filename: {audio_filename}", flush=True)
             audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
             
-            print(f"Emitting ai_comment to clients (upload flow), audio_url={audio_url}", flush=True)
             socketio.emit('ai_comment', {
                 'comment': comment,
                 'audio_url': audio_url
@@ -367,7 +390,6 @@ def receive_note():
         audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
         
         # フロントエンドに通知（音声再生用・リン子の反応）
-        print(f"Emitting ai_comment to clients (comment len={len(comment)})", flush=True)
         socketio.emit('ai_comment', {
             'comment': comment,
             'audio_url': audio_url
@@ -376,7 +398,6 @@ def receive_note():
     socketio.start_background_task(generate_and_notify)
     
     # AI-Boardフロントエンドに付箋表示を通知（付箋ボード連携・カメラ経由の付箋）
-    print(f"Emitting new_text_note to clients: id={note_id}, text={(text or '')[:50]}...", flush=True)
     socketio.emit('new_text_note', {
         'id': note_id,
         'text': text,

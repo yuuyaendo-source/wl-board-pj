@@ -19,8 +19,6 @@ const AI_BOARD_LINK_BOARD_IDS = (process.env.AI_BOARD_LINK_BOARD_IDS || 'wl').sp
 if (process.env.NODE_ENV !== 'production' || process.env.AI_BOARD_INSECURE_SSL === '1') {
     process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 }
-console.log('AI-Board URL:', AI_BOARD_BASE, '(INSECURE_SSL=', process.env.AI_BOARD_INSECURE_SSL === '1', ')');
-
 // 開発環境かどうかの判定
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
@@ -283,6 +281,26 @@ app.prepare().then(() => {
             });
         } catch (error) {
             console.error('Error getting board summary:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // REST API: ボードの付箋全件取得（AI-Board の「全件取得」ボタン用）
+    server.get('/api/boards/:id/notes', (req, res) => {
+        try {
+            const boardId = req.params.id;
+            if (!boards[boardId]) {
+                return res.status(404).json({ error: `Board ${boardId} not found` });
+            }
+            const notes = (boards[boardId].notes || []).map((n) => ({
+                id: n.id,
+                text: n.text || '',
+                author: n.author || '',
+                createdAt: n.createdAt || 0,
+            }));
+            return res.json({ boardId, notes });
+        } catch (error) {
+            console.error('Error getting board notes:', error);
             return res.status(500).json({ error: 'Internal server error' });
         }
     });

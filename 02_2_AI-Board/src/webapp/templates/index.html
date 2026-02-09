@@ -55,24 +55,48 @@
             border-radius: 3px;
         }
 
-        /* 付箋ボード連携の付箋：付箋の形ではなく文字のみ。ランダムに縦書き・横書き */
+        /* 付箋ボード連携の付箋：視認性を保つため背景・余白・行数制限を付与 */
         .board-linked-text {
             position: absolute;
             color: #fff;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-            font-size: clamp(1rem, 2.5vw, 1.5rem);
-            white-space: pre-wrap;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+            font-size: clamp(0.95rem, 2.2vw, 1.35rem);
+            line-height: 1.4;
+            max-width: min(320px, 85vw);
+            max-height: 6em;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
             word-break: break-word;
             pointer-events: none;
             animation: popIn 0.4s ease-out;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
         }
         .board-linked-text.vertical {
             writing-mode: vertical-rl;
             text-orientation: mixed;
+            -webkit-line-clamp: unset;
+            line-clamp: unset;
+            max-height: 7em;
+            max-width: none;
         }
         .board-linked-text.horizontal {
             writing-mode: horizontal-tb;
         }
+        .board-linked-text.fade-out {
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        .board-linked-text.size-newest { transform: scale(1.18); }
+        .board-linked-text.size-mid    { transform: scale(1); }
+        .board-linked-text.size-old    { transform: scale(0.88); }
 
         @keyframes popIn {
             from {
@@ -315,6 +339,33 @@
             box-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
         }
 
+        /* 付箋全件取得ボタン */
+        #board-notes-toolbar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #board-notes-toolbar .btn-fetch-all {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #00ffcc;
+            color: #00ffcc;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        #board-notes-toolbar .btn-fetch-all:hover {
+            background: rgba(0, 255, 204, 0.2);
+        }
+        #board-notes-toolbar .fetch-status {
+            font-size: 0.75rem;
+            color: #888;
+        }
 
         /* Settings Panel Styles */
         #settings-panel {
@@ -525,7 +576,7 @@
             style="pointer-events: auto; cursor: pointer; background: #00ff00; color: black; padding: 5px 10px; border-radius: 5px; margin-right: 10px; display: inline-block;">
             🔊 Enable Audio
         </div>
-        <span class="online-status"></span> AI-Board System Online | AI: Active
+        AI-Board System Online | AI: Active
     </div>
 
     <!-- Mode Switcher: 受付モード / AIボードモード / パーソナルモード -->
@@ -533,6 +584,11 @@
         <button class="mode-btn active" data-mode="ai-board" title="AIボードモード">AI-Board</button>
         <button class="mode-btn" data-mode="reception" title="受付モード">Reception</button>
         <button class="mode-btn" data-mode="personal" title="パーソナルモード">Personal</button>
+    </div>
+    <!-- 付箋：全件取得（ボードから取得・ローテーション表示） -->
+    <div id="board-notes-toolbar">
+        <button type="button" id="btn-fetch-all-notes" class="btn-fetch-all">付箋を全件取得</button>
+        <span id="fetch-all-status" class="fetch-status" aria-live="polite"></span>
     </div>
     <!-- 自動パーソナル切替の状態（ON時のみ表示・原因切り分け用） -->
     <div id="auto-personal-status" class="auto-personal-status" aria-live="polite" style="display: none;"></div>
@@ -567,6 +623,14 @@
             <div class="setting-item">
                 <label>Visible</label>
                 <input type="checkbox" id="avatar-visible-toggle" checked>
+            </div>
+            <p class="settings-group-label">付箋表示（ボード連携）</p>
+            <div class="setting-item">
+                <label for="board-notes-display-count">付箋表示数 (10〜25)</label>
+                <input type="range" id="board-notes-display-count" min="10" max="25" step="1" value="12" title="同時に表示する付箋の数">
+            </div>
+            <div class="setting-item" style="margin-top: -6px;">
+                <span id="board-notes-display-count-value" style="color: #888; font-size: 0.8rem;">12 件</span>
             </div>
             <div class="setting-item">
                 <label>アバターのサイズ</label>
@@ -1852,7 +1916,6 @@
         })();
     </script>
     <script>
-        // 付箋・AIコメントはSocket経由で届く。接続に失敗すると表示もリン子の反応もなし
         const socket = io(window.location.origin, {
             path: '/socket.io',
             transports: ['websocket', 'polling'],
@@ -1864,16 +1927,213 @@
         const aiChatBox = document.getElementById('ai-chat-box');
         const aiText = document.getElementById('ai-text');
         const unmuteBtn = document.getElementById('unmute-btn');
-        const onlineStatusEl = document.querySelector('#branding .online-status');
-        function setSocketStatus(ok) {
-            if (onlineStatusEl) {
-                onlineStatusEl.textContent = ok ? 'Socket接続済 | ' : 'Socket未接続 | ';
-                onlineStatusEl.style.color = ok ? '#0f0' : '#f80';
+
+        // --- 付箋ボード連携：全件取得・表示数10-25・ローテーション・フェードアウト ---
+        const BOARD_NOTES_STORAGE_KEY = 'ai-board-notes-display-count';
+        const ROTATION_INTERVAL_MS = 8000;
+        let allBoardNotes = [];
+        let boardLinkedNoteIds = [];
+        let boardNotesRotationTimer = null;
+        let currentWindowStart = 0;
+
+        function getDisplayCount() {
+            const el = document.getElementById('board-notes-display-count');
+            if (!el) return 12;
+            const v = parseInt(el.value, 10);
+            return Math.min(25, Math.max(10, isNaN(v) ? 12 : v));
+        }
+
+        function createBoardNoteElement(note, sizeClass) {
+            const el = document.createElement('div');
+            el.id = 'note-' + note.id;
+            el.className = 'board-linked-text' + (sizeClass ? ' ' + sizeClass : '');
+            el.title = note.text;
+            const maxW = Math.max(200, window.innerWidth - 120);
+            const maxH = Math.max(150, window.innerHeight - 120);
+            el.style.left = Math.random() * maxW + 'px';
+            el.style.top = Math.random() * maxH + 'px';
+            const isVertical = Math.random() < 0.5;
+            el.classList.add(isVertical ? 'vertical' : 'horizontal');
+            const textSpan = document.createElement('span');
+            textSpan.className = 'note-text';
+            textSpan.innerText = note.text;
+            el.appendChild(textSpan);
+            if (note.author) {
+                const authorSpan = document.createElement('span');
+                authorSpan.innerText = ' — ' + note.author;
+                authorSpan.style.opacity = '0.85';
+                authorSpan.style.fontSize = '0.85em';
+                el.appendChild(authorSpan);
+            }
+            return el;
+        }
+
+        function removeBoardNoteWithFadeOut(id, callback) {
+            const el = document.getElementById('note-' + id);
+            if (!el) {
+                if (callback) callback();
+                return;
+            }
+            el.classList.add('fade-out');
+            setTimeout(() => {
+                el.remove();
+                if (callback) callback();
+            }, 420);
+        }
+
+        function getSizeClassForWindowIndex(index, totalInWindow) {
+            if (totalInWindow <= 1) return 'size-mid';
+            if (index === 0) return 'size-newest';
+            if (index >= totalInWindow - 1) return 'size-old';
+            return 'size-mid';
+        }
+        function getScaleForSizeClass(sizeClass) {
+            if (sizeClass === 'size-newest') return 1.18;
+            if (sizeClass === 'size-old') return 0.88;
+            return 1;
+        }
+
+        function renderBoardNotesWindow() {
+            const L = allBoardNotes.length;
+            const N = Math.min(getDisplayCount(), L);
+            if (N === 0) return;
+            const start = currentWindowStart;
+            for (let i = 0; i < N; i++) {
+                const idx = (start + i) % L;
+                const note = allBoardNotes[idx];
+                if (!note) continue;
+                let el = document.getElementById('note-' + note.id);
+                const sizeClass = getSizeClassForWindowIndex(i, N);
+                if (el) {
+                    el.className = 'board-linked-text' + (el.classList.contains('vertical') ? ' vertical' : ' horizontal') + ' ' + sizeClass;
+                    el.style.transform = 'scale(' + getScaleForSizeClass(sizeClass) + ')';
+                    const textSpan = el.querySelector('.note-text');
+                    if (textSpan) textSpan.innerText = note.text;
+                    el.title = note.text;
+                    continue;
+                }
+                el = createBoardNoteElement(note, sizeClass);
+                canvas.appendChild(el);
+                setTimeout(() => { el.style.transform = 'scale(' + getScaleForSizeClass(sizeClass) + ')'; }, 450);
             }
         }
-        setSocketStatus(false);
 
-        // Unmute logic
+        function tickRotation() {
+            const L = allBoardNotes.length;
+            const N = Math.min(getDisplayCount(), L);
+            if (L <= N) {
+                renderBoardNotesWindow();
+                return;
+            }
+            const leaveIdx = (currentWindowStart - 1 + L) % L;
+            const leaveId = allBoardNotes[leaveIdx].id;
+            currentWindowStart = (currentWindowStart + 1) % L;
+            const enterIdx = (currentWindowStart + N - 1) % L;
+            const enterNote = allBoardNotes[enterIdx];
+            removeBoardNoteWithFadeOut(leaveId, () => {
+                const sizeClass = getSizeClassForWindowIndex(N - 1, N);
+                const el = createBoardNoteElement(enterNote, sizeClass);
+                canvas.appendChild(el);
+                setTimeout(() => { el.style.transform = 'scale(' + getScaleForSizeClass(sizeClass) + ')'; }, 450);
+                const visibleIds = [];
+                for (let i = 0; i < N; i++) {
+                    const idx = (currentWindowStart + i) % L;
+                    visibleIds.push(allBoardNotes[idx].id);
+                }
+                canvas.querySelectorAll('.board-linked-text').forEach(el => {
+                    const id = el.id && el.id.replace(/^note-/, '');
+                    if (!id) return;
+                    const i = visibleIds.indexOf(id);
+                    if (i >= 0) {
+                        const sc = getSizeClassForWindowIndex(i, N);
+                        el.className = el.className.replace(/\bsize-\w+/g, '').trim() + ' ' + sc;
+                        el.style.transform = 'scale(' + getScaleForSizeClass(sc) + ')';
+                    }
+                });
+            });
+        }
+
+        function startBoardNotesRotation() {
+            stopBoardNotesRotation();
+            if (allBoardNotes.length === 0) return;
+            const L = allBoardNotes.length;
+            const N = Math.min(getDisplayCount(), L);
+            if (L <= N) return;
+            boardNotesRotationTimer = setInterval(tickRotation, ROTATION_INTERVAL_MS);
+        }
+
+        function stopBoardNotesRotation() {
+            if (boardNotesRotationTimer) {
+                clearInterval(boardNotesRotationTimer);
+                boardNotesRotationTimer = null;
+            }
+        }
+
+        async function fetchAllNotes() {
+            const statusEl = document.getElementById('fetch-all-status');
+            const btn = document.getElementById('btn-fetch-all-notes');
+            if (statusEl) statusEl.textContent = '取得中...';
+            if (btn) btn.disabled = true;
+            try {
+                const r = await fetch('/api/board_notes');
+                const data = await r.json();
+                const notes = (data.notes || []).slice();
+                notes.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                const linked = canvas.querySelectorAll('.board-linked-text');
+                if (notes.length === 0) {
+                    if (statusEl) statusEl.textContent = '付箋は 0 件です';
+                } else if (linked.length === 0) {
+                    allBoardNotes = notes;
+                    currentWindowStart = 0;
+                    boardLinkedNoteIds.length = 0;
+                    renderBoardNotesWindow();
+                    startBoardNotesRotation();
+                    if (statusEl) statusEl.textContent = notes.length + ' 件取得・ローテーション開始';
+                } else {
+                    let done = 0;
+                    linked.forEach(el => {
+                        el.classList.add('fade-out');
+                        setTimeout(() => {
+                            el.remove();
+                            done++;
+                            if (done === linked.length) {
+                                allBoardNotes = notes;
+                                currentWindowStart = 0;
+                                boardLinkedNoteIds.length = 0;
+                                renderBoardNotesWindow();
+                                startBoardNotesRotation();
+                                if (statusEl) statusEl.textContent = notes.length + ' 件取得・ローテーション開始';
+                            }
+                        }, 420);
+                    });
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '取得失敗';
+                console.error('fetchAllNotes:', e);
+            }
+            if (btn) btn.disabled = false;
+            setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
+        }
+
+        document.getElementById('btn-fetch-all-notes')?.addEventListener('click', fetchAllNotes);
+        const displayCountInput = document.getElementById('board-notes-display-count');
+        const displayCountValue = document.getElementById('board-notes-display-count-value');
+        if (displayCountInput) {
+            try {
+                const saved = localStorage.getItem(BOARD_NOTES_STORAGE_KEY);
+                if (saved) {
+                    const v = Math.min(25, Math.max(10, parseInt(saved, 10)));
+                    if (!isNaN(v)) { displayCountInput.value = v; }
+                }
+            } catch (_) {}
+            displayCountInput.addEventListener('input', () => {
+                const v = getDisplayCount();
+                if (displayCountValue) displayCountValue.textContent = v + ' 件';
+                try { localStorage.setItem(BOARD_NOTES_STORAGE_KEY, String(v)); } catch (_) {}
+            });
+            if (displayCountValue) displayCountValue.textContent = getDisplayCount() + ' 件';
+        }
+
         unmuteBtn.addEventListener('click', () => {
             const audio = new Audio();
             audio.play().catch(() => { }); // Try to play silence
@@ -1882,16 +2142,7 @@
         });
 
         socket.on('connect', () => {
-            console.log('Socket connected to server');
-            setSocketStatus(true);
-        });
-        socket.on('connect_error', (err) => {
-            console.error('Socket connect_error:', err.message);
-            setSocketStatus(false);
-        });
-        socket.on('disconnect', (reason) => {
-            console.warn('Socket disconnected:', reason);
-            setSocketStatus(false);
+            console.log('Connected to server');
         });
 
         socket.on('new_note', (data) => {
@@ -1948,9 +2199,10 @@
         // AI-Board の画面上の付箋とコメントを全てクリアするイベント
         socket.on('clear_all_notes', function () {
             console.log("Clearing all notes from AI-Board UI.");
-            // キャンバス上の付箋を全削除
+            stopBoardNotesRotation();
+            allBoardNotes.length = 0;
+            boardLinkedNoteIds.length = 0;
             canvas.innerHTML = '';
-            // コメント表示もリセット
             aiText.innerText = '...';
             aiChatBox.style.display = 'none';
         });
@@ -2000,41 +2252,35 @@
         }
 
         function createTextStickyNote(data) {
-            // 付箋ボードから連携された付箋：付箋の形ではなく文字表示。ランダム位置・縦書き or 横書き
+            const note = { id: data.id, text: data.text, author: data.author || '', createdAt: Date.now() };
+            if (boardNotesRotationTimer !== null) {
+                const i = allBoardNotes.findIndex(n => n.id === data.id);
+                if (i >= 0) {
+                    allBoardNotes[i] = note;
+                } else {
+                    allBoardNotes.unshift(note);
+                }
+                return;
+            }
             let el = document.getElementById('note-' + data.id);
             if (el) {
                 const textSpan = el.querySelector('.note-text');
                 if (textSpan) textSpan.innerText = data.text;
+                if (el.title !== data.text) el.title = data.text;
                 return;
             }
-
-            el = document.createElement('div');
-            el.id = 'note-' + data.id;
-            el.className = 'board-linked-text';
-
-            const maxW = Math.max(200, window.innerWidth - 100);
-            const maxH = Math.max(150, window.innerHeight - 100);
-            const randomX = Math.random() * maxW;
-            const randomY = Math.random() * maxH;
-            el.style.left = randomX + 'px';
-            el.style.top = randomY + 'px';
-
-            const isVertical = Math.random() < 0.5;
-            el.classList.add(isVertical ? 'vertical' : 'horizontal');
-
-            const textSpan = document.createElement('span');
-            textSpan.className = 'note-text';
-            textSpan.innerText = data.text;
-            el.appendChild(textSpan);
-
-            if (data.author) {
-                const authorSpan = document.createElement('span');
-                authorSpan.innerText = ' — ' + data.author;
-                authorSpan.style.opacity = '0.85';
-                authorSpan.style.fontSize = '0.85em';
-                el.appendChild(authorSpan);
+            const displayCount = getDisplayCount();
+            while (boardLinkedNoteIds.length >= displayCount) {
+                const oldId = boardLinkedNoteIds.shift();
+                const oldEl = document.getElementById('note-' + oldId);
+                if (oldEl) {
+                    oldEl.classList.add('fade-out');
+                    setTimeout(() => oldEl.remove(), 420);
+                }
             }
-
+            boardLinkedNoteIds.push(data.id);
+            const sizeClass = boardLinkedNoteIds.length === 1 ? 'size-newest' : (boardLinkedNoteIds.length === displayCount ? 'size-old' : 'size-mid');
+            el = createBoardNoteElement(note, sizeClass);
             canvas.appendChild(el);
         }
     </script>
