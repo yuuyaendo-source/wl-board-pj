@@ -41,6 +41,8 @@ import face_registry_storage as face_registry
 
 # 設定: 付箋ボード連携先。本番: POSTIT_BOARD_URL=http://wl-sticky-note.local
 BOARD_APP_URL = os.environ.get("POSTIT_BOARD_URL", "http://127.0.0.1:3000").strip().rstrip("/")
+# Board System（4ボード・パーソナル等）のURL。ナビリンク用。本番では環境に合わせて設定
+BOARD_SYSTEM_URL = os.environ.get("BOARD_SYSTEM_URL", "http://127.0.0.1:3001").strip().rstrip("/")
 
 # config.jsonから設定を読み込む（board_id: 本番は wl → http://wl-sticky-note.local/board/wl）
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
@@ -104,23 +106,33 @@ def camera_stream():
     )
 
 
+def _index_context(**kwargs):
+    """index.html に共通で渡すコンテキスト（他ボードへのリンク用）"""
+    ctx = {
+        "sticky_board_url": BOARD_APP_URL,
+        "board_system_url": BOARD_SYSTEM_URL,
+    }
+    ctx.update(kwargs)
+    return ctx
+
+
 @app.route('/')
 def index():
     """AI-Boardのステータス表示用ページ"""
-    return render_template('index.html')
+    return render_template('index.html', **_index_context())
 
 
 @app.route('/personal')
 def personal():
     """個人用パーソナルモード（デスクトップアプリから user 指定でアクセス）。モード切替UIは非表示でパーソナルのみ表示。"""
     user_id = request.args.get('user', '').strip()
-    return render_template('index.html', personal_only=True, user_id=user_id)
+    return render_template('index.html', **_index_context(personal_only=True, user_id=user_id))
 
 
 @app.route('/asakawa')
 def asakawa():
     """デモ用: 浅川さんのパーソナルモード（顔検出・任意切替・デスクトップアプリで同じページに統一）。"""
-    return render_template('index.html', personal_only=True, user_id='asakawa')
+    return render_template('index.html', **_index_context(personal_only=True, user_id='asakawa'))
 
 
 @app.route('/manager')

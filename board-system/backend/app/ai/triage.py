@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+"""
+Logic 1: Auto-Triage（自動仕分け）。
+Main Board 新規投稿が「タスクか情報か」「担当者明記か」を LLM で判定し、結果を返す。
+"""
+from app.ai.client import generate_json
+
+
+def run_triage(content: str) -> dict | None:
+    """
+    付箋本文からタスク判定と担当者名を取得する。
+    戻り値: None（API 未設定・失敗） or
+           {"is_task": bool, "assignee_name": str | None}
+    担当者名は users.name で検索する想定（部分一致で可）。
+    """
+    prompt = f"""以下の投稿を分析し、JSON のみで答えてください。
+
+投稿:「{content[:500]}」
+
+質問:
+1. この投稿は「タスク（作業・やるべきこと）」ですか？ それとも「情報の共有・雑談」ですか？
+2. タスクの場合、特定の担当者（人名）が明記されていますか？
+
+回答は必ず次の JSON 形式のみにしてください。他に説明は不要です。
+{{"is_task": true または false, "assignee_name": "担当者名（いなければ null）"}}
+"""
+    data = generate_json(prompt)
+    if not data:
+        return None
+    is_task = data.get("is_task") is True
+    assignee = data.get("assignee_name")
+    if isinstance(assignee, str):
+        assignee = assignee.strip() or None
+    else:
+        assignee = None
+    return {"is_task": is_task, "assignee_name": assignee}

@@ -15,6 +15,7 @@ Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋�
 - ボード名の保存・ボードのダウンロード・インポート
 - リアルタイム同期（複数ユーザー対応）
 - AI-Board・Desktopアプリとの連携API
+- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Rinko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は http://localhost:3001）。
 
 ---
 

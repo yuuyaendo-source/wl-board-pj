@@ -13,6 +13,8 @@ const path = require('path');
 
 // AI-Board 連携先（本番: .env に AI_BOARD_URL を設定。HTTPS の場合は https://172.16.1.251:5000）
 const AI_BOARD_BASE = (process.env.AI_BOARD_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
+// Board System API（付箋削除連携: 付箋ボードで削除したら Task/Personal からも削除）
+const BOARD_SYSTEM_API_BASE = (process.env.BOARD_SYSTEM_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 // 付箋追加時に AI-Board へ通知するボードID（カンマ区切り。本番連携先: wl）
 const AI_BOARD_LINK_BOARD_IDS = (process.env.AI_BOARD_LINK_BOARD_IDS || 'wl').split(',').map(s => s.trim()).filter(Boolean);
 // AI-Board が自己証明書（HTTPS）のときは付箋ボードから fetch が失敗するため、明示的に許可する
@@ -191,12 +193,14 @@ app.prepare().then(() => {
             }
         });
 
-        // 付箋削除
+        // 付箋削除（Board System 連携: 同じ付箋を Task/Personal からも削除）
         socket.on('delete-note', ({ boardId, noteId }) => {
             if (boards[boardId]) {
                 boards[boardId].notes = boards[boardId].notes.filter((n) => n.id !== noteId);
                 io.to(boardId).emit('note-deleted', noteId);
                 saveBoards();
+                const url = `${BOARD_SYSTEM_API_BASE}/sticky_notes/by_postit?board_id=${encodeURIComponent(boardId)}&note_id=${encodeURIComponent(String(noteId))}`;
+                fetch(url, { method: 'DELETE' }).catch((err) => console.error('Board System delete by_postit:', err.message));
             }
         });
 
@@ -301,6 +305,27 @@ app.prepare().then(() => {
             return res.json({ boardId, notes });
         } catch (error) {
             console.error('Error getting board notes:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // REST API: 付箋1件削除（Board System のゴミ箱から呼ばれる連携用）
+    server.delete('/api/boards/:id/notes/:noteId', (req, res) => {
+        try {
+            const boardId = req.params.id;
+            const noteId = req.params.noteId;
+            if (!boards[boardId]) {
+                return res.status(404).json({ error: `Board ${boardId} not found` });
+            }
+            const before = boards[boardId].notes.length;
+            boards[boardId].notes = boards[boardId].notes.filter((n) => String(n.id) !== String(noteId));
+            if (boards[boardId].notes.length < before) {
+                io.to(boardId).emit('note-deleted', noteId);
+                saveBoards();
+            }
+            return res.status(204).end();
+        } catch (error) {
+            console.error('Error deleting board note:', error);
             return res.status(500).json({ error: 'Internal server error' });
         }
     });
