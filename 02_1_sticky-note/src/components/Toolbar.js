@@ -118,6 +118,24 @@ export default function Toolbar({
                     </button>
                 </span>
             </div>
+
+            <div className={styles.divider} />
+
+            <div className={styles.group}>
+                <span className={styles.iconBtnWrap} data-tooltip="Board System を開く">
+                    <a
+                        href={process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || "http://localhost:3001"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.iconBtn}
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+                        aria-label="Board System を開く"
+                    >
+                        📋
+                    </a>
+                </span>
+            </div>
+
         </div>
     );
 }

@@ -1,0 +1,11 @@
+{
+  "name": "board-system",
+  "private": true,
+  "description": "Board System (Wonder Rinko) - 4 boards frontend + backend",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && .venv/Scripts/Activate.ps1; uvicorn app.main:app --reload --port 8000",
+    "build": "cd frontend && npm run build",
+    "start": "cd frontend && npm run start"
+  }
+}

@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 // AI-Board が HTTPS で動作する場合は https に変更（自己証明書は NODE_TLS_REJECT_UNAUTHORIZED=0 で許可）
 const nextConfig = {
+  async redirects() {
+    return [
+      { source: '/', destination: '/board/wl', permanent: false },
+    ];
+  },
   async rewrites() {
     return [
       {

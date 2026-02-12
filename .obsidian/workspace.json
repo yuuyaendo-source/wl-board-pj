@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/開発・改善プラン/今後進めるべきプラン.md",
+                "file": "docs/開発・改善プラン/改善指示書10.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "今後進めるべきプラン"
+              "title": "改善指示書10"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/開発・改善プラン/今後進めるべきプラン.md",
+                "file": "docs/開発・改善プラン/改善指示書10.md",
                 "collapseAll": true,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "今後進めるべきプランへのバックリンク"
+              "title": "改善指示書10へのバックリンク"
             }
           },
           {
@@ -182,10 +182,12 @@
       "bases:Create new base": false
     }
   },
-  "active": "906b5eebca5761c7",
+  "active": "73be8a7709220827",
   "lastOpenFiles": [
-    "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
+    "docs/開発・改善プラン/改善指示書9_開発プラン.md",
+    "docs/開発・改善プラン/改善指示書10.md",
     "docs/開発・改善プラン/今後進めるべきプラン.md",
+    "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
     "02_1_sticky-note/docs/本番連携の整理.md",
     "02_3_WL_Desktop_app/dist/WonderRinko.msi",
     "02_3_WL_Desktop_app/build/exe.win-amd64-3.12/lib/xml/parsers/__init__.pyc",
