@@ -1,11 +1,28 @@
 const BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
 
+function normalizeErrorMessage(status: number, body: string): string {
+  const trimmed = body.trim();
+  // HTML が返った場合（404 ページ・エラーページ等）は短いメッセージに置き換え
+  if (trimmed.startsWith("<") || trimmed.startsWith("<!")) {
+    if (status === 404) {
+      return "API の URL が誤っているか、指定したパスが存在しません。NEXT_PUBLIC_API_URL を確認してください。";
+    }
+    return `サーバーエラー（${status}）。API の接続先を確認してください。`;
+  }
+  // JSON の detail など短いメッセージはそのまま返す（長すぎる場合は切り詰め）
+  if (trimmed.length > 300) return trimmed.slice(0, 300) + "...";
+  return trimmed || `HTTP ${status}`;
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(normalizeErrorMessage(res.status, text));
+  }
   if (res.status === 204) return undefined as T;
   return res.json();
 }
