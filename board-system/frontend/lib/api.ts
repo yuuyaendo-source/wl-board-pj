@@ -97,5 +97,8 @@ export const api = {
   dailyReset: {
     messages: (ownerId: number) =>
       fetchApi<{ owner_id: number; messages: string[] }>(`/daily_reset/messages?owner_id=${ownerId}`),
+    /** 全ユーザーの Personal Today を MORNING にコピー（毎朝 10:15 の cron 用・テスト用） */
+    syncToMorning: () =>
+      fetchApi<{ ok: boolean; created: number }>("/daily_reset/sync_to_morning", { method: "POST" }),
   },
 };
