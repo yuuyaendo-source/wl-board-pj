@@ -186,8 +186,9 @@ function PersonalTaskReleaseDropZone({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const isFromTask = e.dataTransfer.getData("isFromTask");
-    if (isFromTask !== "true") {
+    // dragover では getData() が空になるブラウザがあるため、型の有無で判定（NoteCard で Task 由来のときだけ付与）
+    const canRelease = e.dataTransfer.types.includes("application/x-board-task-release");
+    if (!canRelease) {
       e.dataTransfer.dropEffect = "none";
       return;
     }

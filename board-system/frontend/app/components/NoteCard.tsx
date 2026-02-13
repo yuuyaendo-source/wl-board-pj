@@ -51,6 +51,10 @@ export default function NoteCard({
             e.dataTransfer.setData("text/plain", noteIdStr);
             if (dragData) {
               Object.entries(dragData).forEach(([k, v]) => e.dataTransfer.setData(k, v));
+              // dragover では getData が空になるブラウザがあるため、Task リリース用に型だけ付与（drop ゾーンで types を参照）
+              if (dragData.isFromTask === "true") {
+                e.dataTransfer.setData("application/x-board-task-release", "1");
+              }
             }
             e.dataTransfer.effectAllowed = "copyMove";
             onDragStart?.(e);
