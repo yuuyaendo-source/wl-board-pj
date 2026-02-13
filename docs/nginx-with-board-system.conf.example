@@ -1,9 +1,12 @@
 # Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供
 # Board System は /boards 以下（basePath）で提供。付箋ボードは / と /_next/ で 3000 をそのまま使う。
 # 参照: docs/本番デプロイ手順.md
+#
+# 他サイト（例: server_name _ の brainstorming）がある場合、付箋ボード用を default_server にすると
+# 同じ IP でアクセスしたときにこちらが優先される。
 
 server {
-    listen 80;
+    listen 80 default_server;
     server_name wl-sticky-note.local 172.16.1.81;
 
     access_log /var/log/nginx/wl-sticky-note_access.log;

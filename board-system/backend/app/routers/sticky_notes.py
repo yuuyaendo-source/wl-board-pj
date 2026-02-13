@@ -124,40 +124,41 @@ async def create_sticky_note(body: StickyNoteCreate, db: AsyncSession = Depends(
     db.add(placement)
     await db.flush()
 
-    # フェーズ3: Auto-Triage（同期的な Gemini 呼び出しをスレッドで実行）
-    from app.ai import run_triage, run_matrix_scoring
-    triage = await asyncio.to_thread(run_triage, note.content) if note.content else None
-    if triage and triage.get("is_task"):
-        # Task Board に配置し、マトリクススコアを取得
-        score = await asyncio.to_thread(run_matrix_scoring, note.content) if note.content else None
-        pos_x = float(score["urgency"]) if score else 50.0
-        pos_y = float(score["importance"]) if score else 50.0
-        quad = score.get("matrix_quadrant", 4) if score else 4
-        task_placement = BoardPlacement(
-            note_id=note.id,
-            board_type=BoardType.TASK,
-            owner_id=None,
-            position_x=pos_x,
-            position_y=pos_y,
-            matrix_quadrant=quad,
-            sort_order=0,
-        )
-        db.add(task_placement)
-        await db.flush()
-        # 担当者あり → そのユーザーの Personal (Inbox) に配置
-        assignee_name = triage.get("assignee_name")
-        if assignee_name:
-            owner_id = await asyncio.to_thread(_resolve_assignee_to_user_id, assignee_name)
-            if owner_id is not None:
-                personal = BoardPlacement(
-                    note_id=note.id,
-                    board_type=BoardType.PERSONAL,
-                    owner_id=owner_id,
-                    lane=Lane.INBOX,
-                    sort_order=0,
-                )
-                db.add(personal)
-                await db.flush()
+    # フェーズ3: Auto-Triage（同期的な Gemini 呼び出しをスレッドで実行）。例外時はスキップし 500 を防ぐ
+    try:
+        from app.ai import run_triage, run_matrix_scoring
+        triage = await asyncio.to_thread(run_triage, note.content) if note.content else None
+        if triage and triage.get("is_task"):
+            score = await asyncio.to_thread(run_matrix_scoring, note.content) if note.content else None
+            pos_x = float(score.get("urgency", 50)) if score else 50.0
+            pos_y = float(score.get("importance", 50)) if score else 50.0
+            quad = score.get("matrix_quadrant", 4) if score else 4
+            task_placement = BoardPlacement(
+                note_id=note.id,
+                board_type=BoardType.TASK,
+                owner_id=None,
+                position_x=pos_x,
+                position_y=pos_y,
+                matrix_quadrant=quad,
+                sort_order=0,
+            )
+            db.add(task_placement)
+            await db.flush()
+            assignee_name = triage.get("assignee_name")
+            if assignee_name:
+                owner_id = await asyncio.to_thread(_resolve_assignee_to_user_id, assignee_name)
+                if owner_id is not None:
+                    personal = BoardPlacement(
+                        note_id=note.id,
+                        board_type=BoardType.PERSONAL,
+                        owner_id=owner_id,
+                        lane=Lane.INBOX,
+                        sort_order=0,
+                    )
+                    db.add(personal)
+                    await db.flush()
+    except Exception:
+        pass  # 付箋と Main 配置は作成済み。Triage 失敗時は Task/Personal 配置をスキップ
 
     await db.refresh(note)
     return _note_response(note)
