@@ -19,7 +19,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # ----- Board System フロント（/boards/ 以下すべて → Next.js 3001） -----
+    # ----- Board System フロント（/boards および /boards/... → Next.js 3001） -----
+    # /boards のみのときは /boards/ へリダイレクト（Next の basePath と相性を合わせる）
+    location = /boards {
+        return 302 $scheme://$host/boards/;
+    }
     location /boards/ {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;

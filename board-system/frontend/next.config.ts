@@ -1,10 +1,15 @@
 import type { NextConfig } from "next";
 
+// 本番で付箋ボードと同一ドメイン運用時は /boards で提供（環境変数より優先して確実に効かせる）
+const basePath =
+  process.env.NEXT_PUBLIC_BASE_PATH !== undefined
+    ? process.env.NEXT_PUBLIC_BASE_PATH
+    : process.env.NODE_ENV === "production"
+      ? "/boards"
+      : "";
+
 const nextConfig: NextConfig = {
-  // 本番で付箋ボードと同一ドメイン運用時、付箋ボードが /_next/ を使うため
-  // Board System は /boards 以下にまとめ、アセットは /boards/_next/ で提供する。
-  // ビルド時に NEXT_PUBLIC_BASE_PATH=/boards を指定すること。
-  basePath: process.env.NEXT_PUBLIC_BASE_PATH ?? "",
+  basePath,
 };
 
 export default nextConfig;
