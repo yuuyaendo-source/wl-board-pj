@@ -77,10 +77,23 @@ export default function PersonalBoardView({
 
   const handleTaskReleaseDrop = useCallback(
     async (placementId: number) => {
-      await api.boardPlacements.delete(placementId);
-      await fetchPersonal();
+      try {
+        await api.boardPlacements.delete(placementId);
+        await fetchPersonal();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "タスクリリースに失敗しました");
+      }
     },
     [fetchPersonal]
+  );
+
+  // タスクリリースで placementId が取れないブラウザ用: noteId から配置IDを解決
+  const fromTaskPlacements = [...byLane.INBOX, ...byLane.TODAY, ...byLane.DONE].filter(
+    (p) => p.is_from_task
+  );
+  const getReleasePlacementId = useCallback(
+    (noteId: number) => fromTaskPlacements.find((p) => p.note_id === noteId)?.id ?? null,
+    [fromTaskPlacements]
   );
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -102,7 +115,10 @@ export default function PersonalBoardView({
       <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
         <span className="text-sm text-zinc-500">ゴミ箱・タスクリリース：</span>
         <PersonalTrashDropZone onDrop={handleTrashDrop} />
-        <PersonalTaskReleaseDropZone onDrop={handleTaskReleaseDrop} />
+        <PersonalTaskReleaseDropZone
+          onDrop={handleTaskReleaseDrop}
+          getReleasePlacementId={getReleasePlacementId}
+        />
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -158,11 +174,18 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
   );
 }
 
-function PersonalTaskReleaseDropZone({ onDrop }: { onDrop: (placementId: number) => void }) {
+function PersonalTaskReleaseDropZone({
+  onDrop,
+  getReleasePlacementId,
+}: {
+  onDrop: (placementId: number) => void;
+  getReleasePlacementId?: (noteId: number) => number | null;
+}) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const isFromTask = e.dataTransfer.getData("isFromTask");
     if (isFromTask !== "true") {
       e.dataTransfer.dropEffect = "none";
@@ -174,10 +197,18 @@ function PersonalTaskReleaseDropZone({ onDrop }: { onDrop: (placementId: number)
   const handleDragLeave = () => setOver(false);
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setOver(false);
-    if (e.dataTransfer.getData("isFromTask") !== "true") return;
-    const placementId = e.dataTransfer.getData("placementId");
-    if (placementId) onDrop(Number(placementId));
+    let placementIdStr = e.dataTransfer.getData("placementId");
+    // Firefox 等で placementId が空になる場合のフォールバック
+    if (!placementIdStr && getReleasePlacementId) {
+      const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
+      if (noteId) {
+        const resolved = getReleasePlacementId(Number(noteId));
+        if (resolved != null) placementIdStr = String(resolved);
+      }
+    }
+    if (placementIdStr) onDrop(Number(placementIdStr));
   };
 
   return (
