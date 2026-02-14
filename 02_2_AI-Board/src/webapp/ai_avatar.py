@@ -218,6 +218,77 @@ def generate_comment_from_text(text):
         return "なんや調子悪いわ。"
 
 
+def generate_idea_from_two_texts(text_a, text_b):
+    """
+    2つの付箋の内容から、端的なタイトルとその説明を生成する。
+    返り値: {"title": "20字以内のタイトル", "description": "1〜2文の説明"} または None
+    """
+    if not _get_api_key() or not _has_genai():
+        return None
+    prompt = (
+        "以下の2つの付箋の内容を組み合わせて、新しいアイデアを生成してください。\n"
+        "必ず次のJSON形式のみで出力してください。他は不要です。\n"
+        '{"title": "20字以内の端的なタイトル（フレーズ）", "description": "1〜2文の説明文"}\n'
+        f"付箋A: {text_a}\n付箋B: {text_b}"
+    )
+    try:
+        client = _get_client()
+        if _use_new_sdk and client:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL_NEW,
+                contents=prompt,
+            )
+            raw = (response.text or "").strip()
+        else:
+            _ensure_legacy_configured()
+            model = _genai_legacy.GenerativeModel(model_name=GEMINI_MODEL_LEGACY)
+            response = model.generate_content(prompt)
+            raw = (response.text or "").strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        data = json.loads(raw)
+        title = (data.get("title") or "").strip()[:80]
+        description = (data.get("description") or "").strip()[:300]
+        if not title:
+            return None
+        return {"title": title, "description": description}
+    except Exception as e:
+        print(f"generate_idea_from_two_texts error: {e}", flush=True)
+        return None
+
+
+def wall_talk(note_text, user_message):
+    """
+    付箋の内容について「壁打ち」する。ユーザーの質問や掘り下げに短く返答する。
+    """
+    if not _get_api_key() or not _has_genai():
+        return ""
+    prompt = (
+        "あなたは「リン子」というAIアシスタントです。東北弁が少し混じり、短くテンポよく話します。"
+        "以下の付箋のアイデアについて、ユーザーが壁打ち（質問・掘り下げ）をしています。"
+        "2〜3文で、親身にアドバイスやツッコミを返してください。\n"
+        f"付箋の内容: {note_text}\n"
+        f"ユーザー: {user_message or 'このアイデアについて聞きたい'}\n"
+        "返答（説明や前置きは不要、本文のみ）:"
+    )
+    try:
+        client = _get_client()
+        if _use_new_sdk and client:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL_NEW,
+                contents=prompt,
+            )
+            reply = (response.text or "").strip()
+        else:
+            _ensure_legacy_configured()
+            model = _genai_legacy.GenerativeModel(model_name=GEMINI_MODEL_LEGACY)
+            response = model.generate_content(prompt)
+            reply = (response.text or "").strip()
+        return reply[:500]
+    except Exception as e:
+        print(f"wall_talk error: {e}", flush=True)
+        return ""
+
+
 import requests
 import uuid
 

@@ -206,6 +206,100 @@ def api_board_notes():
         return jsonify({'error': str(e), 'notes': []}), 500
 
 
+@app.route('/api/generate_idea_from_notes', methods=['POST'])
+def api_generate_idea_from_notes():
+    """
+    ピン留めエリアで2枚の付箋をぶつけたときに呼ぶ。
+    2つのテキストからAIで新アイデアを生成し、BoardSystem（付箋ボード）に追加して返す。
+    """
+    try:
+        data = request.get_json() or {}
+        text_a = (data.get('textA') or '').strip()
+        text_b = (data.get('textB') or '').strip()
+        if not text_a or not text_b:
+            return jsonify({'error': 'textA and textB are required'}), 400
+        idea = ai_avatar.generate_idea_from_two_texts(text_a, text_b)
+        if not idea or not idea.get('title'):
+            return jsonify({'error': 'Failed to generate idea', 'ideaTitle': '', 'ideaDescription': ''}), 502
+        idea_title = idea.get('title', '').strip()
+        idea_description = (idea.get('description') or '').strip()
+        idea_full = idea_title + ('\n\n' + idea_description if idea_description else '')
+        note_id = f"ai-idea-{int(time.time() * 1000)}"
+        note_data = {
+            "boardId": ACTIVE_BOARD_ID,
+            "note": {
+                "id": note_id,
+                "text": idea_full,
+                "x": 500.0,
+                "y": 500.0,
+                "color": "#00ffcc",
+                "pinned": False,
+                "author": "AI",
+                "createdAt": int(time.time() * 1000),
+                "imageUrl": None
+            }
+        }
+        try:
+            r = requests.post(
+                f"{BOARD_APP_URL}/api/sticky_notes",
+                json=note_data,
+                headers={'Content-Type': 'application/json'},
+                timeout=5
+            )
+            if r.status_code != 200:
+                print(f"Board POST idea note: {r.status_code} {r.text}", flush=True)
+        except Exception as e:
+            print(f"Board POST error: {e}", flush=True)
+        socketio.emit('new_text_note', {
+            'id': note_id,
+            'text': idea_full,
+            'author': 'AI'
+        })
+
+        def speak_idea():
+            """生成したアイデアのタイトルをリン子の音声で読み上げる"""
+            try:
+                audio_filename = ai_avatar.generate_voice(idea_title, VOICE_FOLDER)
+                audio_url = f"/static/voices/{audio_filename}" if audio_filename else None
+                socketio.emit('ai_comment', {
+                    'comment': idea_title,
+                    'audio_url': audio_url
+                })
+            except Exception as e:
+                print(f"speak_idea error: {e}", flush=True)
+        socketio.start_background_task(speak_idea)
+
+        return jsonify({
+            'ideaTitle': idea_title,
+            'ideaDescription': idea_description,
+            'ideaText': idea_full,
+            'noteId': note_id
+        })
+    except Exception as e:
+        print(f"generate_idea_from_notes: {e}", flush=True)
+        return jsonify({'error': str(e), 'ideaTitle': '', 'ideaDescription': ''}), 500
+
+
+@app.route('/api/wall_talk', methods=['POST'])
+def api_wall_talk():
+    """
+    AI生成付箋について「壁打ち」する。付箋の内容とユーザーのメッセージに対してリン子が短く返答する。
+    """
+    try:
+        data = request.get_json() or {}
+        note_text = (data.get('noteText') or '').strip()
+        user_message = (data.get('userMessage') or '').strip()
+        if not note_text:
+            return jsonify({'error': 'noteText is required'}), 400
+        reply = ai_avatar.wall_talk(note_text, user_message)
+        if not reply:
+            return jsonify({'error': 'Failed to get reply', 'reply': ''}), 502
+        return jsonify({'reply': reply})
+    except Exception as e:
+        print(f"wall_talk: {e}", flush=True)
+        return jsonify({'error': str(e), 'reply': ''}), 500
+
+
 # --- 顔・名前登録 API（将来 S3 等に差し替え可能なストレージ抽象の上で動作） ---
 
 @app.route('/api/face_registry', methods=['GET'])

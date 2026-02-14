@@ -36,6 +36,7 @@
             position: relative;
             width: 100vw;
             height: 100vh;
+            z-index: 60;
         }
 
         .sticky-note {
@@ -70,7 +71,8 @@
             line-clamp: 3;
             -webkit-box-orient: vertical;
             word-break: break-word;
-            pointer-events: none;
+            pointer-events: auto;
+            cursor: grab;
             animation: popIn 0.4s ease-out;
             padding: 10px 14px;
             border-radius: 8px;
@@ -78,6 +80,35 @@
             border: 1px solid rgba(255, 255, 255, 0.25);
             box-shadow: 0 2px 8px rgba(0,0,0,0.35);
         }
+        .board-linked-text:active { cursor: grabbing; }
+        /* 回遊はJSで left/top を更新（scale と競合しない） */
+        .board-linked-text.pinned { cursor: grab; }
+        /* ピン留めエリア（左に縦配置） */
+        .pin-zone {
+            position: absolute;
+            left: 24px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 140px;
+            height: min(420px, 75vh);
+            border: 2px dashed rgba(0, 255, 204, 0.5);
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 70;
+            pointer-events: auto;
+        }
+        .pin-zone-label {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.7);
+            white-space: nowrap;
+        }
+        .pin-zone .board-linked-text { pointer-events: auto; }
         .board-linked-text.vertical {
             writing-mode: vertical-rl;
             text-orientation: mixed;
@@ -94,9 +125,33 @@
             transform: scale(0.95);
             transition: opacity 0.4s ease, transform 0.4s ease;
         }
-        .board-linked-text.size-newest { transform: scale(1.18); }
-        .board-linked-text.size-mid    { transform: scale(1); }
-        .board-linked-text.size-old    { transform: scale(0.88); }
+        .board-linked-text.size-newest { transform: scale(0.79); }
+        .board-linked-text.size-mid    { transform: scale(0.67); }
+        .board-linked-text.size-old    { transform: scale(0.59); }
+        .board-linked-text.collision-flash {
+            animation: collisionFlash 0.4s ease-out;
+        }
+        @keyframes collisionFlash {
+            0% { filter: brightness(1.5); box-shadow: 0 0 20px rgba(0, 255, 204, 0.8); }
+            100% { filter: brightness(1); box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+        }
+        .collision-burst {
+            position: fixed;
+            pointer-events: none;
+            width: 80px;
+            height: 80px;
+            left: 0;
+            top: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 255, 204, 0.7) 0%, transparent 70%);
+            transform: translate(-50%, -50%);
+            animation: collisionBurst 0.6s ease-out forwards;
+            z-index: 90;
+        }
+        @keyframes collisionBurst {
+            0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+        }
 
         @keyframes popIn {
             from {
@@ -115,6 +170,7 @@
             position: absolute;
             bottom: 20px;
             right: 20px;
+            z-index: 80;
             background: rgba(0, 0, 0, 0.6);
             padding: 10px 20px;
             border-radius: 20px;
@@ -150,6 +206,28 @@
             box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
             animation: slideIn 0.5s ease;
         }
+
+        /* 壁打ちパネル（AI生成付箋をクリックで表示） */
+        #wall-talk-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(400px, 90vw);
+            background: rgba(0, 20, 30, 0.95);
+            border: 1px solid #00ffcc;
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 200;
+            display: none;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+        }
+        #wall-talk-panel.open { display: block; }
+        #wall-talk-panel h3 { margin: 0 0 12px; font-size: 1rem; color: #00ffcc; }
+        #wall-talk-panel .wall-talk-note { background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; margin-bottom: 12px; font-size: 0.95rem; }
+        #wall-talk-panel textarea { width: 100%; min-height: 60px; margin-bottom: 10px; padding: 8px; border-radius: 6px; background: #1a1a1a; color: #fff; border: 1px solid #333; resize: vertical; }
+        #wall-talk-panel .wall-talk-reply { margin-top: 12px; padding: 10px; background: rgba(0, 255, 204, 0.1); border-radius: 8px; font-size: 0.9rem; white-space: pre-wrap; }
+        #wall-talk-panel .wall-talk-close { position: absolute; top: 10px; right: 10px; background: transparent; border: none; color: #888; cursor: pointer; font-size: 1.2rem; }
 
         #ai-chat-box::after {
             content: '';
@@ -548,10 +626,25 @@
     {% endif %}
     <div id="canvas">
         <!-- Sticky notes will be injected here -->
+        <!-- ピン留めエリア：ここにドラッグした付箋を留め、ぶつけるとAIが新アイデアを生成 -->
+        <div id="pin-zone" class="pin-zone" aria-label="ピン留めエリア">
+            <span class="pin-zone-label">📌 付箋を重ねてAIアイデア</span>
+        </div>
     </div>
 
     <div id="ai-chat-box">
         <strong>リン子:</strong> <span id="ai-text">...</span>
+    </div>
+
+    <!-- 壁打ちパネル（AI生成付箋クリックで表示） -->
+    <div id="wall-talk-panel" aria-label="壁打ち" role="dialog">
+        <button type="button" class="wall-talk-close" title="閉じる" aria-label="閉じる">×</button>
+        <h3>💬 この付箋について壁打ち</h3>
+        <div class="wall-talk-note" id="wall-talk-note-text"></div>
+        <label for="wall-talk-input">質問や掘り下げたいこと（任意）</label>
+        <textarea id="wall-talk-input" placeholder="例: このアイデアを実現するには？"></textarea>
+        <button type="button" id="wall-talk-submit" class="btn-fetch-all" style="margin-right:8px">送信</button>
+        <div class="wall-talk-reply" id="wall-talk-reply" style="display:none;"></div>
     </div>
 
     <!-- VRMアバター（右下）上バーで移動・右下で枠サイズ・左下でアバターサイズ -->
@@ -1930,7 +2023,39 @@
 
         // --- 付箋ボード連携：全件取得・表示数10-25・ローテーション・フェードアウト ---
         const BOARD_NOTES_STORAGE_KEY = 'ai-board-notes-display-count';
-        const ROTATION_INTERVAL_MS = 8000;
+        const ROTATION_INTERVAL_MS = 9000; // 1付箋あたり9秒表示
+        const WANDER_SPEED = 1.69;  // 回遊速度倍率（1.3の1.3倍）
+        const WANDER_RANGE_SCALE = 1.3; // 動く範囲の倍率
+        const NOTE_DISPLAY_LEN = 17; // 付箋に表示する文字数（ホバーで全文）
+        const NOTE_APPROX_W = 220, NOTE_APPROX_H = 90; // 回遊時の付箋サイズ（ピン留めエリア除外用）
+
+        function truncateTo17(s) {
+            if (s == null || s === '') return '';
+            const t = String(s);
+            return t.length > NOTE_DISPLAY_LEN ? t.slice(0, NOTE_DISPLAY_LEN) + '…' : t;
+        }
+        function getNoteDisplayText(note) {
+            let s = (note.displayText != null && note.displayText !== '') ? note.displayText : (note.text || '');
+            if (s.indexOf('\n\n') >= 0) s = s.split('\n\n')[0];
+            return s;
+        }
+
+        function getWanderBounds() {
+            const pinZone = document.getElementById('pin-zone');
+            const cw = canvas.offsetWidth || window.innerWidth;
+            const ch = canvas.offsetHeight || window.innerHeight;
+            const zoneRight = pinZone ? pinZone.offsetLeft + pinZone.offsetWidth + 20 : 180;
+            const centerLeft = zoneRight;
+            const centerTop = 80;
+            const centerRight = Math.max(centerLeft + 200, cw - 120);
+            const centerBottom = Math.max(centerTop + 150, ch - 120);
+            return {
+                centerLeft,
+                centerTop,
+                rangeW: Math.max(1, centerRight - centerLeft),
+                rangeH: Math.max(1, centerBottom - centerTop)
+            };
+        }
         let allBoardNotes = [];
         let boardLinkedNoteIds = [];
         let boardNotesRotationTimer = null;
@@ -1948,15 +2073,21 @@
             el.id = 'note-' + note.id;
             el.className = 'board-linked-text' + (sizeClass ? ' ' + sizeClass : '');
             el.title = note.text;
-            const maxW = Math.max(200, window.innerWidth - 120);
-            const maxH = Math.max(150, window.innerHeight - 120);
-            el.style.left = Math.random() * maxW + 'px';
-            el.style.top = Math.random() * maxH + 'px';
+            el.dataset.noteId = note.id;
+            el.dataset.noteText = note.text;
+            const b = getWanderBounds();
+            const left = b.centerLeft + Math.random() * b.rangeW;
+            const top = b.centerTop + Math.random() * b.rangeH;
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+            el.style.transition = 'opacity 0.4s, transform 0.4s';
+            el.dataset.vx = (Math.random() - 0.5) * 0.8;
+            el.dataset.vy = (Math.random() - 0.5) * 0.8;
             const isVertical = Math.random() < 0.5;
             el.classList.add(isVertical ? 'vertical' : 'horizontal');
             const textSpan = document.createElement('span');
             textSpan.className = 'note-text';
-            textSpan.innerText = note.text;
+            textSpan.innerText = truncateTo17(getNoteDisplayText(note));
             el.appendChild(textSpan);
             if (note.author) {
                 const authorSpan = document.createElement('span');
@@ -1965,6 +2096,7 @@
                 authorSpan.style.fontSize = '0.85em';
                 el.appendChild(authorSpan);
             }
+            setupNoteDrag(el);
             return el;
         }
 
@@ -1988,9 +2120,9 @@
             return 'size-mid';
         }
         function getScaleForSizeClass(sizeClass) {
-            if (sizeClass === 'size-newest') return 1.18;
-            if (sizeClass === 'size-old') return 0.88;
-            return 1;
+            if (sizeClass === 'size-newest') return 0.79;
+            if (sizeClass === 'size-old') return 0.59;
+            return 0.67;
         }
 
         function renderBoardNotesWindow() {
@@ -2008,7 +2140,7 @@
                     el.className = 'board-linked-text' + (el.classList.contains('vertical') ? ' vertical' : ' horizontal') + ' ' + sizeClass;
                     el.style.transform = 'scale(' + getScaleForSizeClass(sizeClass) + ')';
                     const textSpan = el.querySelector('.note-text');
-                    if (textSpan) textSpan.innerText = note.text;
+                    if (textSpan) textSpan.innerText = truncateTo17(getNoteDisplayText(note));
                     el.title = note.text;
                     continue;
                 }
@@ -2069,6 +2201,241 @@
             }
         }
 
+        // --- 付箋のゆっくり回遊（中央範囲のみ・ピン留めエリアには入らない） ---
+        let wanderIntervalId = null;
+        function startWanderLoop() {
+            if (wanderIntervalId) return;
+            wanderIntervalId = setInterval(() => {
+                const pinZone = document.getElementById('pin-zone');
+                const b = getWanderBounds();
+                const zoneRight = pinZone ? pinZone.offsetLeft + pinZone.offsetWidth : 0;
+                canvas.querySelectorAll('.board-linked-text:not(.pinned)').forEach(el => {
+                    if (pinZone && pinZone.contains(el)) return;
+                    const vx = parseFloat(el.dataset.vx) || 0;
+                    const vy = parseFloat(el.dataset.vy) || 0;
+                    let left = parseFloat(el.style.left) || b.centerLeft;
+                    let top = parseFloat(el.style.top) || b.centerTop;
+                    left = b.centerLeft + ((left - b.centerLeft + vx * WANDER_SPEED) % b.rangeW + b.rangeW) % b.rangeW;
+                    top = b.centerTop + ((top - b.centerTop + vy * WANDER_SPEED) % b.rangeH + b.rangeH) % b.rangeH;
+                    if (zoneRight > 0 && left < zoneRight + 10 && left + NOTE_APPROX_W > pinZone.offsetLeft) {
+                        left = zoneRight + 10;
+                    }
+                    el.style.left = left + 'px';
+                    el.style.top = top + 'px';
+                });
+            }, 120);
+        }
+        function stopWanderLoop() {
+            if (wanderIntervalId) {
+                clearInterval(wanderIntervalId);
+                wanderIntervalId = null;
+            }
+        }
+
+        // --- 付箋ドラッグ＆ピン留め ---
+        let dragNote = null, dragOffsetX = 0, dragOffsetY = 0, dragHasMoved = false, lastReleaseClientX = 0, lastReleaseClientY = 0;
+        function setupNoteDrag(el) {
+            if (!el || el.classList.contains('pin-drag-setup')) return;
+            el.classList.add('pin-drag-setup');
+            const onStart = (clientX, clientY) => {
+                if (dragNote) return;
+                dragHasMoved = false;
+                lastReleaseClientX = clientX;
+                lastReleaseClientY = clientY;
+                const rect = el.getBoundingClientRect();
+                dragNote = el;
+                dragOffsetX = clientX - rect.left;
+                dragOffsetY = clientY - rect.top;
+                el.style.zIndex = '100';
+                el.style.transition = 'none';
+            };
+            const onMove = (clientX, clientY) => {
+                if (!dragNote || dragNote !== el) return;
+                dragHasMoved = true;
+                lastReleaseClientX = clientX;
+                lastReleaseClientY = clientY;
+                const parent = el.offsetParent || canvas;
+                const pr = parent.getBoundingClientRect();
+                let x = clientX - pr.left - dragOffsetX;
+                let y = clientY - pr.top - dragOffsetY;
+                dragNote.style.left = Math.max(0, x) + 'px';
+                dragNote.style.top = Math.max(0, y) + 'px';
+            };
+            const onEnd = (clientX, clientY) => {
+                if (!dragNote || dragNote !== el) return;
+                const releaseX = clientX != null ? clientX : lastReleaseClientX;
+                const releaseY = clientY != null ? clientY : lastReleaseClientY;
+                el.style.zIndex = '';
+                el.style.transition = '';
+                const pinZone = document.getElementById('pin-zone');
+                if (pinZone) {
+                    const pzRect = pinZone.getBoundingClientRect();
+                    const elRect = el.getBoundingClientRect();
+                    const cx = elRect.left + elRect.width / 2;
+                    const cy = elRect.top + elRect.height / 2;
+                    const noteCenterInZone = cx >= pzRect.left && cx <= pzRect.right && cy >= pzRect.top && cy <= pzRect.bottom;
+                    const releaseInZone = releaseX >= pzRect.left && releaseX <= pzRect.right && releaseY >= pzRect.top && releaseY <= pzRect.bottom;
+                    const inZone = noteCenterInZone || releaseInZone;
+                    if (inZone && !pinZone.contains(el)) {
+                        el.classList.add('pinned');
+                        pinZone.appendChild(el);
+                        el.style.left = (Math.random() * Math.max(20, pinZone.offsetWidth - 100)) + 'px';
+                        el.style.top = (36 + Math.random() * Math.max(20, pinZone.offsetHeight - 120)) + 'px';
+                    }
+                    if (inZone || pinZone.contains(el)) {
+                        setTimeout(() => checkPinZoneCollision(), 50);
+                    }
+                }
+                dragNote = null;
+            };
+            el.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); onStart(e.clientX, e.clientY); });
+            el.addEventListener('touchstart', e => { e.preventDefault(); onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+            document.addEventListener('mousemove', e => { onMove(e.clientX, e.clientY); });
+            document.addEventListener('touchmove', e => { if (e.touches.length) onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+            document.addEventListener('mouseup', e => onEnd(e.clientX, e.clientY));
+            document.addEventListener('touchend', e => {
+                const t = e.changedTouches && e.changedTouches[0];
+                onEnd(t ? t.clientX : null, t ? t.clientY : null);
+            });
+        }
+
+        // ピン留めエリア内で2枚の付箋が「ぶつかった」（重なり or 中心が近い）らAIに新アイデアを生成させる
+        const COLLISION_DISTANCE_PX = 120;
+        let lastCollisionKey = '';
+        function checkPinZoneCollision() {
+            const pinZone = document.getElementById('pin-zone');
+            if (!pinZone) return;
+            const pinned = pinZone.querySelectorAll('.board-linked-text.pinned');
+            if (pinned.length < 2) return;
+            for (let i = 0; i < pinned.length; i++) {
+                for (let j = i + 1; j < pinned.length; j++) {
+                    const a = pinned[i].getBoundingClientRect();
+                    const b = pinned[j].getBoundingClientRect();
+                    const rectOverlap = !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+                    const cxA = (a.left + a.right) / 2, cyA = (a.top + a.bottom) / 2;
+                    const cxB = (b.left + b.right) / 2, cyB = (b.top + b.bottom) / 2;
+                    const dist = Math.hypot(cxA - cxB, cyA - cyB);
+                    const near = dist < COLLISION_DISTANCE_PX;
+                    if (rectOverlap || near) {
+                        const idA = pinned[i].dataset.noteId || pinned[i].id;
+                        const idB = pinned[j].dataset.noteId || pinned[j].id;
+                        const key = [idA, idB].sort().join('-');
+                        if (key === lastCollisionKey) return;
+                        lastCollisionKey = key;
+                        playCollisionEffect(pinned[i], pinned[j]);
+                        const textA = pinned[i].dataset.noteText || pinned[i].querySelector('.note-text')?.innerText || '';
+                        const textB = pinned[j].dataset.noteText || pinned[j].querySelector('.note-text')?.innerText || '';
+                        if (textA && textB) generateIdeaFromTwoNotes(textA, textB);
+                        return;
+                    }
+                }
+            }
+            lastCollisionKey = '';
+        }
+
+        function playCollisionEffect(elA, elB) {
+            const rA = elA.getBoundingClientRect();
+            const rB = elB.getBoundingClientRect();
+            const cx = (rA.left + rA.right + rB.left + rB.right) / 4;
+            const cy = (rA.top + rA.bottom + rB.top + rB.bottom) / 4;
+            const burst = document.createElement('div');
+            burst.className = 'collision-burst';
+            burst.style.left = cx + 'px';
+            burst.style.top = cy + 'px';
+            document.body.appendChild(burst);
+            setTimeout(() => burst.remove(), 650);
+            elA.classList.add('collision-flash');
+            elB.classList.add('collision-flash');
+            setTimeout(() => {
+                elA.classList.remove('collision-flash');
+                elB.classList.remove('collision-flash');
+            }, 420);
+        }
+
+        async function generateIdeaFromTwoNotes(textA, textB) {
+            const statusEl = document.getElementById('fetch-all-status');
+            if (statusEl) statusEl.textContent = 'AIがアイデアを考え中...';
+            try {
+                const r = await fetch('/api/generate_idea_from_notes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ textA, textB })
+                });
+                const data = await r.json();
+                if (data.error) throw new Error(data.error);
+                const title = data.ideaTitle || '';
+                const desc = data.ideaDescription || '';
+                const fullText = data.ideaText || (title + (desc ? '\n\n' + desc : ''));
+                if (title || fullText) {
+                    addGeneratedIdeaNote(fullText, title ? { displayText: title } : null, data.noteId);
+                    if (statusEl) statusEl.textContent = '新しいアイデアをボードに追加しました';
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = '生成失敗';
+                console.error('generateIdeaFromTwoNotes:', e);
+            }
+            setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+        }
+
+        function addGeneratedIdeaNote(fullText, opt, noteId) {
+            const note = {
+                id: noteId || 'ai-' + Date.now(),
+                text: fullText || '',
+                author: 'AI',
+                createdAt: Date.now(),
+                displayText: (opt && opt.displayText) ? opt.displayText : (fullText || '')
+            };
+            allBoardNotes.unshift(note);
+            const el = createBoardNoteElement(note, 'size-newest');
+            el.classList.add('ai-generated');
+            el.style.opacity = '0';
+            canvas.appendChild(el);
+            requestAnimationFrame(() => { el.style.opacity = '1'; });
+            setTimeout(() => { el.style.transform = 'scale(' + getScaleForSizeClass('size-newest') + ')'; }, 50);
+        }
+
+        // 壁打ちパネル：AI生成付箋クリックで開く
+        canvas.addEventListener('click', (e) => {
+            if (dragHasMoved) { dragHasMoved = false; return; }
+            const noteEl = e.target.closest('.board-linked-text.ai-generated');
+            if (!noteEl) return;
+            const text = noteEl.dataset.noteText || noteEl.querySelector('.note-text')?.innerText || '';
+            if (!text) return;
+            const panel = document.getElementById('wall-talk-panel');
+            const noteDisplay = document.getElementById('wall-talk-note-text');
+            const replyEl = document.getElementById('wall-talk-reply');
+            if (panel && noteDisplay) {
+                noteDisplay.textContent = text;
+                panel.dataset.wallTalkNoteText = text;
+                replyEl.style.display = 'none';
+                replyEl.textContent = '';
+                panel.classList.add('open');
+            }
+        });
+        document.querySelector('#wall-talk-panel .wall-talk-close')?.addEventListener('click', () => {
+            document.getElementById('wall-talk-panel').classList.remove('open');
+        });
+        document.getElementById('wall-talk-submit')?.addEventListener('click', async () => {
+            const panel = document.getElementById('wall-talk-panel');
+            const noteText = panel?.dataset.wallTalkNoteText || '';
+            const input = document.getElementById('wall-talk-input');
+            const replyEl = document.getElementById('wall-talk-reply');
+            if (!noteText || !replyEl) return;
+            replyEl.textContent = '考え中...';
+            replyEl.style.display = 'block';
+            try {
+                const r = await fetch('/api/wall_talk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ noteText, userMessage: (input?.value || '').trim() })
+                });
+                const data = await r.json();
+                replyEl.textContent = data.reply || '(返答が得られませんでした)';
+            } catch (err) {
+                replyEl.textContent = 'エラー: ' + err.message;
+            }
+        });
+
         async function fetchAllNotes() {
             const statusEl = document.getElementById('fetch-all-status');
             const btn = document.getElementById('btn-fetch-all-notes');
@@ -2082,12 +2449,14 @@
                 const linked = canvas.querySelectorAll('.board-linked-text');
                 if (notes.length === 0) {
                     if (statusEl) statusEl.textContent = '付箋は 0 件です';
+                    stopWanderLoop();
                 } else if (linked.length === 0) {
                     allBoardNotes = notes;
                     currentWindowStart = 0;
                     boardLinkedNoteIds.length = 0;
                     renderBoardNotesWindow();
                     startBoardNotesRotation();
+                    startWanderLoop();
                     if (statusEl) statusEl.textContent = notes.length + ' 件取得・ローテーション開始';
                 } else {
                     let done = 0;
@@ -2102,7 +2471,8 @@
                                 boardLinkedNoteIds.length = 0;
                                 renderBoardNotesWindow();
                                 startBoardNotesRotation();
-                                if (statusEl) statusEl.textContent = notes.length + ' 件取得・ローテーション開始';
+                                startWanderLoop();
+                            if (statusEl) statusEl.textContent = notes.length + ' 件取得・ローテーション開始';
                             }
                         }, 420);
                     });
@@ -2203,9 +2573,12 @@
         socket.on('clear_all_notes', function () {
             console.log("Clearing all notes from AI-Board UI.");
             stopBoardNotesRotation();
+            stopWanderLoop();
             allBoardNotes.length = 0;
             boardLinkedNoteIds.length = 0;
-            canvas.innerHTML = '';
+            const pinZone = document.getElementById('pin-zone');
+            if (pinZone) pinZone.querySelectorAll('.board-linked-text').forEach(el => el.remove());
+            canvas.querySelectorAll('.board-linked-text').forEach(el => el.remove());
             aiText.innerText = '...';
             aiChatBox.style.display = 'none';
         });
