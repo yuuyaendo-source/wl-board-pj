@@ -20,9 +20,10 @@ def run_triage(content: str) -> dict | None:
 質問:
 1. この投稿は「タスク（作業・やるべきこと）」ですか？ それとも「情報の共有・雑談」ですか？
 2. タスクの場合、特定の担当者（人名）が明記されていますか？
+3. 上記1の判定理由を1行で端的に（例: 期限付きの作業依頼のため / 共有メモのため）。
 
 回答は必ず次の JSON 形式のみにしてください。他に説明は不要です。
-{{"is_task": true または false, "assignee_name": "担当者名（いなければ null）"}}
+{{"is_task": true または false, "assignee_name": "担当者名（いなければ null）", "reason": "判定理由を1行で"}}
 """
     data = generate_json(prompt)
     if not data:
@@ -33,4 +34,9 @@ def run_triage(content: str) -> dict | None:
         assignee = assignee.strip() or None
     else:
         assignee = None
-    return {"is_task": is_task, "assignee_name": assignee}
+    reason = data.get("reason")
+    if isinstance(reason, str):
+        reason = reason.strip() or None
+    else:
+        reason = None
+    return {"is_task": is_task, "assignee_name": assignee, "reason": reason}

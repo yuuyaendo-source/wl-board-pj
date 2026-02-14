@@ -102,7 +102,36 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 4. **Meeting スナップショット**  
    `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
 
-- 環境変数: `GEMINI_API_KEY`（必須）、`GEMINI_MODEL`（任意・既定: gemini-2.5-flash-lite）
+- 環境変数: `GEMINI_API_KEY`（必須）、`GEMINI_MODEL`（任意・既定: gemini-2.0-flash）
+
+## 本番（Ubuntu）: 起動とログ
+
+- **ログはファイルに残さない**。確認時だけ別ターミナルで `tail -f` する想定。
+
+### 起動（本番では --reload なし）
+
+```bash
+cd /path/to/board-system/backend
+source .venv/bin/activate
+# 別ターミナルで tail するため一時的に tee（ファイルは残さず /tmp でよい）
+uvicorn app.main:app --host 0.0.0.0 --port 8000 2>&1 | tee /tmp/board-backend.log
+```
+
+- `/tmp` は再起動で消えるのでログを残さない運用に適している。必要なら `tail -f /tmp/board-backend.log` で追う。
+
+### 別ターミナルでログを追う
+
+```bash
+tail -f /tmp/board-backend.log
+```
+
+- 直近から: `tail -n 100 -f /tmp/board-backend.log`
+- `Ctrl+C` で終了（バックエンドは止まらない）
+
+### systemd で運用する場合
+
+- ログは **journald** に出るので、別ターミナルで `journalctl -u board-system-api -f` で追える（ユニット名は環境に合わせる）。
+- 詳細は [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
 
 ## 引き継ぎ・本番
 

@@ -3,6 +3,7 @@
 設定。環境変数から読み込み（.env 対応）。
 将来的に PostgreSQL へ切り替える場合は DATABASE_URL を変更するだけにする。
 """
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -14,7 +15,16 @@ class Settings(BaseSettings):
 
     # Gemini API（フェーズ3 AI Worker）。未設定なら自動仕分け・スコアリングはスキップ
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash-lite"
+
+    @field_validator("gemini_api_key")
+    @classmethod
+    def strip_api_key(cls, v: str | None) -> str | None:
+        """ .env の改行・余白を除去 """
+        if v is None:
+            return None
+        v = (v or "").strip()
+        return v if v else None
+    gemini_model: str = "gemini-2.0-flash"
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱から削除時に 02_1 へ DELETE 連携する
     postit_board_url: str = "http://127.0.0.1:3000"

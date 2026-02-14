@@ -28,6 +28,7 @@ export default function TaskBoardPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [autoImportEnabled, setAutoImportEnabled] = useState(false);
 
   const fetchTask = useCallback(async () => {
     try {
@@ -80,6 +81,27 @@ export default function TaskBoardPage() {
     window.addEventListener("task-import-request", handler);
     return () => window.removeEventListener("task-import-request", handler);
   }, [handleImportFromPostit]);
+
+  // 自動取り込み（ON 時に1回実行し、以降5分ごと）
+  useEffect(() => {
+    if (!autoImportEnabled) return;
+    const runImport = async () => {
+      try {
+        const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { notes: PostitNote[] };
+        const notes = (data.notes || []).map((n) => ({ id: String(n.id), text: n.text || "" }));
+        if (notes.length === 0) return;
+        await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
+        await fetchTask();
+      } catch {
+        // 自動取り込みは失敗しても静かにスキップ
+      }
+    };
+    runImport(); // 有効化直後に1回
+    const interval = setInterval(runImport, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [autoImportEnabled, fetchTask]);
 
   const handleCopyToPersonal = useCallback(
     async (noteId: number, ownerId: number) => {
@@ -143,6 +165,17 @@ export default function TaskBoardPage() {
             {importing ? "取り込み中…" : importMessage}
           </div>
         )}
+        <div className="mb-2 flex flex-wrap items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
+            <input
+              type="checkbox"
+              checked={autoImportEnabled}
+              onChange={(e) => setAutoImportEnabled(e.target.checked)}
+              className="rounded border-[var(--border)]"
+            />
+            <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）</span>
+          </label>
+        </div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="text-sm text-zinc-500">ゴミ箱</span>
           <TrashDropZone onDrop={handleTrashDrop} />

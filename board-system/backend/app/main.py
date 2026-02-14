@@ -3,14 +3,18 @@
 Board System (Wonder Rinko) - FastAPI エントリポイント。
 非同期 SQLAlchemy + aiosqlite で SQLite を利用。将来は PostgreSQL へ URL 変更のみで移行可能。
 """
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.db import init_db
 import app.models  # noqa: F401 — モデルを Base に登録してから create_all するため
 from app.routers import board_placements, boards, daily_reset, sticky_notes, users
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -19,6 +23,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     from app.db import seed_personal_users
     await seed_personal_users()
+    if settings.gemini_api_key:
+        logger.info("[Rinko AI] GEMINI_API_KEY 設定済み — 自動振り分け・スコアリングが有効です")
+    else:
+        logger.warning("[Rinko AI] GEMINI_API_KEY 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
     yield
     # シャットダウン時は特になし（engine はアプリ終了で閉じる）
 

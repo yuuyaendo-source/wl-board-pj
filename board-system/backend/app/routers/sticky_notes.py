@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, StickyNote, User
+from app.models import BoardPlacement, BoardType, StickyNote
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
@@ -40,8 +40,10 @@ async def list_sticky_notes(db: AsyncSession = Depends(get_db)):
 
 @router.post("/import_from_postit", response_model=ImportFromPostitResponse)
 async def import_from_postit(body: ImportFromPostitBody, db: AsyncSession = Depends(get_db)):
-    """付箋ボードから一括取り込み。postit_board_id + postit_note_id が既に存在する付箋はスキップ（重複防止）。"""
+    """付箋ボードから一括取り込み。重複はスキップ。取り込んだ各付箋は AI で自動振り分け（Task 列・担当者→Personal）。"""
     from app.models.sticky_note import NoteStatus
+    from app.services.orchestrator import process_new_note_ai
+
     created = 0
     skipped = 0
     for item in body.notes:
@@ -74,31 +76,13 @@ async def import_from_postit(body: ImportFromPostitBody, db: AsyncSession = Depe
         )
         db.add(placement_main)
         await db.flush()
-        placement_task = BoardPlacement(
-            note_id=note.id,
-            board_type=BoardType.TASK,
-            owner_id=None,
-            position_x=25.0,
-            position_y=25.0,
-            matrix_quadrant=4,
-            sort_order=0,
-        )
-        db.add(placement_task)
-        await db.flush()
         created += 1
+        # 取り込んだ付箋を AI で自動振り分け（Task の列・担当者→Personal）
+        try:
+            await process_new_note_ai(note.id, db)
+        except Exception:
+            pass  # 1件失敗しても他は続行
     return ImportFromPostitResponse(created=created, skipped=skipped)
-
-
-def _resolve_assignee_to_user_id(assignee_name: str) -> int | None:
-    """担当者名から users.id を取得（部分一致）。Gemini と同様スレッド内で同期 DB 使用。"""
-    from sqlalchemy import create_engine, select as sync_select
-    from sqlalchemy.orm import Session
-    from app.config import settings
-    url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
-    engine = create_engine(url)
-    with Session(engine) as session:
-        row = session.execute(sync_select(User.id).where(User.name.contains(assignee_name)).limit(1)).first()
-        return row[0] if row else None
 
 
 @router.post("", response_model=StickyNoteResponse)
@@ -124,41 +108,13 @@ async def create_sticky_note(body: StickyNoteCreate, db: AsyncSession = Depends(
     db.add(placement)
     await db.flush()
 
-    # フェーズ3: Auto-Triage（同期的な Gemini 呼び出しをスレッドで実行）。例外時はスキップし 500 を防ぐ
+    # AI 自動振り分け（Triage → Matrix → Task 配置・Personal 配布）。例外時はスキップし 500 を防ぐ
     try:
-        from app.ai import run_triage, run_matrix_scoring
-        triage = await asyncio.to_thread(run_triage, note.content) if note.content else None
-        if triage and triage.get("is_task"):
-            score = await asyncio.to_thread(run_matrix_scoring, note.content) if note.content else None
-            pos_x = float(score.get("urgency", 50)) if score else 50.0
-            pos_y = float(score.get("importance", 50)) if score else 50.0
-            quad = score.get("matrix_quadrant", 4) if score else 4
-            task_placement = BoardPlacement(
-                note_id=note.id,
-                board_type=BoardType.TASK,
-                owner_id=None,
-                position_x=pos_x,
-                position_y=pos_y,
-                matrix_quadrant=quad,
-                sort_order=0,
-            )
-            db.add(task_placement)
-            await db.flush()
-            assignee_name = triage.get("assignee_name")
-            if assignee_name:
-                owner_id = await asyncio.to_thread(_resolve_assignee_to_user_id, assignee_name)
-                if owner_id is not None:
-                    personal = BoardPlacement(
-                        note_id=note.id,
-                        board_type=BoardType.PERSONAL,
-                        owner_id=owner_id,
-                        lane=Lane.INBOX,
-                        sort_order=0,
-                    )
-                    db.add(personal)
-                    await db.flush()
+        from app.services.orchestrator import process_new_note_ai
+
+        await process_new_note_ai(note.id, db)
     except Exception:
-        pass  # 付箋と Main 配置は作成済み。Triage 失敗時は Task/Personal 配置をスキップ
+        pass  # 付箋と Main 配置は作成済み。AI 失敗時は Task/Personal 配置をスキップ
 
     await db.refresh(note)
     return _note_response(note)

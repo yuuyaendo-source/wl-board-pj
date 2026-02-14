@@ -35,9 +35,10 @@ def run_matrix_scoring(content: str) -> dict | None:
 
 - 緊急度: 期限が近い・すぐ対応すべきほど高い。
 - 重要度: 成果・影響が大きいほど高い。
+- 採点理由を1行で端的に（例: 今週中が期限で影響大 / 余裕ありだが重要）。
 
 回答は必ず次の JSON 形式のみにしてください。
-{{"urgency": 0以上100以下の整数, "importance": 0以上100以下の整数}}
+{{"urgency": 0以上100以下の整数, "importance": 0以上100以下の整数, "reason": "採点理由を1行で"}}
 """
     data = generate_json(prompt)
     if not data:
@@ -49,8 +50,14 @@ def run_matrix_scoring(content: str) -> dict | None:
         i = max(0, min(100, i))
     except (TypeError, ValueError):
         u, i = 50, 50
+    reason = data.get("reason")
+    if isinstance(reason, str):
+        reason = reason.strip() or None
+    else:
+        reason = None
     return {
         "urgency": u,
         "importance": i,
         "matrix_quadrant": _quadrant_from_xy(float(u), float(i)),
+        "reason": reason,
     }

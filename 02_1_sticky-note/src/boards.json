@@ -33,26 +33,6 @@
   "wl": {
     "notes": [
       {
-        "id": "mlezsr2d-rn0graoec",
-        "text": "ノー残業",
-        "x": 1772.6124877929688,
-        "y": 1849.7124938964844,
-        "color": "#ffeb3b",
-        "pinned": false,
-        "author": "タン",
-        "createdAt": 1770630693637
-      },
-      {
-        "id": "mlf05p7w-i5vvo5nzu",
-        "text": "タン\n",
-        "x": 1987.9750366210938,
-        "y": 1844.8875122070312,
-        "color": "#ffeb3b",
-        "pinned": false,
-        "author": "堀",
-        "createdAt": 1770631297772
-      },
-      {
         "id": "mix56mjp-ynqrd3c8r",
         "text": "社内について思うことを書いて貼る！\n・課題\n・あったらいいな\n・こうしたい\n",
         "x": 1656.1250915527344,
@@ -73,36 +53,14 @@
         "createdAt": 1765272907838
       },
       {
-        "id": "miydwu8j-ptc22q0tv",
-        "text": "タンうるさい\nうるさいですか？\nうるさい）うるさいです",
-        "x": 3600.6365576393873,
-        "y": 3600.6365576393873,
-        "color": "#e0e0e0",
-        "pinned": false,
-        "author": "堀　高喜",
-        "createdAt": 1765272909332,
-        "groupId": "trash"
-      },
-      {
         "id": "miydwvy9-wtcl1nanr",
-        "text": "ノー残業Day\n\n担当：ネットワークチーム",
+        "text": "今日はノー残業Day\n\n担当：ネットワークチーム",
         "x": 1164.140625,
         "y": 1644.5625,
         "color": "#e1bee7",
         "pinned": false,
         "author": "林田",
         "createdAt": 1765272911553
-      },
-      {
-        "id": "miydxz7f-eklexlvdi",
-        "text": "焼酎よりウィスキー！！",
-        "x": 2746.5938110351562,
-        "y": 2193.5938110351562,
-        "color": "#ffeb3b",
-        "pinned": false,
-        "author": "福山",
-        "createdAt": 1765272962428,
-        "groupId": "group-1769128610979"
       },
       {
         "id": "miydyhgo-rycskpeb3",
@@ -177,28 +135,6 @@
         "createdAt": 1765273106062
       },
       {
-        "id": "miye1bwy-awvgwiw8m",
-        "text": "体力テスト",
-        "x": 2656.447998046875,
-        "y": 1902,
-        "color": "#fff9c4",
-        "pinned": false,
-        "author": "浅川",
-        "createdAt": 1765273118866,
-        "groupId": "group-1769128642614"
-      },
-      {
-        "id": "miye1rkp-szxjt7i4p",
-        "text": "レモンサワー\nビール",
-        "x": 2699.5938110351562,
-        "y": 2144.5938110351562,
-        "color": "#a7ffeb",
-        "pinned": false,
-        "author": "堀　高喜",
-        "createdAt": 1765273139161,
-        "groupId": "group-1769128610979"
-      },
-      {
         "id": "miye1xs1-uxjoy1w96",
         "text": "資材管理\n\n担当：福山",
         "x": 1890.4063720703125,
@@ -207,17 +143,6 @@
         "pinned": false,
         "author": "堀　高喜",
         "createdAt": 1765273147201
-      },
-      {
-        "id": "miye1yek-95icr0f7g",
-        "text": "小林さんはおやつを食べた？",
-        "x": 3600.003489657794,
-        "y": 3600.003489657794,
-        "color": "#e0e0e0",
-        "pinned": false,
-        "author": "タン",
-        "createdAt": 1765273148013,
-        "groupId": "trash"
       },
       {
         "id": "miye2jrz-9o0x3es1c",
@@ -250,16 +175,6 @@
         "createdAt": 1765273242268
       },
       {
-        "id": "miye4rx8-fyk7r0l0a",
-        "text": "このアプリの名前を付けてほしい",
-        "x": 1671.25,
-        "y": 2389.640625,
-        "color": "#b3e5fc",
-        "pinned": false,
-        "author": "浅川",
-        "createdAt": 1765273279580
-      },
-      {
         "id": "miye5a6w-gtbm6vdjo",
         "text": "",
         "x": 3593.3151824190163,
@@ -269,16 +184,6 @@
         "author": "林田",
         "createdAt": 1765273303256,
         "groupId": "trash"
-      },
-      {
-        "id": "miye5e4g-8q7pfzyca",
-        "text": "『書きこ見』\n『タレコ見』\n『ツブヤ気』\n『思いつ鬼』",
-        "x": 2059.812469482422,
-        "y": 2425.437469482422,
-        "color": "#c5e1a5",
-        "pinned": false,
-        "author": "福山",
-        "createdAt": 1765273308353
       },
       {
         "id": "miye5rup-h8kznh2en",
@@ -331,17 +236,6 @@
         "createdAt": 1765331885540
       },
       {
-        "id": "mizqwq5i-cdug5ot3e",
-        "text": "2026年夏\n全員で筋肉ポージング!＼( 'ω')／",
-        "x": 2725.447998046875,
-        "y": 1888,
-        "color": "#fff9c4",
-        "pinned": false,
-        "author": "浅川",
-        "createdAt": 1765355205223,
-        "groupId": "group-1769128642614"
-      },
-      {
         "id": "mj9vp3n8-q74v7ymdc",
         "text": "現場の使用材料管理\n原価なども\n\n担当：小林",
         "x": 1154.53125,
@@ -360,16 +254,6 @@
         "pinned": false,
         "author": "検証アドミン",
         "createdAt": 1769733635747
-      },
-      {
-        "id": "ml05qq3x-urk84usn5",
-        "text": "ワンダーリン子ちゃんバージョンアップ",
-        "x": 2254.7813415527344,
-        "y": 2421.374969482422,
-        "color": "#c5e1a5",
-        "pinned": false,
-        "author": "検証アドミン",
-        "createdAt": 1769733684142
       },
       {
         "id": "ml7nwmyx-6hnuewt4f",
@@ -394,8 +278,8 @@
       {
         "id": "mla5tex6-130k9437m",
         "text": "リン子さんを住まわせるイケてる箱がほしい",
-        "x": 1856.015625,
-        "y": 2042.4063110351562,
+        "x": 2672.006103515625,
+        "y": 2187.3936462402344,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "浅川",
@@ -404,8 +288,8 @@
       {
         "id": "mla5ubus-n2epo234r",
         "text": "どんな電気錠、電磁錠でも開けられる仕組み",
-        "x": 1462.2813415527344,
-        "y": 2043.7344360351562,
+        "x": 2099.6873779296875,
+        "y": 2432.0186157226562,
         "color": "#e1bee7",
         "pinned": false,
         "author": "浅川",
@@ -414,8 +298,8 @@
       {
         "id": "mla5vqdt-okpwnqr4m",
         "text": "オフィスの何をコントロールしたら便利か？",
-        "x": 1293.1517682756696,
-        "y": 2034.6405901227677,
+        "x": 1650.2845655168803,
+        "y": 2440.3502764020645,
         "color": "#c5e1a5",
         "pinned": false,
         "author": "浅川",
@@ -434,8 +318,8 @@
       {
         "id": "mlf1gpn6-g8ke2vkn2",
         "text": "朝会の前に付箋を書いて、発表する",
-        "x": 1510.484375,
-        "y": 1703.09375,
+        "x": 1628.4811401367188,
+        "y": 2074.081085205078,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "test",
@@ -444,8 +328,8 @@
       {
         "id": "mlfwewhb-3dnhp939v",
         "text": "ワンクリックなど最小限の行動で完結するシステムロジックを考える",
-        "x": 1271.2137769277003,
-        "y": 1654.3810461122018,
+        "x": 970.21240234375,
+        "y": 1760.3685913085938,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "test",
@@ -454,22 +338,12 @@
       {
         "id": "mlfwl109-ar4ekbukn",
         "text": "アプリはインストール時点で自動スタートアップに設定される",
-        "x": 1273.9419899315938,
-        "y": 1650.3772730766605,
+        "x": 976.93115234375,
+        "y": 1969.3748474121094,
         "color": "#ffeb3b",
         "pinned": false,
         "author": "test",
         "createdAt": 1770685760601
-      },
-      {
-        "id": "mlfyigi3-9aakfj4ko",
-        "text": "肩が痛いです。",
-        "x": 2736.7813110351562,
-        "y": 2429.562530517578,
-        "color": "#b3e5fc",
-        "pinned": false,
-        "author": "遠藤",
-        "createdAt": 1770688999947
       },
       {
         "id": "mlfz4pmn-t4lmyll6v",
@@ -582,24 +456,154 @@
         "createdAt": 1770875848243
       },
       {
-        "id": "mlj7e3qt-nhymi1rmm",
-        "text": "タスク移動テスト",
-        "x": 1639.625,
-        "y": 2025.328125,
+        "id": "mllw9t7d-cwkgpcimo",
+        "text": "明日までにAプロダクトの企画書を作る",
+        "x": 1846.1269010575968,
+        "y": 2068.418489590424,
         "color": "#ffeb3b",
         "pinned": false,
-        "author": "浅川 久司",
-        "createdAt": 1770885311861
+        "author": "test",
+        "createdAt": 1771048034330
       },
       {
-        "id": "mlj7jzfr-y1gbxv7m7",
-        "text": "タスク受け渡しテスト",
-        "x": 1721.859375,
-        "y": 1918.84375,
+        "id": "mllwf4yx-mvm0yks29",
+        "text": "CES2028へ出展するためのロードマップを2月末までに作る",
+        "x": 1835.858094342395,
+        "y": 2075.4577068713356,
         "color": "#c5e1a5",
         "pinned": false,
-        "author": "浅川 久司",
-        "createdAt": 1770885586215
+        "author": "test",
+        "createdAt": 1771048282858
+      },
+      {
+        "id": "mllwfmhb-3efax8h61",
+        "text": "明日13:00までにBさんにチャットで返信する",
+        "x": 2017.7604370117188,
+        "y": 1932.4063415527344,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771048305551
+      },
+      {
+        "id": "mllwsena-8d14iuyh6",
+        "text": "今日中にBさんへ指示をする",
+        "x": 1832.1136431109205,
+        "y": 2069.8043234109427,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771048901926
+      },
+      {
+        "id": "mllwv6b1-ch3b9vsy6",
+        "text": "6か月後にまでにＢプロダクトのプランを作成する",
+        "x": 1849.9869497377713,
+        "y": 2077.325183486688,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049031085
+      },
+      {
+        "id": "mllwxhib-g7lkhbhs9",
+        "text": "今週中にAIの実装をする",
+        "x": 1837.4792007236654,
+        "y": 2067.1625315532974,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049138915
+      },
+      {
+        "id": "mllx4e1z-7x2hyntib",
+        "text": "test",
+        "x": 1845.325452082932,
+        "y": 1909.9448626611584,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049461032
+      },
+      {
+        "id": "mllx4px8-71gx31nr8",
+        "text": "今日メールする",
+        "x": 1831.5896721737386,
+        "y": 1927.6916806478866,
+        "color": "#ffccbc",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049476412
+      },
+      {
+        "id": "mllx5lnr-bjdfgrm72",
+        "text": "2028年のCESに出るためのプランを3月末までに作る",
+        "x": 1834.234609173437,
+        "y": 1915.976682932476,
+        "color": "#e1bee7",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049517543
+      },
+      {
+        "id": "mllx9yai-nesgr5oh7",
+        "text": "今日中にCさんにメールをする\n担当：浅川",
+        "x": 1825.8902100166633,
+        "y": 1913.7973172365344,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049720539
+      },
+      {
+        "id": "mllxeg5s-gud6uapxb",
+        "text": "来週金曜までに報告書を作成する",
+        "x": 1830.4439135052878,
+        "y": 1912.378029267804,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771049930321
+      },
+      {
+        "id": "mllxjw1c-j4g4t597i",
+        "text": "2月17日までのDさんへメールを返信する",
+        "x": 1904.506682709271,
+        "y": 1968.168773904837,
+        "color": "#ffeb3b",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771050184176
+      },
+      {
+        "id": "mllxlfzb-ipc7xwv2o",
+        "text": "リン子さんの動作を改善\n浅川",
+        "x": 1900.825224254956,
+        "y": 1957.8642417324684,
+        "color": "#e1bee7",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771050256679
+      },
+      {
+        "id": "mllxpd1w-e9wgwfdql",
+        "text": "3か月後にプロジェクトを立ち上げる",
+        "x": 1893.7038484605046,
+        "y": 1966.0132865805358,
+        "color": "#a7ffeb",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771050439508
+      },
+      {
+        "id": "mllxputk-gnmolsged",
+        "text": "リン子さんのモーションを修正する\n浅川",
+        "x": 1901.825134805104,
+        "y": 1969.5782204279128,
+        "color": "#c5e1a5",
+        "pinned": false,
+        "author": "test",
+        "createdAt": 1771050462537
       }
     ],
     "lines": [],
