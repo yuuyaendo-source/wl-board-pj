@@ -2,22 +2,64 @@
 """
 Wonder Linko Desktop App - cx_Freeze 用 setup（MSI ビルド）
 実行: python setup.py bdist_msi  または  .\build_msi.ps1
+
+根本方針: PIL は cx_Freeze の自動収集に頼らず、lib/PIL に全ファイルを明示コピーする。
+実行時は app.py 先頭で sys.path に lib を追加し、PIL を lib/PIL から読み込む。
 """
 import os
+import sys
 from cx_Freeze import Executable, setup
 
-# 同梱するデータファイル（ビルド時に存在するものだけ）
 include_files = []
 if os.path.exists("config.json"):
     include_files.append(("config.json", "config.json"))
 if os.path.exists("toast_icon.png"):
     include_files.append(("toast_icon.png", "toast_icon.png"))
 
+# PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
+# excludes で PIL を除外し、ここでだけ同梱する。.pyd が無いと MSI インストール後に起動エラーになる
+# 重要: 同梱する _imaging*.pyd は「この Python のバージョン」と一致している必要がある（cp312=3.12, cp314=3.14）
+_pil_imaging_pyd_count = 0
+_expected_suffix = f".cp{sys.version_info.major}{sys.version_info.minor}-"
+try:
+    import PIL
+    pil_root = os.path.abspath(PIL.__file__)
+    if os.path.isfile(pil_root):
+        pil_root = os.path.dirname(pil_root)
+    for dirpath, _dirnames, filenames in os.walk(pil_root):
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            src = os.path.join(dirpath, name)
+            rel = os.path.relpath(src, pil_root)
+            dest = os.path.join("lib", "PIL", rel).replace("\\", "/")
+            include_files.append((src, dest))
+            if "_imaging" in name and name.endswith(".pyd"):
+                _pil_imaging_pyd_count += 1
+except Exception:
+    pass
+if _pil_imaging_pyd_count == 0:
+    raise SystemExit(
+        "PIL の _imaging*.pyd が 1 つも見つかりません。"
+        " pip install Pillow で Pillow を入れ直してからビルドしてください。"
+    )
+# この Python バージョン用の _imaging が含まれているか確認（cp312/cp314 等の一致）
+_has_matching_pyd = any(_expected_suffix in d[0] for d in include_files if "_imaging" in d[0] and d[0].endswith(".pyd"))
+if not _has_matching_pyd:
+    raise SystemExit(
+        f"PIL の _imaging が「この Python ({sys.version_info.major}.{sys.version_info.minor})」用ではありません。"
+        " pip install --force-reinstall Pillow を実行してからビルドしてください。"
+    )
+
 build_exe_options = {
-    "excludes": ["tkinter", "unittest"],
+    "excludes": ["unittest", "PIL"],
     "include_files": include_files,
-    # トレイアイコン用。cx_Freeze が自動検出しないため明示的に含める
-    "includes": ["pystray", "PIL", "PIL.Image", "winotify", "win10toast", "win10toast_click", "requests"],
+    "includes": [
+        "pystray", "winotify", "win10toast", "win10toast_click", "requests",
+        "customtkinter", "pynput",
+    ],
+    "packages": ["customtkinter", "pynput"],
+    "zip_exclude_packages": ["*"],
 }
 
 # MSI 用オプション（ユーザー領域にインストール・管理者不要）
@@ -37,7 +79,7 @@ bdist_msi_options = {
 executables = [
     Executable(
         "app.py",
-        base="Win32GUI",
+        base="gui",  # cx_Freeze 8 では "gui"（コンソール非表示）。旧 "Win32GUI" は "gui" に変更済み
         target_name="WonderLinko.exe",
         shortcut_name="Wonder Linko",
         shortcut_dir="DesktopFolder",

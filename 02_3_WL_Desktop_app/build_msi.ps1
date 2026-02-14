@@ -10,10 +10,11 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Host "Installing cx_Freeze..." -ForegroundColor Yellow
-pip install -q cx_Freeze
+Write-Host "Installing cx_Freeze and freeze-core..." -ForegroundColor Yellow
+# freeze-core は cx_Freeze の Windows 用依存。Python バージョンに合った wheel を入れるため明示的にアップグレード
+pip install -q --upgrade freeze-core cx_Freeze
 
-# Python 3.13+ では python-msilib が必要な場合あり
+# Python 3.13+ では python-msilib が cx_Freeze の依存で入る
 $pyVer = (python -c "import sys; print(sys.version_info.major, sys.version_info.minor)" 2>$null)
 if ($pyVer -match "3\.(1[3-9]|[2-9][0-9])") {
     pip install -q python-msilib 2>$null
@@ -31,8 +32,15 @@ $msiPath = Get-ChildItem -Path "dist" -Filter "*.msi" -ErrorAction SilentlyConti
 if ($msiPath) {
     Write-Host ""
     Write-Host "Done: $($msiPath.FullName)" -ForegroundColor Green
-    Write-Host "Distribute: MSI を配布し、メンバーはインストーラーでインストール。" -ForegroundColor Cyan
-    Write-Host "Note: ビルド前に本番用 config.json を置いておくと、同梱された状態でインストールされます。" -ForegroundColor Gray
+    $pilPyd = Get-ChildItem -Path "build" -Recurse -Filter "_imaging*.pyd" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pilPyd) {
+        Write-Host "PIL _imaging: bundled ($($pilPyd.Name))" -ForegroundColor Gray
+    } else {
+        Write-Error "_imaging*.pyd is not in build. Do not distribute this MSI."
+        exit 1
+    }
+    Write-Host "Distribute the MSI for installation." -ForegroundColor Cyan
+    Write-Host "Note: Put production config.json before building to bundle it." -ForegroundColor Gray
 } else {
     Write-Host "MSI not found in dist. Check build output." -ForegroundColor Yellow
 }

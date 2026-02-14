@@ -29,6 +29,7 @@ def _get_defaults():
         "postit_board_id": "wl",  # トレイクリックで開くデフォルトボード。本番: wl（AI-Board連携先）
         "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
+        "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
         "personal_path": "asakawa",  # デモ用: パーソナルモードのパス（/asakawa でAIボード・デスクトップアプリ同一ページ）
         "open_personal_on_start": False,
         "avatar_visible": True,
@@ -37,6 +38,8 @@ def _get_defaults():
         "postit_poll_interval_sec": 60,  # 付箋ボードの新付箋チェック間隔（0で無効）
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
+        "mini_port_api_url": "http://wl-sticky-note.local/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
+        "mini_port_taskboard_url": "http://wl-sticky-note.local/boards/taskboard",  # リン子クリックで開く Task ボード URL
     }
 
 
@@ -54,6 +57,8 @@ def load_config():
             pass
     cfg["ai_board_url"] = os.environ.get("AI_BOARD_URL", cfg["ai_board_url"]).rstrip("/") + "/"
     cfg["postit_board_url"] = os.environ.get("POSTIT_BOARD_URL", cfg["postit_board_url"]).rstrip("/") + "/"
+    cfg["mini_port_api_url"] = (os.environ.get("MINI_PORT_API_URL", cfg.get("mini_port_api_url", "http://wl-sticky-note.local/board/wl"))).rstrip("/")
+    cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "http://wl-sticky-note.local/boards/taskboard"))).strip()
     return cfg
 
 
@@ -64,6 +69,7 @@ def save_config(cfg):
     out["ai_board_url"] = cfg.get("ai_board_url", defaults["ai_board_url"])
     out["postit_board_url"] = cfg.get("postit_board_url", defaults["postit_board_url"])
     out["user_id"] = cfg.get("user_id", defaults["user_id"])
+    out["display_name"] = cfg.get("display_name", defaults.get("display_name", ""))
     out["personal_path"] = cfg.get("personal_path", defaults.get("personal_path", ""))
     out["postit_board_id"] = cfg.get("postit_board_id", defaults.get("postit_board_id", ""))
     if cfg.get("postit_board_ids") is not None:
@@ -71,5 +77,7 @@ def save_config(cfg):
     out["postit_poll_interval_sec"] = cfg.get("postit_poll_interval_sec", defaults.get("postit_poll_interval_sec", 60))
     out["tray_click_action"] = cfg.get("tray_click_action", defaults.get("tray_click_action", "postit"))
     out["toast_icon_path"] = cfg.get("toast_icon_path", defaults.get("toast_icon_path", ""))
+    out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "http://wl-sticky-note.local/board/wl"))
+    out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "http://wl-sticky-note.local/boards/taskboard"))
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)

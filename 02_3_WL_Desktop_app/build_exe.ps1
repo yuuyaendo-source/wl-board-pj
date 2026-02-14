@@ -1,6 +1,8 @@
 # Wonder Rinko Desktop App - exe build (PyInstaller)
 # Run: .\build_exe.ps1
 # Output: dist\WonderRinko.exe
+#
+# Note: exe 単体の配布が許可されない環境では、代わりに .\build_msi.ps1 で MSI をビルドして配布すること。
 
 Set-Location $PSScriptRoot
 
@@ -13,7 +15,12 @@ Write-Host "Installing PyInstaller..." -ForegroundColor Yellow
 pip install -q pyinstaller
 
 Write-Host "Building exe..." -ForegroundColor Yellow
-pyinstaller --noconsole --onefile --name WonderRinko app.py
+# WonderRinko.spec で PIL を同梱（_imaging.pyd 必須）。spec が無ければ CLI でビルド
+if (Test-Path "WonderRinko.spec") {
+    pyinstaller --noconsole --clean WonderRinko.spec
+} else {
+    pyinstaller --noconsole --onefile --name WonderRinko app.py
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed."
