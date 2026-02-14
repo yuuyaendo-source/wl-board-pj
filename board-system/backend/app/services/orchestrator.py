@@ -21,20 +21,52 @@ logger = logging.getLogger("uvicorn")
 EISENHOWER_TO_COLUMN = {1: 4, 2: 3, 3: 2, 4: 1}
 
 
+def _normalize_assignee_name(name: str) -> str:
+    """敬称を除去してマッチしやすくする。"""
+    if not name or not name.strip():
+        return ""
+    s = name.strip()
+    for suffix in ("さん", "君", "様", "先生", "ちゃん"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)].strip()
+            break
+    return s
+
+
 def _resolve_assignee_to_user_id_sync(assignee_name: str) -> int | None:
-    """担当者名から users.id を取得（部分一致）。同期。"""
+    """担当者名から users.id を取得。完全一致を優先し、なければ部分一致。同期。"""
     from sqlalchemy import create_engine, select as sync_select
     from sqlalchemy.orm import Session
 
     from app.config import settings
 
+    raw = (assignee_name or "").strip()
+    normalized = _normalize_assignee_name(raw) if raw else ""
+    if not raw and not normalized:
+        return None
+
     url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
     engine = create_engine(url)
     with Session(engine) as session:
-        row = session.execute(
-            sync_select(User.id).where(User.name.contains(assignee_name)).limit(1)
-        ).first()
-        return row[0] if row else None
+        # 完全一致を優先（姓のみ or フルネーム）
+        for candidate in (normalized, raw):
+            if not candidate:
+                continue
+            row = session.execute(
+                sync_select(User.id).where(User.name == candidate).limit(1)
+            ).first()
+            if row:
+                return row[0]
+        # 部分一致（User.name に candidate が含まれる）
+        for candidate in (normalized, raw):
+            if not candidate:
+                continue
+            row = session.execute(
+                sync_select(User.id).where(User.name.contains(candidate)).limit(1)
+            ).first()
+            if row:
+                return row[0]
+    return None
 
 
 async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
