@@ -27,6 +27,7 @@ server {
     location = /boards {
         return 302 $scheme://$host/boards/;
     }
+    # Board System フロント（proxy_pass の末尾にパスを付けないこと。付けると /boards/task が 3001 で /task になり RSC が 404 になる）
     location /boards/ {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;

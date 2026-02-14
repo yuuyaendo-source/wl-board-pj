@@ -6,8 +6,8 @@ import { useRef, useEffect, useState } from "react";
 import { PERSONAL_MEMBERS } from "@/lib/personalMembers";
 
 const links = [
-  { href: "/task", label: "Task" },
-  { href: "/morning", label: "Meeting" },
+  { href: "/taskboard", label: "Task" },
+  { href: "/meeting", label: "Meeting" },
 ];
 
 // 付箋ボードは /board/wl へ（Board System からのみ行き来）
@@ -34,12 +34,12 @@ export default function Nav() {
   return (
     <nav className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-white px-4 py-2 shadow-sm">
       <Link
-        href="/task"
+        href="/taskboard"
         className="rounded-xl px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100"
       >
         Board System
       </Link>
-      {pathname === "/task" && (
+      {pathname === "/taskboard" && (
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("task-import-request"))}
