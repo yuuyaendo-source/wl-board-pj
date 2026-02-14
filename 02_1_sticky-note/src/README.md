@@ -15,7 +15,7 @@ Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋�
 - ボード名の保存・ボードのダウンロード・インポート
 - リアルタイム同期（複数ユーザー対応）
 - AI-Board・Desktopアプリとの連携API
-- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Rinko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は http://localhost:3001）。
+- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Rinko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は http://localhost:3001）。**本番では `http://wl-sticky-note.local/boards` に設定し、必ず再ビルドすること。** 付箋ボードと Board System を同一サーバでデプロイする手順はリポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
 
 ---
 
@@ -39,9 +39,10 @@ npm run dev
 
 ## 本番デプロイ
 
-**正規版のデプロイはプロジェクトルートの [docs/デプロイ手順.md](../docs/デプロイ手順.md) を参照してください。**
+- **付箋ボード＋Board System を同一サーバで運用**: リポジトリルートの **[docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md)** を参照（02_1_sticky-note と board-system の clone・ビルド・PM2・Nginx の一連手順）。
+- **付箋ボード単体**: プロジェクトルート [docs/デプロイ手順.md](../docs/デプロイ手順.md) を参照。
 
-### 手順の概要
+### 単体デプロイの手順の概要
 
 1. サーバに SSH 接続
 2. `/var/www/wl-sticky-note` に wlinko-pj を sparse-checkout で clone（02_1_sticky-note のみ）
@@ -63,11 +64,14 @@ sudo systemctl status nginx # Nginx 状態
 ```bash
 cd /var/www/wl-sticky-note
 git pull
-cd 02_1_sticky-note/src
+cd 02_1_sticky-note/src   # releases の場合は releases/02_1_sticky-note/src
+rm -rf .next
 npm install
 npm run build
-pm2 restart wl-sticky-note
+pm2 restart wl-sticky-note --update-env
 ```
+
+`.env` の `NEXT_PUBLIC_*` を変更した場合は必ず再ビルドすること。
 
 ---
 

@@ -72,11 +72,14 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | board_placements | GET/POST | `/board_placements` | 一覧（`?board_type=&owner_id=`）・作成 |
 | | GET/PATCH/DELETE | `/board_placements/{id}` | 1件取得・更新・削除 |
 | boards | GET | `/boards/main` | Main ボード View |
-| | GET | `/boards/task` | Task ボード View |
-| | GET | `/boards/personal?owner_id=` | Personal ボード View |
-| | GET | `/boards/morning` | Morning ボード View |
+| | GET | `/boards/task` | Task ボード View（5列対応。各配置に `taken_by`, `task_color` 付与） |
+| | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
+| | GET | `/boards/morning` | Morning ボード View（MORNING 配置一覧） |
 | daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧（Logic 3） |
+| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（cron 10:15 用・テスト用） |
 
+- **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
+- **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
 - **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
 
 ## フェーズ3: AI Worker（Rinko Core）
@@ -90,14 +93,18 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 
 2. **Matrix Scoring（Logic 2）**  
    Task Board に載せる際、LLM が緊急度・重要度を 0–100 で採点。  
-   position_x = 緊急度、position_y = 重要度。matrix_quadrant は 1–4 で自動算出。
+   position_x = 緊急度、position_y = 重要度。matrix_quadrant は 1–4 で自動算出（5=完了は Personal DONE 連動で設定）。
 
 3. **Daily Reset（Logic 3）**  
    `GET /daily_reset/messages?owner_id=` で、そのユーザーの Personal Today レーンの付箋について  
    「昨日の『〇〇』は持ち越しますか？」形式のメッセージを LLM で生成。
 
+4. **Meeting スナップショット**  
+   `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
+
 - 環境変数: `GEMINI_API_KEY`（必須）、`GEMINI_MODEL`（任意・既定: gemini-2.5-flash-lite）
 
-## 次のステップ（開発プラン）
+## 引き継ぎ・本番
 
-1. **フェーズ4**: Frontend（Next.js 4ボード View）
+- 本番デプロイ・運用: リポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+- systemd で `board-system-api` として uvicorn を常時起動。SQLite の書き込み権限（backend ディレクトリの chown）と uvicorn パスの確認が必要な場合あり（同ドキュメントのトラブルシューティング参照）。

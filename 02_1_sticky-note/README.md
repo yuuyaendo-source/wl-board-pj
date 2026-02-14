@@ -5,7 +5,8 @@
 - **プロジェクト名**: wl-sticky-note
 - **本番サーバ**: IP `172.16.1.81` / ドメイン `wl-sticky-note.local`
 - **本番ボード（連携先）**: **http://wl-sticky-note.local/board/wl** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
-- **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは 02_1_sticky-note のみ clone してデプロイします。
+- **Board System との本番同一サーバ運用**: 付箋ボードと Board System（Task / Personal / Meeting）を同一サーバで動かす場合は、**wlinko-pj ルートの [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** に従う（02_1_sticky-note と board-system をまとめて clone・ビルド・Nginx 設定）。単体デプロイの場合は下記「本番デプロイ」を参照。
+- **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは sparse-checkout で 02_1_sticky-note と board-system の両方を取得してデプロイする構成も可。
 
 ---
 
@@ -49,11 +50,8 @@ cd src
 
 ## 本番デプロイ
 
-**正規版のデプロイ手順は [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照してください。**
-
-- サーバで 02_1_sticky-note のみ clone（sparse-checkout）
-- `src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動まで実行
-- アクセス: http://wl-sticky-note.local
+- **付箋ボード＋Board System を同一サーバで運用する場合**: リポジトリルートの **[docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** を参照（推奨。clone・付箋ボード deploy・Board System backend/frontend・Nginx の一連手順）。
+- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: http://wl-sticky-note.local
 
 ---
 
@@ -87,6 +85,8 @@ cd src
 | `PORT` | サーバーのポート | `3000` |
 | `NODE_ENV` | 実行環境 | `production` |
 | `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | `https://127.0.0.1:5000` |
+| `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
+| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `http://wl-sticky-note.local/boards` |
 
 ---
 

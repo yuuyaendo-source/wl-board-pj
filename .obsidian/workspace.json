@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "5d27e7298417cbe7",
+        "id": "145463dc9755d38a",
         "type": "tabs",
         "children": [
           {
-            "id": "b76b697941adbaec",
+            "id": "43dfca1af5b04537",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "docs/開発・改善プラン/改善指示書11.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "改善指示書11"
+              "title": "新規タブ"
             }
           }
         ]
@@ -183,10 +179,16 @@
       "bases:Create new base": false
     }
   },
-  "active": "b76b697941adbaec",
+  "active": "43dfca1af5b04537",
   "lastOpenFiles": [
-    "docs/開発・改善プラン/改善指示書10.md",
+    "board-system/README.md",
+    "02_3_WL_Desktop_app/README.md",
+    "02_2_AI-Board/README.md",
+    "02_1_sticky-note/README.md",
+    "README.md",
+    "docs/起動手順.md",
     "docs/開発・改善プラン/改善指示書11.md",
+    "docs/開発・改善プラン/改善指示書10.md",
     "docs/開発・改善プラン/改善指示書9_開発プラン.md",
     "docs/開発・改善プラン/今後進めるべきプラン.md",
     "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
@@ -207,10 +209,8 @@
     "docs/開発ドキュメント/レセプション_トラッキング_切り分け.md",
     "docs/開発ドキュメント/開発全体像_20260205.md",
     "02_2_AI-Board/temp_captures/cam-1770279814882-0_20260205_172335.jpg",
-    "02_3_WL_Desktop_app/README.md",
     "docs/開発ドキュメント/新機能開発プラン_20260205.md",
     "docs/開発・改善プラン/改善指示書7.md",
-    "docs/開発ドキュメント/全体改善と一般リリース時の問題点.md",
-    "README.md"
+    "docs/開発ドキュメント/全体改善と一般リリース時の問題点.md"
   ]
 }

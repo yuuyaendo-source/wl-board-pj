@@ -2,14 +2,26 @@
 
 浅川研究室のプロジェクト群です。AI、Web技術、そしてアバターインタラクションを組み合わせた実験的なアプリケーションを含みます。
 
+---
+
+## 引き継ぎのための入口（人・AI向け）
+
+- **全体の構成と各ディレクトリの役割**: 下記「プロジェクト構成」表を参照。
+- **開発時の起動方法**: [docs/起動手順.md](docs/起動手順.md)
+- **本番デプロイ（付箋ボード＋Board System 同一サーバ）**: [docs/本番デプロイ手順.md](docs/本番デプロイ手順.md)  
+  - 初回デプロイはセクション 1〜8、コード更新の反映はセクション 9。
+- **各サブプロジェクトの詳細**: 各ディレクトリの **README.md** を参照（02_1_sticky-note、02_2_AI-Board、board-system / backend / frontend）。開発状況・API・環境変数・引き継ぎ時の注意が記載されている。
+
+---
+
 ## 📁 プロジェクト構成
 
 | ディレクトリ / ファイル | 説明 |
 |------------------------|------|
-| **02_1_sticky-note** | 付箋掲示用Webアプリ（Next.js + Express + Socket.IO）。ポート3000。AI-Board 連携・Board System へのリンクあり。 |
+| **02_1_sticky-note** | 付箋掲示用Webアプリ（Next.js + Express + Socket.IO）。ポート3000。AI-Board 連携・**Board System へのリンク**あり。本番は付箋ボードと Board System を同一サーバ（wl-sticky-note.local）で運用可能。 |
 | **02_2_AI-Board** | **[メイン]** AI搭載デジタルボード（Flask + Socket.IO）。ポート5000。HTTPS・3モード（AI-Board / Reception / Personal）・受付画面 (`/operator`)・名前・顔管理 (`/manager`) 対応。 |
-| **board-system** | Wonder Rinko 用 4ボード（Main / Task / Personal / Morning）。バックエンド FastAPI（8000）、フロント Next.js（3000 または 3001）。 |
-| **docs** | 共通ドキュメント。**起動手順**: [docs/起動手順.md](docs/起動手順.md)。`改善議論.md`、`改善指示書6.md`、`次の実装プラン.md`、`レセプション_トラッキング_切り分け.md`、`パーソナル_名前顔管理_設計.md` など。 |
+| **board-system** | **Wonder Rinko** 用 4ボード（Main / **Task 5列** / Personal / Morning）。FastAPI（8000）+ Next.js（3000 または 3001）。Task はアイデア・短期・長期・重要・完了の5列。Personal 付箋色（緑=タスク由来・青=投稿・灰=Done）。Meeting は毎朝 10:15 に Today スナップショット反映（cron 連携）。本番デプロイは [docs/本番デプロイ手順.md](docs/本番デプロイ手順.md) 参照。 |
+| **docs** | 共通ドキュメント。**起動手順**: [docs/起動手順.md](docs/起動手順.md)。**本番デプロイ（付箋＋Board System 同一サーバ）**: [docs/本番デプロイ手順.md](docs/本番デプロイ手順.md)。`改善指示書10.md`・`改善指示書11.md`、`レセプション_トラッキング_切り分け.md`、`パーソナル_名前顔管理_設計.md` など。 |
 | **scripts** | `allow_firewall_port_3000.ps1`（付箋ボード）、`allow_firewall_port_5000.ps1`（AI-Board）— CATO/遠隔アクセス用にファイアウォールでポート許可（管理者実行）。 |
 | **start_all_servers.ps1** | 付箋ボード・AI-Board を一括起動。CATO 接続PCからは **http://172.16.1.251:3000** / **http://172.16.1.251:5000** でアクセス可能。 |
 | **docs/開発ドキュメント/開発環境_CATO.md** | CATO ネットワークでの開発環境（localhost = 172.16.1.251）の説明。 |
@@ -101,6 +113,7 @@
     *   **カメラソース**: 「このPCのカメラ」または「ネットワークカメラ（エントランス用）」— 後者はサーバー `/camera_stream`（`.env` の `RTSP_URL` または Webカメラ）を使用。
     *   **任意切替＋名前・顔照合**: Personal ボタン押下時、登録がある場合は名前を選択しカメラで顔を照合。一致時のみパーソナルモードに切替。
     *   **名前・顔の管理** (`/manager`): 特定の管理者が名前の追加・削除と各名前に対する顔の登録を行う。データは `face_registry_storage` 経由で保存（現状はローカル JSON、将来 S3 等へ移行可能）。`docs/パーソナル_名前顔管理_設計.md` 参照。
+*   **引き継ぎ用**: 付箋ボード＋Board System の本番構成・更新手順は [docs/本番デプロイ手順.md](docs/本番デプロイ手順.md)。各サブプロジェクトの README も参照。
 *   🚧 **今後の予定** (`docs/次の実装プラン.md` 参照)
     *   **受付モードのトラッキング調整**: ポーズ・表情のずれ修正、検出安定化。
     *   **Phase 2B: 音声統合**: WebRTC 双方向音声、リップシンク。
