@@ -11,6 +11,15 @@ const POSTIT_BOARD_URL =
   process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000";
 const POSTIT_BOARD_ID = "wl";
 
+const AUTO_IMPORT_STORAGE_KEY = "board-system:taskboard:autoImport";
+
+function getStoredAutoImport(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage.getItem(AUTO_IMPORT_STORAGE_KEY);
+  if (stored === null) return true; // 未設定時はON（バックグラウンドで実行）
+  return stored === "true";
+}
+
 /** 5列: アイデア(1), 短期タスク(2), 長期タスク(3), 重要(4), 完了(5) */
 const COLUMNS = [
   { q: 1, title: "アイデア" },
@@ -28,7 +37,22 @@ export default function TaskBoardPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
-  const [autoImportEnabled, setAutoImportEnabled] = useState(false);
+  const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
+
+  // 初回マウント時に localStorage から復元（デフォルトはON）
+  useEffect(() => {
+    setAutoImportEnabledState(getStoredAutoImport());
+  }, []);
+
+  const setAutoImportEnabled = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    setAutoImportEnabledState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(AUTO_IMPORT_STORAGE_KEY, String(next));
+      }
+      return next;
+    });
+  }, []);
 
   const fetchTask = useCallback(async () => {
     try {
@@ -173,7 +197,7 @@ export default function TaskBoardPage() {
               onChange={(e) => setAutoImportEnabled(e.target.checked)}
               className="rounded border-[var(--border)]"
             />
-            <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）</span>
+            <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）※オフにするときだけチェックを外してください</span>
           </label>
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
