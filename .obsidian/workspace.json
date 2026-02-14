@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/開発・改善プラン/改善指示書10.md",
+                "file": "docs/開発・改善プラン/改善指示書11.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "改善指示書10"
+              "title": "改善指示書11"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/開発・改善プラン/改善指示書10.md",
+                "file": "docs/開発・改善プラン/改善指示書11.md",
                 "collapseAll": true,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "改善指示書10へのバックリンク"
+              "title": "改善指示書11へのバックリンク"
             }
           },
           {
@@ -169,7 +169,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 200,
+    "collapsed": true
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -182,10 +183,11 @@
       "bases:Create new base": false
     }
   },
-  "active": "73be8a7709220827",
+  "active": "b76b697941adbaec",
   "lastOpenFiles": [
-    "docs/開発・改善プラン/改善指示書9_開発プラン.md",
     "docs/開発・改善プラン/改善指示書10.md",
+    "docs/開発・改善プラン/改善指示書11.md",
+    "docs/開発・改善プラン/改善指示書9_開発プラン.md",
     "docs/開発・改善プラン/今後進めるべきプラン.md",
     "docs/開発ドキュメント/DT_APP開発プラン_20260205.md",
     "02_1_sticky-note/docs/本番連携の整理.md",

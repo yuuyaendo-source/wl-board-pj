@@ -79,11 +79,12 @@ async def update_board_placement(
     body: BoardPlacementUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """配置の lane / position_x,y / matrix_quadrant / sort_order を更新。"""
+    """配置の lane / position_x,y / matrix_quadrant / sort_order を更新。Personal の DONE と Task 完了を連動。"""
     result = await db.execute(select(BoardPlacement).where(BoardPlacement.id == placement_id))
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
+    prev_lane = placement.lane
     if body.lane is not None:
         placement.lane = body.lane
     if body.position_x is not None:
@@ -94,6 +95,23 @@ async def update_board_placement(
         placement.matrix_quadrant = body.matrix_quadrant
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
+    # Personal の DONE ↔ 他レーン変更時に Task の matrix_quadrant（5=完了）を連動
+    if placement.board_type == BoardType.PERSONAL and body.lane is not None:
+        from app.models.board_placement import Lane
+
+        r_task = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.TASK,
+                BoardPlacement.owner_id.is_(None),
+            )
+        )
+        task_placement = r_task.scalar_one_or_none()
+        if task_placement:
+            if body.lane == Lane.DONE:
+                task_placement.matrix_quadrant = 5
+            elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
+                task_placement.matrix_quadrant = 4
     await db.flush()
     await db.refresh(placement)
     return _placement_response(placement)

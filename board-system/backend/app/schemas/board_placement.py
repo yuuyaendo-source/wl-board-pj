@@ -45,8 +45,15 @@ class MoveToPersonalBody(BaseModel):
     lane: Lane = Lane.INBOX
 
 
+class TakenByUser(BaseModel):
+    """Task 付箋をパーソナルに引き取ったユーザー（アイコン表示用）。"""
+    id: int
+    name: str
+    name_short: str  # 例: 浅川久司 → 浅
+
+
 class BoardPlacementWithNoteResponse(BaseModel):
-    """配置 + 付箋本文（ボード View 用）。Personal 用に is_from_task を付与。"""
+    """配置 + 付箋本文（ボード View 用）。Personal 用 is_from_task、Task 用 taken_by / task_color。"""
     id: int
     note_id: int
     board_type: BoardType
@@ -59,3 +66,6 @@ class BoardPlacementWithNoteResponse(BaseModel):
     note_content: str
     note_status: str
     is_from_task: bool = False
+    # Task 用: 誰が引き取ったか・付箋の色（yellow=未引き取り, green=誰かが引き取り中, grey=誰かがDone）
+    taken_by: list[TakenByUser] = []
+    task_color: str = "yellow"  # "yellow" | "green" | "grey"

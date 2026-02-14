@@ -60,7 +60,7 @@ export default function MorningBoardPage() {
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-2 text-xl font-bold">Meeting</h1>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <p className="text-sm text-zinc-500">参加者の Today レーンスナップショット（毎朝 10:15 に反映）</p>
+        <p className="text-sm text-zinc-500">（毎朝 10:15 に反映）</p>
         <button
           type="button"
           onClick={handleSyncToMorning}
@@ -70,9 +70,6 @@ export default function MorningBoardPage() {
           {syncing ? "反映中…" : "今の Today を反映（テスト用）"}
         </button>
       </div>
-      {morningPlacements.length === 0 && (
-        <p className="mb-6 text-sm text-zinc-500">スナップショットがまだありません。パーソナルで Today に付箋を D&D したあと、上の「今の Today を反映」で表示できます。</p>
-      )}
       <div className="flex flex-col gap-6">
         {users.map((u) => (
           <section key={u.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">

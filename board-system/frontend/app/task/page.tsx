@@ -7,16 +7,17 @@ import { PERSONAL_MEMBERS } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
 
-// 付箋ボード（02_1）のベースURL。取り込み時に /api/boards/wl/notes を取得
 const POSTIT_BOARD_URL =
   process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000";
 const POSTIT_BOARD_ID = "wl";
 
-const QUADRANTS = [
-  { q: 1, title: "緊急・重要", cx: 75, cy: 75 },
-  { q: 2, title: "重要", cx: 25, cy: 75 },
-  { q: 3, title: "緊急", cx: 75, cy: 25 },
-  { q: 4, title: "その他", cx: 25, cy: 25 },
+/** 5列: アイデア(1), 短期タスク(2), 長期タスク(3), 重要(4), 完了(5) */
+const COLUMNS = [
+  { q: 1, title: "アイデア" },
+  { q: 2, title: "短期タスク" },
+  { q: 3, title: "長期タスク" },
+  { q: 4, title: "重要" },
+  { q: 5, title: "完了" },
 ] as const;
 
 type PostitNote = { id: string; text: string; author?: string; createdAt?: number };
@@ -74,6 +75,12 @@ export default function TaskBoardPage() {
     }
   }, [fetchTask]);
 
+  useEffect(() => {
+    const handler = () => handleImportFromPostit();
+    window.addEventListener("task-import-request", handler);
+    return () => window.removeEventListener("task-import-request", handler);
+  }, [handleImportFromPostit]);
+
   const handleCopyToPersonal = useCallback(
     async (noteId: number, ownerId: number) => {
       try {
@@ -99,9 +106,9 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
-  const byQuadrant = placements.reduce(
+  const byColumn = placements.reduce(
     (acc, p) => {
-      const q = p.matrix_quadrant ?? 4;
+      const q = p.matrix_quadrant ?? 1;
       if (!acc[q]) acc[q] = [];
       acc[q].push(p);
       return acc;
@@ -110,12 +117,9 @@ export default function TaskBoardPage() {
   );
 
   const handleDrop = useCallback(
-    async (placementId: number, quadrant: number) => {
-      const { cx, cy } = QUADRANTS.find((x) => x.q === quadrant) ?? QUADRANTS[3];
+    async (placementId: number, column: number) => {
       await api.boardPlacements.patch(placementId, {
-        position_x: cx,
-        position_y: cy,
-        matrix_quadrant: quadrant,
+        matrix_quadrant: column,
       });
       await fetchTask();
     },
@@ -131,54 +135,39 @@ export default function TaskBoardPage() {
     );
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-bold">Task Board（4事象）</h1>
-      <p className="mb-4 text-sm text-zinc-500">
-        付箋をドラッグして象限で振り分け。メンバー名にドロップでパーソナルボードへコピー。
-      </p>
-
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={handleImportFromPostit}
-          disabled={importing}
-          className="rounded-xl px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-          style={{ background: "var(--primary)" }}
-        >
-          {importing ? "取り込み中…" : "付箋ボードから取り込む"}
-        </button>
-        {importMessage && (
-          <span className="text-sm text-zinc-500">{importMessage}</span>
+    <div className="mx-auto max-w-6xl px-4 py-4">
+      {/* メニューバー・ゴミ箱・パーソナルへコピーはスクロールについてくる */}
+      <div className="sticky top-[52px] z-10 -mx-4 border-b border-[var(--border)] bg-white px-4 py-3 shadow-sm">
+        {(importing || importMessage) && (
+          <div className="mb-2 text-sm text-zinc-500">
+            {importing ? "取り込み中…" : importMessage}
+          </div>
         )}
-      </div>
-
-      <div className="mb-6 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-        <h2 className="mb-2 text-sm font-semibold text-zinc-600">
-          パーソナルボードへコピー（付箋をメンバーにドロップ）
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          {PERSONAL_MEMBERS.map(({ ownerId, name }) => (
-            <MemberDropZone
-              key={ownerId}
-              name={name}
-              onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
-            />
-          ))}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-zinc-500">ゴミ箱</span>
+          <TrashDropZone onDrop={handleTrashDrop} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm text-zinc-500">パーソナルボードへコピー（付箋をメンバーにドロップ）</span>
+          <div className="flex flex-wrap gap-2">
+            {PERSONAL_MEMBERS.map(({ ownerId, name }) => (
+              <MemberDropZone
+                key={ownerId}
+                name={name}
+                onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="mb-6 flex items-center gap-4">
-        <span className="text-sm text-zinc-500">ゴミ箱（付箋をドロップで削除・付箋ボードからも削除）</span>
-        <TrashDropZone onDrop={handleTrashDrop} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {QUADRANTS.map(({ q, title }) => (
-          <QuadrantDropZone
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        {COLUMNS.map(({ q, title }) => (
+          <ColumnDropZone
             key={q}
-            quadrant={q}
+            column={q}
             title={title}
-            placements={byQuadrant[q] ?? []}
+            placements={byColumn[q] ?? []}
             onDrop={(placementId) => handleDrop(placementId, q)}
             onRefresh={fetchTask}
           />
@@ -206,7 +195,7 @@ function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-sm transition-colors ${
+      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
         over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
       }`}
       onDragOver={handleDragOver}
@@ -234,10 +223,7 @@ function MemberDropZone({
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-  };
+  const handleDragLeave = () => setOver(false);
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -248,7 +234,7 @@ function MemberDropZone({
 
   return (
     <div
-      className={`min-w-[120px] rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
+      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${
         over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
       }`}
       onDragOver={handleDragOver}
@@ -260,14 +246,14 @@ function MemberDropZone({
   );
 }
 
-function QuadrantDropZone({
-  quadrant,
+function ColumnDropZone({
+  column,
   title,
   placements,
   onDrop,
   onRefresh,
 }: {
-  quadrant: number;
+  column: number;
   title: string;
   placements: PlacementWithNote[];
   onDrop: (placementId: number) => void;
@@ -290,7 +276,7 @@ function QuadrantDropZone({
 
   return (
     <div
-      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-4 transition-colors ${
+      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${
         over ? "border-[var(--primary)] bg-green-50/50" : ""
       }`}
       onDragOver={handleDragOver}
@@ -300,7 +286,14 @@ function QuadrantDropZone({
       <h2 className="mb-3 font-semibold text-zinc-700">{title}</h2>
       <div className="flex flex-col gap-2">
         {placements.map((p) => (
-          <NoteCard key={p.id} placement={p} draggable onDragEnd={onRefresh} />
+          <NoteCard
+            key={p.id}
+            placement={p}
+            draggable
+            cardColor={p.task_color}
+            takenBy={p.taken_by}
+            onDragEnd={onRefresh}
+          />
         ))}
       </div>
     </div>

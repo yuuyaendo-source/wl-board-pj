@@ -106,14 +106,10 @@ export default function PersonalBoardView({
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <h1 className="mb-2 text-xl font-bold">パーソナルボード — {displayName}</h1>
-      <p className="mb-4 text-sm text-zinc-500">
-        1行入力でタスクに追加。D&D で Today / タスク / Done へ移動。
-      </p>
+      <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
       <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
 
-      <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-        <span className="text-sm text-zinc-500">ゴミ箱・タスクリリース：</span>
+      <div className="mt-6 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
         <PersonalTrashDropZone onDrop={handleTrashDrop} />
         <PersonalTaskReleaseDropZone
           onDrop={handleTaskReleaseDrop}
@@ -272,6 +268,13 @@ function LaneColumn({
             key={p.id}
             placement={p}
             draggable
+            cardColor={
+              lane === "DONE"
+                ? "grey"
+                : p.is_from_task
+                  ? "green"
+                  : "blue"
+            }
             dragData={{ isFromTask: String(!!p.is_from_task) }}
             onDragEnd={onRefresh}
           />

@@ -32,13 +32,23 @@ export default function Nav() {
   const isPersonalPage = pathname?.startsWith("/personal/");
 
   return (
-    <nav className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-white px-4 py-2 shadow-sm">
+    <nav className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-white px-4 py-2 shadow-sm">
       <Link
         href="/task"
         className="rounded-xl px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100"
       >
         Board System
       </Link>
+      {pathname === "/task" && (
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("task-import-request"))}
+          className="rounded-xl px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+          style={{ background: "var(--primary)" }}
+        >
+          付箋ボードから取り込む
+        </button>
+      )}
       {links.map(({ href, label }) => (
         <Link
           key={href}
