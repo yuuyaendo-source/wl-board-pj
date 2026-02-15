@@ -6,5 +6,6 @@ temp_captures/
 src/webapp/static/captures/
 src/webapp/static/voices/
 src/webapp/data/
+logs/
 models_list.txt
 models.txt

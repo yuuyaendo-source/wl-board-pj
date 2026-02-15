@@ -28,7 +28,9 @@ def run_triage(content: str) -> dict | None:
     data = generate_json(prompt)
     if not data:
         return None
-    is_task = data.get("is_task") is True
+    # LLM が "true" を文字列で返す場合にも対応（is True のみだと False になる）
+    raw_is_task = data.get("is_task")
+    is_task = raw_is_task is True or (isinstance(raw_is_task, str) and raw_is_task.strip().lower() == "true")
     assignee = data.get("assignee_name")
     if isinstance(assignee, str):
         assignee = assignee.strip() or None

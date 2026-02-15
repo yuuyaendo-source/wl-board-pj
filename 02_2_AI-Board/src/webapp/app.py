@@ -745,6 +745,14 @@ def _get_local_ips():
 
 
 if __name__ == '__main__':
+    # Ensure stdout/stderr use UTF-8 on Windows when redirected (avoids UnicodeEncodeError with cp932)
+    import sys
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     print("Starting Flask Server...")
     local_ips = _get_local_ips()
     

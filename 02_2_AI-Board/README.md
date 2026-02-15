@@ -136,7 +136,18 @@ python app.py
 ```
 
 - ブラウザ: http://localhost:5000  
-- 一括起動ではルートの `start_all_servers.ps1` がこの手順を実行。
+
+### バックグラウンド起動（PowerShell を閉じても止まらない）
+
+作業用PCで「PowerShell を閉じるとサーバーが止まる」「安定して動かしたい」場合は、以下を使います。
+
+```powershell
+cd 02_2_AI-Board
+.\start_server_background.ps1
+```
+
+- 停止: `.\stop_server_background.ps1` またはタスクマネージャーで python を終了。
+- 詳細（Windows サービス化・タスクスケジューラ・安定運用のコツ）: ** [docs/安定運用・バックグラウンド起動.md](docs/安定運用・バックグラウンド起動.md) ** を参照。
 
 ### 遠隔アクセス（Receptionモード・受付オペレーター）
 
