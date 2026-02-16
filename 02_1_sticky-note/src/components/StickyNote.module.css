@@ -20,6 +20,12 @@
     box-shadow: 0 0 0 3px var(--primary, #79dc89);
 }
 
+/* 完了済み（Board System ゴミ箱で落とした付箋）。取り込み対象外 */
+.note.gray {
+    opacity: 0.85;
+    border: 1px solid #bdbdbd;
+}
+
 .note.large {
     width: 320px;
     height: 320px;

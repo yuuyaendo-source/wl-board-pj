@@ -38,8 +38,10 @@ def _get_defaults():
         "postit_poll_interval_sec": 60,  # 付箋ボードの新付箋チェック間隔（0で無効）
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
+        "notifications_enabled": True,  # トースト通知の表示（アプリ内でオン/オフ。Windows の設定とは別）
         "mini_port_api_url": "http://wl-sticky-note.local/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "http://wl-sticky-note.local/boards/taskboard",  # リン子クリックで開く Task ボード URL
+        "update_check_url": "",  # 更新チェック用 JSON の URL。空ならチェックしない。例: https://example.com/wonderlinko/latest.json
     }
 
 
@@ -77,7 +79,9 @@ def save_config(cfg):
     out["postit_poll_interval_sec"] = cfg.get("postit_poll_interval_sec", defaults.get("postit_poll_interval_sec", 60))
     out["tray_click_action"] = cfg.get("tray_click_action", defaults.get("tray_click_action", "postit"))
     out["toast_icon_path"] = cfg.get("toast_icon_path", defaults.get("toast_icon_path", ""))
+    out["notifications_enabled"] = cfg.get("notifications_enabled", defaults.get("notifications_enabled", True))
     out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "http://wl-sticky-note.local/board/wl"))
     out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "http://wl-sticky-note.local/boards/taskboard"))
+    out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)

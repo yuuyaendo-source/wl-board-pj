@@ -116,11 +116,11 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         <div
             ref={noteRef}
             data-sticky-note="true"
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''}`}
             style={{
                 left: note.x,
                 top: note.y,
-                backgroundColor: note.color,
+                backgroundColor: note.gray ? '#e0e0e0' : (note.color || COLORS[0]),
                 transform: `scale(${isDragging ? 1.05 : 1})`,
                 zIndex: isDragging ? 1000 : 1,
             }}

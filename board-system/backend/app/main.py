@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Board System (Wonder Rinko) - FastAPI エントリポイント。
+Board System (Wonder Linko) - FastAPI エントリポイント。
 非同期 SQLAlchemy + aiosqlite で SQLite を利用。将来は PostgreSQL へ URL 変更のみで移行可能。
 """
 import logging
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Board System API (Wonder Rinko)",
+    title="Board System API (Wonder Linko)",
     description="4ボード（Main / Task / Personal / Morning）用のバックエンドAPI。",
     version="0.1.0",
     lifespan=lifespan,

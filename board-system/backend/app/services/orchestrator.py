@@ -33,19 +33,29 @@ def _normalize_assignee_name(name: str) -> str:
     return s
 
 
+def _sync_database_url() -> str:
+    """非同期用 URL を同期用に変換（別接続で担当者検索するため）。"""
+    from app.config import settings
+
+    url = settings.database_url
+    if "postgresql+asyncpg" in url:
+        return url.replace("postgresql+asyncpg", "postgresql+psycopg2", 1)
+    if "sqlite+aiosqlite" in url:
+        return url.replace("sqlite+aiosqlite", "sqlite", 1)
+    return url
+
+
 def _resolve_assignee_to_user_id_sync(assignee_name: str) -> int | None:
-    """担当者名から users.id を取得。完全一致を優先し、なければ部分一致。同期。"""
+    """担当者名から users.id を取得。完全一致を優先し、なければ部分一致。同期専用エンジンで実行。"""
     from sqlalchemy import create_engine, select as sync_select
     from sqlalchemy.orm import Session
-
-    from app.config import settings
 
     raw = (assignee_name or "").strip()
     normalized = _normalize_assignee_name(raw) if raw else ""
     if not raw and not normalized:
         return None
 
-    url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
+    url = _sync_database_url()
     engine = create_engine(url)
     with Session(engine) as session:
         # 完全一致を優先（姓のみ or フルネーム）
@@ -87,6 +97,8 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         return
 
     content = note.content or ""
+    content_preview = (content[:300] + "…") if len(content) > 300 else (content or "(空)")
+    logger.info("[Rinko AI] Note %s 内容: %s", note_id, content_preview)
 
     # --- 1. Triage ---
     try:
@@ -105,52 +117,50 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         logger.info("[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）", note_id)
         return
 
+    # タスクでないと判定されても全件 Task ボードに載せる（曖昧な内容で取りこぼしを防ぐ）
     if not triage_result.get("is_task"):
         reason = triage_result.get("reason") or ""
         logger.info(
-            "[Rinko AI] Note %s 振り分け完了: タスクでないと判定 → Main のみ（Task には出さない）｜%s",
+            "[Rinko AI] Note %s タスクでないと判定 → アイデア列に配置｜%s",
             note_id,
             reason,
         )
-        return
+        await _place_on_task_board(db, note_id, 50.0, 50.0, 1)  # 1=アイデア
+        await db.flush()
+        # 担当者名があれば Personal 配布を試みる（下記 4 と共通のためここで続行）
 
     triage_reason = triage_result.get("reason") or ""
-    if triage_reason:
+    if triage_reason and triage_result.get("is_task"):
         logger.info("[Rinko AI] Note %s Triage 理由: %s", note_id, triage_reason)
 
-    # --- 2. Matrix Scoring ---
-    try:
-        matrix_result = await asyncio.to_thread(run_matrix_scoring, content)
-    except Exception as e:
-        logger.warning("[Rinko AI] Matrix scoring failed: %s", e)
-        matrix_result = None
-
-    urgency = 50.0
-    importance = 50.0
-    quadrant_eisenhower = 4  # デフォルト: どちらでもない → アイデア列
-
-    if matrix_result:
-        urgency = float(matrix_result.get("urgency", 50))
-        importance = float(matrix_result.get("importance", 50))
-        quadrant_eisenhower = matrix_result.get("matrix_quadrant", 4)
-
-    column = EISENHOWER_TO_COLUMN.get(quadrant_eisenhower, 1)
-    COLUMN_NAMES = {1: "アイデア", 2: "短期タスク", 3: "長期タスク", 4: "重要"}
-    column_name = COLUMN_NAMES.get(column, "アイデア")
-    matrix_reason = (matrix_result or {}).get("reason") or ""
-    logger.info(
-        "[Rinko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
-        note_id,
-        urgency,
-        importance,
-        column_name,
-        matrix_reason,
-    )
-
-    # --- 3. Task ボードへ配置 ---
-    await _place_on_task_board(db, note_id, urgency, importance, column)
-    await db.flush()
-    logger.info("[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置", note_id, column_name)
+    # --- 2. Matrix Scoring（タスクと判定されたときのみ） ---
+    urgency, importance, column = 50.0, 50.0, 1
+    column_name = "アイデア"
+    if triage_result.get("is_task"):
+        try:
+            matrix_result = await asyncio.to_thread(run_matrix_scoring, content)
+        except Exception as e:
+            logger.warning("[Rinko AI] Matrix scoring failed: %s", e)
+            matrix_result = None
+        if matrix_result:
+            urgency = float(matrix_result.get("urgency", 50))
+            importance = float(matrix_result.get("importance", 50))
+            quadrant_eisenhower = matrix_result.get("matrix_quadrant", 4)
+            column = EISENHOWER_TO_COLUMN.get(quadrant_eisenhower, 1)
+        COLUMN_NAMES = {1: "アイデア", 2: "短期タスク", 3: "長期タスク", 4: "重要"}
+        column_name = COLUMN_NAMES.get(column, "アイデア")
+        matrix_reason = (matrix_result or {}).get("reason") or ""
+        logger.info(
+            "[Rinko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
+            note_id,
+            urgency,
+            importance,
+            column_name,
+            matrix_reason,
+        )
+        await _place_on_task_board(db, note_id, urgency, importance, column)
+        await db.flush()
+        logger.info("[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置", note_id, column_name)
 
     # --- 4. Personal へ配布（担当者あり） ---
     assignee_name = triage_result.get("assignee_name")

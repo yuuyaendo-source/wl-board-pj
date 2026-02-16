@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         return v if v else None
     gemini_model: str = "gemini-2.0-flash"
 
-    # 付箋ボード（02_1）のベースURL。タスクゴミ箱から削除時に 02_1 へ DELETE 連携する
+    # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
     postit_board_url: str = "http://127.0.0.1:3000"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

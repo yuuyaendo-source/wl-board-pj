@@ -10,7 +10,7 @@ interface NoteCardProps {
   /** ドラッグ時に dataTransfer に追加でセットする値（Personal のゴミ箱/タスクリリース制限用） */
   dragData?: Record<string, string>;
   /** Task/Personal の付箋色（未指定時は placement.task_color または黄） */
-  cardColor?: "yellow" | "green" | "grey" | "blue";
+  cardColor?: "yellow" | "green" | "grey" | "blue" | "red";
   /** Task 用: 引き取り者（短縮名アイコン表示） */
   takenBy?: TakenByUser[];
   onDragStart?: (e: React.DragEvent) => void;
@@ -22,6 +22,7 @@ const BG_COLOR = {
   green: "bg-green-100 border-green-300",
   grey: "bg-zinc-200 border-zinc-400",
   blue: "bg-blue-100 border-blue-300",
+  red: "bg-red-100 border-red-400",
 } as const;
 
 export default function NoteCard({
@@ -83,7 +84,8 @@ export default function NoteCard({
             if (dragData) {
               Object.entries(dragData).forEach(([k, v]) => e.dataTransfer.setData(k, v));
               // dragover では getData が空になるブラウザがあるため、Task リリース用に型だけ付与（drop ゾーンで types を参照）
-              if (dragData.isFromTask === "true") {
+              // isFromTask: タスク由来の付箋をリリース（配置削除）。canReleaseToTask: パーソナル投稿もタスクへ追加可能
+              if (dragData.isFromTask === "true" || dragData.canReleaseToTask === "true") {
                 e.dataTransfer.setData("application/x-board-task-release", "1");
               }
             }

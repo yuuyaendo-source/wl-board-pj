@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: linko-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: linko_user
+      POSTGRES_PASSWORD: linko_password
+      POSTGRES_DB: linko_board_system
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U linko_user -d linko_board_system" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - linko-net
+    restart: always
+
+networks:
+  linko-net:
+    name: linko-net
+    driver: bridge
+
+volumes:
+  postgres_data:

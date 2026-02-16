@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: linko-backend-${COLOR}
+    ports:
+      - "${PORT_BACKEND}:8000"
+    environment:
+      # DBは linko-db (docker-compose.db.ymlで定義) に接続
+      DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      POSTIT_BOARD_URL: http://sticky-note:3000
+      # Nginx経由のリクエストを信頼
+      FORWARDED_ALLOW_IPS: "*"
+    networks:
+      - linko-net
+    restart: always
+    # DBの状態確認はネットワーク越しだと healthcheck が複雑になるため、
+    # アプリ側での接続リトライに任せるか、簡易的な wait-for スクリプトを使う
+    # ここでは depends_on は使えない（別composeのため）
+
+  frontend:
+    build:
+      context: ./frontend
+      # ビルド時環境変数
+      args:
+        # クライアントサイドで叩くURL (ブラウザ -> Nginx)
+        NEXT_PUBLIC_API_URL: http://wl-sticky-note.local/api/bs
+        NEXT_PUBLIC_BASE_PATH: ""
+        NEXT_PUBLIC_LEGACY_BOARD_URL: http://wl-sticky-note.local
+    container_name: linko-frontend-${COLOR}
+    ports:
+      - "${PORT_FRONTEND}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://wl-sticky-note.local/api/bs
+      NEXT_PUBLIC_LEGACY_BOARD_URL: http://wl-sticky-note.local
+    networks:
+      - linko-net
+    restart: always
+
+  sticky-note:
+    build: ../02_1_sticky-note/src
+    container_name: linko-sticky-note-${COLOR}
+    ports:
+      - "${PORT_STICKY}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # コンテナ間通信 (backend は同じネットワーク内のサービス名として参照したいが、
+      # ブルー/グリーンで名前が変わるため、linko-backend-blue等は動的。
+      # しかし、そもそも backend から sticky-note へは通知が行くだけ。
+      # sticky-note から backend へは削除連携のみ。
+      # ここでは localhost 経由だと Nginx を通るため wl-sticky-note.local を使うのが正解か？
+      # いや、コンテナ内から wl-sticky-note.local は解決できない（hosts設定しないと）。
+      # したがって、docker network 内で相手を見つける必要があるが、相手の名前が動的。
+      #
+      # 解決策:
+      # 1. 互いに localhost を指す (ホストネットワークモードではないので無理)
+      # 2. Nginx (ホスト) を経由する。ホストのIP (172.17.0.1 or similar) を指す。
+      #    add_host で host.docker.internal を追加するのが手っ取り早い。
+
+      BOARD_SYSTEM_API_URL: http://host.docker.internal:80/api/bs
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://wl-sticky-note.local
+      DATA_DIR: /app/data
+    volumes:
+      - sticky_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - linko-net
+    restart: always
+
+networks:
+  linko-net:
+    external: true
+
+volumes:
+  sticky_data:

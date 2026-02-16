@@ -40,11 +40,28 @@ board-system/
    cd board-system/frontend
    npm install
    npm run dev
-   # 付箋ボード併用時: npm run dev -- -p 3001
+   # 付箋ボード併用時: npm run dev -- -p 3000
    ```
 3. ブラウザで http://localhost:3000 を開く（3001 で起動した場合は http://localhost:3001）。トップで「API 接続済み」と出れば OK。
 
 **付箋ボード（02_1）と併用する場合**: 02_1 を 3000、board-system フロントを 3001 で起動。02_1 の `.env` に `NEXT_PUBLIC_BOARD_SYSTEM_URL=http://localhost:3001`、board-system の `.env.local` に `NEXT_PUBLIC_LEGACY_BOARD_URL=http://localhost:3000` を設定すると相互リンクで行き来可能。
+
+## ローカルで Docker を動かす（付箋ボード＋Board System まとめて）
+
+Docker で付箋ボード・Board System・PostgreSQL をまとめて起動して確認できます。**cato-ca.crt は不要**（無くてもビルド可能）。
+
+```powershell
+cd board-system
+copy .env.example .env   # 任意: GEMINI_API_KEY を設定
+docker compose up -d --build
+docker exec -it linko-backend alembic upgrade head   # 初回のみ
+```
+
+- **Board System**: http://localhost:3010  
+- **付箋ボード**: http://localhost:3011  
+- **停止**: `docker compose down`  
+
+詳細は [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) の「ローカルで Docker を動かして確認する」を参照。
 
 ## 本番への反映（コード更新時）
 
