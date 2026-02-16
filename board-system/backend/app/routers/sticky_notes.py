@@ -2,7 +2,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -108,13 +108,14 @@ async def create_sticky_note(body: StickyNoteCreate, db: AsyncSession = Depends(
     db.add(placement)
     await db.flush()
 
-    # AI 自動振り分け（Triage → Matrix → Task 配置・Personal 配布）。例外時はスキップし 500 を防ぐ
-    try:
-        from app.services.orchestrator import process_new_note_ai
+    # personal_only でないときのみ AI 自動振り分け（Triage → Task 配置・Personal 配布）
+    if not getattr(body, "personal_only", False):
+        try:
+            from app.services.orchestrator import process_new_note_ai
 
-        await process_new_note_ai(note.id, db)
-    except Exception:
-        pass  # 付箋と Main 配置は作成済み。AI 失敗時は Task/Personal 配置をスキップ
+            await process_new_note_ai(note.id, db)
+        except Exception:
+            pass  # 付箋と Main 配置は作成済み。AI 失敗時は Task/Personal 配置をスキップ
 
     await db.refresh(note)
     return _note_response(note)
@@ -146,12 +147,15 @@ async def update_sticky_note(note_id: int, body: StickyNoteUpdate, db: AsyncSess
     return _note_response(note)
 
 
-def _notify_postit_delete(board_id: str, note_id: str) -> None:
-    """付箋ボード（02_1）の付箋を削除。同期で呼ぶ。"""
+def _notify_postit_archive(board_id: str, note_id: str) -> None:
+    """付箋ボード（02_1）の付箋を削除せずグレー化。同期で呼ぶ。"""
+    import json
     import urllib.request
     from app.config import settings
     url = f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
-    req = urllib.request.Request(url, method="DELETE")
+    body = json.dumps({"gray": True}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="PATCH")
+    req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             pass
@@ -181,7 +185,7 @@ async def delete_sticky_notes_by_postit(
 
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋削除。関連する board_placements は CASCADE で削除。付箋ボード連携時は 02_1 へも DELETE。"""
+    """付箋削除。関連する board_placements は CASCADE で削除。付箋ボード連携時は 02_1 では削除せずグレー化（PATCH）。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -191,7 +195,7 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(note)
     await db.flush()
     if postit_board_id and postit_note_id:
-        await asyncio.to_thread(_notify_postit_delete, postit_board_id, postit_note_id)
+        await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
     return None
 
 
@@ -246,7 +250,8 @@ async def move_to_personal(
 
 @router.post("/{note_id}/release_to_task_board", response_model=BoardPlacementResponse)
 async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋を Task Board に配置する。既に TASK 配置があればそのまま返す。"""
+    """付箋を Task Board に配置する。既に TASK 配置があればそのまま返す。
+    パーソナル投稿をリリースした場合は当該付箋の Personal 配置を削除し、タスクボードでは黄色（未引き取り）で表示する。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -271,6 +276,14 @@ async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)
         db.add(placement)
         await db.flush()
         await db.refresh(placement)
+    # パーソナル投稿をリリースした場合：Personal 配置を削除し、タスクボードで黄色（誰でも引き継げる状態）にする
+    await db.execute(
+        delete(BoardPlacement).where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+        )
+    )
+    await db.flush()
     return BoardPlacementResponse(
         id=placement.id,
         note_id=placement.note_id,

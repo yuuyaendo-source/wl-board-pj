@@ -29,7 +29,7 @@ const COLUMNS = [
   { q: 5, title: "完了" },
 ] as const;
 
-type PostitNote = { id: string; text: string; author?: string; createdAt?: number };
+type PostitNote = { id: string; text: string; author?: string; createdAt?: number; gray?: boolean };
 
 export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
@@ -77,10 +77,12 @@ export default function TaskBoardPage() {
       const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
       if (!res.ok) throw new Error("付箋ボードの取得に失敗しました");
       const data = (await res.json()) as { notes: PostitNote[] };
-      const notes = (data.notes || []).map((n) => ({
-        id: String(n.id),
-        text: n.text || "",
-      }));
+      const notes = (data.notes || [])
+        .filter((n) => !n.gray)
+        .map((n) => ({
+          id: String(n.id),
+          text: n.text || "",
+        }));
       const result = await api.stickyNotes.importFromPostit({
         board_id: POSTIT_BOARD_ID,
         notes,
@@ -114,7 +116,9 @@ export default function TaskBoardPage() {
         const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
         if (!res.ok) return;
         const data = (await res.json()) as { notes: PostitNote[] };
-        const notes = (data.notes || []).map((n) => ({ id: String(n.id), text: n.text || "" }));
+        const notes = (data.notes || [])
+          .filter((n) => !n.gray)
+          .map((n) => ({ id: String(n.id), text: n.text || "" }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
         await fetchTask();
@@ -324,11 +328,11 @@ function ColumnDropZone({
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
-    if (id) onDrop(Number(id));
+    if (id) await Promise.resolve(onDrop(Number(id)));
   };
 
   return (

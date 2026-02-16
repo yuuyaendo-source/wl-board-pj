@@ -1,0 +1,82 @@
+# ==========================================================
+# Docker Compose - ローカル開発 & 本番共通
+# sticky-note + board-system (backend/frontend) + PostgreSQL
+# ==========================================================
+# 起動: docker compose up -d --build
+# 停止: docker compose down
+# ログ: docker compose logs -f
+# ==========================================================
+
+services:
+  # --- PostgreSQL ---
+  db:
+    image: postgres:15-alpine
+    container_name: linko-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: linko_user
+      POSTGRES_PASSWORD: linko_password
+      POSTGRES_DB: linko_board_system
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U linko_user -d linko_board_system" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Board System Backend (FastAPI) ---
+  backend:
+    build: ./backend
+    container_name: linko-backend
+    ports:
+      - "8010:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      POSTIT_BOARD_URL: http://sticky-note:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Board System Frontend (Next.js) ---
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8010
+        NEXT_PUBLIC_BASE_PATH: ""
+        NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+    container_name: linko-frontend
+    ports:
+      - "3010:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8010
+      NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # --- 付箋ボード (Next.js + Express + Socket.IO) ---
+  sticky-note:
+    build: ../02_1_sticky-note/src
+    container_name: linko-sticky-note
+    ports:
+      - "3011:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      BOARD_SYSTEM_API_URL: http://backend:8000
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://localhost:3010
+    volumes:
+      - sticky_data:/app/data
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  sticky_data:

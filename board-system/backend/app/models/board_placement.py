@@ -22,6 +22,7 @@ class Lane(str, enum.Enum):
     INBOX = "INBOX"
     TODAY = "TODAY"
     DONE = "DONE"
+    HELP_REQUEST = "HELP_REQUEST"  # 応援要請（付箋を赤表示）
 
 
 def _enum_values(e):

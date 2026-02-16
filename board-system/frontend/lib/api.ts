@@ -27,7 +27,7 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-import type { PlacementWithNote, User } from "./types";
+import type { LaneType, PlacementWithNote, User } from "./types";
 
 export const api = {
   health: () => fetchApi<{ status: string }>("/health"),
@@ -45,6 +45,7 @@ export const api = {
       author_id?: number;
       postit_board_id?: string;
       postit_note_id?: string;
+      personal_only?: boolean;
     }) => fetchApi<{ id: number }>("/sticky_notes", { method: "POST", body: JSON.stringify(body) }),
     /** 付箋ボードから一括取り込み（重複はスキップ） */
     importFromPostit: (body: { board_id: string; notes: { id: string; text: string }[] }) =>
@@ -54,7 +55,7 @@ export const api = {
       }),
     delete: (noteId: number) =>
       fetchApi<undefined>(`/sticky_notes/${noteId}`, { method: "DELETE" }),
-    moveToPersonal: (noteId: number, body: { owner_id: number; lane?: "INBOX" | "TODAY" | "DONE" }) =>
+    moveToPersonal: (noteId: number, body: { owner_id: number; lane?: LaneType }) =>
       fetchApi<unknown>(`/sticky_notes/${noteId}/move_to_personal`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -76,7 +77,7 @@ export const api = {
     patch: (
       id: number,
       body: {
-        lane?: "INBOX" | "TODAY" | "DONE";
+        lane?: LaneType;
         position_x?: number;
         position_y?: number;
         matrix_quadrant?: number;

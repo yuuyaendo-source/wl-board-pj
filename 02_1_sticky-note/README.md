@@ -82,7 +82,7 @@ cd src
 
 | 変数 | 説明 | 例 |
 |------|------|-----|
-| `PORT` | サーバーのポート | `3000` |
+| `PORT` | サーバーのポート | `3001` |
 | `NODE_ENV` | 実行環境 | `production` |
 | `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | `https://127.0.0.1:5000` |
 | `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |

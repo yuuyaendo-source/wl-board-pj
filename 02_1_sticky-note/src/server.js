@@ -28,8 +28,13 @@ const handle = app.getRequestHandler();
 
 // ポート設定
 const port = process.env.PORT || 3000;
-// データ保存用ファイルパス
-const DATA_FILE = path.join(__dirname, 'boards.json');
+// データ保存用ディレクトリ（Docker では /app/data をボリュームマウントして永続化する）
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+// DATA_DIR が存在しない場合は作成
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+const DATA_FILE = path.join(DATA_DIR, 'boards.json');
 
 app.prepare().then(() => {
     const server = express();
@@ -43,7 +48,7 @@ app.prepare().then(() => {
     // CORS設定（Python側からのリクエストを許可）
     server.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         if (req.method === 'OPTIONS') {
             return res.sendStatus(200);
@@ -289,7 +294,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: ボードの付箋全件取得（AI-Board の「全件取得」ボタン用）
+    // REST API: ボードの付箋全件取得（Board System 取り込み用。gray=true は完了済みで取り込まない）
     server.get('/api/boards/:id/notes', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -301,6 +306,7 @@ app.prepare().then(() => {
                 text: n.text || '',
                 author: n.author || '',
                 createdAt: n.createdAt || 0,
+                gray: !!n.gray,
             }));
             return res.json({ boardId, notes });
         } catch (error) {
@@ -309,7 +315,30 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 付箋1件削除（Board System のゴミ箱から呼ばれる連携用）
+    // REST API: 付箋をグレー化（Board System のゴミ箱用。削除せず表示だけグレーにする）
+    server.patch('/api/boards/:id/notes/:noteId', (req, res) => {
+        try {
+            const boardId = req.params.id;
+            const noteId = req.params.noteId;
+            const { gray } = req.body || {};
+            if (!boards[boardId]) {
+                return res.status(404).json({ error: `Board ${boardId} not found` });
+            }
+            const note = (boards[boardId].notes || []).find((n) => String(n.id) === String(noteId));
+            if (!note) {
+                return res.status(404).json({ error: 'Note not found' });
+            }
+            note.gray = gray === true;
+            io.to(boardId).emit('note-updated', note);
+            saveBoards();
+            return res.json({ success: true, note });
+        } catch (error) {
+            console.error('Error patching board note:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // REST API: 付箋1件削除（付箋ボード上の削除ボタン用。Board System ゴミ箱では PATCH でグレー化を使う）
     server.delete('/api/boards/:id/notes/:noteId', (req, res) => {
         try {
             const boardId = req.params.id;

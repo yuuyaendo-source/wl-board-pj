@@ -67,14 +67,24 @@ def _get_toast_icon_path():
     return os.path.abspath(default_path)
 
 
-def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8):
+def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8, force_show: bool = False):
     """
     右下にトーストを表示する。
     url を渡すと保存し、表示中にクリックするとそのお知らせへ飛べる。
+    アプリ設定で notifications_enabled が False の場合は表示しない（URL は保存する）。
+    force_show=True のときは設定を無視して表示（通知オン/オフの確認メッセージ用）。
     """
     global _last_notification_url
     if url:
         _last_notification_url = url
+
+    if not force_show:
+        try:
+            from config_loader import load_config
+            if not load_config().get("notifications_enabled", True):
+                return
+        except Exception:
+            pass
 
     if sys.platform == "win32":
         # 1) winotify（「開く」ボタンでURLを開く・ワンクリックで確実・アイコン指定可）
@@ -82,8 +92,9 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8)
             try:
                 from winotify import Notification
                 icon_path = _get_toast_icon_path()
+                # app_id を変えると Windows が「別アプリ」と扱う。通知オフで復旧しない場合の対策で WonderLinko.Desktop に変更
                 kwargs = {
-                    "app_id": "Wonder Rinko",
+                    "app_id": "WonderLinko.Desktop",
                     "title": title or "Wonder Rinko",
                     "msg": message,
                 }

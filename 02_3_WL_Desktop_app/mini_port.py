@@ -108,8 +108,11 @@ class MiniPortWindow(ctk.CTk):
     EXPANDED_W = 360
     EXPANDED_H = 200
 
-    def __init__(self):
+    def __init__(self, on_hide=None, on_notifications_toggle=None, get_notifications_enabled=None):
         super().__init__()
+        self._on_hide = on_hide if callable(on_hide) else None
+        self._on_notifications_toggle = on_notifications_toggle if callable(on_notifications_toggle) else None
+        self._get_notifications_enabled = get_notifications_enabled if callable(get_notifications_enabled) else (lambda: True)
         self._feedback_job = None
         self._input_visible = False
         self._placeholder_visible = False
@@ -119,6 +122,7 @@ class MiniPortWindow(ctk.CTk):
         self._last_compact_y = 0
         self._configure_window()
         self._build_ui()
+        self._setup_context_menu()
         self._position_bottom_right(compact=True)
         if HAS_PYNPUT:
             self._start_hotkey_listener()
@@ -258,6 +262,34 @@ class MiniPortWindow(ctk.CTk):
         self.btn_send.pack(side="right")
 
         self._setup_drag()
+
+    def _setup_context_menu(self):
+        """右クリックで通知オン/オフ・ミニポート非表示のメニューを表示。"""
+        import tkinter as tk
+        self._ctx_menu = tk.Menu(self, tearoff=0)
+        self._ctx_menu.add_command(label="", command=self._ctx_toggle_notifications)
+        self._ctx_menu.add_command(label="ミニポートを非表示にする", command=self._ctx_hide_miniport)
+        for widget in (self.frame, self.compact_frame):
+            widget.bind("<Button-3>", self._on_right_click)
+        if hasattr(self, "input_frame"):
+            self.input_frame.bind("<Button-3>", self._on_right_click)
+
+    def _on_right_click(self, event):
+        """右クリックでコンテキストメニューを表示。"""
+        enabled = self._get_notifications_enabled()
+        self._ctx_menu.entryconfig(0, label="通知をオフにする" if enabled else "通知をオンにする")
+        try:
+            self._ctx_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self._ctx_menu.grab_release()
+
+    def _ctx_toggle_notifications(self):
+        if self._on_notifications_toggle:
+            self._on_notifications_toggle()
+
+    def _ctx_hide_miniport(self):
+        if self._on_hide:
+            self._on_hide()
 
     def _setup_drag(self):
         """ウィンドウをマウス/タッチでドラッグ移動できるようにする。"""

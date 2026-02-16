@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.env.local
+.env.local.example
+.env.production.example
+*.log
+*.md
+CUsershisasDocumentsdevwlinko-pj

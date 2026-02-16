@@ -12,6 +12,7 @@ const LANES: { key: LaneType; label: string }[] = [
   { key: "TODAY", label: "Today" },
   { key: "INBOX", label: "タスク" },
   { key: "DONE", label: "Done" },
+  { key: "HELP_REQUEST", label: "応援要請" },
 ];
 
 export default function PersonalBoardView({
@@ -25,6 +26,7 @@ export default function PersonalBoardView({
     INBOX: [],
     TODAY: [],
     DONE: [],
+    HELP_REQUEST: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +35,7 @@ export default function PersonalBoardView({
     try {
       setError(null);
       const list = await api.boards.personal(ownerId);
-      const next: Record<LaneType, PlacementWithNote[]> = { INBOX: [], TODAY: [], DONE: [] };
+      const next: Record<LaneType, PlacementWithNote[]> = { INBOX: [], TODAY: [], DONE: [], HELP_REQUEST: [] };
       for (const p of list) {
         const lane = (p.lane ?? "INBOX") as LaneType;
         if (lane in next) next[lane].push(p);
@@ -52,7 +54,8 @@ export default function PersonalBoardView({
 
   const handlePost = useCallback(
     async (text: string) => {
-      const note = (await api.stickyNotes.create({ content: text })) as { id: number };
+      // personal_only: true で Task に載せず Personal のみ（青付箋）
+      const note = (await api.stickyNotes.create({ content: text, personal_only: true })) as { id: number };
       await api.stickyNotes.moveToPersonal(note.id, { owner_id: ownerId, lane: "INBOX" });
       await fetchPersonal();
     },
@@ -61,6 +64,7 @@ export default function PersonalBoardView({
 
   const handleDrop = useCallback(
     async (placementId: number, targetLane: LaneType) => {
+      setError(null);
       await api.boardPlacements.patch(placementId, { lane: targetLane });
       await fetchPersonal();
     },
@@ -77,6 +81,7 @@ export default function PersonalBoardView({
 
   const handleTaskReleaseDrop = useCallback(
     async (placementId: number) => {
+      setError(null);
       try {
         await api.boardPlacements.delete(placementId);
         await fetchPersonal();
@@ -87,8 +92,22 @@ export default function PersonalBoardView({
     [fetchPersonal]
   );
 
+  /** パーソナル投稿（青）をタスクボードへ追加。Task に載っていない付箋用。 */
+  const handleNoteAddToTask = useCallback(
+    async (noteId: number) => {
+      setError(null);
+      try {
+        await api.stickyNotes.releaseToTask(noteId);
+        await fetchPersonal();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
+      }
+    },
+    [fetchPersonal]
+  );
+
   // タスクリリースで placementId が取れないブラウザ用: noteId から配置IDを解決
-  const fromTaskPlacements = [...byLane.INBOX, ...byLane.TODAY, ...byLane.DONE].filter(
+  const fromTaskPlacements = [...byLane.INBOX, ...byLane.TODAY, ...byLane.DONE, ...byLane.HELP_REQUEST].filter(
     (p) => p.is_from_task
   );
   const getReleasePlacementId = useCallback(
@@ -113,6 +132,7 @@ export default function PersonalBoardView({
         <PersonalTrashDropZone onDrop={handleTrashDrop} />
         <PersonalTaskReleaseDropZone
           onDrop={handleTaskReleaseDrop}
+          onDropNoteToTask={handleNoteAddToTask}
           getReleasePlacementId={getReleasePlacementId}
         />
       </div>
@@ -172,9 +192,12 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
 
 function PersonalTaskReleaseDropZone({
   onDrop,
+  onDropNoteToTask,
   getReleasePlacementId,
 }: {
   onDrop: (placementId: number) => void;
+  /** パーソナル投稿（Task に載っていない付箋）をタスクボードへ追加するとき */
+  onDropNoteToTask?: (noteId: number) => void;
   getReleasePlacementId?: (noteId: number) => number | null;
 }) {
   const [over, setOver] = useState(false);
@@ -182,7 +205,7 @@ function PersonalTaskReleaseDropZone({
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // dragover では getData() が空になるブラウザがあるため、型の有無で判定（NoteCard で Task 由来のときだけ付与）
+    // dragover では getData() が空になるブラウザがあるため、型の有無で判定（Task 由来 or パーソナル投稿）
     const canRelease = e.dataTransfer.types.includes("application/x-board-task-release");
     if (!canRelease) {
       e.dataTransfer.dropEffect = "none";
@@ -192,20 +215,20 @@ function PersonalTaskReleaseDropZone({
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setOver(false);
-    let placementIdStr = e.dataTransfer.getData("placementId");
-    // Firefox 等で placementId が空になる場合のフォールバック
-    if (!placementIdStr && getReleasePlacementId) {
-      const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-      if (noteId) {
-        const resolved = getReleasePlacementId(Number(noteId));
-        if (resolved != null) placementIdStr = String(resolved);
-      }
+    const noteIdStr = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
+    if (!noteIdStr) return;
+    const noteId = Number(noteIdStr);
+    // Task 由来の付箋は配置削除でリリース。パーソナル投稿（青）は releaseToTask で Task に追加
+    const placementId = getReleasePlacementId?.(noteId) ?? null;
+    if (placementId != null) {
+      await Promise.resolve(onDrop(placementId));
+    } else if (onDropNoteToTask) {
+      await Promise.resolve(onDropNoteToTask(noteId));
     }
-    if (placementIdStr) onDrop(Number(placementIdStr));
   };
 
   return (
@@ -219,7 +242,7 @@ function PersonalTaskReleaseDropZone({
       onDrop={handleDrop}
     >
       <span>📤</span>
-      <span>タスクリリース（Taskからコピーした付箋のみ）</span>
+      <span>タスクボードへ（Task由来はリリース、投稿付箋は追加）</span>
     </div>
   );
 }
@@ -234,7 +257,7 @@ function LaneColumn({
   lane: LaneType;
   label: string;
   placements: PlacementWithNote[];
-  onDrop: (placementId: number) => void;
+  onDrop: (placementId: number) => void | Promise<void>;
   onRefresh: () => void;
 }) {
   const [over, setOver] = useState(false);
@@ -245,11 +268,11 @@ function LaneColumn({
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
-    if (id) onDrop(Number(id));
+    if (id) await Promise.resolve(onDrop(Number(id)));
   };
 
   return (
@@ -269,13 +292,15 @@ function LaneColumn({
             placement={p}
             draggable
             cardColor={
-              lane === "DONE"
-                ? "grey"
-                : p.is_from_task
-                  ? "green"
-                  : "blue"
+              lane === "HELP_REQUEST"
+                ? "red"
+                : lane === "DONE"
+                  ? "grey"
+                  : p.is_from_task
+                    ? "green"
+                    : "blue"
             }
-            dragData={{ isFromTask: String(!!p.is_from_task) }}
+            dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
             onDragEnd={onRefresh}
           />
         ))}

@@ -15,6 +15,10 @@ if os.path.exists("config.json"):
     include_files.append(("config.json", "config.json"))
 if os.path.exists("toast_icon.png"):
     include_files.append(("toast_icon.png", "toast_icon.png"))
+if os.path.exists("docs/Windows通知がオフになった場合.md"):
+    include_files.append(("docs/Windows通知がオフになった場合.md", "docs/Windows通知がオフになった場合.md"))
+if os.path.exists("docs/通知設定をリセットする.ps1"):
+    include_files.append(("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1"))
 
 # PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
 # excludes で PIL を除外し、ここでだけ同梱する。.pyd が無いと MSI インストール後に起動エラーになる
@@ -86,9 +90,12 @@ executables = [
     )
 ]
 
+# バージョンは version.py で一元管理
+from version import __version__
+
 setup(
     name="WonderLinkoDesktop",
-    version="1.0.0",
+    version=__version__,
     description="Wonder Linko Agent",
     options={
         "build_exe": build_exe_options,

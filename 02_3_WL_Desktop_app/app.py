@@ -95,6 +95,8 @@ from config_loader import load_config, save_config
 import notifications
 from postit_poll import start_postit_poll, fetch_summary_with_error
 import startup
+from version import __version__
+from update_checker import check_for_update, check_and_notify, download_and_install
 
 
 # メニューから参照するためグローバルに設定を保持
@@ -244,6 +246,16 @@ def hide_miniport(icon=None, item=None):
         _miniport_window.after(0, _miniport_hide)
 
 
+def _toggle_notifications(icon=None, item=None):
+    """通知の表示オン/オフをトグルして保存。"""
+    global _config
+    _config = load_config()
+    _config["notifications_enabled"] = not _config.get("notifications_enabled", True)
+    save_config(_config)
+    on_off = "オン" if _config["notifications_enabled"] else "オフ"
+    notifications.show_toast("Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True)
+
+
 def toggle_miniport(icon=None, item=None):
     """トレイメニュー「ミニポート」の表示/非表示トグル。"""
     if _miniport_window is None:
@@ -307,6 +319,82 @@ def _set_tray_click_action(action):
     )
 
 
+def _schedule_on_main(fn):
+    """メインスレッドで fn を実行する（ミニポートの after でスケジュール）。"""
+    if _miniport_window is not None:
+        try:
+            _miniport_window.after(0, fn)
+        except Exception:
+            fn()
+    else:
+        fn()
+
+
+def _on_update_check_result(has_update: bool, latest_version: str, download_url: str):
+    """更新チェック結果を処理。メインスレッドから呼ばれる想定。"""
+    if not has_update:
+        notifications.show_toast("Wonder Linko", f"最新版です（v{__version__}）", duration_sec=2, force_show=True)
+        return
+    msg = f"新しいバージョン {latest_version} が利用可能です。\n今すぐダウンロードしてインストールしますか？"
+    try:
+        import ctypes
+        ret = ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 更新", 0x04)  # MB_YESNO
+        if ret != 6:  # IDYES
+            return
+    except Exception:
+        return
+    ok, err = download_and_install(download_url)
+    if ok:
+        notifications.show_toast(
+            "Wonder Linko",
+            "インストーラーを起動しました。表示される手順に従ってインストールし、完了後にアプリを再起動してください。",
+            duration_sec=6,
+            force_show=True,
+        )
+    else:
+        try:
+            ctypes.windll.user32.MessageBoxW(None, "更新のインストールに失敗しました。\n\n" + err, "Wonder Linko", 0x10)
+        except Exception:
+            pass
+
+
+def _check_update_clicked(*args):
+    """トレイメニュー「更新を確認」."""
+    _config = load_config()
+    url = (_config.get("update_check_url") or "").strip()
+    if not url:
+        notifications.show_toast(
+            "Wonder Linko",
+            "更新チェックの URL が設定されていません（config.json の update_check_url）",
+            duration_sec=4,
+            force_show=True,
+        )
+        return
+
+    def on_result(has_update, latest_version, download_url):
+        _schedule_on_main(lambda: _on_update_check_result(has_update, latest_version, download_url))
+
+    check_and_notify(__version__, url, on_result)
+
+
+def _show_notification_help(*args):
+    """Windows で通知をオフにしたあと再度オンにする手順をメッセージで表示。"""
+    msg = (
+        "通知をオフにすると、アプリや再インストールではオンに戻せません。\n\n"
+        "【対処1】設定でオンに戻す\n"
+        "  設定 → システム → 通知 で「Wonder Linko」等を探し、スイッチをオンに。\n\n"
+        "【対処2】一覧に出てこない場合\n"
+        "  docs の「通知設定をリセットする.ps1」を実行（アプリ終了後）。\n\n"
+        "【対処3】レジストリ削除でも直らない場合\n"
+        "  最新版の MSI で再インストールしてください。新版は通知用IDを変更しているため、通知が復活することがあります。"
+    )
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 通知が表示されない場合", 0)
+    except Exception:
+        pass
+
+
 def build_menu(icon):
     """トレイメニューを組み立てる。"""
     global _config
@@ -335,11 +423,14 @@ def build_menu(icon):
         pystray.MenuItem("テストお知らせ（付箋ボードURL付き）", lambda *_: notifications.show_toast(
             "テスト", "新しい付箋が投稿されました。", url=_config.get("postit_board_url"), duration_sec=5
         )),
+        pystray.MenuItem("通知が表示されない場合", _show_notification_help),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("通知を表示", _toggle_notifications, checked=lambda *_: _config.get("notifications_enabled", True)),
         pystray.MenuItem("アバターを表示", toggle_avatar, checked=lambda *_: _config.get("avatar_visible", True)),
         pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
         pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
+        pystray.MenuItem("更新を確認", _check_update_clicked),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("終了", quit_app),
     )
@@ -351,7 +442,7 @@ def run_tray():
     _config = load_config()
     image = _make_icon_image()
     menu = build_menu(None)
-    _icon = pystray.Icon("wonder_rinko", image, "Wonder Rinko（リン子）", menu)
+    _icon = pystray.Icon("wonder_rinko", image, f"Wonder Linko（v{__version__}）", menu)
     _icon.run()
 
 
@@ -435,7 +526,21 @@ def main():
         import customtkinter as ctk
         from mini_port import MiniPortWindow
         ctk.set_appearance_mode("system")
-        _miniport_window = MiniPortWindow()
+
+        def _miniport_on_hide():
+            hide_miniport()
+
+        def _miniport_on_notifications_toggle():
+            _toggle_notifications()
+
+        def _miniport_get_notifications_enabled():
+            return load_config().get("notifications_enabled", True)
+
+        _miniport_window = MiniPortWindow(
+            on_hide=_miniport_on_hide,
+            on_notifications_toggle=_miniport_on_notifications_toggle,
+            get_notifications_enabled=_miniport_get_notifications_enabled,
+        )
         _miniport_visible = True
     except Exception as e:
         _miniport_window = None
@@ -449,6 +554,21 @@ def main():
     # トレイを別スレッドで開始（メインスレッドはミニポートの mainloop で使用）
     tray_thread = threading.Thread(target=run_tray, daemon=True)
     tray_thread.start()
+
+    # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
+    _cfg = load_config()
+    _update_url = (_cfg.get("update_check_url") or "").strip()
+    if _update_url:
+
+        def _on_startup_update_result(has_update, latest_version, _download_url):
+            if has_update:
+                _schedule_on_main(lambda: notifications.show_toast(
+                    "Wonder Linko",
+                    f"新しいバージョン {latest_version} が利用可能です。トレイの「更新を確認」からインストールできます。",
+                    duration_sec=6,
+                ))
+
+        check_and_notify(__version__, _update_url, _on_startup_update_result)
 
     # ミニポートのメインループ（メインスレッド）。終了時はトレイの「終了」で quit が呼ばれる
     if _miniport_window is not None:

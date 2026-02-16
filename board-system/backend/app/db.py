@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-非同期 DB 接続（SQLAlchemy 2.0 + aiosqlite）。
-生SQLは使わず ORM のみ。PostgreSQL 移行時は DATABASE_URL の変更のみで対応可能。
+非同期 DB 接続（SQLAlchemy 2.0）。
+SQLite (aiosqlite) と PostgreSQL (asyncpg) の両方に対応。
 """
 from collections.abc import AsyncGenerator
 
@@ -10,9 +10,19 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-# 非同期エンジン（aiosqlite 使用）
+# DBのURL文字列を取得（Pydanticの型の場合は文字列化）
+db_url = str(settings.database_url)
+
+# 接続引数の設定
+connect_args = {}
+# SQLiteの場合のみ、スレッドチェックを無効化する設定が必要
+if "sqlite" in db_url:
+    connect_args = {"check_same_thread": False}
+
+# 非同期エンジン作成
 engine = create_async_engine(
-    settings.database_url,
+    db_url,
+    connect_args=connect_args, # ここで動的に引数を渡す
     echo=False,  # 開発時は True で SQL ログ出力
 )
 
@@ -62,8 +72,10 @@ PERSONAL_USER_NAMES = [
 
 async def seed_personal_users() -> None:
     """パーソナルボード用ユーザー（id 1-7）がなければ作成する。"""
+    # 循環参照を防ぐため関数内でインポート
     from sqlalchemy import select
-    from app.models import User
+    from app.models.user import User # ※パスに注意: app.models 直下か app.models.user か確認してください
+    
     async with async_session_maker() as session:
         for i, name in enumerate(PERSONAL_USER_NAMES, 1):
             r = await session.execute(select(User).where(User.id == i))

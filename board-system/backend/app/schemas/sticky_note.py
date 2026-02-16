@@ -12,6 +12,8 @@ class StickyNoteCreate(BaseModel):
     status: NoteStatus | None = None
     postit_board_id: str | None = None
     postit_note_id: str | None = None
+    """True のとき AI 振り分けをスキップ（パーソナル投稿のみで Task に載せない）。"""
+    personal_only: bool | None = None
 
 
 class StickyNoteUpdate(BaseModel):

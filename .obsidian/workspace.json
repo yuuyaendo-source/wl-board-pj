@@ -4,17 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "145463dc9755d38a",
+        "id": "d055c2e04dd052d3",
         "type": "tabs",
         "children": [
           {
-            "id": "43dfca1af5b04537",
+            "id": "2f4d799c4f527260",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "全体改善.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "新規タブ"
+              "title": "全体改善"
             }
           }
         ]
@@ -179,8 +183,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "43dfca1af5b04537",
+  "active": "2f4d799c4f527260",
   "lastOpenFiles": [
+    "全体改善.md",
     "board-system/README.md",
     "02_3_WL_Desktop_app/README.md",
     "02_2_AI-Board/README.md",

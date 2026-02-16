@@ -1,0 +1,102 @@
+worker_processes 1;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+
+    # ブルー/グリーン環境のアップストリーム定義
+    # デプロイスクリプトで active_env を切り替えることで向き先を変更する
+    
+    # Board System Frontend (Next.js)
+    upstream frontend_blue {
+        server 127.0.0.1:3010;
+        keepalive 64;
+    }
+    upstream frontend_green {
+        server 127.0.0.1:3020;
+        keepalive 64;
+    }
+
+    # Board System Backend (FastAPI)
+    upstream backend_blue {
+        server 127.0.0.1:8010;
+        keepalive 64;
+    }
+    upstream backend_green {
+        server 127.0.0.1:8020;
+        keepalive 64;
+    }
+
+    # Sticky Note (Next.js + Socket.IO)
+    upstream sticky_blue {
+        server 127.0.0.1:3011;
+        keepalive 64;
+    }
+    upstream sticky_green {
+        server 127.0.0.1:3021;
+        keepalive 64;
+    }
+
+    # 現在のアクティブ環境（スクリプトで書き換えるincludeファイル）
+    # 内容例: 
+    # upstream frontend_current { server 127.0.0.1:3010; }
+    # upstream backend_current { server 127.0.0.1:8010; }
+    # upstream sticky_current { server 127.0.0.1:3011; }
+    include /etc/nginx/conf.d/active_env.conf;
+
+    server {
+        listen 80;
+        server_name wl-sticky-note.local;
+
+        # フロントエンドへのプロキシ
+        location / {
+            proxy_pass http://frontend_current;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_cache_bypass $http_upgrade;
+        }
+
+        # バックエンドAPIへのプロキシ
+        # /api/docs, /api/openapi.json など
+        location /api/ {
+            # FastAPIのルートが /api プレフィックスを持っているか確認が必要
+            # ここでは /api/* を backend_current/api/* に転送すると仮定
+            proxy_pass http://backend_current/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # Sticky Note へのプロキシ
+        # sticky-note は /board/* などを扱う
+        # パスベースのルーティングが必要
+        
+        # sticky-noteのSocket.IO
+        location /socket.io/ {
+            proxy_pass http://sticky_current/socket.io/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+        }
+
+        # sticky-noteのページとAPI
+        # 現状の構成を確認すると、3000(sticky) と 3001(board-frontend) が共存している
+        # パスの切り分け:
+        # /board/* -> sticky
+        # /api/boards/* -> sticky (some) or backend (some)?
+        # sticky-note は /api/boards/:id/summary 等を提供
+        # board-system は /boards (frontend)
+        
+        # 明確なルーティング戦略が必要
+        # ...一旦保留して現状構成を確認...
+    }
+}
