@@ -317,6 +317,28 @@ docker exec -it linko-backend-green alembic upgrade head
 
 ドメイン未設定の場合は、上記の 172.16.1.83 でアクセスして確認できます。
 
+### 5.6 パーソナルボードで投稿できない場合
+
+パーソナルボードの投稿は **users テーブルに id 1〜7 のユーザーが存在することが前提**です（フロントの「パーソナルボード」メニューと対応）。
+
+- **旧サーバからデータ移行した場合**  
+  移行スクリプト（`migrate_sqlite_to_pg.py`）で users も流し込まれているため、通常はそのままで問題ありません。
+- **新サーバで DB を空のまま立ち上げた場合**  
+  ユーザーが 1 件もないため、パーソナル投稿で「owner_id のユーザーが存在しません」といったエラーになります。次のいずれかで対処してください。
+
+  **方法 1: シードスクリプトで 7 名分のユーザーを登録する（推奨）**
+
+  ```bash
+  docker exec -it linko-backend-blue python scripts/seed_personal_members.py
+  # または linko-backend-green（稼働中の backend コンテナ名で実行）
+  ```
+
+  これで id 1〜7 のユーザー（堀・福山・小林・タン・浅川・遠藤・林田）が作成され、パーソナルボードで投稿できるようになります。
+
+  **方法 2: API でユーザーを 1 件ずつ作成する**
+
+  `POST http://wl-sticky-note.local/api/bs/users` で `{"name": "表示名", "role": null}` を送り、作成された id を確認します。フロントの `frontend/lib/personalMembers.ts` の `ownerId` は 1〜7 を想定しているため、運用で 1〜7 を揃えたい場合はシードスクリプトを使うか、移行データで users を投入してください。
+
 ---
 
 ## 6. 通常のデプロイ（コード更新時）
@@ -496,12 +518,27 @@ Nginx の向き先が前の Blue/Green に切り替わり、`systemctl reload ng
 
 ### ログ確認
 
-```bash
-# 現在の向き先
-cat /etc/nginx/conf.d/active_env.conf
+本番は **deploy.sh** が `-f docker-compose.prod.yml` と **プロジェクト名 `board-system-blue` / `board-system-green`** で起動しているため、`docker compose logs -f` だけ（ファイル・プロジェクトを指定しない）では対象コンテナがなく、ログが出ません。
 
-# コンテナログ（例: Blue の backend）
-docker logs -f linko-backend-blue
+**現在どちらの環境が動いているか確認する:**
+
+```bash
+cat /etc/nginx/conf.d/active_env.conf
+# 127.0.0.1:3010 なら Blue、3020 なら Green
+```
+
+**ログの見方（どちらか一方を使う）:**
+
+```bash
+# 方法 1: コンテナ名で直接（推奨・簡単）
+docker logs -f linko-backend-blue    # または linko-backend-green
+docker logs -f linko-frontend-blue
+docker logs -f linko-sticky-note-blue
+
+# 方法 2: docker compose で見る（プロジェクト名・ファイルを指定）
+cd /var/www/wlinko-pj/board-system
+docker compose -f docker-compose.prod.yml -p board-system-blue logs -f
+# または -p board-system-green（上記 active_env.conf で稼働中を確認）
 ```
 
 ### ビルドが遅い・止まる場合（CATO / プロキシ環境）

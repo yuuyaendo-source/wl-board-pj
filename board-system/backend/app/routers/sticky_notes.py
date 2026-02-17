@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, StickyNote
+from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
@@ -227,6 +227,13 @@ async def move_to_personal(
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
+    # owner_id は users.id の外部キー。ユーザーが存在しないと DB エラーになるため事前チェック
+    user_result = await db.execute(select(User).where(User.id == body.owner_id))
+    if user_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"owner_id={body.owner_id} のユーザーが存在しません。パーソナルボードを使うには users テーブルに該当 ID のユーザーが必要です。",
+        )
     r = await db.execute(
         select(BoardPlacement).where(
             BoardPlacement.note_id == note_id,
