@@ -193,7 +193,8 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
     e.preventDefault();
     setOver(false);
     if (e.dataTransfer.getData("isFromTask") === "true") return;
-    const noteId = e.dataTransfer.getData("noteId");
+    // noteId を優先。一部ブラウザで drop 時に getData("noteId") が空になる場合があるため placementId をフォールバック（API が placement から note を解決）
+    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
     if (noteId) onDrop(Number(noteId));
   };
 

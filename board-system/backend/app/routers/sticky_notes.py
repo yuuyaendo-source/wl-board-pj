@@ -250,11 +250,25 @@ async def delete_sticky_notes_by_postit(
 
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋削除。複数人が持っている場合は全員がDoneにするまで削除不可。付箋ボード連携時は 02_1 では削除せずグレー化（PATCH）。"""
+    """付箋削除。複数人が持っている場合は全員がDoneにするまで削除不可。付箋ボード連携時は 02_1 では削除せずグレー化（PATCH）。
+    パスは sticky_note.id を想定。誤って board_placement.id が渡された場合も PERSONAL 配置から note_id を解決して削除する。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
-        raise HTTPException(status_code=404, detail="Sticky note not found")
+        # フロントが placement.id を渡した場合のフォールバック: PERSONAL 配置から note_id を解決
+        placement_result = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.id == note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+            ).limit(1)
+        )
+        placement = placement_result.scalar_one_or_none()
+        if placement:
+            note_id = placement.note_id
+            result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
+            note = result.scalar_one_or_none()
+        if not note:
+            raise HTTPException(status_code=404, detail="Sticky note not found")
 
     # 複数人が持っている付箋は全員がDoneにするまで削除できない
     r = await db.execute(
