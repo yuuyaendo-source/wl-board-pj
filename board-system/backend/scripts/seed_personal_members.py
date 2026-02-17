@@ -4,14 +4,14 @@
 新サーバで DB を空の状態で立ち上げた場合、パーソナルボードで投稿するにはこのスクリプトか
 移行スクリプトで users を用意する必要がある。
 
-使い方:
-  DATABASE_URL=postgresql+asyncpg://linko_user:linko_password@127.0.0.1:5433/linko_board_system python scripts/seed_personal_members.py
+使い方（ホストで実行する場合）:
+  cd /var/www/wlinko-pj/board-system/backend
+  source .venv/bin/activate
+  DATABASE_URL="postgresql://linko_user:linko_password@127.0.0.1:5433/linko_board_system" python scripts/seed_personal_members.py
 
-または Docker コンテナ内:
+Docker コンテナ内（イメージに scripts が含まれるように再ビルド済みの場合）:
   docker exec -it linko-backend-blue python scripts/seed_personal_members.py
-  （コンテナ内の DATABASE_URL がそのまま使われる）
 """
-import asyncio
 import os
 import sys
 
@@ -30,45 +30,38 @@ PERSONAL_MEMBERS = [
 ]
 
 
-async def main() -> None:
+def main() -> None:
     pg_url = os.environ.get("DATABASE_URL")
     if not pg_url:
         print("DATABASE_URL を設定してください", file=sys.stderr)
         sys.exit(1)
-    if "postgresql+asyncpg" not in pg_url:
-        print("postgresql+asyncpg の URL を指定してください（例: postgresql+asyncpg://...）", file=sys.stderr)
-        sys.exit(1)
+    # psycopg2 用に postgresql:// に統一（+asyncpg / +psycopg2 は外す）
+    pg_url = pg_url.replace("postgresql+asyncpg", "postgresql", 1).replace("postgresql+psycopg2", "postgresql", 1)
 
-    from sqlalchemy import select, text
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session, sessionmaker
 
-    from app.db import Base
     from app.models import User
 
-    engine = create_async_engine(pg_url, echo=False)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    engine = create_engine(pg_url)
+    session_factory = sessionmaker(engine, autocommit=False, autoflush=False)
 
-    async with async_session() as db:
+    with session_factory() as db:
         added = 0
         for user_id, name in PERSONAL_MEMBERS:
-            r = await db.execute(select(User).where(User.id == user_id))
-            if r.scalar_one_or_none() is not None:
+            if db.get(User, user_id) is not None:
                 continue
             db.add(User(id=user_id, name=name))
             added += 1
             print(f"  追加: id={user_id}, name={name}")
-        await db.commit()
+        db.commit()
         if added > 0:
-            # 次回の INSERT で id が重複しないようシーケンスを更新
-            await db.execute(text(
+            db.execute(text(
                 "SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT COALESCE(MAX(id), 1) FROM users))"
             ))
-            await db.commit()
+            db.commit()
         print(f"users: {added} 件追加しました。" if added else "users: 変更なし（既に 1〜7 が存在します）。")
-
-    await engine.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -54,17 +54,20 @@ export default function PersonalBoardView({
 
   const handlePost = useCallback(
     async (text: string) => {
-      // personal_only: true で Task に載せず Personal のみ（青付箋）
-      const note = (await api.stickyNotes.create({ content: text, personal_only: true })) as { id: number };
-      await api.stickyNotes.moveToPersonal(note.id, { owner_id: ownerId, lane: "INBOX" });
-      // 楽観的更新: すぐ一覧に表示してからサーバーと同期
-      const tempId = -note.id;
+      // 1リクエストで create + Personal 配置（move_to_personal の 404 を防ぐ）
+      const placement = await api.stickyNotes.createPersonal({
+        content: text,
+        owner_id: ownerId,
+        lane: "INBOX",
+      });
+      const noteId = placement.note_id;
+      const placementId = placement.id;
       setByLane((prev) => ({
         ...prev,
         INBOX: [
           {
-            id: tempId,
-            note_id: note.id,
+            id: placementId,
+            note_id: noteId,
             board_type: "PERSONAL",
             owner_id: ownerId,
             lane: "INBOX",

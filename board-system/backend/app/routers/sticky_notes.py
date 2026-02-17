@@ -2,6 +2,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,8 +118,72 @@ async def create_sticky_note(body: StickyNoteCreate, db: AsyncSession = Depends(
         except Exception:
             pass  # 付箋と Main 配置は作成済み。AI 失敗時は Task/Personal 配置をスキップ
 
+    await db.commit()
     await db.refresh(note)
     return _note_response(note)
+
+
+class CreatePersonalNoteBody(BaseModel):
+    """パーソナルボードに直接投稿する際のリクエスト。create + move_to_personal を1トランザクションで行う。"""
+    content: str
+    owner_id: int
+    lane: Lane = Lane.INBOX
+
+
+@router.post("/create_personal", response_model=BoardPlacementResponse)
+async def create_personal_note(
+    body: CreatePersonalNoteBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """パーソナルボードに付箋を1件作成し、指定 owner の Personal に配置する。1リクエストで完結するため、複数インスタンスやコミットタイミングの影響を受けない。"""
+    from app.models.sticky_note import NoteStatus
+
+    user_result = await db.execute(select(User).where(User.id == body.owner_id))
+    if user_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"owner_id={body.owner_id} のユーザーが存在しません。",
+        )
+    note = StickyNote(
+        content=body.content,
+        author_id=None,
+        status=NoteStatus.ACTIVE,
+        postit_board_id=None,
+        postit_note_id=None,
+    )
+    db.add(note)
+    await db.flush()
+    placement_main = BoardPlacement(
+        note_id=note.id,
+        board_type=BoardType.MAIN,
+        owner_id=None,
+        sort_order=0,
+    )
+    db.add(placement_main)
+    await db.flush()
+    placement_personal = BoardPlacement(
+        note_id=note.id,
+        board_type=BoardType.PERSONAL,
+        owner_id=body.owner_id,
+        lane=body.lane,
+        sort_order=0,
+    )
+    db.add(placement_personal)
+    await db.flush()
+    await db.refresh(placement_personal)
+    return BoardPlacementResponse(
+        id=placement_personal.id,
+        note_id=placement_personal.note_id,
+        board_type=placement_personal.board_type,
+        owner_id=placement_personal.owner_id,
+        lane=placement_personal.lane,
+        position_x=placement_personal.position_x,
+        position_y=placement_personal.position_y,
+        matrix_quadrant=placement_personal.matrix_quadrant,
+        sort_order=placement_personal.sort_order,
+        created_at=placement_personal.created_at,
+        updated_at=placement_personal.updated_at,
+    )
 
 
 @router.get("/{note_id}", response_model=StickyNoteResponse)

@@ -1,6 +1,8 @@
 # ローカルで Docker をビルドしてテストする手順
 
-手元の PC で付箋ボード＋Board System を Docker で起動し、動作確認するまでの手順です。
+手元の PC で付箋ボード＋Board System を Docker で起動し、動作確認するまでの手順です。**本番サーバは不要**で、`board-system/docker-compose.yml`（ローカル用）を使います。
+
+- **本番を Docker でデプロイする手順**は [docs/本番デプロイ手順_Docker.md](docs/本番デプロイ手順_Docker.md) を参照してください。
 
 ---
 

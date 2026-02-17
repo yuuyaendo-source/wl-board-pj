@@ -1,6 +1,6 @@
 # Board System (Wonder Rinko)
 
-改善指示書9〜11に基づく「統合ボードシステム」。付箋ボード（02_1）と連携し、Main / Task / Personal / Morning の 4 ボードを提供。**本番は付箋ボードと同一サーバ（wl-sticky-note.local）でデプロイ可能。** 詳細は [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md) を参照。
+改善指示書9〜11に基づく「統合ボードシステム」。付箋ボード（02_1）と連携し、Main / Task / Personal / Morning の 4 ボードを提供。**本番は付箋ボードと同一サーバ（wl-sticky-note.local）でデプロイ可能。** デプロイ手順は [docs/デプロイ・運用.md](../docs/デプロイ・運用.md) の索引を参照（Docker 本番は [本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md)、非 Docker は [本番デプロイ手順.md](../docs/本番デプロイ手順.md)）。
 
 ## 構成
 

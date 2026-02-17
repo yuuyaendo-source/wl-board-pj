@@ -55,6 +55,12 @@ export const api = {
       postit_note_id?: string;
       personal_only?: boolean;
     }) => fetchApi<{ id: number }>("/sticky_notes", { method: "POST", body: JSON.stringify(body) }),
+    /** パーソナルボードに直接投稿（1リクエストで create + Personal 配置。move_to_personal の 404 を防ぐ） */
+    createPersonal: (body: { content: string; owner_id: number; lane?: LaneType }) =>
+      fetchApi<{ id: number; note_id: number }>("/sticky_notes/create_personal", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     /** 付箋ボードから一括取り込み（重複はスキップ） */
     importFromPostit: (body: { board_id: string; notes: { id: string; text: string }[] }) =>
       fetchApi<{ created: number; skipped: number }>("/sticky_notes/import_from_postit", {
