@@ -287,7 +287,87 @@ cd board-system/deploy
 
 ---
 
-## 7. ロールバック
+## 7. 本番データの移行（旧サーバ → 新サーバ）
+
+現在稼働中の本番サーバ（旧）から、新サーバ（172.16.1.83）へデータだけ移す手順です。**移行するのは (1) PostgreSQL（ユーザー・付箋・配置）と (2) 付箋ボードの boards.json の 2 種類**です。
+
+### 7.1 旧サーバでバックアップを取得
+
+**PostgreSQL**
+
+```bash
+# 旧サーバで（board-system があるディレクトリで）
+cd /var/www/wlinko-pj/board-system
+
+# DB コンテナ名は linko-db。プロジェクト名でボリュームを参照している場合は compose の -p を確認
+docker exec linko-db pg_dump -U linko_user --clean --if-exists linko_board_system > ~/wlinko_pg_backup.sql
+```
+
+`~/wlinko_pg_backup.sql` を新サーバへコピーします（scp 等）。
+
+**付箋ボード（boards.json）**
+
+```bash
+# 旧サーバで。ボリューム名は compose の -p による（例: board-system_sticky_data）
+docker volume ls | grep sticky
+
+# 中身をコピー（例: プロジェクト名が board-system の場合）
+docker run --rm -v board-system_sticky_data:/data -v "$HOME:/out" alpine cp /data/boards.json /out/boards.json 2>/dev/null || \
+docker run --rm -v linko_sticky_data:/data -v "$HOME:/out" alpine cp /data/boards.json /out/boards.json
+```
+
+`~/boards.json` を新サーバへコピーします。ボリューム名が違う場合は `docker volume ls` で確認し、上記の `board-system_sticky_data` 部分を置き換えてください。
+
+### 7.2 新サーバでリストア
+
+**前提**: 新サーバでは「4. ネットワークと DB の起動」まで完了し、**まだ deploy.sh は実行していない**（または DB だけ起動済み）状態を想定します。
+
+**PostgreSQL**
+
+```bash
+# 新サーバで
+cd /var/www/wlinko-pj/board-system
+docker network create linko-net
+docker compose -f docker-compose.db.yml up -d
+
+# リストア（バックアップを新サーバのどこかに置いた場合）
+docker exec -i linko-db psql -U linko_user -d linko_board_system < /path/to/wlinko_pg_backup.sql
+```
+
+エラーで `relation "xxx" does not exist` が出る場合は、バックアップに `--clean` が含まれているため無視してよいことがあります。重要なのは `CREATE TABLE` や `INSERT` が適用されていることです。
+
+**付箋ボード（boards.json）**
+
+新サーバで一度 deploy を実行して `sticky_data` ボリュームを作成してから、中身を上書きします。
+
+```bash
+# 初回デプロイでボリューム作成（未実行なら）
+cd /var/www/wlinko-pj/board-system/deploy
+./deploy.sh
+
+# コンテナを止めてから boards.json を差し替え（プロジェクト名は deploy で使っているものに合わせる）
+cd /var/www/wlinko-pj/board-system
+docker compose -f docker-compose.prod.yml -p board-system-blue down
+# または active が green なら -p board-system-green
+
+# バックアップした boards.json をボリュームにコピー
+docker run --rm -v board-system_sticky_data:/data -v "/path/to/boards.json:/src/boards.json" alpine cp /src/boards.json /data/boards.json
+
+# 再度デプロイでコンテナを起動
+cd deploy && ./deploy.sh
+```
+
+`/path/to/boards.json` は旧サーバからコピーしたファイルのパスに置き換えてください。
+
+### 7.3 移行後の確認
+
+- 新サーバで `http://172.16.1.83/`（またはドメイン）にアクセスし、ユーザー・付箋・タスク・パーソナルが表示されること
+- 付箋ボード `http://172.16.1.83/board/` で、旧環境のボード・付箋が表示されること
+- 必要に応じて `alembic upgrade head` を実行（スキーマが最新なら不要）
+
+---
+
+## 8. ロールバック
 
 デプロイ後に問題があった場合、直前の環境に戻します。
 
@@ -301,7 +381,7 @@ Nginx の向き先が前の Blue/Green に切り替わり、`systemctl reload ng
 
 ---
 
-## 8. 運用メモ
+## 9. 運用メモ
 
 ### ポート割り当て（Blue/Green）
 
@@ -336,7 +416,7 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 
 ---
 
-## 9. 参照
+## 10. 参照
 
 - **board-system 配下の詳細**: [board-system/DEPLOY.md](../board-system/DEPLOY.md)
 - **非 Docker 本番デプロイ**: [本番デプロイ手順.md](本番デプロイ手順.md)

@@ -9,7 +9,15 @@ function normalizeErrorMessage(status: number, body: string): string {
     }
     return `サーバーエラー（${status}）。API の接続先を確認してください。`;
   }
-  // JSON の detail など短いメッセージはそのまま返す（長すぎる場合は切り詰め）
+  // JSON の detail を優先（FastAPI の HTTPException 等）
+  if (trimmed.startsWith("{")) {
+    try {
+      const o = JSON.parse(trimmed) as { detail?: string };
+      if (typeof o.detail === "string" && o.detail) return o.detail;
+    } catch {
+      // ignore
+    }
+  }
   if (trimmed.length > 300) return trimmed.slice(0, 300) + "...";
   return trimmed || `HTTP ${status}`;
 }

@@ -57,6 +57,28 @@ export default function PersonalBoardView({
       // personal_only: true で Task に載せず Personal のみ（青付箋）
       const note = (await api.stickyNotes.create({ content: text, personal_only: true })) as { id: number };
       await api.stickyNotes.moveToPersonal(note.id, { owner_id: ownerId, lane: "INBOX" });
+      // 楽観的更新: すぐ一覧に表示してからサーバーと同期
+      const tempId = -note.id;
+      setByLane((prev) => ({
+        ...prev,
+        INBOX: [
+          {
+            id: tempId,
+            note_id: note.id,
+            board_type: "PERSONAL",
+            owner_id: ownerId,
+            lane: "INBOX",
+            position_x: null,
+            position_y: null,
+            matrix_quadrant: null,
+            sort_order: 0,
+            note_content: text,
+            note_status: "ACTIVE",
+            is_from_task: false,
+          } as PlacementWithNote,
+          ...prev.INBOX,
+        ],
+      }));
       await fetchPersonal();
     },
     [ownerId, fetchPersonal]
@@ -65,6 +87,21 @@ export default function PersonalBoardView({
   const handleDrop = useCallback(
     async (placementId: number, targetLane: LaneType) => {
       setError(null);
+      // 楽観的更新: 1回の操作で即反映
+      setByLane((prev) => {
+        let placement: PlacementWithNote | null = null;
+        const next = { ...prev };
+        for (const key of Object.keys(next) as LaneType[]) {
+          const idx = next[key].findIndex((p) => p.id === placementId);
+          if (idx >= 0) {
+            placement = { ...next[key][idx], lane: targetLane };
+            next[key] = next[key].filter((_, i) => i !== idx);
+            break;
+          }
+        }
+        if (placement) next[targetLane] = [...next[targetLane], placement];
+        return next;
+      });
       await api.boardPlacements.patch(placementId, { lane: targetLane });
       await fetchPersonal();
     },
@@ -73,27 +110,19 @@ export default function PersonalBoardView({
 
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
-      await api.stickyNotes.delete(noteId);
-      await fetchPersonal();
-    },
-    [fetchPersonal]
-  );
-
-  const handleTaskReleaseDrop = useCallback(
-    async (placementId: number) => {
       setError(null);
       try {
-        await api.boardPlacements.delete(placementId);
+        await api.stickyNotes.delete(noteId);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "タスクリリースに失敗しました");
+        setError(e instanceof Error ? e.message : "削除に失敗しました");
       }
     },
     [fetchPersonal]
   );
 
-  /** パーソナル投稿（青）をタスクボードへ追加。Task に載っていない付箋用。 */
-  const handleNoteAddToTask = useCallback(
+  /** 付箋をタスクボードへ。Task 由来・パーソナル投稿どちらも releaseToTask(noteId) で統一（404 回避） */
+  const handleReleaseToTask = useCallback(
     async (noteId: number) => {
       setError(null);
       try {
@@ -106,15 +135,6 @@ export default function PersonalBoardView({
     [fetchPersonal]
   );
 
-  // タスクリリースで placementId が取れないブラウザ用: noteId から配置IDを解決
-  const fromTaskPlacements = [...byLane.INBOX, ...byLane.TODAY, ...byLane.DONE, ...byLane.HELP_REQUEST].filter(
-    (p) => p.is_from_task
-  );
-  const getReleasePlacementId = useCallback(
-    (noteId: number) => fromTaskPlacements.find((p) => p.note_id === noteId)?.id ?? null,
-    [fromTaskPlacements]
-  );
-
   if (loading) return <div className="p-6">Loading...</div>;
   if (error)
     return (
@@ -125,16 +145,15 @@ export default function PersonalBoardView({
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
-      <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
+      {/* スクロール時も入力・投稿・ゴミ箱・タスクボードへが追従する */}
+      <div className="sticky top-[52px] z-10 -mx-6 bg-white px-6 pb-4 pt-2 shadow-[0_1px_0_0_var(--border)]">
+        <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
+        <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
 
-      <div className="mt-6 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-        <PersonalTrashDropZone onDrop={handleTrashDrop} />
-        <PersonalTaskReleaseDropZone
-          onDrop={handleTaskReleaseDrop}
-          onDropNoteToTask={handleNoteAddToTask}
-          getReleasePlacementId={getReleasePlacementId}
-        />
+        <div className="mt-6 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+          <PersonalTrashDropZone onDrop={handleTrashDrop} />
+          <PersonalTaskReleaseDropZone onDropToTask={handleReleaseToTask} />
+        </div>
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -190,22 +209,12 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
   );
 }
 
-function PersonalTaskReleaseDropZone({
-  onDrop,
-  onDropNoteToTask,
-  getReleasePlacementId,
-}: {
-  onDrop: (placementId: number) => void;
-  /** パーソナル投稿（Task に載っていない付箋）をタスクボードへ追加するとき */
-  onDropNoteToTask?: (noteId: number) => void;
-  getReleasePlacementId?: (noteId: number) => number | null;
-}) {
+function PersonalTaskReleaseDropZone({ onDropToTask }: { onDropToTask: (noteId: number) => void | Promise<void> }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // dragover では getData() が空になるブラウザがあるため、型の有無で判定（Task 由来 or パーソナル投稿）
     const canRelease = e.dataTransfer.types.includes("application/x-board-task-release");
     if (!canRelease) {
       e.dataTransfer.dropEffect = "none";
@@ -221,14 +230,7 @@ function PersonalTaskReleaseDropZone({
     setOver(false);
     const noteIdStr = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
     if (!noteIdStr) return;
-    const noteId = Number(noteIdStr);
-    // Task 由来の付箋は配置削除でリリース。パーソナル投稿（青）は releaseToTask で Task に追加
-    const placementId = getReleasePlacementId?.(noteId) ?? null;
-    if (placementId != null) {
-      await Promise.resolve(onDrop(placementId));
-    } else if (onDropNoteToTask) {
-      await Promise.resolve(onDropNoteToTask(noteId));
-    }
+    await Promise.resolve(onDropToTask(Number(noteIdStr)));
   };
 
   return (
@@ -236,13 +238,12 @@ function PersonalTaskReleaseDropZone({
       className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
         over ? "border-[var(--primary)] bg-green-50" : "border-zinc-300 bg-zinc-100"
       }`}
-      style={over ? {} : undefined}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <span>📤</span>
-      <span>タスクボードへ（Task由来はリリース、投稿付箋は追加）</span>
+      <span>タスクボードへ</span>
     </div>
   );
 }
@@ -291,6 +292,7 @@ function LaneColumn({
             key={p.id}
             placement={p}
             draggable
+            showPersonalBadge={p.is_from_task === false && lane !== "HELP_REQUEST"}
             cardColor={
               lane === "HELP_REQUEST"
                 ? "red"

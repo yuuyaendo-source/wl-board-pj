@@ -150,8 +150,14 @@ export default function TaskBoardPage() {
 
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
-      await api.stickyNotes.delete(noteId);
-      await fetchTask();
+      setImportMessage(null);
+      try {
+        await api.stickyNotes.delete(noteId);
+        await fetchTask();
+      } catch (e) {
+        setImportMessage(e instanceof Error ? e.message : "削除に失敗しました");
+        setTimeout(() => setImportMessage(null), 5000);
+      }
     },
     [fetchTask]
   );
