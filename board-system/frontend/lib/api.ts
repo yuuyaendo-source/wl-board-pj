@@ -25,6 +25,7 @@ function normalizeErrorMessage(status: number, body: string): string {
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
+    cache: "no-store",
     headers: { "Content-Type": "application/json", ...options?.headers },
   });
   if (!res.ok) {
