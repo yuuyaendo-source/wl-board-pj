@@ -1,4 +1,4 @@
-version: '3.8'
+# version は obsolete のため省略（Compose V2）
 
 services:
   db:
@@ -24,7 +24,7 @@ services:
 networks:
   linko-net:
     name: linko-net
-    driver: bridge
+    external: true
 
 volumes:
   postgres_data:
