@@ -6,6 +6,8 @@ import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 interface NoteCardProps {
   placement: PlacementWithNote;
   showAiBadge?: boolean;
+  /** パーソナル投稿（自分で作成）の印。タスクへ移動したら表示しない */
+  showPersonalBadge?: boolean;
   draggable?: boolean;
   /** ドラッグ時に dataTransfer に追加でセットする値（Personal のゴミ箱/タスクリリース制限用） */
   dragData?: Record<string, string>;
@@ -28,6 +30,7 @@ const BG_COLOR = {
 export default function NoteCard({
   placement,
   showAiBadge = false,
+  showPersonalBadge = false,
   draggable = false,
   dragData,
   cardColor,
@@ -44,11 +47,21 @@ export default function NoteCard({
         <p className="min-h-[1.5em] flex-1 whitespace-pre-wrap text-sm font-medium text-zinc-900">
           {placement.note_content || "（空）"}
         </p>
-        {showAiBadge && (
-          <span className="shrink-0 text-amber-600 dark:text-amber-400" title="AI が配置">
-            ✨
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {showPersonalBadge && (
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] font-bold text-white"
+              title="パーソナル投稿（自分で作成）"
+            >
+              P
+            </span>
+          )}
+          {showAiBadge && (
+            <span className="text-amber-600 dark:text-amber-400" title="AI が配置">
+              ✨
+            </span>
+          )}
+        </div>
       </div>
       {takenBy.length > 0 && (
         <div className="flex flex-wrap gap-1">

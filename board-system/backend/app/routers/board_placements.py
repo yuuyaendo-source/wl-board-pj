@@ -102,6 +102,7 @@ async def update_board_placement(
     from app.models.board_placement import Lane
 
     # Personal の DONE ↔ 他レーン変更時に Task の matrix_quadrant（5=完了）を連動
+    # Personal で応援要請へ移動したらタスクボードにも載せ、以後タスクとして扱う
     if placement.board_type == BoardType.PERSONAL and body.lane is not None:
         r_task = await db.execute(
             select(BoardPlacement).where(
@@ -111,6 +112,15 @@ async def update_board_placement(
             )
         )
         task_placement = r_task.scalar_one_or_none()
+        if body.lane == Lane.HELP_REQUEST and not task_placement:
+            task_placement = BoardPlacement(
+                note_id=placement.note_id,
+                board_type=BoardType.TASK,
+                owner_id=None,
+                sort_order=0,
+            )
+            db.add(task_placement)
+            await db.flush()
         if task_placement:
             if body.lane == Lane.DONE:
                 task_placement.matrix_quadrant = 5
