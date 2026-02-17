@@ -24,24 +24,26 @@ services:
   frontend:
     build:
       context: ./frontend
-      # ビルド時環境変数
       args:
-        # クライアントサイドで叩くURL (ブラウザ -> Nginx)
-        NEXT_PUBLIC_API_URL: http://wl-sticky-note.local/api/bs
-        NEXT_PUBLIC_BASE_PATH: ""
-        NEXT_PUBLIC_LEGACY_BOARD_URL: http://wl-sticky-note.local
+        # ブラウザから API を叩くベース URL（.env の NEXT_PUBLIC_API_URL で上書き可。IP でアクセスする場合は http://172.16.1.83/api/bs などに）
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://wl-sticky-note.local/api/bs}
+        NEXT_PUBLIC_BASE_PATH: "/boards"
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://wl-sticky-note.local}
     container_name: linko-frontend-${COLOR}
     ports:
       - "${PORT_FRONTEND}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://wl-sticky-note.local/api/bs
-      NEXT_PUBLIC_LEGACY_BOARD_URL: http://wl-sticky-note.local
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://wl-sticky-note.local/api/bs}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://wl-sticky-note.local}
     networks:
       - linko-net
     restart: always
 
   sticky-note:
-    build: ../02_1_sticky-note/src
+    build:
+      context: ../02_1_sticky-note/src
+      args:
+        NEXT_PUBLIC_BASE_PATH: "/board"
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "${PORT_STICKY}:3000"
@@ -62,7 +64,7 @@ services:
       #    add_host で host.docker.internal を追加するのが手っ取り早い。
 
       BOARD_SYSTEM_API_URL: http://host.docker.internal:80/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://wl-sticky-note.local
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://wl-sticky-note.local/boards
       DATA_DIR: /app/data
     volumes:
       - sticky_data:/app/data

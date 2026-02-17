@@ -44,11 +44,67 @@ Blue/Green デプロイにより、切り替え時にダウンタイムを抑え
 
 | 用途 | 非 Docker（本番デプロイ手順.md） | Docker（本手順） |
 |------|----------------------------------|------------------|
-| 付箋ボード | http://wl-sticky-note.local/ | http://wl-sticky-note.local/**board/** |
-| Board System フロント | http://wl-sticky-note.local/**boards**/ | http://wl-sticky-note.local/**/** |
+| 付箋ボード | http://wl-sticky-note.local/ | http://wl-sticky-note.local/**board/**（例: /board/wl） |
+| Board System フロント | http://wl-sticky-note.local/**boards**/ | http://wl-sticky-note.local/**boards/**（例: /boards/taskboard） |
 | Board System API | http://wl-sticky-note.local/**boards-api**/ | http://wl-sticky-note.local/**api/bs**/ |
 
-Docker 版では Nginx が「`/` → Board System フロント」「`/board/` → 付箋ボード」「`/api/bs/` → Board System API」となっています。
+Docker 版では Nginx が「`/` → 302 で /boards/taskboard へ」「`/boards/` → Board System フロント」「`/board/` → 付箋ボード」「`/api/bs/` → Board System API」となっています。
+
+---
+
+## 本番切り替えの流れ（旧サーバ → 新サーバ）
+
+DNS を切り替える前に、新サーバで動作確認してから本番切り替えする手順です。
+
+```
+1. 新サーバで動作を確認
+   → 新サーバの IP（例: http://172.16.1.83/）でアクセスし、表示・ログイン・付箋・タスク・パーソナルなどを確認。
+   → .env で NEXT_PUBLIC_API_URL=http://172.16.1.83/api/bs を設定してビルドした状態で確認する。
+
+2. 必要に応じて修正
+   → 不具合があれば修正し、再度デプロイして確認する。
+
+3. データベースを最新の旧サーバデータに合わせる
+   → 切り替え直前に、旧サーバの board.db と boards.json を再度取得し、新サーバに反映する（下記「切り替え前の最終データ同期」）。
+
+4. DNS 切り替え
+   → ドメイン（例: wl-sticky-note.local）の DNS を 旧サーバ IP（172.16.1.81）→ 新サーバ IP（172.16.1.83）に変更する。
+   → 新サーバのフロントはドメイン用（NEXT_PUBLIC_API_URL=http://wl-sticky-note.local/api/bs）で再ビルド・デプロイしておく。
+
+5. 以降、新サーバで運用
+   → 旧サーバは必要に応じて停止または別用途へ。
+```
+
+### 切り替え前の最終データ同期（手順 3）
+
+DNS 切り替えの直前に行い、新サーバのデータを旧サーバの最新状態に揃えます。
+
+**旧環境が非 Docker（SQLite）の場合**
+
+```bash
+# 旧サーバで（本番稼働中の最新データを取得）
+cp /var/www/wl-sticky-note/releases/board-system/backend/board.db ~/wlinko_board_final.db
+cp /var/www/wl-sticky-note/releases/02_1_sticky-note/src/boards.json ~/boards_final.json
+# 上記を新サーバへ scp 等でコピー
+
+# 新サーバで（PostgreSQL を空にしてから再投入する場合）
+# 1) 既存データを削除してから移行スクリプトを再実行する
+docker exec -i linko-db psql -U linko_user -d linko_board_system -c "
+  TRUNCATE board_placements, sticky_notes, users RESTART IDENTITY CASCADE;
+"
+# 2) 移行スクリプトで最新の board.db を流し込む
+cd /var/www/wlinko-pj/board-system/backend
+source .venv/bin/activate
+SQLITE_DB=/path/to/wlinko_board_final.db \
+DATABASE_URL="postgresql+psycopg2://linko_user:linko_password@127.0.0.1:5433/linko_board_system" \
+python scripts/migrate_sqlite_to_pg.py
+
+# 3) boards.json をボリュームに上書き（コンテナは起動したままでも可）
+docker run --rm -v board-system_sticky_data:/data -v "/path/to/boards_final.json:/src/boards.json" alpine cp /src/boards.json /data/boards.json
+```
+
+**旧環境が Docker（PostgreSQL）の場合**  
+旧サーバで再度 `pg_dump` と付箋ボードの boards.json を取得し、新サーバで「7. 本番データの移行」の B-2 と同様にリストアする。既存データを残さず上書きする場合は、新サーバの PostgreSQL で該当テーブルを TRUNCATE してからダンプを流し込む。
 
 ---
 
@@ -218,7 +274,8 @@ EOF
 
 ### 5.2 deploy.sh のパス確認
 
-`board-system/deploy/deploy.sh` の先頭で `APP_DIR` を確認します。
+`board-system/deploy/deploy.sh` の先頭で `APP_DIR` 
+を確認します。
 
 ```bash
 APP_DIR="/var/www/wlinko-pj/board-system"
@@ -289,81 +346,123 @@ cd board-system/deploy
 
 ## 7. 本番データの移行（旧サーバ → 新サーバ）
 
-現在稼働中の本番サーバ（旧）から、新サーバ（172.16.1.83）へデータだけ移す手順です。**移行するのは (1) PostgreSQL（ユーザー・付箋・配置）と (2) 付箋ボードの boards.json の 2 種類**です。
+現在稼働中の本番サーバ（旧）から、新サーバ（172.16.1.83・Docker）へデータを移す手順です。**旧環境が非 Docker（PM2 + SQLite）か、Docker（PostgreSQL）かで手順が異なります。**
 
-### 7.1 旧サーバでバックアップを取得
+---
 
-**PostgreSQL**
+### パターン A: 旧環境が非 Docker（PM2 + SQLite）の場合
 
-```bash
-# 旧サーバで（board-system があるディレクトリで）
-cd /var/www/wlinko-pj/board-system
+旧サーバは [本番デプロイ手順.md](本番デプロイ手順.md) の構成で、**Board System の DB は SQLite（board.db）** です。
 
-# DB コンテナ名は linko-db。プロジェクト名でボリュームを参照している場合は compose の -p を確認
-docker exec linko-db pg_dump -U linko_user --clean --if-exists linko_board_system > ~/wlinko_pg_backup.sql
-```
-
-`~/wlinko_pg_backup.sql` を新サーバへコピーします（scp 等）。
-
-**付箋ボード（boards.json）**
+#### A-1. 旧サーバでバックアップを取得
 
 ```bash
-# 旧サーバで。ボリューム名は compose の -p による（例: board-system_sticky_data）
-docker volume ls | grep sticky
+# 旧サーバ（例: asakawa-lab-sv）で
+# Board System の SQLite ファイルをコピー（releases 配下の例）
+cp /var/www/wl-sticky-note/releases/board-system/backend/board.db ~/wlinko_board.db
 
-# 中身をコピー（例: プロジェクト名が board-system の場合）
-docker run --rm -v board-system_sticky_data:/data -v "$HOME:/out" alpine cp /data/boards.json /out/boards.json 2>/dev/null || \
-docker run --rm -v linko_sticky_data:/data -v "$HOME:/out" alpine cp /data/boards.json /out/boards.json
+# 付箋ボードの boards.json（環境によりパスが異なります）
+# 例: 02_1 の src 直下、または deploy で DATA_DIR を指定している場合はそのパス
+cp /var/www/wl-sticky-note/releases/02_1_sticky-note/src/boards.json ~/boards.json
+# 見つからない場合は find で検索: find /var/www/wl-sticky-note -name "boards.json"
 ```
 
-`~/boards.json` を新サーバへコピーします。ボリューム名が違う場合は `docker volume ls` で確認し、上記の `board-system_sticky_data` 部分を置き換えてください。
+`~/wlinko_board.db` と `~/boards.json` を新サーバへ scp 等でコピーします。
 
-### 7.2 新サーバでリストア
-
-**前提**: 新サーバでは「4. ネットワークと DB の起動」まで完了し、**まだ deploy.sh は実行していない**（または DB だけ起動済み）状態を想定します。
-
-**PostgreSQL**
+#### A-2. 新サーバでリストア（SQLite → PostgreSQL）
 
 ```bash
 # 新サーバで
 cd /var/www/wlinko-pj/board-system
 docker network create linko-net
 docker compose -f docker-compose.db.yml up -d
-
-# リストア（バックアップを新サーバのどこかに置いた場合）
-docker exec -i linko-db psql -U linko_user -d linko_board_system < /path/to/wlinko_pg_backup.sql
 ```
 
-エラーで `relation "xxx" does not exist` が出る場合は、バックアップに `--clean` が含まれているため無視してよいことがあります。重要なのは `CREATE TABLE` や `INSERT` が適用されていることです。
+新サーバの **backend ディレクトリ**で、空のスキーマを作成してから移行スクリプトを実行します。
+
+```bash
+cd /var/www/wlinko-pj/board-system/backend
+
+# Python 仮想環境と依存（未作成なら）
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt psycopg2-binary
+
+# 空の PostgreSQL にスキーマを作成（ホストの 5433 で DB が公開されている想定）
+DATABASE_URL="postgresql+asyncpg://linko_user:linko_password@127.0.0.1:5433/linko_board_system" alembic upgrade head
+
+# SQLite のデータを PostgreSQL に流し込む（wlinko_board.db を置いたパスに置き換え）
+SQLITE_DB=/path/to/wlinko_board.db \
+DATABASE_URL="postgresql+psycopg2://linko_user:linko_password@127.0.0.1:5433/linko_board_system" \
+python scripts/migrate_sqlite_to_pg.py
+```
+
+`/path/to/wlinko_board.db` は旧サーバからコピーした board.db のパスに置き換えてください。
+
+**スクリプトが無い場合**（`scripts/migrate_sqlite_to_pg.py` がリポジトリにまだ無い場合）: ローカルでこのファイルがあるディレクトリから `scp board-system/backend/scripts/migrate_sqlite_to_pg.py devuser01@新サーバ:/var/www/wlinko-pj/board-system/backend/scripts/` でコピーするか、[backend/scripts/migrate_sqlite_to_pg.py](../board-system/backend/scripts/migrate_sqlite_to_pg.py) の内容をサーバで `mkdir -p scripts` のうえ `scripts/migrate_sqlite_to_pg.py` として保存してください。
+
+#### A-3. 付箋ボード（boards.json）の反映
+
+「B-2. 付箋ボード（boards.json）」と同様に、deploy 実行後に `boards.json` をボリュームへコピーしてください。
+
+---
+
+### パターン B: 旧環境が Docker（PostgreSQL）の場合
+
+#### B-1. 旧サーバでバックアップを取得
+
+**PostgreSQL**
+
+```bash
+# 旧サーバで。PostgreSQL コンテナ名を確認
+docker ps -a --format "{{.Names}}" | grep -E "db|postgres"
+
+# 表示された名前を使ってダンプ（例: linko-db）
+docker exec <DBコンテナ名> pg_dump -U linko_user --clean --if-exists linko_board_system > ~/wlinko_pg_backup.sql
+```
+
+`~/wlinko_pg_backup.sql` を新サーバへコピーします。
 
 **付箋ボード（boards.json）**
 
-新サーバで一度 deploy を実行して `sticky_data` ボリュームを作成してから、中身を上書きします。
+```bash
+docker volume ls | grep sticky
+docker run --rm -v board-system_sticky_data:/data -v "$HOME:/out" alpine cp /data/boards.json /out/boards.json
+# ボリューム名が違う場合は docker volume ls で確認して置き換え
+```
+
+`~/boards.json` を新サーバへコピーします。
+
+#### B-2. 新サーバでリストア
 
 ```bash
-# 初回デプロイでボリューム作成（未実行なら）
-cd /var/www/wlinko-pj/board-system/deploy
-./deploy.sh
+cd /var/www/wlinko-pj/board-system
+docker network create linko-net
+docker compose -f docker-compose.db.yml up -d
 
-# コンテナを止めてから boards.json を差し替え（プロジェクト名は deploy で使っているものに合わせる）
+# PostgreSQL ダンプを流し込む
+docker exec -i linko-db psql -U linko_user -d linko_board_system < /path/to/wlinko_pg_backup.sql
+```
+
+**付箋ボード（boards.json）**: 一度 deploy でボリューム作成後、コンテナを止めてから差し替え。
+
+```bash
+cd /var/www/wlinko-pj/board-system/deploy && ./deploy.sh
 cd /var/www/wlinko-pj/board-system
 docker compose -f docker-compose.prod.yml -p board-system-blue down
-# または active が green なら -p board-system-green
 
-# バックアップした boards.json をボリュームにコピー
 docker run --rm -v board-system_sticky_data:/data -v "/path/to/boards.json:/src/boards.json" alpine cp /src/boards.json /data/boards.json
 
-# 再度デプロイでコンテナを起動
 cd deploy && ./deploy.sh
 ```
 
-`/path/to/boards.json` は旧サーバからコピーしたファイルのパスに置き換えてください。
+---
 
 ### 7.3 移行後の確認
 
-- 新サーバで `http://172.16.1.83/`（またはドメイン）にアクセスし、ユーザー・付箋・タスク・パーソナルが表示されること
-- 付箋ボード `http://172.16.1.83/board/` で、旧環境のボード・付箋が表示されること
-- 必要に応じて `alembic upgrade head` を実行（スキーマが最新なら不要）
+- 新サーバでユーザー・付箋・タスク・パーソナルが表示されること
+- 付箋ボードで旧環境のボード・付箋が表示されること
+- パターン A の場合は、必要に応じて `docker exec linko-backend-blue alembic upgrade head` でスキーマを最新化
 
 ---
 
@@ -413,6 +512,30 @@ BuildKit を無効にしてビルドします。
 export DOCKER_BUILDKIT=0
 docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 ```
+
+### 「API の URL が誤っているか…」エラー（接続先: http://wl-sticky-note.local/api/bs）
+
+次のどれかで解消します。
+
+1. **Nginx のメイン設定**  
+   `board-system/nginx/nginx.conf` の内容を本番サーバの Nginx に反映しているか確認。`/etc/nginx/nginx.conf` をこの内容で置き換えるか、`include /etc/nginx/conf.d/active_env.conf;` と `server_name wl-sticky-note.local;` および `location /api/bs/` が含まれるようにする。
+
+2. **アクセスする URL と API URL の一致**  
+   **IP で開いている場合**（例: http://172.16.1.83/）は、フロントの接続先も同じ IP にする必要があります。  
+   `board-system/.env` に以下を書いてから **再ビルド・再デプロイ**してください。
+   ```bash
+   NEXT_PUBLIC_API_URL=http://172.16.1.83/api/bs
+   NEXT_PUBLIC_LEGACY_BOARD_URL=http://172.16.1.83
+   ```
+   その後:
+   ```bash
+   cd /var/www/wlinko-pj/board-system/deploy
+   ./deploy.sh
+   ```
+   （ビルド時に上記が読み込まれ、フロントの API 接続先が変わります。）
+
+3. **ドメインで開く場合**  
+   `http://wl-sticky-note.local/` で開く場合は、その PC の hosts または DNS で `wl-sticky-note.local` が **本番サーバの IP（例: 172.16.1.83）** を指しているか確認してください。古いサーバの IP のままだと API が別サーバに向いてしまいます。
 
 ---
 
