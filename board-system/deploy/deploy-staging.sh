@@ -14,10 +14,10 @@ docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-
 echo "Ensuring DB is running..."
 docker compose -f "$DOCKER_COMPOSE_DB" up -d
 
-# ステージング用 DB がなければ作成（同一 PostgreSQL コンテナ内）
-if ! docker exec linko-db psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$STAGING_DB_NAME'" | grep -q 1; then
+# ステージング用 DB がなければ作成（同一 PostgreSQL コンテナ内。db は POSTGRES_USER=linko_user で起動）
+if ! docker exec linko-db psql -U linko_user -d linko_board_system -tAc "SELECT 1 FROM pg_database WHERE datname = '$STAGING_DB_NAME'" | grep -q 1; then
   echo "Creating staging database: $STAGING_DB_NAME"
-  docker exec linko-db psql -U postgres -c "CREATE DATABASE $STAGING_DB_NAME OWNER linko_user;"
+  docker exec linko-db psql -U linko_user -d linko_board_system -c "CREATE DATABASE $STAGING_DB_NAME OWNER linko_user;"
 fi
 
 # .env の値（GEMINI_API_KEY 等）を引き継ぎ、そのうえでステージング用に上書き

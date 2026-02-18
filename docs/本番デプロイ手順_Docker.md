@@ -20,6 +20,7 @@
 | [7. トラブルシューティング](#7-トラブルシューティング) | よくある事象と対処 |
 | [8. 参照](#8-参照) | 関連ドキュメント |
 | [付録 A: ローカルで Docker を動かす](#付録-a-ローカルで-docker-を動かす) | 本番前に手元で確認する場合 |
+| [付録 B: ステージング環境でテスト](#付録-b-ステージング環境でテスト) | 本番を止めずに新機能を検証する |
 
 ---
 
@@ -30,6 +31,8 @@
 | **初回デプロイ** | [3. 初回デプロイ](#3-初回デプロイ) を順に実施 |
 | **コード更新の反映** | [4. 通常のデプロイ](#4-通常のデプロイ) を実行 |
 | **問題発生時** | [5. ロールバック](#5-ロールバック) を実行 |
+| **新機能を本番停止なしでテスト** | [付録 B: ステージング環境でテスト](#付録-b-ステージング環境でテスト) を実施 |
+| **ステージングで問題なかったので本番へ反映** | [4. 通常のデプロイ](#4-通常のデプロイ) の手順で `./deploy.sh` を実行（[付録 B.5](#b5-ステージングで問題なければ本番へ反映) 参照） |
 
 ---
 
@@ -281,6 +284,95 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 - **非 Docker 本番デプロイ**: [本番デプロイ手順.md](本番デプロイ手順.md)
 - **本番設定の目安（.env 等）**: [本番設定の目安.md](本番設定の目安.md)
 - **ローカルで Docker を試す**: [付録 A](#付録-a-ローカルで-docker-を動かす) または [ローカルDockerでテストする手順.md](../ローカルDockerでテストする手順.md)
+
+---
+
+## 付録 B: ステージング環境でテスト
+
+新しい機能や動作を検証するための**ステージングは本番と同一サーバ**で運用する。本番を止めずに、別ポート（3030/8030/3031）と**別 DB**（`linko_board_system_staging`）でステージングを動かす。同一サーバ上の Nginx が `server_name` で本番とステージングを振り分ける。
+
+### B.1 構成
+
+- **ステージング**: 本番と同じサーバ（例: 172.16.1.83）上で、別ポート・別 DB で起動。
+- **アクセス**: http://staging.wl-sticky-note.local/  
+  **名前解決**: DNS で `staging.wl-sticky-note.local` を**本番サーバの IP**（例: 172.16.1.83）に向けるか、各 PC の hosts に `172.16.1.83 staging.wl-sticky-note.local` を追加する。
+- ステージングは **本番と別のデータベース**（`linko_board_system_staging`）を使用。同一 PostgreSQL 内に別 DB が自動作成され、本番データに影響しない。
+
+### B.2 手順（初回・本番サーバで実施）
+
+1. **本番サーバにリポジトリがある前提**  
+   `/var/www/wlinko-pj` に wlinko-pj があり、`board-system/.env` が用意されていること。  
+   ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wl-sticky-note.local`）に合わせて **http://staging.wl-sticky-note.local/api/bs** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
+
+2. **本番サーバの Nginx にステージング用設定を追加**  
+   `board-system/nginx/staging.conf` を本番 Nginx の `http {}` から読み込む。  
+   例: `/etc/nginx/conf.d/staging.conf` に `board-system/nginx/staging.conf` の内容をコピーし、メインの `nginx.conf` の `http { }` 内で `include /etc/nginx/conf.d/staging.conf;` を追加。  
+   `sudo nginx -t` → `sudo systemctl reload nginx` で反映。
+
+3. **ステージングの起動（本番サーバで実行）**  
+   ```bash
+   cd /var/www/wlinko-pj/board-system/deploy
+   chmod +x deploy-staging.sh
+   ./deploy-staging.sh
+   ```
+   初回はビルドに数分かかる。完了後、**staging.wl-sticky-note.local** が本番サーバ IP に解決する状態で、ブラウザから http://staging.wl-sticky-note.local/ にアクセスして動作確認。
+
+4. **マイグレーション**  
+   `deploy-staging.sh` 内でステージング DB に対して `alembic upgrade head` を実行する。失敗する場合は本番サーバで手動:  
+   `docker exec -it linko-backend-staging alembic upgrade head`  
+   ステージング用のユーザー（パーソナルボード等）が必要なら、コンテナ内で `python scripts/seed_personal_members.py` を実行するか、画面の「ユーザー管理」から追加する。
+
+### B.3 手順（2回目以降・コード更新して再テスト）
+
+**本番サーバ**（ステージングも動かしている同じサーバ）で:
+
+```bash
+cd /var/www/wlinko-pj
+git pull
+cd board-system/deploy
+./deploy-staging.sh
+```
+
+ステージングだけが再ビルド・再起動する。本番のコンテナは触らない。
+
+### B.4 ステージングの停止
+
+不要になったら**本番サーバ**で:
+
+```bash
+cd /var/www/wlinko-pj/board-system/deploy
+./stop-staging.sh
+```
+
+本番には影響しない。
+
+### B.5 ステージングで問題なければ本番へ反映
+
+ステージングと本番は**同じリポジトリのコード**を使う。ステージングで確認した内容は、**同じサーバ**で通常デプロイすると本番に反映される。
+
+1. ステージング（http://staging.wl-sticky-note.local/）で動作・表示を確認する。
+2. 問題なければ、**本番サーバ**で通常の本番デプロイを行う（[4. 通常のデプロイ](#4-通常のデプロイ) と同じ手順）。
+
+```bash
+# 本番サーバで実行（ステージングを動かしているのと同じサーバ）
+cd /var/www/wlinko-pj
+git pull
+cd board-system/deploy
+./deploy.sh
+```
+
+これで本番の Blue/Green が最新コードに切り替わる。ステージングで試したコードがそのまま本番に出る形になる。
+
+- **スキーマ変更**（マイグレーション追加）を入れた場合は、デプロイ後に本番 Backend で `alembic upgrade head` を実行する（[3.7 初回マイグレーション](#37-初回マイグレーション) と同様）。
+- ステージングはそのまま残してよい。本番反映後も同じサーバで次の変更をステージングで試せる。
+
+### B.6 ポート
+
+| 役割       | ステージング |
+|------------|--------------|
+| Frontend   | 3030         |
+| Backend    | 8030         |
+| Sticky Note| 3031         |
 
 ---
 
