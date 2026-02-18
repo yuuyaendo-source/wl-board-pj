@@ -1,13 +1,22 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { getMemberBySlug } from "@/lib/personalMembers";
+import { usePersonalMembers, getMemberBySlug } from "@/lib/personalMembers";
 import PersonalBoardView from "../../components/PersonalBoardView";
 
 export default function PersonalSlugPage() {
   const params = useParams();
   const slug = typeof params.slug === "string" ? params.slug : "";
-  const member = getMemberBySlug(slug);
+  const { members, loading } = usePersonalMembers();
+  const member = slug ? getMemberBySlug(slug, members) : null;
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-zinc-500">読込中…</p>
+      </div>
+    );
+  }
 
   if (!member) {
     return (

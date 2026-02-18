@@ -1,0 +1,7 @@
+# ステージング用オーバーライド: 本番と同じ compose だが Backend のみ別 DB を使用
+# 使い方: docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml -p board-system-staging up -d --build
+
+services:
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system_staging

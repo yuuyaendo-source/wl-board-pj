@@ -13,11 +13,12 @@ import OneLineInput from "./OneLineInput";
 const REFETCH_DELAY_MS = 120;
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** 表示順: 応援要請 → Today → タスク → Done */
 const LANES: { key: LaneType; label: string }[] = [
+  { key: "HELP_REQUEST", label: "応援要請" },
   { key: "TODAY", label: "Today" },
   { key: "INBOX", label: "タスク" },
   { key: "DONE", label: "Done" },
-  { key: "HELP_REQUEST", label: "応援要請" },
 ];
 
 export default function PersonalBoardView({
@@ -63,19 +64,19 @@ export default function PersonalBoardView({
       const placement = await api.stickyNotes.createPersonal({
         content: text,
         owner_id: ownerId,
-        lane: "INBOX",
+        lane: "TODAY",
       });
       const noteId = placement.note_id;
       const placementId = placement.id;
       setByLane((prev) => ({
         ...prev,
-        INBOX: [
+        TODAY: [
           {
             id: placementId,
             note_id: noteId,
             board_type: "PERSONAL",
             owner_id: ownerId,
-            lane: "INBOX",
+            lane: "TODAY",
             position_x: null,
             position_y: null,
             matrix_quadrant: null,
@@ -84,7 +85,7 @@ export default function PersonalBoardView({
             note_status: "ACTIVE",
             is_from_task: false,
           } as PlacementWithNote,
-          ...prev.INBOX,
+          ...prev.TODAY,
         ],
       }));
       await delay(REFETCH_DELAY_MS);
@@ -168,7 +169,7 @@ export default function PersonalBoardView({
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         {LANES.map(({ key, label }) => (
           <LaneColumn
             key={key}

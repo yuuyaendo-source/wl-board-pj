@@ -45,6 +45,8 @@ export const api = {
     list: () => fetchApi<User[]>("/users"),
     create: (body: { name: string; role?: string }) =>
       fetchApi<User>("/users", { method: "POST", body: JSON.stringify(body) }),
+    delete: (userId: number) =>
+      fetchApi<undefined>(`/users/${userId}`, { method: "DELETE" }),
   },
 
   stickyNotes: {

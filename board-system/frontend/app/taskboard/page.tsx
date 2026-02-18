@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
-import { PERSONAL_MEMBERS } from "@/lib/personalMembers";
+import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
 
@@ -43,6 +43,7 @@ export default function TaskBoardPage() {
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
+  const { members: personalMembers } = usePersonalMembers();
 
   // 初回マウント時に localStorage から復元（デフォルトはON）
   useEffect(() => {
@@ -171,7 +172,7 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
-  const byColumn = placements.reduce(
+  const byColumnRaw = placements.reduce(
     (acc, p) => {
       const q = p.matrix_quadrant ?? 1;
       if (!acc[q]) acc[q] = [];
@@ -180,6 +181,13 @@ export default function TaskBoardPage() {
     },
     {} as Record<number, PlacementWithNote[]>
   );
+  // 応援要請（赤）の付箋を各列の一番上に
+  const byColumn: Record<number, PlacementWithNote[]> = {};
+  for (const q of Object.keys(byColumnRaw).map(Number)) {
+    byColumn[q] = [...(byColumnRaw[q] ?? [])].sort((a, b) =>
+      (a.task_color === "red" ? 0 : 1) - (b.task_color === "red" ? 0 : 1)
+    );
+  }
 
   const handleDrop = useCallback(
     async (placementId: number, column: number) => {
@@ -227,7 +235,7 @@ export default function TaskBoardPage() {
         <div className="flex flex-col gap-2">
           <span className="text-sm text-zinc-500">パーソナルボードへコピー（付箋をメンバーにドロップ）</span>
           <div className="flex flex-wrap gap-2">
-            {PERSONAL_MEMBERS.map(({ ownerId, name }) => (
+            {personalMembers.map(({ ownerId, name }) => (
               <MemberDropZone
                 key={ownerId}
                 name={name}

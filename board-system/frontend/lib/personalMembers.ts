@@ -1,17 +1,57 @@
-/** パーソナルボード メンバー（slug → owner_id, 表示名）。API の owner_id は 1〜7 で対応 */
-export const PERSONAL_MEMBERS = [
-  { slug: "hori" as const, ownerId: 1, name: "堀 高喜" },
-  { slug: "fukuyama" as const, ownerId: 2, name: "福山 一道" },
-  { slug: "kobayashi" as const, ownerId: 3, name: "小林 康三" },
-  { slug: "thang" as const, ownerId: 4, name: "ブイクエット タン" },
-  { slug: "asakawa" as const, ownerId: 5, name: "浅川 久司" },
-  { slug: "endo" as const, ownerId: 6, name: "遠藤 悠矢" },
-  { slug: "hayashida" as const, ownerId: 7, name: "林田 康佑" },
-] as const;
+"use client";
 
-export type PersonalSlug = (typeof PERSONAL_MEMBERS)[number]["slug"];
+import { useEffect, useState, useCallback } from "react";
+import { api } from "@/lib/api";
 
-export function getMemberBySlug(slug: string): { ownerId: number; name: string } | null {
-  const m = PERSONAL_MEMBERS.find((x) => x.slug === slug);
+/** パーソナルボード用メンバー（URL の slug は user.id を文字列にしたもの） */
+export interface PersonalMember {
+  slug: string;
+  ownerId: number;
+  name: string;
+}
+
+/** API の /users からメンバー一覧を取得。メンバー増減に対応する */
+export function usePersonalMembers(): {
+  members: PersonalMember[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+} {
+  const [members, setMembers] = useState<PersonalMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const users = await api.users.list();
+      setMembers(
+        users.map((u) => ({
+          slug: String(u.id),
+          ownerId: u.id,
+          name: u.name,
+        }))
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load members");
+      setMembers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { members, loading, error, refetch };
+}
+
+export function getMemberBySlug(
+  slug: string,
+  members: PersonalMember[]
+): { ownerId: number; name: string } | null {
+  const m = members.find((x) => x.slug === slug);
   return m ? { ownerId: m.ownerId, name: m.name } : null;
 }
