@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
 import { PERSONAL_MEMBERS } from "@/lib/personalMembers";
@@ -10,6 +11,10 @@ import NoteCard from "../components/NoteCard";
 const POSTIT_BOARD_URL =
   process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000";
 const POSTIT_BOARD_ID = "wl";
+
+/** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
+const REFETCH_DELAY_MS = 120;
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 const AUTO_IMPORT_STORAGE_KEY = "board-system:taskboard:autoImport";
 
@@ -58,7 +63,7 @@ export default function TaskBoardPage() {
     try {
       setError(null);
       const list = await api.boards.task();
-      setPlacements(list);
+      flushSync(() => setPlacements(list));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -94,6 +99,7 @@ export default function TaskBoardPage() {
             ? `すべて既に取り込み済みです（${result.skipped} 件）`
             : "取り込む付箋がありませんでした";
       setImportMessage(msg);
+      await delay(REFETCH_DELAY_MS);
       await fetchTask();
     } catch (e) {
       setImportMessage(e instanceof Error ? e.message : "取り込みに失敗しました");
@@ -121,6 +127,7 @@ export default function TaskBoardPage() {
           .map((n) => ({ id: String(n.id), text: n.text || "" }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
+        await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch {
         // 自動取り込みは失敗しても静かにスキップ
@@ -138,6 +145,7 @@ export default function TaskBoardPage() {
           owner_id: ownerId,
           lane: "INBOX",
         });
+        await delay(REFETCH_DELAY_MS);
         await fetchTask();
         setImportMessage("パーソナルボードにコピーしました");
         setTimeout(() => setImportMessage(null), 2000);
@@ -153,6 +161,7 @@ export default function TaskBoardPage() {
       setImportMessage(null);
       try {
         await api.stickyNotes.delete(noteId);
+        await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch (e) {
         setImportMessage(e instanceof Error ? e.message : "削除に失敗しました");
@@ -177,6 +186,7 @@ export default function TaskBoardPage() {
       await api.boardPlacements.patch(placementId, {
         matrix_quadrant: column,
       });
+      await delay(REFETCH_DELAY_MS);
       await fetchTask();
     },
     [fetchTask]

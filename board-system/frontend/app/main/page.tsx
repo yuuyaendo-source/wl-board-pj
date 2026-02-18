@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import OneLineInput from "../components/OneLineInput";
+
+/** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
+const REFETCH_DELAY_MS = 120;
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** キャンバス上の座標（ピクセル） */
 type Position = { x: number; y: number };
@@ -26,12 +31,14 @@ export default function MainBoardPage() {
         api.boards.main(),
         api.boardPlacements.list(),
       ]);
-      setPlacements(mainList);
       const moved = new Set<number>();
       for (const p of allPlacements) {
         if (p.board_type === "TASK" || p.board_type === "PERSONAL") moved.add(p.note_id);
       }
-      setAiMovedNoteIds(moved);
+      flushSync(() => {
+        setPlacements(mainList);
+        setAiMovedNoteIds(moved);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -72,6 +79,7 @@ export default function MainBoardPage() {
   const handlePost = useCallback(
     async (text: string) => {
       await api.stickyNotes.create({ content: text });
+      await delay(REFETCH_DELAY_MS);
       await fetchMain();
     },
     [fetchMain]
@@ -90,6 +98,7 @@ export default function MainBoardPage() {
       const position_x = Math.max(0, Math.min(100, (x / w) * 100));
       const position_y = Math.max(0, Math.min(100, (y / h) * 100));
       await api.boardPlacements.patch(placementId, { position_x, position_y });
+      await delay(REFETCH_DELAY_MS);
       await fetchMain();
     },
     [containerSize, fetchMain]

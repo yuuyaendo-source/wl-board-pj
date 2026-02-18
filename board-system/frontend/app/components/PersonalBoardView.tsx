@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
 import type { LaneType } from "@/lib/types";
 import ApiErrorBanner from "./ApiErrorBanner";
 import NoteCard from "./NoteCard";
 import OneLineInput from "./OneLineInput";
+
+/** mutation 直後の refetch で古いレスポンスが返るのを防ぐため、少し待ってから再取得する */
+const REFETCH_DELAY_MS = 120;
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 const LANES: { key: LaneType; label: string }[] = [
   { key: "TODAY", label: "Today" },
@@ -40,7 +45,7 @@ export default function PersonalBoardView({
         const lane = (p.lane ?? "INBOX") as LaneType;
         if (lane in next) next[lane].push(p);
       }
-      setByLane(next);
+      flushSync(() => setByLane(next));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -82,6 +87,7 @@ export default function PersonalBoardView({
           ...prev.INBOX,
         ],
       }));
+      await delay(REFETCH_DELAY_MS);
       await fetchPersonal();
     },
     [ownerId, fetchPersonal]
@@ -106,6 +112,7 @@ export default function PersonalBoardView({
         return next;
       });
       await api.boardPlacements.patch(placementId, { lane: targetLane });
+      await delay(REFETCH_DELAY_MS);
       await fetchPersonal();
     },
     [fetchPersonal]
@@ -116,6 +123,7 @@ export default function PersonalBoardView({
       setError(null);
       try {
         await api.stickyNotes.delete(noteId);
+        await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
         setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -130,6 +138,7 @@ export default function PersonalBoardView({
       setError(null);
       try {
         await api.stickyNotes.releaseToTask(noteId);
+        await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
         setError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
