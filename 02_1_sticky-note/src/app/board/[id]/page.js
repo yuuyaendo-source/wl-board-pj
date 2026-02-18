@@ -79,11 +79,17 @@ export default function BoardPage() {
 
         socket.on("note-added", (note) => {
             setNotes((prev) => {
-                // 重複防止 - 既に同じIDの付箋があるかチェック
-                if (prev.some(n => n.id === note.id)) {
-                    return prev;
+                if (prev.some(n => n.id === note.id)) return prev;
+                // AI生成付箋は現在のビューポート中央付近に配置
+                let placed = note;
+                if (note.author === "AI" && boardContainerRef.current) {
+                    const el = boardContainerRef.current;
+                    const cx = el.scrollLeft + (el.clientWidth / 2) - 100;
+                    const cy = el.scrollTop + (el.clientHeight / 2) - 75;
+                    placed = { ...note, x: cx, y: cy };
+                    socket.emit("update-note", { boardId, note: placed });
                 }
-                return [...prev, note];
+                return [...prev, placed];
             });
         });
 

@@ -305,9 +305,10 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
    ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wl-sticky-note.local`）に合わせて **http://staging.wl-sticky-note.local/api/bs** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
 
 2. **本番サーバの Nginx にステージング用設定を追加**  
-   `board-system/nginx/staging.conf` を本番 Nginx の `http {}` から読み込む。  
-   例: `/etc/nginx/conf.d/staging.conf` に `board-system/nginx/staging.conf` の内容をコピーし、メインの `nginx.conf` の `http { }` 内で `include /etc/nginx/conf.d/staging.conf;` を追加。  
-   `sudo nginx -t` → `sudo systemctl reload nginx` で反映。
+   - リポジトリの `board-system/nginx/staging.conf` の内容を、サーバーの **Nginx 設定の読み込み先** に置く。  
+   - **よくあるやり方**: `/etc/nginx/conf.d/staging.conf` にコピーする。多くの環境では `/etc/nginx/nginx.conf`（メイン設定ファイル）の `http { }` 内にすでに `include /etc/nginx/conf.d/*.conf;` があるため、`conf.d/` に置くだけで自動的に読み込まれる。  
+   - 読み込まれない場合は、`/etc/nginx/nginx.conf` を開き、`http { }` ブロック内の適当な位置に `include /etc/nginx/conf.d/staging.conf;` を 1 行追加する。  
+   - 反映: `sudo nginx -t` で確認後、`sudo systemctl reload nginx`。
 
 3. **ステージングの起動（本番サーバで実行）**  
    ```bash
@@ -373,6 +374,32 @@ cd board-system/deploy
 | Frontend   | 3030         |
 | Backend    | 8030         |
 | Sticky Note| 3031         |
+
+### B.7 ステージングにアクセスできないときの確認
+
+PC の名前解決はできているがブラウザで開けない場合、**サーバー上**で次を順に確認する。
+
+1. **Nginx がステージング設定を読み込んでいるか**  
+   ```bash
+   sudo nginx -T 2>/dev/null | grep -E "staging.wl-sticky-note|3030|8030|3031"
+   ```  
+   `staging.wl-sticky-note.local` や 3030/8030/3031 の記述が出れば読み込み済み。何も出ない場合は `/etc/nginx/nginx.conf` の `http { }` 内に `include /etc/nginx/conf.d/*.conf;` があるか、または `include /etc/nginx/conf.d/staging.conf;` を追加したうえで `sudo systemctl reload nginx` する。
+
+2. **サーバー自身からステージングに届くか**  
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -H "Host: staging.wl-sticky-note.local" http://127.0.0.1/
+   ```  
+   `302` や `200` が返れば、Nginx の振り分けとステージングコンテナは動いている。その場合は **3** へ。
+
+3. **ファイアウォール**  
+   同じ PC で本番（例: http://wl-sticky-note.local/）にはアクセスできるなら、ポート 80 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 80 が許可されているか確認する。  
+   （ping が通らないだけの場合は、ICMP を止めているだけのことが多く、HTTP には影響しない。）
+
+4. **ステージング用ポートが listen しているか**  
+   ```bash
+   ss -tlnp | grep -E '3030|8030|3031'
+   ```  
+   何も出ない場合はステージングコンテナが落ちている可能性がある。`docker ps | grep staging` で確認し、必要なら `./deploy-staging.sh` を再実行する。
 
 ---
 

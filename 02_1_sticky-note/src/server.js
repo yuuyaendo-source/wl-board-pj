@@ -176,9 +176,8 @@ app.prepare().then(() => {
                     socket.to(boardId).emit('note-updated', note);
                     saveBoards();
 
-                    // AI-Board (Python) に通知 (Real Cam以外の場合)
-                    // これにより、Webアプリで作成・編集した付箋にもAIがコメントする
-                    if (note.author !== 'Real Cam') {
+                    // AI-Board (Python) に通知（位置だけの更新・AI自身の付箋のときは通知しない）
+                    if (note.author !== 'Real Cam' && note.author !== 'AI') {
                         try {
                             // Pythonサーバーへ通知（HTTPS対応）
                             fetch(`${AI_BOARD_BASE}/api/receive_note`, {
@@ -385,8 +384,8 @@ app.prepare().then(() => {
             }
             saveBoards();
 
-            // AI-Board (Python) に通知してAIコメントを生成させる（新規追加時のみ。更新時はコメント重複を防ぐ）
-            if (note.author === 'Real Cam' && existingIndex < 0) {
+            // AI-Board (Python) に通知してリン子のコメントを生成（新規追加時のみ。AI自身の付箋は除く）
+            if (existingIndex < 0 && note.author !== 'AI') {
                  try {
                      fetch(`${AI_BOARD_BASE}/api/receive_note`, {
                          method: 'POST',
