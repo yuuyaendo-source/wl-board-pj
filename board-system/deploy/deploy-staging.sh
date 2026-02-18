@@ -1,14 +1,14 @@
 #!/bin/bash
 set -e
-# 本番を止めずにステージング環境を起動する。
-# 同一サーバ・同一 PostgreSQL コンテナ内で「別 DB」（linko_board_system_staging）を使用する。
-# アクセス: http://staging.wl-sticky-note.local/ （DNS で名前解決するか、各 PC の hosts にサーバ IP を追加すること）
+# ステージング環境を起動する。ステージングは別サーバ 172.16.1.84 で運用する想定。
+# 同一マシン内で「別 DB」（linko_board_system_staging）を使用する。
+# アクセス: http://172.16.1.84/ （DNS で staging.wl-sticky-note.local → 172.16.1.84 にしても可。その場合は STAGING_HOST=staging.wl-sticky-note.local で再ビルド）
 
 APP_DIR="/var/www/wlinko-pj/board-system"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 DOCKER_COMPOSE_STAGING="$APP_DIR/docker-compose.staging.yml"
 DOCKER_COMPOSE_DB="$APP_DIR/docker-compose.db.yml"
-STAGING_HOST="${STAGING_HOST:-staging.wl-sticky-note.local}"
+STAGING_HOST="${STAGING_HOST:-172.16.1.84}"
 STAGING_DB_NAME="linko_board_system_staging"
 
 docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-net
@@ -41,6 +41,5 @@ echo "Running migrations on staging DB..."
 sleep 5
 docker exec linko-backend-staging alembic upgrade head 2>/dev/null || true
 
-echo "Staging is up. Ensure ${STAGING_HOST} resolves to this server (DNS or /etc/hosts)."
-echo "Then configure Nginx to route ${STAGING_HOST} to 3030/8030/3031 (see nginx/staging.conf)."
-echo "URL: http://${STAGING_HOST}/"
+echo "Staging is up. URL: http://${STAGING_HOST}/"
+echo "Ensure Nginx on this server routes port 80 to 3030/8030/3031 (see nginx/staging.conf)."
