@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactElement } from "react";
+
 const URL_REGEX = /(https?:\/\/[^\s<>\[\]()]+)/gi;
 
 /**
@@ -13,7 +15,7 @@ export default function LinkifiedText({
   className?: string;
 }) {
   if (text == null || text === "") return null;
-  const parts: JSX.Element[] = [];
+  const parts: ReactElement[] = [];
   let lastIndex = 0;
   let keyIndex = 0;
   let m;
