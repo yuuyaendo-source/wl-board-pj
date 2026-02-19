@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
     postit_board_url: str = "http://127.0.0.1:3000"
+    # 付箋ボードのボードID（Board System でタスクになった付箋をここに反映する）
+    postit_board_id: str = "wl"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

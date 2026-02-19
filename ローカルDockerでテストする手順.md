@@ -43,6 +43,22 @@ docker compose up -d --build
 - 初回はイメージのビルドで数分かかることがあります
 - **cato-ca.crt** が無くてもビルドできます（証明書はオプション）
 
+**「parent snapshot does not exist」などビルドキャッシュのエラーが出る場合**は、キャッシュを使わずにビルドし直してください。
+
+```powershell
+cd board-system
+docker compose build --no-cache
+docker compose up -d
+```
+
+まだ解消しない場合は、ビルドキャッシュを削除してから再試行します。
+
+```powershell
+docker builder prune -f
+docker compose build --no-cache
+docker compose up -d
+```
+
 ### 4. マイグレーション（初回のみ）
 
 PostgreSQL のテーブルを作成します。

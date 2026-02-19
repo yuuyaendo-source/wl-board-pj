@@ -2,6 +2,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from app.config import settings
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -431,6 +432,22 @@ async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)
         )
     )
     await db.flush()
+
+    # 付箋ボード連携なしの付箋がタスクになったら付箋ボードに反映
+    if not note.postit_note_id:
+        from app.services.orchestrator import _sync_note_to_postit_sync
+        ok = await asyncio.to_thread(
+            _sync_note_to_postit_sync,
+            note.id,
+            note.content or "",
+            settings.postit_board_id,
+            settings.postit_board_url,
+        )
+        if ok:
+            note.postit_board_id = settings.postit_board_id
+            note.postit_note_id = f"bs-{note.id}"
+            await db.flush()
+
     return BoardPlacementResponse(
         id=placement.id,
         note_id=placement.note_id,

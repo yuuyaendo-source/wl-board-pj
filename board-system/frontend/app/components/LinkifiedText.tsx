@@ -3,9 +3,14 @@
 import type { ReactElement } from "react";
 
 const URL_REGEX = /(https?:\/\/[^\s<>\[\]()]+)/gi;
+const URL_DISPLAY_MAX = 40;
+
+function shortenUrl(url: string): string {
+  return url.length <= URL_DISPLAY_MAX ? url : url.slice(0, URL_DISPLAY_MAX - 1) + "…";
+}
 
 /**
- * テキスト中の URL をリンク化して表示する。
+ * テキスト中の URL をリンク化して表示する。長い URL は省略表示（title で全文）。
  */
 export default function LinkifiedText({
   text,
@@ -25,16 +30,18 @@ export default function LinkifiedText({
       parts.push(<span key={`t-${keyIndex++}`}>{text.slice(lastIndex, m.index)}</span>);
     }
     const url = m[0];
+    const display = shortenUrl(url);
     parts.push(
       <a
         key={`a-${keyIndex++}`}
         href={url}
         target="_blank"
         rel="noopener noreferrer"
+        title={url}
         className="text-blue-600 underline hover:text-blue-800"
         onClick={(e) => e.stopPropagation()}
       >
-        {url}
+        {display}
       </a>
     );
     lastIndex = re.lastIndex;

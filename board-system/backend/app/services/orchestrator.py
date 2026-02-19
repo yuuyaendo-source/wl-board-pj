@@ -2,10 +2,13 @@
 """
 AIによる自動振り分けオーケストレーター。
 新規付箋の内容を Triage → Matrix Scoring し、Task ボードの適切な列へ配置、担当者があれば Personal にも配布する。
-改善指示書12を参考に現状の非同期構成に合わせて実装。
+Board System でタスクになった付箋（postit 連携なし）は付箋ボードにも反映する。
 """
 import asyncio
+import json
 import logging
+import time
+import urllib.request
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -115,6 +118,20 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
         logger.info("[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）", note_id)
+        if not note.postit_note_id:
+            from app.config import settings
+            ok = await asyncio.to_thread(
+                _sync_note_to_postit_sync,
+                note.id,
+                note.content or "",
+                settings.postit_board_id,
+                settings.postit_board_url,
+            )
+            if ok:
+                note.postit_board_id = settings.postit_board_id
+                note.postit_note_id = f"bs-{note.id}"
+                await db.flush()
+                logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
         return
 
     # タスクでないと判定されても全件 Task ボードに載せる（曖昧な内容で取りこぼしを防ぐ）
@@ -193,6 +210,52 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             logger.warning("[Rinko AI] Assignee '%s' not found in DB.", assignee_name)
     else:
         logger.info("[Rinko AI] Note %s 振り分け完了（担当者なし）", note_id)
+
+    # Board System でタスクになった付箋（付箋ボード連携なし）を付箋ボードに反映
+    if not note.postit_note_id:
+        from app.config import settings
+
+        ok = await asyncio.to_thread(
+            _sync_note_to_postit_sync,
+            note.id,
+            note.content or "",
+            settings.postit_board_id,
+            settings.postit_board_url,
+        )
+        if ok:
+            note.postit_board_id = settings.postit_board_id
+            note.postit_note_id = f"bs-{note.id}"
+            await db.flush()
+            logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
+
+
+def _sync_note_to_postit_sync(note_id: int, content: str, board_id: str, base_url: str) -> bool:
+    """Board System の付箋を付箋ボードに追加する（同期）。成功時 True。"""
+    postit_note_id = f"bs-{note_id}"
+    payload = {
+        "boardId": board_id,
+        "note": {
+            "id": postit_note_id,
+            "text": content or "",
+            "x": 0,
+            "y": 0,
+            "color": "#ffeb3b",
+            "pinned": False,
+            "author": "",
+            "createdAt": int(time.time() * 1000),
+        },
+    }
+    url = f"{base_url.rstrip('/')}/api/sticky_notes"
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if 200 <= resp.status < 300:
+                return True
+    except Exception as e:
+        logger.warning("[Rinko AI] sync_note_to_postit failed: %s", e)
+    return False
 
 
 async def _place_on_task_board(

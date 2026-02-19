@@ -106,7 +106,7 @@ export default function NoteCard({
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 rounded bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
+            className="shrink-0 rounded bg-amber-400 px-2 py-1 text-xs font-medium text-white hover:bg-amber-500"
           >
             追記
           </button>
