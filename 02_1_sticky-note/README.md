@@ -84,7 +84,7 @@ cd src
 |------|------|-----|
 | `PORT` | サーバーのポート | `3001` |
 | `NODE_ENV` | 実行環境 | `production` |
-| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | `https://127.0.0.1:5000` |
+| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wl-ai-board.local` / ローカル: `http://127.0.0.1:5000` |
 | `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
 | `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `http://wl-sticky-note.local/boards` |
 

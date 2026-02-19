@@ -46,6 +46,7 @@ AI-Board のバックエンド・付箋検知・AIアバター制御を担う Py
 | **Socket.IO** | コメント・音声ファイル情報（`ai_comment`）、付箋表示（`new_text_note`）、全削除（`clear_all_notes`）をフロントへリアルタイム配信。 |
 | **付箋の重複防止** | 既存IDの付箋は更新（`note-updated`）として扱い、新規のみ `note-added` で AI コメントをトリガー。 |
 | **リン子の音声** | 付箋受信時に Gemini でコメント生成 → VOICEVOX で音声合成 → `ai_comment` で必ずフロントに通知（音声生成失敗時もコメントは表示）。VOICEVOX 未起動時はログに「音声未生成」を出力。 |
+| **リン子連携仕様** | いつ・どの経路でリン子がコメント・発声するかの整理は **[docs/リン子連携仕様.md](docs/リン子連携仕様.md)** を参照。 |
 
 ### 2. AIアバター（`src/webapp/ai_avatar.py`）
 
@@ -214,7 +215,7 @@ cd 02_2_AI-Board
 
 | 項目 | 値 |
 |------|-----|
-| AIサーバーURL | http://localhost:5000 |
+| AIサーバーURL | 開発: http://localhost:5000。本番: **http://wl-ai-board.local**（DNS または hosts で名前解決） |
 | 付箋検知の API 送信先 | 開発: http://localhost:3000/api/sticky_notes。本番: `POSTIT_BOARD_URL=http://wl-sticky-note.local` で http://wl-sticky-note.local/api/sticky_notes に送信。 |
 | **Postit連携** | 本番連携先: **http://wl-sticky-note.local/board/wl**。`config.json` の `board_id` を `wl` にし、本番では環境変数 `POSTIT_BOARD_URL=http://wl-sticky-note.local` を設定する。 |
 | **全件取得API** | `GET /api/board_notes` … 付箋ボードの付箋を全件取得（CORS 回避のプロキシ）。ボード未実装・エラー時は `notes: []` で応答。 |
@@ -232,7 +233,7 @@ cd 02_2_AI-Board
 
 ## 既知の制限・注意
 
-- **付箋・リン子が反応しない場合**: 付箋とAIコメントは **Socket.IO** でブラウザに届きます。AI-Board の画面を同じURLで開いたタブにしておくこと。ブラウザのコンソール（F12）で `connect_error` が出ていないか確認し、付箋ボード側の `AI_BOARD_URL` を AI-Board サーバの URL（HTTPS の場合は `AI_BOARD_INSECURE_SSL=1` も設定）にすること。
+- **付箋・リン子が反応しない場合**: 付箋とAIコメントは **Socket.IO** でブラウザに届きます。AI-Board の画面を同じURLで開いたタブにしておくこと。ブラウザのコンソール（F12）で `connect_error` が出ていないか確認し、付箋ボード側の **`AI_BOARD_URL`** を AI-Board の本番 URL（例: **http://wl-ai-board.local**）にすること。HTTPS かつ自己証明書の場合は `AI_BOARD_INSECURE_SSL=1` も設定。
 - **RTSP 401 Unauthorized**: URL にユーザー名・パスワードを含める（`rtsp://user:pass@host:port/path`）。
 - **Stream timeout**: ネットワーク遅延やカメラ側の応答が遅いと 30 秒程度でタイムアウトすることがある。接続後は `CAP_PROP_OPEN_TIMEOUT_MSEC` を 60 秒に延長する処理を入れているが、読み取り側のタイムアウトは環境により変動する。
 - **google-genai**: Python 3.14 や一部環境では未対応のため、その場合は `google-generativeai` にフォールバックし、FutureWarning が表示される。
