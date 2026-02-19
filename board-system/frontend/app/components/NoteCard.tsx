@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
+import LinkifiedText from "./LinkifiedText";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
@@ -15,6 +17,8 @@ interface NoteCardProps {
   cardColor?: "yellow" | "green" | "grey" | "blue" | "red";
   /** Task 用: 引き取り者（短縮名アイコン表示） */
   takenBy?: TakenByUser[];
+  /** 追記コールバック（指定時は追記入力欄を表示。付箋は追記のみ） */
+  onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
 }
@@ -35,17 +39,30 @@ export default function NoteCard({
   dragData,
   cardColor,
   takenBy = [],
+  onAppendContent,
   onDragStart,
   onDragEnd,
 }: NoteCardProps) {
+  const [appendText, setAppendText] = useState("");
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
+
+  const handleSubmitAppend = () => {
+    const trimmed = appendText.trim();
+    if (!trimmed || !onAppendContent) return;
+    onAppendContent(placement.note_id, placement.note_content ?? null, trimmed);
+    setAppendText("");
+  };
 
   const content = (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-start justify-between gap-2">
-        <p className="min-h-[1.5em] flex-1 whitespace-pre-wrap text-sm font-medium text-zinc-900">
-          {placement.note_content || "（空）"}
+        <p className="min-h-[1.5em] flex-1 whitespace-pre-wrap text-sm font-medium text-zinc-900 break-words">
+          {placement.note_content ? (
+            <LinkifiedText text={placement.note_content} />
+          ) : (
+            "（空）"
+          )}
         </p>
         <div className="flex shrink-0 items-center gap-1">
           {showPersonalBadge && (
@@ -74,6 +91,25 @@ export default function NoteCard({
               {u.name_short}
             </span>
           ))}
+        </div>
+      )}
+      {onAppendContent && (
+        <div className="mt-1 flex gap-1" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="text"
+            value={appendText}
+            onChange={(e) => setAppendText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSubmitAppend())}
+            placeholder="追記..."
+            className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 text-xs"
+          />
+          <button
+            type="button"
+            onClick={handleSubmitAppend}
+            className="shrink-0 rounded bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600"
+          >
+            追記
+          </button>
         </div>
       )}
     </div>

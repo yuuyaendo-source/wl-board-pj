@@ -98,15 +98,36 @@
     border-color: #333;
 }
 
-.textarea {
+.noteContent {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    word-break: break-all;
+}
+.noteContent a {
+    color: #1565c0;
+    text-decoration: underline;
+}
+.linkifiedText {
+    white-space: pre-wrap;
+}
+.appendInput {
     width: 100%;
-    height: 100%;
+    min-height: 2.5em;
+    margin-top: 6px;
+    padding: 4px 0;
     background: transparent;
     border: none;
+    border-top: 1px solid rgba(0,0,0,0.1);
     resize: none;
     font-family: inherit;
-    font-size: 1.1rem;
+    font-size: 1rem;
     outline: none;
+}
+.note.large .appendInput {
+    font-size: 1.2rem;
 }
 
 .groupBadge {

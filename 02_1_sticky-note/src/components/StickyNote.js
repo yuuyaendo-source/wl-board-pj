@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import LinkifiedText from "./LinkifiedText";
 import styles from "./StickyNote.module.css";
 
 const COLORS = [
@@ -8,6 +9,7 @@ const COLORS = [
 
 export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDown, onMouseUp }) {
     const [isDragging, setIsDragging] = useState(false);
+    const [appendText, setAppendText] = useState("");
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
 
@@ -112,6 +114,14 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         setShowColorPicker(false);
     };
 
+    const submitAppend = () => {
+        const trimmed = appendText.trim();
+        if (!trimmed) return;
+        const newText = (note.text || "").trim() ? `${(note.text || "").trim()}\n${trimmed}` : trimmed;
+        onUpdate({ ...note, text: newText });
+        setAppendText("");
+    };
+
     return (
         <div
             ref={noteRef}
@@ -175,11 +185,24 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     <img src={note.imageUrl} alt="Sticky note capture" className={styles.image} />
                 </div>
             )}
+            {/* 既存テキストは表示のみ（URLはリンク化）。追記のみ可能 */}
+            <div className={styles.noteContent}>
+                {(note.text || "").trim() ? (
+                    <LinkifiedText text={note.text} className={styles.linkifiedText} />
+                ) : null}
+            </div>
             <textarea
-                value={note.text}
-                onChange={(e) => onUpdate({ ...note, text: e.target.value })}
-                placeholder="Type here..."
-                className={styles.textarea}
+                className={styles.appendInput}
+                placeholder={note.text ? "追記..." : "入力..."}
+                value={appendText}
+                onChange={(e) => setAppendText(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submitAppend();
+                    }
+                }}
+                onBlur={() => appendText.trim() && submitAppend()}
             />
             {note.groupId && (
                 <div className={styles.groupBadge} title={`Group ID: ${note.groupId}`}>

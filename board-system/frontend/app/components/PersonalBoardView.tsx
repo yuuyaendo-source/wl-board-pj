@@ -58,6 +58,18 @@ export default function PersonalBoardView({
     fetchPersonal();
   }, [fetchPersonal]);
 
+  const handleAppendContent = useCallback(
+    async (noteId: number, currentContent: string | null, appendedText: string) => {
+      const newContent = (currentContent || "").trim()
+        ? `${(currentContent || "").trim()}\n${appendedText}`
+        : appendedText;
+      await api.stickyNotes.update(noteId, { content: newContent });
+      await delay(REFETCH_DELAY_MS);
+      await fetchPersonal();
+    },
+    [fetchPersonal]
+  );
+
   const handlePost = useCallback(
     async (text: string) => {
       // 1リクエストで create + Personal 配置（move_to_personal の 404 を防ぐ）
@@ -178,6 +190,7 @@ export default function PersonalBoardView({
             placements={byLane[key]}
             onDrop={(placementId) => handleDrop(placementId, key)}
             onRefresh={fetchPersonal}
+            onAppendContent={handleAppendContent}
           />
         ))}
       </div>
@@ -268,12 +281,14 @@ function LaneColumn({
   placements,
   onDrop,
   onRefresh,
+  onAppendContent,
 }: {
   lane: LaneType;
   label: string;
   placements: PlacementWithNote[];
   onDrop: (placementId: number) => void | Promise<void>;
   onRefresh: () => void;
+  onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
 }) {
   const [over, setOver] = useState(false);
 
@@ -317,6 +332,7 @@ function LaneColumn({
                     : "blue"
             }
             dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
+            onAppendContent={onAppendContent}
             onDragEnd={onRefresh}
           />
         ))}

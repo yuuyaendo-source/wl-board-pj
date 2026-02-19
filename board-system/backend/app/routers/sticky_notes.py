@@ -186,6 +186,31 @@ async def create_personal_note(
     )
 
 
+class SyncFromPostitBody(BaseModel):
+    """付箋ボードの付箋テキストを Board System の該当付箋に反映する。"""
+    board_id: str
+    note_id: str
+    content: str
+
+
+@router.patch("/sync_from_postit", response_model=StickyNoteResponse)
+async def sync_from_postit(body: SyncFromPostitBody, db: AsyncSession = Depends(get_db)):
+    """付箋ボードで追記された内容を、Board System の該当付箋（postit_board_id + postit_note_id）に反映する。"""
+    result = await db.execute(
+        select(StickyNote).where(
+            StickyNote.postit_board_id == body.board_id,
+            StickyNote.postit_note_id == body.note_id,
+        ).limit(1)
+    )
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="No sticky note linked to this postit note")
+    note.content = body.content
+    await db.flush()
+    await db.refresh(note)
+    return _note_response(note)
+
+
 @router.get("/{note_id}", response_model=StickyNoteResponse)
 async def get_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     """付箋1件取得。"""
@@ -196,9 +221,25 @@ async def get_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     return _note_response(note)
 
 
+def _notify_postit_text(board_id: str, note_id: str, text: str) -> None:
+    """付箋ボードの付箋テキストを更新（Board System で追記した内容を反映）。"""
+    import json
+    import urllib.request
+    from app.config import settings
+    url = f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
+    body = json.dumps({"text": text}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="PATCH")
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            pass
+    except Exception:
+        pass
+
+
 @router.patch("/{note_id}", response_model=StickyNoteResponse)
 async def update_sticky_note(note_id: int, body: StickyNoteUpdate, db: AsyncSession = Depends(get_db)):
-    """付箋の content / status を更新。"""
+    """付箋の content / status を更新。付箋ボード連携付箋の場合は追記内容を付箋ボード側にも反映する。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -209,6 +250,9 @@ async def update_sticky_note(note_id: int, body: StickyNoteUpdate, db: AsyncSess
         note.status = body.status
     await db.flush()
     await db.refresh(note)
+    # 付箋ボード連携付箋の場合、追記内容を付箋ボード側に反映
+    if body.content is not None and note.postit_board_id and note.postit_note_id:
+        await asyncio.to_thread(_notify_postit_text, note.postit_board_id, note.postit_note_id, note.content)
     return _note_response(note)
 
 

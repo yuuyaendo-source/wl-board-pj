@@ -157,6 +157,18 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
+  const handleAppendContent = useCallback(
+    async (noteId: number, currentContent: string | null, appendedText: string) => {
+      const newContent = (currentContent || "").trim()
+        ? `${(currentContent || "").trim()}\n${appendedText}`
+        : appendedText;
+      await api.stickyNotes.update(noteId, { content: newContent });
+      await delay(REFETCH_DELAY_MS);
+      await fetchTask();
+    },
+    [fetchTask]
+  );
+
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
       setImportMessage(null);
@@ -255,6 +267,7 @@ export default function TaskBoardPage() {
             placements={byColumn[q] ?? []}
             onDrop={(placementId) => handleDrop(placementId, q)}
             onRefresh={fetchTask}
+            onAppendContent={handleAppendContent}
           />
         ))}
       </div>
@@ -337,12 +350,14 @@ function ColumnDropZone({
   placements,
   onDrop,
   onRefresh,
+  onAppendContent,
 }: {
   column: number;
   title: string;
   placements: PlacementWithNote[];
   onDrop: (placementId: number) => void;
   onRefresh: () => void;
+  onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
 }) {
   const [over, setOver] = useState(false);
 
@@ -377,6 +392,7 @@ function ColumnDropZone({
             draggable
             cardColor={p.task_color}
             takenBy={p.taken_by}
+            onAppendContent={onAppendContent}
             onDragEnd={onRefresh}
           />
         ))}
