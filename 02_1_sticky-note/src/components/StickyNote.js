@@ -193,7 +193,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             </div>
             <textarea
                 className={styles.appendInput}
-                placeholder={note.text ? "追記..." : "入力..."}
+                placeholder={note.text ? "追記... (Shift+Enter: 改行 / Enter: 反映)" : "入力... (Shift+Enter: 改行 / Enter: 反映)"}
                 value={appendText}
                 onChange={(e) => setAppendText(e.target.value)}
                 onKeyDown={(e) => {

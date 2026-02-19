@@ -26,7 +26,7 @@ interface NoteCardProps {
 const BG_COLOR = {
   yellow: "bg-[#fff9c4]",
   green: "bg-green-100 border-green-300",
-  grey: "bg-zinc-200 border-zinc-400",
+  grey: "bg-zinc-300 border-zinc-300",
   blue: "bg-blue-100 border-blue-300",
   red: "bg-red-100 border-red-400",
 } as const;
@@ -95,18 +95,23 @@ export default function NoteCard({
       )}
       {onAppendContent && (
         <div className="mt-1 flex gap-1" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="text"
+          <textarea
             value={appendText}
             onChange={(e) => setAppendText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleSubmitAppend())}
-            placeholder="追記..."
-            className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 text-xs"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmitAppend();
+              }
+            }}
+            placeholder="追記... (Shift+Enter:改行)"
+            rows={2}
+            className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs"
           />
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 rounded bg-amber-400 px-2 py-1 text-xs font-medium text-white hover:bg-amber-500"
+            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-gray-300 hover:bg-amber-300"
           >
             追記
           </button>
