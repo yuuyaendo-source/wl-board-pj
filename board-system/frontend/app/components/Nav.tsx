@@ -15,6 +15,14 @@ const links = [
 const STICKY_BOARD_WL_URL =
   (process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000") + "/board/wl";
 
+const AWARENESS_TRELLO_URL =
+  "https://trello.com/b/VTKI9CBt/%E6%84%8F%E8%AD%98%E5%90%88%E3%82%8F%E3%81%9B";
+
+const EVALUATION_WEB_URL = "https://wonder-link.japaneast.cloudapp.azure.com/login";
+
+// 交通費精算（仮）リンク先は未定。URL が決まり次第ここを差し替えてください。
+const TRAVEL_EXPENSE_URL = "#";
+
 export default function Nav() {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -64,6 +72,14 @@ export default function Nav() {
           {label}
         </Link>
       ))}
+      <a
+        href={AWARENESS_TRELLO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
+      >
+        意識合わせ
+      </a>
 
       <div className="relative" ref={dropdownRef}>
         <button
@@ -100,6 +116,22 @@ export default function Nav() {
           </ul>
         )}
       </div>
+      <a
+        href={EVALUATION_WEB_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
+      >
+        評価WEB
+      </a>
+      <a
+        href={TRAVEL_EXPENSE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
+      >
+        交通費精算（仮）
+      </a>
 
       <div className="ml-auto flex items-center gap-2">
         <AddUserMenu members={personalMembers} onSuccess={refetchMembers} />
