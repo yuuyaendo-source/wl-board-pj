@@ -229,7 +229,17 @@ export default function TaskBoardPage() {
             {importing ? "取り込み中…" : importMessage}
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-center gap-3">
+        <div className="mb-2 items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => handleImportFromPostit()}
+            disabled={importing}
+            className="shrink-0 rounded-xl px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            style={{ background: "var(--primary)" }}
+          >
+            付箋ボードから取り込む
+          </button>
+          
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
             <input
               type="checkbox"
@@ -239,6 +249,7 @@ export default function TaskBoardPage() {
             />
             <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）※オフにするときだけチェックを外してください</span>
           </label>
+
         </div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="text-sm text-zinc-500">ゴミ箱</span>

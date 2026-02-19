@@ -23,6 +23,8 @@ const EVALUATION_WEB_URL = "https://wonder-link.japaneast.cloudapp.azure.com/log
 // 交通費精算（仮）リンク先は未定。URL が決まり次第ここを差し替えてください。
 const TRAVEL_EXPENSE_URL = "#";
 
+const INTERNAL_STUDY_ARCHIVE_URL = "http://wl-internal-study.local/";
+
 export default function Nav() {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -49,16 +51,6 @@ export default function Nav() {
       >
         Board System
       </Link>
-      {pathname === "/taskboard" && (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("task-import-request"))}
-          className="rounded-xl px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-          style={{ background: "var(--primary)" }}
-        >
-          付箋ボードから取り込む
-        </button>
-      )}
       {links.map(({ href, label }) => (
         <Link
           key={href}
@@ -124,6 +116,7 @@ export default function Nav() {
       >
         評価WEB
       </a>
+
       <a
         href={TRAVEL_EXPENSE_URL}
         target="_blank"
@@ -133,16 +126,27 @@ export default function Nav() {
         交通費精算（仮）
       </a>
 
-      <div className="ml-auto flex items-center gap-2">
-        <AddUserMenu members={personalMembers} onSuccess={refetchMembers} />
-        <a
+      <a
+        href={INTERNAL_STUDY_ARCHIVE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
+      >
+        社内勉強会サイト
+      </a>
+
+      <a
           href={STICKY_BOARD_WL_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded-xl px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
+          className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
         >
           付箋ボード
         </a>
+      
+      <div className="ml-auto flex items-center gap-2">
+        <AddUserMenu members={personalMembers} onSuccess={refetchMembers} />
+       
       </div>
     </nav>
   );
