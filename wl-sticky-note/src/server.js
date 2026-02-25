@@ -332,11 +332,13 @@ app.prepare().then(() => {
     });
 
     // REST API: ボードの付箋全件取得（Board System 取り込み用。gray=true は完了済みで取り込まない）
+    // ボードが未作成の場合は自動作成して空配列を返す（AI-Board の「付箋を全件取得」が 404 にならないようにする）
     server.get('/api/boards/:id/notes', (req, res) => {
         try {
             const boardId = req.params.id;
             if (!boards[boardId]) {
-                return res.status(404).json({ error: `Board ${boardId} not found` });
+                boards[boardId] = { notes: [], lines: [], name: '' };
+                saveBoards();
             }
             const notes = (boards[boardId].notes || []).map((n) => ({
                 id: n.id,

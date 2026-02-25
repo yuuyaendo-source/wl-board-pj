@@ -3,6 +3,7 @@
 # sticky-note + board-system (backend/frontend) + PostgreSQL
 # ==========================================================
 # 起動: docker compose up -d --build
+# 付箋ボードも含める: docker compose --profile sticky up -d --build（要 wl-sticky-note）
 # 停止: docker compose down
 # ログ: docker compose logs -f
 # ==========================================================
@@ -61,9 +62,13 @@ services:
     restart: unless-stopped
 
   # --- 付箋ボード (Next.js + Express + Socket.IO) ---
+  # 起動するには: docker compose --profile sticky up -d --build
+  # 前提: リポジトリ直下に wl-sticky-note があること（例: wlinko-pj/wl-sticky-note）
   sticky-note:
-    build: ../02_1_sticky-note/src
+    build: ../wl-sticky-note/src
     container_name: linko-sticky-note
+    profiles:
+      - sticky
     ports:
       - "3011:3000"
     environment:

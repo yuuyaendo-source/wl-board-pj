@@ -1,13 +1,26 @@
-# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供
+# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（Let's Encrypt SSL 対応）
 # Board System は /boards 以下（basePath）で提供。付箋ボードは / と /_next/ で 3000 をそのまま使う。
+# 証明書: certbot で取得した /etc/letsencrypt/live/<ドメイン>/ を参照すること。
 # 参照: docs/本番デプロイ手順.md
 #
 # 他サイト（例: server_name _ の brainstorming）がある場合、付箋ボード用を default_server にすると
 # 同じ IP でアクセスしたときにこちらが優先される。
 
+# HTTP → HTTPS リダイレクト
 server {
     listen 80 default_server;
     server_name wl-sticky-note.local 172.16.1.81;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name wl-sticky-note.local 172.16.1.81;
+
+    ssl_certificate     /etc/letsencrypt/live/wl-sticky-note.local/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wl-sticky-note.local/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
     access_log /var/log/nginx/wl-sticky-note_access.log;
     error_log /var/log/nginx/wl-sticky-note_error.log;

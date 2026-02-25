@@ -53,16 +53,16 @@
 |------|------|
 | リポジトリ | wlinko-pj（**02_1_sticky-note** と **board-system** の両方が必要） |
 | Docker | `board-system/docker-compose.prod.yml`（アプリ Blue/Green）、`board-system/docker-compose.db.yml`（PostgreSQL） |
-| リバースプロキシ | ホストの Nginx が 80 番で受け、`active_env.conf` で Blue/Green のポートに振り分け |
+| リバースプロキシ | ホストの Nginx が **80 と 443** で受け、`active_env.conf` で Blue/Green のポートに振り分け（SSL は Let's Encrypt） |
 
 ### 1.3 URL（Docker 版）
 
 | 用途 | URL（例） |
 |------|-----------|
-| トップ | http://wl-sticky-note.local/ → 302 で /boards/taskboard |
-| Board System フロント | http://wl-sticky-note.local/boards/（例: /boards/taskboard） |
-| 付箋ボード | http://wl-sticky-note.local/board/（例: /board/wl） |
-| Board System API | http://wl-sticky-note.local/api/bs/ |
+| トップ | https://wl-sticky-note.local/ → 302 で /boards/taskboard（SSL 化時は https） |
+| Board System フロント | https://wl-sticky-note.local/boards/（例: /boards/taskboard） |
+| 付箋ボード | https://wl-sticky-note.local/board/（例: /board/wl） |
+| Board System API | https://wl-sticky-note.local/api/bs/ |
 
 Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント、`/board/` → 付箋ボード、`/api/bs/` → Board System API。
 
@@ -103,7 +103,7 @@ cp .env.example .env
 nano .env
 ```
 
-少なくとも `GEMINI_API_KEY` を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `http://wl-sticky-note.local/api/bs`）。
+少なくとも `GEMINI_API_KEY` を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `http://wl-sticky-note.local/api/bs`）。**SSL 化している場合は `https://` にすること**（例: `https://board.example.com/api/bs`）。
 
 **CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`02_1_sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
 
@@ -132,6 +132,8 @@ EOF
 ```
 
 メイン設定で `include /etc/nginx/conf.d/active_env.conf;` が読み込まれるようにする。`sudo nginx -t` で確認し、`sudo systemctl reload nginx` でリロード。
+
+**SSL（HTTPS）化する場合**: 本リポジトリの Nginx 設定は Let's Encrypt を前提にしています。証明書の取得・パス設定・自動更新は [SSL-Setup.md](SSL-Setup.md) を参照してください。証明書を配置したうえで Nginx をリロードすると、80 は 443 へリダイレクトされ、443 で HTTPS が有効になります。
 
 ### 3.5 deploy.sh のパス
 

@@ -15,7 +15,7 @@
 | デプロイ・ロールバック | `deploy/deploy.sh`、`deploy/rollback.sh` |
 | Nginx 設定例 | `nginx/nginx.conf` |
 
-本番では Nginx が Port 80 で受け、`active_env.conf` で Blue または Green のポートに振り分けます。
+本番では Nginx が Port **80 と 443** で受け、`active_env.conf` で Blue または Green のポートに振り分けます。**SSL（HTTPS）** は Let's Encrypt を利用します。証明書の取得・設定は [docs/SSL-Setup.md](../docs/SSL-Setup.md) を参照してください。
 
 ---
 
