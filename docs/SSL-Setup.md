@@ -1,8 +1,27 @@
-# Let's Encrypt による SSL 化手順（wl-board-pj）
+# SSL 化手順（wl-board-pj）
 
-各 Nginx 設定は Let's Encrypt の証明書を参照するようにしています。証明書の取得と Nginx への組み込み手順です。
+本番では **linko-system と同じ証明書**（ホストの `~/sv_cert/`）を使用します。Nginx 設定はそのパスを参照するようにしてあります。
 
-## 前提
+## 本番で使用する証明書（board-system / wl-sticky-note）
+
+| 項目 | 内容 |
+|------|------|
+| **配置場所** | ホストの `/home/devuser01/sv_cert/`（`~/sv_cert`） |
+| **ファイル** | `fullchain.pem`（証明書）、`privkey.pem`（秘密鍵） |
+| **FQDN** | `https://wl-sticky-note.internal.wonder-link.co.jp/` |
+| **IP** | `172.16.1.83` |
+
+`board-system/nginx/nginx.conf`・`wl-sticky-note/src/nginx.conf`・`docs/nginx-with-board-system.conf.example` はいずれも上記パス・FQDN・IP を参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
+
+※ linko-system（AI-Board）は別 FQDN（`linko-board.internal.wonder-link.co.jp`）で、同じ証明書ディレクトリを参照しています。
+
+---
+
+## Let's Encrypt で新規取得する場合
+
+以下は、上記とは別に Let's Encrypt で証明書を取得する場合の手順です。
+
+### 前提（Let's Encrypt で取得する場合）
 
 - **公開 DNS が必須**: Let's Encrypt は `.local` やプライベート IP には発行できません。**実在する FQDN**（例: `board.example.com`）で DNS をサーバの IP に向けてください。
 - Nginx はホストで稼働している想定（`/etc/nginx/` に設定を配置）。
@@ -40,13 +59,11 @@ sudo certbot certonly --webroot -w /var/www/html -d board.example.com
 - **証明書**: `/etc/letsencrypt/live/board.example.com/fullchain.pem`
 - **秘密鍵**: `/etc/letsencrypt/live/board.example.com/privkey.pem`
 
-## 3. Nginx 設定での証明書パス
+### 3. Nginx 設定での証明書パス
 
-設定ファイル内の証明書パスは、**取得したドメイン名**と一致させる必要があります。
+**本番（linko-system と同じ証明書を使う場合）**: リポジトリの Nginx 設定はすでに `/home/devuser01/sv_cert/fullchain.pem` と `privkey.pem` を参照しています。変更不要です。
 
-- 現在の例では `wl-sticky-note.local` になっていますが、Let's Encrypt は `.local` に発行できないため、**実際に取得したドメイン**に合わせて書き換えてください。
-
-例: ドメインが `board.example.com` の場合
+**別ドメインで Let's Encrypt を使う場合**: 設定内の証明書パスと `server_name` を、取得したドメインに合わせて書き換えてください。
 
 ```nginx
 ssl_certificate     /etc/letsencrypt/live/board.example.com/fullchain.pem;
@@ -95,7 +112,7 @@ sudo crontab -e
 
 Board System のフロントは `NEXT_PUBLIC_API_URL` 等で API のベース URL を参照します。SSL 化後は **https** に統一してください。
 
-- 例: `NEXT_PUBLIC_API_URL=https://board.example.com/api/bs`
+- 例: `NEXT_PUBLIC_API_URL=https://wl-sticky-note.internal.wonder-link.co.jp/api/bs`
 - Docker 本番の場合は `docker-compose.prod.yml` の環境変数や `.env` で設定。
 
 ## 7. .local のみで使う場合（社内検証）

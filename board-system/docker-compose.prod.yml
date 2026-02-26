@@ -25,16 +25,15 @@ services:
     build:
       context: ./frontend
       args:
-        # ブラウザから API を叩くベース URL（.env の NEXT_PUBLIC_API_URL で上書き可。IP でアクセスする場合は http://172.16.1.83/api/bs などに）
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://wl-sticky-note.local/api/bs}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-sticky-note.internal.wonder-link.co.jp/api/bs}
         NEXT_PUBLIC_BASE_PATH: "/boards"
-        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://wl-sticky-note.local}
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-sticky-note.internal.wonder-link.co.jp}
     container_name: linko-frontend-${COLOR}
     ports:
       - "${PORT_FRONTEND}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://wl-sticky-note.local/api/bs}
-      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://wl-sticky-note.local}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-sticky-note.internal.wonder-link.co.jp/api/bs}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-sticky-note.internal.wonder-link.co.jp}
     networks:
       - linko-net
     restart: always
@@ -63,8 +62,8 @@ services:
       # 2. Nginx (ホスト) を経由する。ホストのIP (172.17.0.1 or similar) を指す。
       #    add_host で host.docker.internal を追加するのが手っ取り早い。
 
-      BOARD_SYSTEM_API_URL: http://host.docker.internal:80/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://wl-sticky-note.local/boards
+      BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-sticky-note.internal.wonder-link.co.jp/boards
       DATA_DIR: /app/data
     volumes:
       - sticky_data:/app/data

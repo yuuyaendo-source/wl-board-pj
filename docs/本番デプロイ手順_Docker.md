@@ -59,10 +59,10 @@
 
 | 用途 | URL（例） |
 |------|-----------|
-| トップ | https://wl-sticky-note.local/ → 302 で /boards/taskboard（SSL 化時は https） |
-| Board System フロント | https://wl-sticky-note.local/boards/（例: /boards/taskboard） |
-| 付箋ボード | https://wl-sticky-note.local/board/（例: /board/wl） |
-| Board System API | https://wl-sticky-note.local/api/bs/ |
+| トップ | https://wl-sticky-note.internal.wonder-link.co.jp/ → 302 で /boards/taskboard |
+| Board System フロント | https://wl-sticky-note.internal.wonder-link.co.jp/boards/（例: /boards/taskboard） |
+| 付箋ボード | https://wl-sticky-note.internal.wonder-link.co.jp/board/（例: /board/wl） |
+| Board System API | https://wl-sticky-note.internal.wonder-link.co.jp/api/bs/ |
 
 Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント、`/board/` → 付箋ボード、`/api/bs/` → Board System API。
 
@@ -73,7 +73,7 @@ Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント�
 - **サーバ**: Ubuntu 24.04 LTS。SSH と sudo が使えること。
 - **Docker**: Docker Engine と Docker Compose（v2 の `docker compose`）がインストール済み。
 - **Nginx**: ホストに Nginx がインストール済み（設定は 3.4 で行う）。
-- **ドメイン・アクセス**: `wl-sticky-note.local` 等で Nginx にアクセスできること（hosts または DNS でサーバ IP を指す）。
+- **ドメイン・アクセス**: `wl-sticky-note.internal.wonder-link.co.jp`（または IP `172.16.1.83`）で Nginx にアクセスできること（DNS でサーバ IP を指す）。
 
 ---
 
@@ -103,7 +103,7 @@ cp .env.example .env
 nano .env
 ```
 
-少なくとも `GEMINI_API_KEY` を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `http://wl-sticky-note.local/api/bs`）。**SSL 化している場合は `https://` にすること**（例: `https://board.example.com/api/bs`）。
+少なくとも `GEMINI_API_KEY` を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wl-sticky-note.internal.wonder-link.co.jp/api/bs`）。**SSL 化時は必ず `https://` にすること**。
 
 **CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`02_1_sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
 
@@ -162,9 +162,9 @@ docker exec -it linko-backend-blue alembic upgrade head
 
 | 用途 | URL（例） |
 |------|-----------|
-| Board System フロント | http://wl-sticky-note.local/ または http://172.16.1.83/ |
-| 付箋ボード | http://wl-sticky-note.local/board/ または http://172.16.1.83/board/ |
-| Board System API（ヘルス） | http://wl-sticky-note.local/api/bs/health または http://172.16.1.83/api/bs/health |
+| Board System フロント | https://wl-sticky-note.internal.wonder-link.co.jp/ または https://172.16.1.83/ |
+| 付箋ボード | https://wl-sticky-note.internal.wonder-link.co.jp/board/ または https://172.16.1.83/board/ |
+| Board System API（ヘルス） | https://wl-sticky-note.internal.wonder-link.co.jp/api/bs/health または https://172.16.1.83/api/bs/health |
 
 ### 3.9 パーソナルボードで投稿できない場合
 
@@ -272,7 +272,7 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 ### 7.2 「API の URL が誤っているか…」エラー
 
 1. **Nginx**: `board-system/nginx/nginx.conf` が本番に反映されているか確認。`include /etc/nginx/conf.d/active_env.conf;` と `location /api/bs/` が含まれるようにする。
-2. **アクセスする URL と一致させる**: ブラウザで IP（例: http://172.16.1.83/）で開いている場合は、`.env` の `NEXT_PUBLIC_API_URL` も同じ IP（例: `http://172.16.1.83/api/bs`）にし、**再ビルド・再デプロイ**する。ドメインで開く場合は `wl-sticky-note.local` が hosts または DNS でサーバ IP を指しているか確認する。
+2. **アクセスする URL と一致させる**: ブラウザで IP（例: https://172.16.1.83/）で開いている場合は、`.env` の `NEXT_PUBLIC_API_URL` も同じ IP（例: `https://172.16.1.83/api/bs`）にし、**再ビルド・再デプロイ**する。ドメインで開く場合は `https://wl-sticky-note.internal.wonder-link.co.jp` が DNS でサーバ IP（172.16.1.83）を指しているか確認する。
 
 ### 7.3 パーソナルボードで投稿できない
 
@@ -394,7 +394,7 @@ PC の名前解決はできているがブラウザで開けない場合、**サ
    `302` や `200` が返れば、Nginx の振り分けとステージングコンテナは動いている。その場合は **3** へ。
 
 3. **ファイアウォール**  
-   同じ PC で本番（例: http://wl-sticky-note.local/）にはアクセスできるなら、ポート 80 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 80 が許可されているか確認する。  
+   同じ PC で本番（例: https://wl-sticky-note.internal.wonder-link.co.jp/）にはアクセスできるなら、ポート 443 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 443 が許可されているか確認する。  
    （ping が通らないだけの場合は、ICMP を止めているだけのことが多く、HTTP には影響しない。）
 
 4. **ステージング用ポートが listen しているか**  

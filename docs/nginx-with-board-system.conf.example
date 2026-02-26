@@ -1,6 +1,6 @@
-# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（Let's Encrypt SSL 対応）
-# Board System は /boards 以下（basePath）で提供。付箋ボードは / と /_next/ で 3000 をそのまま使う。
-# 証明書: certbot で取得した /etc/letsencrypt/live/<ドメイン>/ を参照すること。
+# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（linko-system と同じ証明書）
+# 証明書: ホストの /home/devuser01/sv_cert/（fullchain.pem, privkey.pem）
+# FQDN: https://wl-sticky-note.internal.wonder-link.co.jp/
 # 参照: docs/本番デプロイ手順.md
 #
 # 他サイト（例: server_name _ の brainstorming）がある場合、付箋ボード用を default_server にすると
@@ -9,16 +9,16 @@
 # HTTP → HTTPS リダイレクト
 server {
     listen 80 default_server;
-    server_name wl-sticky-note.local 172.16.1.81;
+    server_name wl-sticky-note.internal.wonder-link.co.jp 172.16.1.83;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl default_server;
-    server_name wl-sticky-note.local 172.16.1.81;
+    server_name wl-sticky-note.internal.wonder-link.co.jp 172.16.1.83;
 
-    ssl_certificate     /etc/letsencrypt/live/wl-sticky-note.local/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/wl-sticky-note.local/privkey.pem;
+    ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
+    ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
