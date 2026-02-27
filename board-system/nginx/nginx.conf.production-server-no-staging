@@ -1,11 +1,7 @@
-# 本番サーバ用 Nginx 設定（wl-board-sys-sv / devuser01）
-# 使い方: サーバで以下を実行
-#   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
-#   sudo nginx -t && sudo systemctl reload nginx
-#
-# FQDN: wl-ai-board.internal.wonder-link.co.jp / IP: 172.16.1.84
-# 証明書: /home/devuser01/sv_cert/ （本番サーバの実際のパス）
-# staging.conf も include する（ステージング環境を使う場合）
+# 本番サーバ用 Nginx 設定（staging なし）
+# staging.conf で nginx -t が失敗する場合に使用。
+#   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server-no-staging /etc/nginx/nginx.conf
+#   sudo nginx -t && sudo systemctl restart nginx
 
 worker_processes 1;
 
@@ -20,17 +16,13 @@ http {
     keepalive_timeout  65;
 
     include /etc/nginx/conf.d/active_env.conf;
-    # ステージングを使う場合のみ有効にする（無効時は nginx -t が通るか確認）
-    include /etc/nginx/conf.d/staging.conf;
 
-    # HTTP → HTTPS リダイレクト
     server {
         listen 80;
         server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
         return 301 https://$host$request_uri;
     }
 
-    # HTTPS（本番: /home/devuser01/sv_cert）
     server {
         listen 443 ssl;
         server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
@@ -40,9 +32,6 @@ http {
         ssl_protocols       TLSv1.2 TLSv1.3;
         ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
-        # ----------------------------------------------------
-        # 1. Sticky Note (Express + Socket.IO) へのルーティング
-        # ----------------------------------------------------
         location /socket.io/ {
             proxy_pass http://current_sticky;
             proxy_http_version 1.1;
@@ -81,9 +70,6 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # ----------------------------------------------------
-        # 2. Board System Backend (FastAPI) へのルーティング
-        # ----------------------------------------------------
         location /api/bs/ {
             rewrite ^/api/bs/(.*)$ /$1 break;
             proxy_pass http://current_backend;
@@ -94,9 +80,6 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        # ----------------------------------------------------
-        # 3. Board System Frontend (Next.js) へのルーティング
-        # ----------------------------------------------------
         location /boards/ {
             proxy_pass http://current_frontend;
             proxy_set_header Host $host;
