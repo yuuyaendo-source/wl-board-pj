@@ -41,7 +41,7 @@ services:
 
   sticky-note:
     build:
-      context: ../02_1_sticky-note/src
+      context: ../wl-sticky-note/src
       args:
         NEXT_PUBLIC_BASE_PATH: "/board"
     container_name: linko-sticky-note-${COLOR}

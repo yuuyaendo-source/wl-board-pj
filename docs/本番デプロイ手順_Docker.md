@@ -51,7 +51,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| リポジトリ | wlinko-pj（**02_1_sticky-note** と **board-system** の両方が必要） |
+| リポジトリ | wlinko-pj（**wl-sticky-note** と **board-system** の両方が必要） |
 | Docker | `board-system/docker-compose.prod.yml`（アプリ Blue/Green）、`board-system/docker-compose.db.yml`（PostgreSQL） |
 | リバースプロキシ | ホストの Nginx が **80 と 443** で受け、`active_env.conf` で Blue/Green のポートに振り分け（SSL は Let's Encrypt） |
 
@@ -83,17 +83,17 @@ Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント�
 
 ### 3.1 リポジトリの配置
 
-compose が `../02_1_sticky-note/src` を参照するため、**02_1_sticky-note と board-system の両方**が必要。sparse-checkout で両方指定するか、フル clone する。
+compose が `../wl-sticky-note/src` を参照するため、**wl-sticky-note と board-system の両方**が必要。sparse-checkout で両方指定するか、フル clone する。
 
 ```bash
 sudo mkdir -p /var/www/wlinko-pj
 sudo chown $USER:$USER /var/www/wlinko-pj
 cd /var/www/wlinko-pj
 git clone https://github.com/YOUR_ORG/wlinko-pj.git .
-# または sparse-checkout で 02_1_sticky-note と board-system を指定
+# または sparse-checkout で wl-sticky-note と board-system を指定
 ```
 
-結果として `/var/www/wlinko-pj/02_1_sticky-note/` と `/var/www/wlinko-pj/board-system/` が存在すること。
+結果として `/var/www/wlinko-pj/wl-sticky-note/` と `/var/www/wlinko-pj/board-system/` が存在すること。
 
 ### 3.2 環境変数
 
@@ -105,7 +105,7 @@ nano .env
 
 少なくとも `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wl-ai-board.internal.wonder-link.co.jp/api/bs`）。**SSL 化時は必ず `https://` にすること**。
 
-**CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`02_1_sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
+**CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`wl-sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
 
 ### 3.3 ネットワークと DB の起動
 
