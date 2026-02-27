@@ -1,0 +1,2 @@
+# シェルスクリプトは常に LF でチェックアウト（本番で /usr/bin/env: `bash\r' エラーを防ぐ）
+*.sh text eol=lf

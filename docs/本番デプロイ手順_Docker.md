@@ -1,6 +1,6 @@
 # 本番デプロイ手順（Docker）
 
-付箋ボード（02_1_sticky-note）と Board System（Wonder Rinko）を **Docker** で本番デプロイする手順です。Blue/Green デプロイで切り替え時のダウンタイムを抑えられます。
+付箋ボードとBoard Systemを **Docker** で本番デプロイする手順です。Blue/Green デプロイで切り替え時のダウンタイムを抑えられます。
 
 - **非 Docker**（PM2 + systemd + Nginx）でデプロイする場合は [本番デプロイ手順.md](本番デプロイ手順.md) を参照してください。
 
