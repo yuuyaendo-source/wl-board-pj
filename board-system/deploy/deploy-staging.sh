@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 # 本番を止めずにステージング環境を起動する（同一サーバ・別ポート・別 DB）。
 # アクセス: http://staging.wl-sticky-note.local/ （DNS で本番サーバ IP を向けるか、hosts に追加）
@@ -20,7 +20,7 @@ if ! docker exec linko-db psql -U linko_user -d linko_board_system -tAc "SELECT 
   docker exec linko-db psql -U linko_user -d linko_board_system -c "CREATE DATABASE $STAGING_DB_NAME OWNER linko_user;"
 fi
 
-# .env の値（GEMINI_API_KEY 等）を引き継ぎ、そのうえでステージング用に上書き
+# .env の値（OLLAMA_URL 等）を引き継ぎ、そのうえでステージング用に上書き
 if [ -f "$APP_DIR/.env" ]; then
   set -a
   source "$APP_DIR/.env"

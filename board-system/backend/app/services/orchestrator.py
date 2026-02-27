@@ -113,7 +113,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     if not triage_result:
         logger.warning(
             "[Rinko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
-            " GEMINI_API_KEY を .env に設定するとタスク判定・列の自動振り分けが有効になります。"
+            " OLLAMA_URL を .env に設定するとタスク判定・列の自動振り分けが有効になります。"
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()

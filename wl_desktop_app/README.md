@@ -59,7 +59,7 @@ cd 02_3_WL_Desktop_app
 
 - `config.json` … `user_id`、`personal_path`、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ。複数指定でどのボードに付箋が追加されても通知）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL（本番: `http://wl-sticky-note.local/`）、アバター・音声のON/OFFなど
 - 環境変数 `WLINKO_USER_ID` でユーザーIDを指定可能。`AI_BOARD_URL`, `POSTIT_BOARD_URL` でURLを上書き可能（`.env` やシステム環境変数）
-- **ミニポートの送信先** … `mini_port_api_url`（例: `http://wl-sticky-note.local/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
+- **ミニポートの送信先** … `mini_port_api_url`（例: `https://wl-ai-board.internal.wonder-link.co.jp/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
 - **自動更新** … `update_check_url` に JSON の URL を設定すると、起動時に更新チェックし、トレイメニュー「更新を確認」で手動チェック・インストールが可能。未設定時は更新チェックを行わない。
 
 ## 自動更新（update_check_url）
@@ -89,7 +89,7 @@ cd 02_3_WL_Desktop_app
 - **単体 exe** … `.\build_exe.ps1` で `dist\WonderRinko.exe` を生成。exe 実行が許可されている場合のみ。
 - **フォルダ＋起動手順** … 本フォルダを ZIP で配布。メンバーは Python 3.10+ を入れ、`.\start_app.ps1` で起動。本番向けの `config.json` を同梱するとよい。
 
-本番連携（http://wl-sticky-note.local/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
+本番連携（https://wl-ai-board.internal.wonder-link.co.jp/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
 
 ## 今後の拡張（開発プラン）
 - AIボード・付箋ボードとの連携（受付モード切替時の通知など）

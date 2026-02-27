@@ -101,7 +101,7 @@ echo ""
 echo "📊 Application status:"
 pm2 list
 echo ""
-echo "🌐 Access: http://wl-sticky-note.local または http://172.16.1.81"
+echo "🌐 Access: https://wl-ai-board.internal.wonder-link.co.jp または https://172.16.1.84"
 echo ""
 echo "📝 Useful commands:"
 echo "  - View logs:     pm2 logs wl-sticky-note"

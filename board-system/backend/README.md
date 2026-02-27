@@ -84,7 +84,7 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 
 ## フェーズ3: AI Worker（Rinko Core）
 
-`GEMINI_API_KEY` を .env に設定すると以下が有効になる。
+`OLLAMA_URL` を .env に設定すると以下が有効になる。
 
 1. **Auto-Triage（Logic 1）**  
    `POST /sticky_notes` で Main に投稿すると、LLM が「タスクか情報か」「担当者明記か」を判定。  
@@ -102,7 +102,7 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 4. **Meeting スナップショット**  
    `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
 
-- 環境変数: `GEMINI_API_KEY`（必須）、`GEMINI_MODEL`（任意・既定: gemini-2.0-flash）
+- 環境変数: `OLLAMA_URL`（必須・例: http://172.16.1.251:11434/v1）、`OLLAMA_MODEL`（任意・既定: llama3.2）
 
 ## 本番（Ubuntu）: 起動とログ
 

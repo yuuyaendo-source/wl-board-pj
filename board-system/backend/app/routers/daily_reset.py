@@ -26,7 +26,7 @@ async def get_daily_reset_messages(
     """
     指定ユーザーの Personal Board の Today レーンにある付箋について、
     「昨日の『〇〇』は持ち越しますか？」形式の問いかけを LLM で生成して返す。
-    GEMINI_API_KEY 未設定時は簡易メッセージを返す。
+    OLLAMA_URL 未設定時は簡易メッセージを返す。
     """
     result = await db.execute(
         select(BoardPlacement, StickyNote)

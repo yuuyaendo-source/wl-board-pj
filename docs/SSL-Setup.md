@@ -6,10 +6,10 @@
 
 | 項目 | 内容 |
 |------|------|
-| **配置場所** | ホストの `/home/devuser01/sv_cert/`（`~/sv_cert`） |
+| **配置場所** | ホストの `/home/hisashi/dev/sv_cert/` |
 | **ファイル** | `fullchain.pem`（証明書）、`privkey.pem`（秘密鍵） |
-| **FQDN** | `https://wl-sticky-note.internal.wonder-link.co.jp/` |
-| **IP** | `172.16.1.83` |
+| **FQDN** | `https://wl-ai-board.internal.wonder-link.co.jp/` |
+| **IP** | `172.16.1.84` |
 
 `board-system/nginx/nginx.conf`・`wl-sticky-note/src/nginx.conf`・`docs/nginx-with-board-system.conf.example` はいずれも上記パス・FQDN・IP を参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
 
@@ -61,7 +61,7 @@ sudo certbot certonly --webroot -w /var/www/html -d board.example.com
 
 ### 3. Nginx 設定での証明書パス
 
-**本番（linko-system と同じ証明書を使う場合）**: リポジトリの Nginx 設定はすでに `/home/devuser01/sv_cert/fullchain.pem` と `privkey.pem` を参照しています。変更不要です。
+**本番（linko-system と同じ証明書を使う場合）**: リポジトリの Nginx 設定はすでに `/home/hisashi/dev/sv_cert/fullchain.pem` と `privkey.pem` を参照しています。変更不要です。
 
 **別ドメインで Let's Encrypt を使う場合**: 設定内の証明書パスと `server_name` を、取得したドメインに合わせて書き換えてください。
 
@@ -112,7 +112,7 @@ sudo crontab -e
 
 Board System のフロントは `NEXT_PUBLIC_API_URL` 等で API のベース URL を参照します。SSL 化後は **https** に統一してください。
 
-- 例: `NEXT_PUBLIC_API_URL=https://wl-sticky-note.internal.wonder-link.co.jp/api/bs`
+- 例: `NEXT_PUBLIC_API_URL=https://wl-ai-board.internal.wonder-link.co.jp/api/bs`
 - Docker 本番の場合は `docker-compose.prod.yml` の環境変数や `.env` で設定。
 
 ## 7. .local のみで使う場合（社内検証）

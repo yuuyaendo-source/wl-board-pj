@@ -9,6 +9,6 @@
   "postit_poll_interval_sec": 60,
   "tray_click_action": "postit",
   "toast_icon_path": "",
-  "ai_board_url": "http://wl-ai-board.local/",
-  "postit_board_url": "http://wl-sticky-note.local/"
+  "ai_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/",
+  "postit_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/"
 }

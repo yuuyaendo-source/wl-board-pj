@@ -9,31 +9,32 @@ services:
     environment:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # ローカル LLM（Ollama）。未設定時は自動振り分けはスキップ
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      # ※ Gemini は使用しない（コメントアウト）
+      # GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       POSTIT_BOARD_URL: http://sticky-note:3000
       # Nginx経由のリクエストを信頼
       FORWARDED_ALLOW_IPS: "*"
     networks:
       - linko-net
     restart: always
-    # DBの状態確認はネットワーク越しだと healthcheck が複雑になるため、
-    # アプリ側での接続リトライに任せるか、簡易的な wait-for スクリプトを使う
-    # ここでは depends_on は使えない（別composeのため）
 
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-sticky-note.internal.wonder-link.co.jp/api/bs}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.co.jp/api/bs}
         NEXT_PUBLIC_BASE_PATH: "/boards"
-        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-sticky-note.internal.wonder-link.co.jp}
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.co.jp}
     container_name: linko-frontend-${COLOR}
     ports:
       - "${PORT_FRONTEND}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-sticky-note.internal.wonder-link.co.jp/api/bs}
-      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-sticky-note.internal.wonder-link.co.jp}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.co.jp/api/bs}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.co.jp}
     networks:
       - linko-net
     restart: always
@@ -49,21 +50,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      # コンテナ間通信 (backend は同じネットワーク内のサービス名として参照したいが、
-      # ブルー/グリーンで名前が変わるため、linko-backend-blue等は動的。
-      # しかし、そもそも backend から sticky-note へは通知が行くだけ。
-      # sticky-note から backend へは削除連携のみ。
-      # ここでは localhost 経由だと Nginx を通るため wl-sticky-note.local を使うのが正解か？
-      # いや、コンテナ内から wl-sticky-note.local は解決できない（hosts設定しないと）。
-      # したがって、docker network 内で相手を見つける必要があるが、相手の名前が動的。
-      #
-      # 解決策:
-      # 1. 互いに localhost を指す (ホストネットワークモードではないので無理)
-      # 2. Nginx (ホスト) を経由する。ホストのIP (172.17.0.1 or similar) を指す。
-      #    add_host で host.docker.internal を追加するのが手っ取り早い。
+
 
       BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-sticky-note.internal.wonder-link.co.jp/boards
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-ai-board.internal.wonder-link.co.jp/boards
       DATA_DIR: /app/data
     volumes:
       - sticky_data:/app/data

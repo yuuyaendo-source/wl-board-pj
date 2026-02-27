@@ -35,8 +35,10 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      # GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       POSTIT_BOARD_URL: http://sticky-note:3000
     depends_on:
       db:

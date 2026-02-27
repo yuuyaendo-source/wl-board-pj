@@ -44,8 +44,8 @@ except ImportError:
 def _sticky_note_api_url():
     """付箋ボードの REST API URL（POST /api/sticky_notes）。board URL から導出。"""
     cfg = load_config()
-    board_url = (cfg.get("mini_port_api_url") or "http://wl-sticky-note.local/board/wl").rstrip("/")
-    # http://wl-sticky-note.local/board/wl → http://wl-sticky-note.local/api/sticky_notes
+    board_url = (cfg.get("mini_port_api_url") or "https://wl-ai-board.internal.wonder-link.co.jp/board/wl").rstrip("/")
+    # https://wl-ai-board.../board/wl → https://wl-ai-board.../api/sticky_notes
     base = re.sub(r"/board/.*$", "", board_url).rstrip("/")
     return f"{base}/api/sticky_notes"
 
@@ -59,7 +59,7 @@ def _board_id():
 def _taskboard_url():
     """ミニウィンドウのリン子クリックで開く Task ボードの URL。"""
     cfg = load_config()
-    return (cfg.get("mini_port_taskboard_url") or "http://wl-sticky-note.local/boards/taskboard").strip()
+    return (cfg.get("mini_port_taskboard_url") or "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard").strip()
 
 
 def _send_content(text: str) -> Tuple[bool, str]:

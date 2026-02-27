@@ -1,5 +1,5 @@
 # Nginx 設定例：同一サーバで旧版・新版を併存させる場合（wl-sticky-note）
-# ドメイン: wl-sticky-note.local  /  IP: 172.16.1.81
+# ドメイン: wl-ai-board.internal.wonder-link.co.jp  /  IP: 172.16.1.84
 # 旧版 v1: ポート80 → localhost:3000
 # 新版 v2: ポート8080 → localhost:3001
 #
@@ -10,7 +10,7 @@
 # 旧版（前バージョン）: ポート 80 → 3000
 server {
     listen 80;
-    server_name wl-sticky-note.local 172.16.1.81;
+    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
 
     access_log /var/log/nginx/wl-sticky-note_v1_access.log;
     error_log /var/log/nginx/wl-sticky-note_v1_error.log;
@@ -47,7 +47,7 @@ server {
 # 新版（新バージョン）: ポート 8080 → 3001
 server {
     listen 8080;
-    server_name wl-sticky-note.local 172.16.1.81;
+    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
 
     access_log /var/log/nginx/wl-sticky-note_v2_access.log;
     error_log /var/log/nginx/wl-sticky-note_v2_error.log;

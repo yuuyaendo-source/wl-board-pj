@@ -1,72 +1,65 @@
 # -*- coding: utf-8 -*-
 """
-Gemini 呼び出し（google-genai SDK）。API キー未設定時は None を返す。
+ローカル LLM（Ollama）呼び出し。OpenAI 互換 API（/v1/chat/completions）を使用。
+OLLAMA_URL 未設定時は None を返す。
+
+※ Gemini は使用しない（ローカル LLM 利用のためコメントアウト）。
 """
 import json
 import logging
 import re
 
+import requests
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-_client = None
+_session: requests.Session | None = None
 
 
-def _get_client():
-    global _client
-    if not settings.gemini_api_key:
-        return None
-    if _client is None:
-        from google import genai
-        _client = genai.Client(api_key=settings.gemini_api_key)
-        logger.info("[Rinko AI] Gemini クライアント初期化: model=%s", settings.gemini_model)
-    return _client
+def _get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    return _session
 
 
 def generate_json(prompt: str) -> dict | None:
     """
     プロンプトを送り、応答から JSON を1つ抽出して dict で返す。
-    失敗時・API キー未設定時は None。
+    失敗時・OLLAMA_URL 未設定時は None。
     """
-    client = _get_client()
-    if not client:
+    if not settings.ollama_url:
         return None
+    url = f"{settings.ollama_url.rstrip('/')}/chat/completions"
+    payload = {
+        "model": settings.ollama_model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
     try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
-        text = getattr(response, "text", None) if response else None
-        if not text and getattr(response, "candidates", None):
-            cand = response.candidates[0] if response.candidates else None
-            if cand and getattr(cand, "content", None) and getattr(cand.content, "parts", None) and cand.content.parts:
-                text = getattr(cand.content.parts[0], "text", None)
-        if not text or not (text := str(text).strip()):
-            logger.warning("[Rinko AI] Gemini 応答が空でした")
+        sess = _get_session()
+        r = sess.post(url, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        choices = data.get("choices") or []
+        if not choices:
+            logger.warning("[Rinko AI] Ollama 応答に choices がありません")
             return None
-        # コードブロック除去
+        content = (choices[0].get("message") or {}).get("content")
+        if not content or not (text := str(content).strip()):
+            logger.warning("[Rinko AI] Ollama 応答が空でした")
+            return None
         if "```" in text:
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
             if m:
                 text = m.group(1).strip()
         return json.loads(text)
+    except requests.RequestException as e:
+        logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, str(e)[:300])
+        return None
+    except json.JSONDecodeError as e:
+        logger.warning("[Rinko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200])
+        return None
     except Exception as e:
-        msg = str(e).strip()
-        if not msg and getattr(e, "message", None):
-            msg = str(e.message).strip()
-        if not msg and e.args:
-            msg = str(e.args[0]).strip() if e.args else ""
-        # APIキー無効は日本語で案内
-        if msg and ("API key not valid" in msg or "API_KEY_INVALID" in msg):
-            logger.warning(
-                "[Rinko AI] GEMINI_API_KEY が無効です。"
-                " https://aistudio.google.com/apikey でキーを確認・再発行し、"
-                " board-system/backend/.env の GEMINI_API_KEY を更新してからサーバーを再起動してください。"
-            )
-        else:
-            if msg and "AIza" in msg:
-                detail = "(APIキー含むため省略)"
-            else:
-                detail = msg[:400] if msg else repr(e.args)[:300]
-            logger.warning("[Rinko AI] Gemini API 呼び出しに失敗しました: %s — %s", type(e).__name__, detail)
+        logger.warning("[Rinko AI] Ollama 呼び出しエラー: %s — %s", type(e).__name__, str(e)[:300])
         return None

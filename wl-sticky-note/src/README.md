@@ -3,7 +3,7 @@
 Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋ボードアプリケーション。
 
 - **プロジェクト名**: wl-sticky-note
-- **本番サーバ**: 172.16.1.81 / wl-sticky-note.local
+- **本番サーバ**: 172.16.1.84 / wl-ai-board.internal.wonder-link.co.jp
 
 ---
 
@@ -15,7 +15,7 @@ Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋�
 - ボード名の保存・ボードのダウンロード・インポート
 - リアルタイム同期（複数ユーザー対応）
 - AI-Board・Desktopアプリとの連携API
-- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Rinko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は http://localhost:3001）。**本番では `http://wl-sticky-note.local/boards` に設定し、必ず再ビルドすること。** 付箋ボードと Board System を同一サーバでデプロイする手順はリポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Rinko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は https://wl-ai-board.internal.wonder-link.co.jp/boards）。**本番では同一 FQDN の `/boards` に設定し、必ず再ビルドすること。** 付箋ボードと Board System を同一サーバでデプロイする手順はリポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
 
 ---
 

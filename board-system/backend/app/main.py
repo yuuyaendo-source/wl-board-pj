@@ -23,10 +23,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     from app.db import seed_personal_users
     await seed_personal_users()
-    if settings.gemini_api_key:
-        logger.info("[Rinko AI] GEMINI_API_KEY 設定済み — 自動振り分け・スコアリングが有効です")
+    if settings.ollama_url:
+        logger.info("[Rinko AI] OLLAMA_URL 設定済み — 自動振り分け・スコアリングが有効です (model=%s)", settings.ollama_model)
     else:
-        logger.warning("[Rinko AI] GEMINI_API_KEY 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
+        logger.warning("[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
     yield
     # シャットダウン時は特になし（engine はアプリ終了で閉じる）
 
