@@ -119,8 +119,15 @@ PostgreSQL は `postgres_data` ボリュームに永続化される。
 
 ### 3.4 Nginx の準備
 
-- `board-system/nginx/nginx.conf` をホストの Nginx から読み込むように配置（`/etc/nginx/nginx.conf` を置き換えるか include）。
-- `active_env.conf` を初回用に作成する。
+- **メイン設定**: 本番サーバ（devuser01）では **`board-system/nginx/nginx.conf.production-server`** をそのままコピーするとよい。  
+  - FQDN: `wl-ai-board.internal.wonder-link.co.jp` / IP: `172.16.1.84`  
+  - 証明書: `/home/devuser01/sv_cert/`  
+  - `staging.conf` の include あり（ステージングを使う場合）
+  ```bash
+  sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
+  ```
+- **別ユーザ・別パスの場合**: `board-system/nginx/nginx.conf` をコピーしたうえで、`ssl_certificate` / `ssl_certificate_key` をサーバ上の実際のパスに書き換える。
+- **active_env.conf** を初回用に作成する。
 
 ```bash
 sudo mkdir -p /etc/nginx/conf.d
@@ -262,19 +269,71 @@ docker compose -f docker-compose.prod.yml -p board-system-blue logs -f
 
 ## 7. トラブルシューティング
 
-### 7.1 ビルドが遅い・止まる（CATO / プロキシ環境）
+### 7.1 コンテナは起動しているがブラウザからアクセスできない
+
+ping は通るが HTTPS で画面が開かない場合は、**サーバ上で**次を順に確認する。
+
+1. **Nginx が動いているか**
+   ```bash
+   sudo systemctl status nginx
+   ```
+   `active (running)` でなければ `sudo systemctl start nginx`。起動に失敗する場合は **4** の証明書パスと **5** を確認。
+
+2. **Nginx のメイン設定に board-system の設定が入っているか**  
+   `deploy.sh` は **active_env.conf だけ**を更新する。**80/443 の server ブロック**（FQDN・SSL・`current_frontend` 等への proxy）は、リポジトリの **`board-system/nginx/nginx.conf`** をサーバの Nginx から読み込む必要がある。
+   ```bash
+   # 設定の内容確認（wl-ai-board や current_frontend が出るか）
+   sudo nginx -T 2>/dev/null | grep -E "wl-ai-board|current_frontend|3010|8010|3011"
+   ```
+   何も出ない場合は、**`/etc/nginx/nginx.conf` を board-system の nginx.conf で置き換える**か、`http { }` 内で `include /var/www/wlinko-pj/board-system/nginx/nginx.conf;` のように読み込む。  
+   例（置き換えの場合）:
+   ```bash
+   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf /etc/nginx/nginx.conf
+   ```
+
+3. **active_env.conf が存在し、ポートがコンテナと一致しているか**
+   ```bash
+   cat /etc/nginx/conf.d/active_env.conf
+   ```
+   `127.0.0.1:3010`（frontend）、`127.0.0.1:8010`（backend）、`127.0.0.1:3011`（sticky）になっているか確認。  
+   `docker container ls` で **8010, 3010, 3011** が表示されているポートと一致させる。
+
+4. **SSL 証明書のパスがサーバ上に存在するか**  
+   リポジトリの nginx.conf は **`/home/hisashi/dev/sv_cert/fullchain.pem`** を参照している。サーバのログインユーザが **devuser01** の場合はこのパスは存在しない。
+   ```bash
+   ls -la /home/hisashi/dev/sv_cert/fullchain.pem
+   ls -la /home/devuser01/sv_cert/fullchain.pem
+   ```
+   サーバに合わせて、**`/etc/nginx/nginx.conf`（または読み込んでいる設定）内の `ssl_certificate` / `ssl_certificate_key` を実際の証明書パスに書き換える**（例: `/home/devuser01/sv_cert/fullchain.pem`）。  
+   変更後: `sudo nginx -t` → `sudo systemctl reload nginx`。
+
+5. **80 / 443 が listen しているか**
+   ```bash
+   ss -tlnp | grep -E ':80 |:443 '
+   ```
+   Nginx が 80 と 443 を listen していれば、ファイアウォールで 80/443 が許可されていればブラウザから届く。  
+   `sudo ufw status` で 80/tcp, 443/tcp が ALLOW か確認。必要なら `sudo ufw allow 80/tcp` / `sudo ufw allow 443/tcp` のあと `sudo ufw reload`。
+
+6. **サーバ自身から curl で確認**
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -k https://127.0.0.1/
+   curl -s -o /dev/null -w "%{http_code}\n" -k https://127.0.0.1/api/bs/health
+   ```
+   `302` や `200` が返れば Nginx とコンテナは連携できている。その場合はクライアント PC のファイアウォールや DNS を疑う。
+
+### 7.2 ビルドが遅い・止まる（CATO / プロキシ環境）
 
 ```bash
 export DOCKER_BUILDKIT=0
 docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 ```
 
-### 7.2 「API の URL が誤っているか…」エラー
+### 7.3 「API の URL が誤っているか…」エラー
 
 1. **Nginx**: `board-system/nginx/nginx.conf` が本番に反映されているか確認。`include /etc/nginx/conf.d/active_env.conf;` と `location /api/bs/` が含まれるようにする。
 2. **アクセスする URL と一致させる**: ブラウザで IP（例: https://172.16.1.84/）で開いている場合は、`.env` の `NEXT_PUBLIC_API_URL` も同じ IP（例: `https://172.16.1.84/api/bs`）にし、**再ビルド・再デプロイ**する。ドメインで開く場合は `https://wl-ai-board.internal.wonder-link.co.jp` が DNS でサーバ IP（172.16.1.84）を指しているか確認する。
 
-### 7.3 パーソナルボードで投稿できない
+### 7.4 パーソナルボードで投稿できない
 
 [3.9 パーソナルボードで投稿できない場合](#39-パーソナルボードで投稿できない場合) を参照（users id 1〜7 の登録）。
 
