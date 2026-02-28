@@ -6,6 +6,20 @@
 
 ---
 
+## CATO 内のホスト分離（2台構成）
+
+同一 CATO 内で **linko-system（AI-Board）** と **wl-board-pj（付箋・Board System）** を別ホストで動かす場合の対応です。
+
+| ホスト（IP） | リポジトリ / サービス | FQDN |
+|--------------|------------------------|------|
+| **172.16.1.251** | linko-system（AI-Board） | https://linko-board.internal.wonder-link.co.jp/ |
+| **172.16.1.83**（または 84） | wl-board-pj（付箋ボード・Board System） | https://wl-ai-board.internal.wonder-link.co.jp/ |
+
+- 上記の **wl-board-pj 用サーバ** に本手順で Docker をデプロイする。
+- linko-system は **172.16.1.251** で稼働し、付箋取得時に `POSTIT_BOARD_URL=https://wl-ai-board.internal.wonder-link.co.jp` で本サーバ（wl-ai-board）へアクセスする。
+
+---
+
 ## 目次
 
 | セクション | 内容 |
