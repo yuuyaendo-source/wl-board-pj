@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # 付箋ボードのボードID（Board System でタスクになった付箋をここに反映する）
     postit_board_id: str = "wl"
 
+    # Google カレンダー連携（OAuth 2.0）。未設定ならカレンダー連携は無効
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: str | None = None
+    google_calendar_redirect_uri: str | None = None  # 例: https://wl-ai-board.example.com/auth/google/callback
+
+    @field_validator("google_calendar_redirect_uri")
+    @classmethod
+    def strip_redirect_uri(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = (v or "").strip().rstrip("/")
+        return v if v else None
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

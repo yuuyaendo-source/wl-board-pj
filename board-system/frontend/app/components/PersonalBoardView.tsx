@@ -2,12 +2,25 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
-import { api } from "@/lib/api";
+import { api, API_BASE } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
 import type { LaneType } from "@/lib/types";
 import ApiErrorBanner from "./ApiErrorBanner";
 import NoteCard from "./NoteCard";
 import OneLineInput from "./OneLineInput";
+
+/** パーソナルサマリ（今日の予定・Today）の型 */
+interface SummaryEvent {
+  summary?: string;
+  start?: string;
+  end?: string;
+}
+interface SummaryTodayItem {
+  label?: string;
+  summary?: string;
+  start?: string;
+  end?: string;
+}
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐため、少し待ってから再取得する */
 const REFETCH_DELAY_MS = 120;
@@ -36,6 +49,8 @@ export default function PersonalBoardView({
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summary, setSummary] = useState<{ events: SummaryEvent[]; today: SummaryTodayItem[] } | null>(null);
 
   const fetchPersonal = useCallback(async () => {
     try {
@@ -54,9 +69,23 @@ export default function PersonalBoardView({
     }
   }, [ownerId]);
 
+  const fetchSummary = useCallback(async () => {
+    try {
+      const data = await api.personalSummary(ownerId);
+      setSummary({ events: data.events ?? [], today: data.today ?? [] });
+    } catch {
+      setSummary({ events: [], today: [] });
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [ownerId]);
+
   useEffect(() => {
     fetchPersonal();
   }, [fetchPersonal]);
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   const handleAppendContent = useCallback(
     async (noteId: number, currentContent: string | null, appendedText: string) => {
@@ -181,7 +210,7 @@ export default function PersonalBoardView({
         </div>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5">
         {LANES.map(({ key, label }) => (
           <LaneColumn
             key={key}
@@ -193,6 +222,13 @@ export default function PersonalBoardView({
             onAppendContent={handleAppendContent}
           />
         ))}
+        <PersonalCalendarPanel
+          ownerId={ownerId}
+          events={summary?.events ?? []}
+          today={summary?.today ?? []}
+          loading={summaryLoading}
+          onRefresh={fetchSummary}
+        />
       </div>
     </div>
   );
@@ -271,6 +307,124 @@ function PersonalTaskReleaseDropZone({ onDropToTask }: { onDropToTask: (noteId: 
     >
       <span>📤</span>
       <span>タスクボードへ</span>
+    </div>
+  );
+}
+
+function formatSummaryTime(start?: string, end?: string): string {
+  if (!start) return "";
+  try {
+    const s = new Date(start);
+    const e = end ? new Date(end) : null;
+    const time = (d: Date) =>
+      isNaN(d.getTime()) ? "" : d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    const startStr = time(s);
+    if (e && !isNaN(e.getTime()) && startStr) {
+      const endStr = time(e);
+      if (endStr) return `${startStr}–${endStr}`;
+    }
+    return startStr || start;
+  } catch {
+    return start;
+  }
+}
+
+function PersonalCalendarPanel({
+  ownerId,
+  events,
+  today,
+  loading,
+  onRefresh,
+}: {
+  ownerId: number;
+  events: SummaryEvent[];
+  today: SummaryTodayItem[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const [refreshing, setRefreshing] = useState(false);
+  const hasEvents = events.length > 0;
+  const hasToday = today.length > 0;
+
+  const handleRefreshFromGoogle = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await api.personalCalendarRefresh(ownerId);
+      onRefresh();
+    } catch {
+      // ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }, [ownerId, onRefresh]);
+
+  return (
+    <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-4">
+      <h2 className="mb-3 font-semibold text-zinc-700">今日の予定（カレンダー連携）</h2>
+      {loading ? (
+        <p className="text-sm text-zinc-500">読み込み中...</p>
+      ) : !hasEvents && !hasToday ? (
+        <p className="text-sm text-zinc-500">
+          カレンダー連携するとここに今日の予定が表示されます。
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {hasEvents && (
+            <div>
+              <h3 className="mb-1 text-xs font-medium text-zinc-500">予定</h3>
+              <ul className="flex flex-col gap-1 text-sm">
+                {events.map((ev, i) => (
+                  <li key={i} className="flex flex-col gap-0.5">
+                    <span className="text-zinc-500">{formatSummaryTime(ev.start, ev.end)}</span>
+                    <span>{ev.summary || "(無題)"}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {hasToday && (
+            <div>
+              <h3 className="mb-1 text-xs font-medium text-zinc-500">Today</h3>
+              <ul className="flex flex-col gap-1 text-sm">
+                {today.map((t, i) => (
+                  <li key={i} className="flex flex-col gap-0.5">
+                    {t.label && <span className="text-[var(--primary)] font-medium">{t.label}</span>}
+                    <span>{t.summary || "(無題)"}</span>
+                    {t.start && (
+                      <span className="text-zinc-500">{formatSummaryTime(t.start, t.end)}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <a
+          href={`${API_BASE}/auth/google?user_id=${ownerId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--primary)] underline hover:opacity-80"
+        >
+          Google カレンダーと連携
+        </a>
+        <button
+          type="button"
+          onClick={handleRefreshFromGoogle}
+          disabled={refreshing}
+          className="text-zinc-500 underline hover:text-zinc-700 disabled:opacity-50"
+        >
+          {refreshing ? "取得中..." : "予定を取得"}
+        </button>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="text-zinc-500 underline hover:text-zinc-700"
+        >
+          更新
+        </button>
+      </div>
     </div>
   );
 }

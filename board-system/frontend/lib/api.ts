@@ -1,4 +1,5 @@
 const BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
+export const API_BASE = BASE;
 
 function normalizeErrorMessage(status: number, body: string): string {
   const trimmed = body.trim();
@@ -114,6 +115,15 @@ export const api = {
     personal: (ownerId: number) => fetchApi<PlacementWithNote[]>(`/boards/personal?owner_id=${ownerId}`),
     morning: () => fetchApi<PlacementWithNote[]>("/boards/morning"),
   },
+
+  /** パーソナルサマリ（今日の予定 + Today）。owner_id を person_id として GET。カレンダー連携表示用 */
+  personalSummary: (ownerId: number) =>
+    fetchApi<{ events: { summary?: string; start?: string; end?: string }[]; today: { label?: string; summary?: string; start?: string; end?: string }[] }>(
+      `/api/personal/${ownerId}/summary`
+    ),
+  /** Google カレンダーから今日の予定を取得してキャッシュに保存。その後 personalSummary を再取得すると反映される。 */
+  personalCalendarRefresh: (ownerId: number) =>
+    fetchApi<{ ok: boolean; events_count: number }>(`/api/personal/${ownerId}/calendar/refresh`, { method: "POST" }),
 
   dailyReset: {
     messages: (ownerId: number) =>

@@ -118,7 +118,11 @@ def _make_icon_image():
 
 
 def _personal_url():
-    """このユーザー用のパーソナルモードURL（personal_path があれば /asakawa 等、なければ /personal?user=xxx）。"""
+    """このユーザー用のパーソナルモードURL。Board System でログイン済みなら Board System のパーソナル、そうでなければ linko のパーソナル。"""
+    board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
+    board_id = (_config.get("board_system_personal_id") or "").strip()
+    if board_url and board_id:
+        return f"{board_url}/personal/{board_id}"
     base = _config.get("ai_board_url", "http://127.0.0.1:5000/").rstrip("/")
     path = (_config.get("personal_path") or "").strip()
     if path:
@@ -395,6 +399,73 @@ def _show_notification_help(*args):
         pass
 
 
+def _show_email_login_dialog() -> str | None:
+    """メールログイン用のメールアドレス入力ダイアログ。入力値を返す。キャンセル時は None。"""
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        email = simpledialog.askstring(
+            "Wonder Linko - Board System ログイン",
+            "Board System のパーソナルボードを開くには、登録済みのメールアドレスを入力してください:",
+            parent=root,
+        )
+        root.destroy()
+        return email.strip() if email and isinstance(email, str) else None
+    except Exception:
+        return None
+
+
+def _board_system_login_clicked(*args):
+    """トレイメニュー「Board System でメールログイン」: メール入力 → Board System で解決 → 設定保存・パーソナルを開く。"""
+    global _config
+    _config = load_config()
+    board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
+    if not board_url:
+        notifications.show_toast(
+            "Wonder Linko",
+            "Board System の URL が設定されていません。config.json の board_system_url または環境変数 BOARD_SYSTEM_URL を設定してください。",
+            duration_sec=5,
+            force_show=True,
+        )
+        return
+    email = _show_email_login_dialog()
+    if not email or "@" not in email:
+        if email is not None:
+            notifications.show_toast("Wonder Linko", "メールアドレスを入力してください。", duration_sec=3, force_show=True)
+        return
+    try:
+        import requests
+        r = requests.get(
+            f"{board_url}/users/by_email",
+            params={"email": email},
+            timeout=10,
+        )
+        if r.status_code == 200 and r.json():
+            data = r.json()
+            user_id = data.get("id")
+            if user_id is not None:
+                _config["board_system_url"] = board_url
+                _config["board_system_personal_id"] = str(user_id)
+                save_config(_config)
+                notifications.show_toast(
+                    "Wonder Linko",
+                    f"ログインしました（{data.get('name', '')}）。パーソナルを開くで Board System のパーソナルボードが開きます。",
+                    duration_sec=4,
+                    force_show=True,
+                )
+                webbrowser.open(f"{board_url}/personal/{user_id}")
+                return
+        if r.status_code == 404:
+            notifications.show_toast("Wonder Linko", "このメールアドレスは未登録です。Board System でユーザーを登録してください。", duration_sec=5, force_show=True)
+        else:
+            notifications.show_toast("Wonder Linko", "ログインに失敗しました。Board System の URL とネットワークを確認してください。", duration_sec=5, force_show=True)
+    except Exception as e:
+        notifications.show_toast("Wonder Linko", "ログインに失敗しました: " + str(e)[:80], duration_sec=5, force_show=True)
+
+
 def build_menu(icon):
     """トレイメニューを組み立てる。"""
     global _config
@@ -417,6 +488,7 @@ def build_menu(icon):
         pystray.MenuItem("ミニポートを表示", show_miniport),
         pystray.MenuItem("ミニポートを非表示", hide_miniport),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Board System でメールログイン", _board_system_login_clicked),
         pystray.MenuItem("パーソナルモードを開く", open_personal_mode),
         pystray.MenuItem("最後のお知らせを開く", open_last_notification, enabled=True),
         pystray.MenuItem("付箋ボード接続テスト", _test_postit_connection),
@@ -478,6 +550,31 @@ def _prompt_display_name_if_empty():
         save_config(_config)
 
 
+def _prompt_board_system_login_if_needed():
+    """board_system_url が設定されているが board_system_personal_id が空のとき、メールログインを1回促す。"""
+    global _config
+    board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
+    board_id = (_config.get("board_system_personal_id") or "").strip()
+    if not board_url or board_id:
+        return
+    email = _show_email_login_dialog()
+    if not email or "@" not in email:
+        return
+    try:
+        import requests
+        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+        if r.status_code == 200 and r.json():
+            data = r.json()
+            user_id = data.get("id")
+            if user_id is not None:
+                _config["board_system_url"] = board_url
+                _config["board_system_personal_id"] = str(user_id)
+                save_config(_config)
+                notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
+    except Exception:
+        pass
+
+
 def _change_display_name(*args):
     """トレイメニュー「表示名を変更」で表示名を再入力して保存する。"""
     global _config
@@ -498,6 +595,9 @@ def main():
 
     # 表示名未設定時は起動時に名前入力を促す
     _prompt_display_name_if_empty()
+
+    # Board System URL が設定されているがパーソナル未ログインのとき、初回のみメールログインを促す（任意）
+    _prompt_board_system_login_if_needed()
 
     # 付箋ボード連携: 新付箋をポーリングし、変化時にトースト＋「最後のお知らせ」にURLを保存
     def on_new_postit_notes(summary, board_open_url):

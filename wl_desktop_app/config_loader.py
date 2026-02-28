@@ -42,6 +42,8 @@ def _get_defaults():
         "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.co.jp/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "",  # 更新チェック用 JSON の URL。空ならチェックしない。例: https://example.com/wonderlinko/latest.json
+        "board_system_url": "",  # Board System のベース URL。設定時はメールログインでパーソナルボードを開ける
+        "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
     }
 
 
@@ -61,6 +63,7 @@ def load_config():
     cfg["postit_board_url"] = os.environ.get("POSTIT_BOARD_URL", cfg["postit_board_url"]).rstrip("/") + "/"
     cfg["mini_port_api_url"] = (os.environ.get("MINI_PORT_API_URL", cfg.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.co.jp/board/wl"))).rstrip("/")
     cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard"))).strip()
+    cfg["board_system_url"] = (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "").strip().rstrip("/")
     return cfg
 
 
@@ -83,5 +86,7 @@ def save_config(cfg):
     out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.co.jp/board/wl"))
     out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard"))
     out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
+    out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
+    out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)

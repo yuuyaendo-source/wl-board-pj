@@ -32,6 +32,18 @@ class PostTodayBody(BaseModel):
     items: list[TodayItem] = []
 
 
+class EventItem(BaseModel):
+    """今日の予定1件。"""
+    summary: str = ""
+    start: str = ""
+    end: str = ""
+
+
+class PostEventsBody(BaseModel):
+    """POST /api/personal/{person_id}/events の body。カレンダー枠に表示する今日の予定を保存。"""
+    events: list[EventItem] = []
+
+
 @router.get("/{person_id}/summary")
 async def get_personal_summary(
     person_id: str,
@@ -81,5 +93,44 @@ async def post_personal_today(
         set_={"today": today_json, "updated_at": datetime.utcnow()},
     )
     await db.execute(stmt)
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/{person_id}/events")
+async def post_personal_events(
+    person_id: str,
+    body: PostEventsBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    今日の予定（events）をキャッシュに保存。カレンダー連携元（Google 取得結果等）が呼ぶ。
+    today は変更せず、events のみ更新する。
+    """
+    if not person_id.strip():
+        raise HTTPException(status_code=400, detail="person_id is required")
+    events_json = json.dumps([e.model_dump() for e in body.events])
+
+    result = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        stmt = sqlite_upsert(PersonalSummaryCache).values(
+            person_id=person_id,
+            events=events_json,
+            today="[]",
+        )
+        await db.execute(stmt)
+    else:
+        stmt = sqlite_upsert(PersonalSummaryCache).values(
+            person_id=person_id,
+            events=events_json,
+            today=row.today or "[]",
+        ).on_conflict_do_update(
+            index_elements=["person_id"],
+            set_={"events": events_json, "updated_at": datetime.utcnow()},
+        )
+        await db.execute(stmt)
     await db.flush()
     return {"ok": True}
