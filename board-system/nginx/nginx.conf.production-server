@@ -4,7 +4,7 @@
 #   sudo nginx -t && sudo systemctl reload nginx
 #
 # FQDN: wl-ai-board.internal.wonder-link.co.jp / IP: 172.16.1.84
-# 証明書: /home/devuser01/sv_cert/ （本番サーバの実際のパス）
+# 証明書: Let's Encrypt 発行の *.internal.wonder-link.co.jp を /home/devuser01/sv_cert/ に fullchain.pem / privkey.pem で配置
 # staging.conf も include する（ステージング環境を使う場合）
 
 worker_processes 1;
@@ -30,7 +30,7 @@ http {
         return 301 https://$host$request_uri;
     }
 
-    # HTTPS（本番: /home/devuser01/sv_cert）
+    # HTTPS（Let's Encrypt *.internal.wonder-link.co.jp を sv_cert に配置して使用）
     server {
         listen 443 ssl;
         server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;

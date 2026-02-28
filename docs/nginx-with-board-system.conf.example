@@ -1,5 +1,5 @@
 # Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（linko-system と同じ証明書）
-# 証明書: ホストの /home/hisashi/dev/sv_cert/（fullchain.pem, privkey.pem）
+# 証明書: Let's Encrypt *.internal.wonder-link.co.jp（ホストの fullchain.pem, privkey.pem）
 # FQDN: https://wl-ai-board.internal.wonder-link.co.jp/
 # 参照: docs/本番デプロイ手順.md
 #
