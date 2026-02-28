@@ -11,6 +11,7 @@
 | セクション | 内容 |
 |------------|------|
 | [クイックチェック](#クイックチェック) | 状況別にやることの一覧 |
+| [運用フロー](#運用フローステージングで確認してから本番) | ステージングで確認してから本番に切り替える手順 |
 | [1. 概要](#1-概要) | 構成・URL・Docker と非 Docker の違い |
 | [2. 前提条件](#2-前提条件) | サーバ・Docker・Nginx・リポジトリ |
 | [3. 初回デプロイ](#3-初回デプロイ) | リポジトリ配置 → .env → DB 起動 → Nginx → deploy → マイグレーション → 確認 |
@@ -29,10 +30,34 @@
 | 状況 | やること |
 |------|----------|
 | **初回デプロイ** | [3. 初回デプロイ](#3-初回デプロイ) を順に実施 |
-| **コード更新の反映** | [4. 通常のデプロイ](#4-通常のデプロイ) を実行 |
+| **コード更新の反映** | [運用フロー](#運用フローステージングで確認してから本番) に従い、**ステージングで確認してから** [4. 通常のデプロイ](#4-通常のデプロイ) を実行 |
 | **問題発生時** | [5. ロールバック](#5-ロールバック) を実行 |
 | **新機能を本番停止なしでテスト** | [付録 B: ステージング環境でテスト](#付録-b-ステージング環境でテスト) を実施 |
 | **ステージングで問題なかったので本番へ反映** | [4. 通常のデプロイ](#4-通常のデプロイ) の手順で `./deploy.sh` を実行（[付録 B.5](#b5-ステージングで問題なければ本番へ反映) 参照） |
+
+---
+
+## 運用フロー（ステージングで確認してから本番）
+
+**推奨**: コード変更は必ず **ステージングで動作確認したうえで** 本番デプロイを行う。
+
+1. **ステージングにデプロイ**  
+   ```bash
+   cd /var/www/wlinko-pj && git pull
+   cd board-system/deploy && ./deploy-staging.sh
+   ```
+2. **ステージングで確認**  
+   https://staging.wl-ai-board.internal.wonder-link.co.jp/ にアクセスし、表示・操作・API が想定どおりか確認する。  
+   （名前解決: DNS または各 PC の hosts に `172.16.1.84 staging.wl-ai-board.internal.wonder-link.co.jp` を追加）
+3. **問題なければ本番へ反映**  
+   ```bash
+   cd /var/www/wlinko-pj && git pull
+   cd board-system/deploy && ./deploy.sh
+   ```
+   Blue/Green 切り替えで本番トラフィックが新環境に向く。ステージングはそのまま残してよい。
+
+- **ステージングを使わずに本番だけ更新する**場合は、[4. 通常のデプロイ](#4-通常のデプロイ) を直接実行してもよいが、リスクは自己負担とする。
+- **Nginx**: ステージングも使う場合は、本番サーバで **`nginx.conf.production-server`**（staging.conf を include する方）を `/etc/nginx/nginx.conf` にコピーし、**`staging.conf`** を `/etc/nginx/conf.d/staging.conf` にコピーしたうえで `nginx -t` と `systemctl reload nginx` を行う（[3.4 Nginx の準備](#34-nginx-の準備)）。
 
 ---
 
@@ -119,14 +144,17 @@ PostgreSQL は `postgres_data` ボリュームに永続化される。
 
 ### 3.4 Nginx の準備
 
-- **メイン設定**: 本番サーバ（devuser01）では **`board-system/nginx/nginx.conf.production-server`** をそのままコピーするとよい。  
-  - FQDN: `wl-ai-board.internal.wonder-link.co.jp` / IP: `172.16.1.84`  
-  - 証明書: `/home/devuser01/sv_cert/`  
-  - `staging.conf` の include あり（ステージングを使う場合）
+- **メイン設定**: 本番サーバ（devuser01）では次のいずれかを使う。  
+  - **ステージングも使う場合**: **`nginx.conf.production-server`** をコピーする（staging.conf を include する）。あわせて **`board-system/nginx/staging.conf`** を `/etc/nginx/conf.d/staging.conf` にコピーする。  
+  - **ステージングを使わない場合**: **`nginx.conf.production-server-no-staging`** をコピーする。  
   ```bash
+  # ステージングも使う場合
   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
+  sudo cp /var/www/wlinko-pj/board-system/nginx/staging.conf /etc/nginx/conf.d/staging.conf
+  sudo nginx -t && sudo systemctl restart nginx
   ```
-- **別ユーザ・別パスの場合**: `board-system/nginx/nginx.conf` をコピーしたうえで、`ssl_certificate` / `ssl_certificate_key` をサーバ上の実際のパスに書き換える。
+  - FQDN: 本番 `wl-ai-board.internal.wonder-link.co.jp` / ステージング `staging.wl-ai-board.internal.wonder-link.co.jp`、証明書: `/home/devuser01/sv_cert/`。
+- **別ユーザ・別パスの場合**: 上記ファイルの `ssl_certificate` / `ssl_certificate_key` をサーバ上の実際のパスに書き換える。
 - **active_env.conf** を初回用に作成する。
 
 ```bash
@@ -354,22 +382,21 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 
 ### B.1 構成
 
-- **ステージング**: 本番と同じサーバ（例: 172.16.1.84）上で、別ポート・別 DB で起動。
-- **アクセス**: http://staging.wl-sticky-note.local/  
-  **名前解決**: DNS で `staging.wl-sticky-note.local` を**本番サーバの IP**（例: 172.16.1.84）に向けるか、各 PC の hosts に `172.16.1.84 staging.wl-sticky-note.local` を追加する。
-- ステージングは **本番と別のデータベース**（`linko_board_system_staging`）を使用。同一 PostgreSQL 内に別 DB が自動作成され、本番データに影響しない。
+- **ステージング**: 本番と同じサーバ（例: 172.16.1.84）上で、別ポート（3030/8030/3031）・**別 DB**（`linko_board_system_staging`）で起動。
+- **アクセス**: https://staging.wl-ai-board.internal.wonder-link.co.jp/  
+  **名前解決**: DNS で `staging.wl-ai-board.internal.wonder-link.co.jp` を**本番サーバの IP**（172.16.1.84）に向けるか、各 PC の hosts に `172.16.1.84 staging.wl-ai-board.internal.wonder-link.co.jp` を追加する。
+- ステージングは **本番と別のデータベース** を使用。本番データに影響しない。
 
 ### B.2 手順（初回・本番サーバで実施）
 
 1. **本番サーバにリポジトリがある前提**  
    `/var/www/wlinko-pj` に wlinko-pj があり、`board-system/.env` が用意されていること。  
-   ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wl-sticky-note.local`）に合わせて **http://staging.wl-sticky-note.local/api/bs** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
+   ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wl-ai-board.internal.wonder-link.co.jp`）に合わせて **https** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
 
 2. **本番サーバの Nginx にステージング用設定を追加**  
-   - リポジトリの `board-system/nginx/staging.conf` の内容を、サーバーの **Nginx 設定の読み込み先** に置く。  
-   - **よくあるやり方**: `/etc/nginx/conf.d/staging.conf` にコピーする。多くの環境では `/etc/nginx/nginx.conf`（メイン設定ファイル）の `http { }` 内にすでに `include /etc/nginx/conf.d/*.conf;` があるため、`conf.d/` に置くだけで自動的に読み込まれる。  
-   - 読み込まれない場合は、`/etc/nginx/nginx.conf` を開き、`http { }` ブロック内の適当な位置に `include /etc/nginx/conf.d/staging.conf;` を 1 行追加する。  
-   - 反映: `sudo nginx -t` で確認後、`sudo systemctl reload nginx`。
+   - **`nginx.conf.production-server`** を `/etc/nginx/nginx.conf` にコピーしていること（staging.conf を include する）。  
+   - **`board-system/nginx/staging.conf`** を `/etc/nginx/conf.d/staging.conf` にコピーする。  
+   - 反映: `sudo nginx -t` で確認後、`sudo systemctl reload nginx`（または `restart nginx`）。
 
 3. **ステージングの起動（本番サーバで実行）**  
    ```bash
@@ -377,7 +404,7 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
    chmod +x deploy-staging.sh
    ./deploy-staging.sh
    ```
-   初回はビルドに数分かかる。完了後、**staging.wl-sticky-note.local** が本番サーバ IP に解決する状態で、ブラウザから http://staging.wl-sticky-note.local/ にアクセスして動作確認。
+   初回はビルドに数分かかる。完了後、**staging.wl-ai-board.internal.wonder-link.co.jp** が本番サーバ IP に解決する状態で、ブラウザから https://staging.wl-ai-board.internal.wonder-link.co.jp/ にアクセスして動作確認。
 
 4. **マイグレーション**  
    `deploy-staging.sh` 内でステージング DB に対して `alembic upgrade head` を実行する。失敗する場合は本番サーバで手動:  
@@ -412,7 +439,7 @@ cd /var/www/wlinko-pj/board-system/deploy
 
 ステージングと本番は**同じリポジトリのコード**を使う。ステージングで確認した内容は、**同じサーバ**で通常デプロイすると本番に反映される。
 
-1. ステージング（http://staging.wl-sticky-note.local/）で動作・表示を確認する。
+1. ステージング（https://staging.wl-ai-board.internal.wonder-link.co.jp/）で動作・表示を確認する。
 2. 問題なければ、**本番サーバ**で通常の本番デプロイを行う（[4. 通常のデプロイ](#4-通常のデプロイ) と同じ手順）。
 
 ```bash
@@ -442,15 +469,15 @@ PC の名前解決はできているがブラウザで開けない場合、**サ
 
 1. **Nginx がステージング設定を読み込んでいるか**  
    ```bash
-   sudo nginx -T 2>/dev/null | grep -E "staging.wl-sticky-note|3030|8030|3031"
+   sudo nginx -T 2>/dev/null | grep -E "staging.wl-ai-board|3030|8030|3031"
    ```  
-   `staging.wl-sticky-note.local` や 3030/8030/3031 の記述が出れば読み込み済み。何も出ない場合は `/etc/nginx/nginx.conf` の `http { }` 内に `include /etc/nginx/conf.d/*.conf;` があるか、または `include /etc/nginx/conf.d/staging.conf;` を追加したうえで `sudo systemctl reload nginx` する。
+   `staging.wl-ai-board.internal.wonder-link.co.jp` や 3030/8030/3031 の記述が出れば読み込み済み。何も出ない場合は `nginx.conf.production-server` を `/etc/nginx/nginx.conf` にコピーし、`staging.conf` を `/etc/nginx/conf.d/` にコピーしたうえで `sudo systemctl restart nginx` する。
 
 2. **サーバー自身からステージングに届くか**  
    ```bash
-   curl -s -o /dev/null -w "%{http_code}\n" -H "Host: staging.wl-sticky-note.local" http://127.0.0.1/
+   curl -s -o /dev/null -w "%{http_code}\n" -k -H "Host: staging.wl-ai-board.internal.wonder-link.co.jp" https://127.0.0.1/
    ```  
-   `302` や `200` が返れば、Nginx の振り分けとステージングコンテナは動いている。その場合は **3** へ。
+   `302` や `200` が返れば、Nginx の振り分けとステージングコンテナは動いている。
 
 3. **ファイアウォール**  
    同じ PC で本番（例: https://wl-ai-board.internal.wonder-link.co.jp/）にはアクセスできるなら、ポート 443 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 443 が許可されているか確認する。  
