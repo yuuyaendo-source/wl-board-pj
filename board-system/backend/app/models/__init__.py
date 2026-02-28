@@ -5,6 +5,7 @@ SQLAlchemy モデル。users / sticky_notes / board_placements。
 """
 from app.db import Base
 from app.models.board_placement import BoardPlacement, BoardType, Lane
+from app.models.personal_summary import PersonalSummaryCache
 from app.models.sticky_note import NoteStatus, StickyNote
 from app.models.user import User
 
@@ -16,4 +17,5 @@ __all__ = [
     "BoardPlacement",
     "BoardType",
     "Lane",
+    "PersonalSummaryCache",
 ]

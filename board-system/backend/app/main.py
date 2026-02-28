@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
 import app.models  # noqa: F401 — モデルを Base に登録してから create_all するため
-from app.routers import board_placements, boards, daily_reset, sticky_notes, users
+from app.routers import board_placements, boards, daily_reset, personal, sticky_notes, users
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ app.include_router(sticky_notes.router)
 app.include_router(board_placements.router)
 app.include_router(boards.router)
 app.include_router(daily_reset.router)
+app.include_router(personal.router)
 
 
 @app.get("/health")
