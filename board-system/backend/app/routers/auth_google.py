@@ -201,8 +201,10 @@ async def auth_google_callback(
         db.add(token)
     await db.flush()
 
-    # フロントのパーソナルボードへ。ベースURLは設定から取れないので相対パス
-    return RedirectResponse(url=f"/personal/{user_id}", status_code=302)
+    # フロントのパーソナルボードへ。本番は basePath /boards のため oauth_success_redirect_base で /boards を指定すること
+    base = (settings.oauth_success_redirect_base or "").strip().rstrip("/")
+    path = f"{base}/personal/{user_id}".lstrip("/")
+    return RedirectResponse(url=f"/{path}", status_code=302)
 
 
 async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[dict]:

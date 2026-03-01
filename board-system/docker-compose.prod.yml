@@ -19,6 +19,8 @@ services:
       GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
       GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      # OAuth 成功後のリダイレクト先。Next basePath が /boards のため /boards を指定（未設定時は /boards）
+      OAUTH_SUCCESS_REDIRECT_BASE: ${OAUTH_SUCCESS_REDIRECT_BASE:-/boards}
       POSTIT_BOARD_URL: http://sticky-note:3000
       # Nginx経由のリクエストを信頼
       FORWARDED_ALLOW_IPS: "*"

@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = None  # 例: https://wl-ai-board.example.com/auth/google/callback
 
+    # OAuth 成功後のリダイレクト先のプレフィックス。本番で Next basePath が /boards のときは "/boards" を指定
+    oauth_success_redirect_base: str = ""
+
+    @field_validator("oauth_success_redirect_base")
+    @classmethod
+    def strip_oauth_success_base(cls, v: str | None) -> str:
+        if v is None:
+            return ""
+        return (v or "").strip().rstrip("/")
+
     @field_validator("google_calendar_redirect_uri")
     @classmethod
     def strip_redirect_uri(cls, v: str | None) -> str | None:
