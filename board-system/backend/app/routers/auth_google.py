@@ -29,12 +29,41 @@ logger = logging.getLogger(__name__)
 GOOGLE_SCOPE = ["https://www.googleapis.com/auth/calendar.readonly"]
 PKCE_TTL_SECONDS = 600
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 def _pkce_code_challenge(verifier: str) -> str:
     """PKCE: code_verifier から S256 の code_challenge を計算。"""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) -> dict:
+    """トークンエンドポイントに code_verifier を付けて POST（自前実装で確実に送る）。"""
+    import requests
+    resp = requests.post(
+        GOOGLE_TOKEN_URI,
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": settings.google_calendar_client_id,
+            "client_secret": settings.google_calendar_client_secret,
+            "code_verifier": code_verifier,
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    expiry = None
+    if data.get("expires_in"):
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
+    return {
+        "access_token": data["access_token"],
+        "refresh_token": data.get("refresh_token"),
+        "expiry": expiry,
+    }
 
 
 def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
@@ -145,18 +174,8 @@ async def auth_google_callback(
             detail="OAuth session expired or invalid. Please click 'Google カレンダーと連携' again from the personal board.",
         )
 
-    def _exchange():
-        flow = _google_flow(redirect_uri, code_verifier=code_verifier)
-        flow.fetch_token(code=code)
-        creds = flow.credentials
-        return {
-            "access_token": creds.token,
-            "refresh_token": getattr(creds, "refresh_token"),
-            "expiry": creds.expiry,
-        }
-
     try:
-        data = await asyncio.to_thread(_exchange)
+        data = await asyncio.to_thread(_exchange_token_with_pkce, code, redirect_uri, code_verifier)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"token exchange failed: {e}")
 
