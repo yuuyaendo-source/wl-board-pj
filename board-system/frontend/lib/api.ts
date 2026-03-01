@@ -46,6 +46,8 @@ export const api = {
     list: () => fetchApi<User[]>("/users"),
     create: (body: { name: string; email?: string; call_name?: string; role?: string }) =>
       fetchApi<User>("/users", { method: "POST", body: JSON.stringify(body) }),
+    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string }) =>
+      fetchApi<User>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (userId: number) =>
       fetchApi<undefined>(`/users/${userId}`, { method: "DELETE" }),
   },

@@ -16,6 +16,10 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
   const [callName, setCallName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editCallName, setEditCallName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -24,6 +28,7 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
       setName("");
       setEmail("");
       setCallName("");
+      setEditingId(null);
       setError(null);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
@@ -61,6 +66,36 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
       setError(e instanceof Error ? e.message : "削除に失敗しました");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const startEdit = (m: PersonalMember) => {
+    setEditingId(m.ownerId);
+    setEditName(m.name);
+    setEditEmail(m.email ?? "");
+    setEditCallName(m.call_name ?? "");
+    setError(null);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingId == null) return;
+    const trimmedName = editName.trim();
+    if (!trimmedName) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.users.update(editingId, {
+        name: trimmedName,
+        email: editEmail.trim() || undefined,
+        call_name: editCallName.trim() || undefined,
+      });
+      onSuccess();
+      setEditingId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "更新に失敗しました");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -129,26 +164,88 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
               <p className="mb-2 text-sm text-red-600">{error}</p>
             )}
             <div className="border-t border-[var(--border)] pt-3">
-              <p className="mb-2 text-xs text-zinc-500">削除（付箋はタスクボードにリリースされます）</p>
+              <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
               <ul className="flex flex-col gap-1">
-                {members.map(({ ownerId, name: displayName, email: memberEmail }) => (
+                {members.map((m) => (
                   <li
-                    key={ownerId}
-                    className="flex flex-col gap-0.5 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                    key={m.ownerId}
+                    className="flex flex-col gap-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-zinc-800 font-medium">{displayName}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(ownerId, displayName)}
-                        disabled={deletingId === ownerId}
-                        className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {deletingId === ownerId ? "削除中…" : "削除"}
-                      </button>
-                    </div>
-                    {memberEmail && (
-                      <span className="text-xs text-zinc-500">{memberEmail}</span>
+                    {editingId === m.ownerId ? (
+                      <form onSubmit={handleUpdate} className="flex flex-col gap-2">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="名前（必須）"
+                          className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                          disabled={submitting}
+                          maxLength={100}
+                        />
+                        <input
+                          type="email"
+                          value={editEmail}
+                          onChange={(e) => setEditEmail(e.target.value)}
+                          placeholder="メールアドレス"
+                          className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                          disabled={submitting}
+                          maxLength={255}
+                        />
+                        <input
+                          type="text"
+                          value={editCallName}
+                          onChange={(e) => setEditCallName(e.target.value)}
+                          placeholder="呼び名"
+                          className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                          disabled={submitting}
+                          maxLength={50}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={submitting || !editName.trim()}
+                            className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+                          >
+                            {submitting ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            className="rounded border border-[var(--border)] px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                          >
+                            キャンセル
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-zinc-800 font-medium">{m.name}</span>
+                          <div className="flex shrink-0 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(m)}
+                              className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
+                            >
+                              編集
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(m.ownerId, m.name)}
+                              disabled={deletingId === m.ownerId}
+                              className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              {deletingId === m.ownerId ? "削除中…" : "削除"}
+                            </button>
+                          </div>
+                        </div>
+                        {(m.email || m.call_name) && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-zinc-500">
+                            {m.email && <span>{m.email}</span>}
+                            {m.call_name && <span>呼び名: {m.call_name}</span>}
+                          </div>
+                        )}
+                      </>
                     )}
                   </li>
                 ))}
