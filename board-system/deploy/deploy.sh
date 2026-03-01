@@ -55,15 +55,20 @@ docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" up -d --bu
 
 # ヘルスチェック
 echo "Waiting for health check..."
-sleep 30
-
-if curl -s "http://localhost:$NEW_PORT_BACKEND/health" | grep "ok"; then
-    echo "Health check passed!"
-else
-    echo "Health check failed!"
-    docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" down
-    exit 1
-fi
+for i in $(seq 1 18); do
+    if curl -sf "http://localhost:$NEW_PORT_BACKEND/health" | grep -q "ok"; then
+        echo "Health check passed!"
+        break
+    fi
+    if [ "$i" -eq 18 ]; then
+        echo "Health check failed after 90s. Backend logs:"
+        docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" logs backend 2>&1 | tail -80
+        docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" down
+        exit 1
+    fi
+    echo "  attempt $i/18, retrying in 5s..."
+    sleep 5
+done
 
 # Nginx切り替え
 echo "Switching traffic..."
