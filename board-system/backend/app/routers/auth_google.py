@@ -2,11 +2,11 @@
 """
 Google カレンダー OAuth と今日の予定取得。
 /auth/google?user_id= で Google へリダイレクト、/auth/google/callback でトークン保存。
-/api/personal/{user_id}/calendar/refresh で今日の予定を取得し PersonalSummaryCache.events に保存。
-PKCE: 認可開始時に code_verifier を DB（oauth_pkce_state）に保存し、コールバックで取得して fetch_token に渡す。
+PKCE: 認可開始時に自前で code_verifier を生成して DB に保存し、コールバックで取得して fetch_token に渡す。
 """
 import asyncio
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,22 +25,20 @@ GOOGLE_SCOPE = ["https://www.googleapis.com/auth/calendar.readonly"]
 PKCE_TTL_SECONDS = 600
 
 
-def _get_code_verifier_from_flow(flow) -> str | None:
-    """Flow から code_verifier を取得（PKCE 用）。"""
+def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
+    """Flow の内部クライアントに code_verifier を設定（authorization_url で code_challenge に使われる）。"""
     try:
         session = getattr(flow, "oauth2session", None)
-        if session is None:
-            return None
-        client = getattr(session, "_client", None) or getattr(session, "client", None)
-        if client is None:
-            return None
-        return getattr(client, "code_verifier", None)
+        if session is not None:
+            client = getattr(session, "_client", None) or getattr(session, "client", None)
+            if client is not None:
+                setattr(client, "code_verifier", code_verifier)
     except Exception:
-        return None
+        pass
 
 
-def _google_flow(redirect_uri: str):
-    """Google OAuth Flow を生成（同期）。"""
+def _google_flow(redirect_uri: str, code_verifier: str | None = None):
+    """Google OAuth Flow を生成（同期）。code_verifier を渡すと PKCE で使用。"""
     from google_auth_oauthlib.flow import Flow
     flow = Flow.from_client_config(
         {
@@ -55,6 +53,8 @@ def _google_flow(redirect_uri: str):
         scopes=GOOGLE_SCOPE,
         redirect_uri=redirect_uri,
     )
+    if code_verifier:
+        _set_code_verifier_on_flow(flow, code_verifier)
     return flow
 
 
@@ -70,18 +70,18 @@ async def auth_google_start(
     if not redirect_uri:
         raise HTTPException(status_code=503, detail="google_calendar_redirect_uri is not set")
     try:
-        flow = await asyncio.to_thread(_google_flow, redirect_uri)
+        # PKCE: 自前で code_verifier を生成し、Flow に設定してから authorization_url を呼ぶ
+        code_verifier = secrets.token_urlsafe(32)
+        flow = await asyncio.to_thread(_google_flow, redirect_uri, code_verifier)
         authorization_url, _ = flow.authorization_url(
             access_type="offline",
             prompt="consent",
             state=str(user_id),
         )
-        code_verifier = _get_code_verifier_from_flow(flow)
-        if code_verifier:
-            expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
-            await db.execute(delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id)))
-            db.add(OAuthPkceState(state=str(user_id), code_verifier=code_verifier, expires_at=expires_at))
-            await db.flush()
+        expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
+        await db.execute(delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id)))
+        db.add(OAuthPkceState(state=str(user_id), code_verifier=code_verifier, expires_at=expires_at))
+        await db.flush()
         return RedirectResponse(url=authorization_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,14 +123,7 @@ async def auth_google_callback(
         )
 
     def _exchange():
-        flow = _google_flow(redirect_uri)
-        # PKCE: コールバック用の Flow に同じ code_verifier を設定
-        if code_verifier:
-            session = getattr(flow, "oauth2session", None)
-            if session is not None:
-                client = getattr(session, "_client", None) or getattr(session, "client", None)
-                if client is not None:
-                    setattr(client, "code_verifier", code_verifier)
+        flow = _google_flow(redirect_uri, code_verifier=code_verifier)
         flow.fetch_token(code=code)
         creds = flow.credentials
         return {
