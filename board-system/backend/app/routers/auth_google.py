@@ -5,9 +5,12 @@ Google カレンダー OAuth と今日の予定取得。
 PKCE: 認可開始時に自前で code_verifier を生成して DB に保存し、コールバックで取得して fetch_token に渡す。
 """
 import asyncio
+import hashlib
 import json
 import logging
 import secrets
+import urllib.parse
+from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_SCOPE = ["https://www.googleapis.com/auth/calendar.readonly"]
 PKCE_TTL_SECONDS = 600
+GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
+
+
+def _pkce_code_challenge(verifier: str) -> str:
+    """PKCE: code_verifier から S256 の code_challenge を計算。"""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
@@ -72,14 +82,21 @@ async def auth_google_start(
     if not redirect_uri:
         raise HTTPException(status_code=503, detail="google_calendar_redirect_uri is not set")
     try:
-        # PKCE: 自前で code_verifier を生成し、Flow に設定してから authorization_url を呼ぶ
+        # PKCE: code_verifier を生成し、認可URLを自前で組み立て（ライブラリ任せだと code_challenge が一致しないため）
         code_verifier = secrets.token_urlsafe(32)
-        flow = await asyncio.to_thread(_google_flow, redirect_uri, code_verifier)
-        authorization_url, _ = flow.authorization_url(
-            access_type="offline",
-            prompt="consent",
-            state=str(user_id),
-        )
+        code_challenge = _pkce_code_challenge(code_verifier)
+        params = {
+            "client_id": settings.google_calendar_client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(GOOGLE_SCOPE),
+            "state": str(user_id),
+            "access_type": "offline",
+            "prompt": "consent",
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+        authorization_url = GOOGLE_AUTH_URI + "?" + urllib.parse.urlencode(params)
         expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
         await db.execute(delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id)))
         db.add(OAuthPkceState(state=str(user_id), code_verifier=code_verifier, expires_at=expires_at))
