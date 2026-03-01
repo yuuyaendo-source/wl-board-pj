@@ -113,3 +113,18 @@ def get_board_system_personal_url(cfg=None):
     if not frontend or not pid:
         return None
     return f"{frontend}/boards/personal/{pid}"
+
+
+def get_effective_board_system_url(cfg=None):
+    """Board System の API ベース URL。board_system_url が未設定のとき、mini_port_taskboard_url から推定する。"""
+    if cfg is None:
+        cfg = load_config()
+    url = (cfg.get("board_system_url") or "").strip().rstrip("/")
+    if url:
+        return url
+    task = (cfg.get("mini_port_taskboard_url") or "").strip()
+    if not task:
+        return ""
+    import re
+    base = re.sub(r"/boards/.*$", "", task).rstrip("/")
+    return f"{base}/api/bs" if base else ""

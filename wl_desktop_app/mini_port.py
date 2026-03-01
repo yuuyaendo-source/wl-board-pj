@@ -22,7 +22,7 @@ except ImportError as e:
     print("エラー:", e)
     sys.exit(1)
 
-from config_loader import load_config, save_config, get_board_system_personal_url, get_app_base_dir
+from config_loader import load_config, save_config, get_board_system_personal_url, get_effective_board_system_url, get_app_base_dir
 
 # 画像表示用（PIL が無い環境ではリン子はテキストボタンのみ）
 # CTkImage は内部で PIL.Image と PIL.ImageTk を参照するため、先に両方 import する
@@ -68,7 +68,7 @@ def _prompt_email_and_resolve_personal(parent=None):
     import tkinter as tk
     from tkinter import simpledialog
     cfg = load_config()
-    board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
+    board_url = get_effective_board_system_url(cfg)
     if not board_url:
         return None
     if parent is None:
@@ -437,7 +437,7 @@ class MiniPortWindow(ctk.CTk):
         if personal_url:
             webbrowser.open(personal_url)
             return
-        board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
+        board_url = get_effective_board_system_url(cfg)
         if board_url:
             # 親に self（ミニポート窓）を渡し、名前入力と取り違えないようにする
             url = _prompt_email_and_resolve_personal(parent=self)
