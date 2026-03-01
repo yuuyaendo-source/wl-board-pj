@@ -2,12 +2,18 @@
 
 社員PCに常駐する「Personal Rinko Agent」。**各ユーザー用のパーソナルモード**（`/personal?user=xxx`）へワンクリックで誘導し、お知らせからのDeep Linkを提供する。
 
+## 開発環境と利用環境
+
+- **開発環境** … **Linux** を想定。`pip install -r requirements.txt` は Linux でそのまま実行可能（Windows 専用のトースト用パッケージは自動でスキップされる）。**MSI ビルドは Windows で行う**（Linux で `./build_msi.sh` を実行すると案内メッセージが出る）。
+- **利用環境（配布先）** … **Windows** または **Mac**（デスクトップアプリ）。トースト通知・MSI 配布・スタートアップ登録は **Windows のみ**。**iPhone** ではデスクトップアプリは利用せず、Board System のパーソナルボード等はブラウザ（Safari 等）でアクセスする。
+
 ## 機能
 
 - **ミニポート（付箋クイック投稿）** … 起動時に**画面上にミニポートを強制表示**。リン子ボタン・「投稿」で付箋を素早く投稿できる。トレイメニュー「ミニポート」「ミニポートを表示」「ミニポートを非表示」で任意に表示/非表示を切り替え可能。
 - **Windows MSI でインストール** … MSI でインストール後、デスクトップのショートカットから起動。起動するとタスクトレイに常駐し、ミニポートが画面上に表示される。
 - **タスクトレイ常駐** … アプリ本体はタスクトレイに常駐。トレイからミニポートの表示/非表示や各種メニューにアクセス。
-- **パーソナルモードを開く** … トレイの「パーソナルモードを開く」で、**このユーザー用**のパーソナル画面（AIボードの `/personal?user=ユーザーID`）をブラウザで開く。起動時に自動で開く動作は行わない。
+- **パーソナルモードを開く** … トレイの「パーソナルモードを開く」で、**このユーザー用**のパーソナル画面をブラウザで開く。`board_system_url` とメールログイン済みの場合は Board System のパーソナルボード（`/boards/personal/{id}`）、そうでなければ AIボードの `/personal?user=ユーザーID`。起動時に自動で開く動作は行わない。
+- **「ボード」ボタン（ミニポート）** … ミニポートの「ボード」をクリックすると**各自の Board System パーソナルボード**を開く。初回のみメールアドレスを入力すると、Board System のユーザーと紐づき `board_system_personal_id` が保存され、以降は同じ PC でそのままパーソナルが開く。`board_system_url` が未設定の場合はタスクボードを開く。
 - **アイコンクリックで開く** … トレイアイコンをクリックすると設定した先（デフォルト: 付箋ボード）を開く。メニュー「アイコンクリックで開く」で付箋ボード／パーソナル／最後のお知らせを切り替え可能。
 - **PC起動時に自動で起動** … **初回起動時**にスタートアップへ自動登録し、**Windows 再起動後もミニポートが自動で表示**される。メニュー「PC起動時に自動で起動」でON/OFFを切り替え可能（レジストリのスタートアップに登録）。
 - **付箋ボード連携** … 付箋ボード（`postit_board_id`）を一定間隔でポーリングし、新付箋が増えたら「新しい付箋が投稿されました」とトースト。「最後のお知らせを開く」で該当ボードを開ける。
@@ -17,10 +23,21 @@
 
 ## 必要な環境
 
-- Windows 10/11（トーストは win10toast-click / win10toast。要 pywin32）
-- Python 3.10+
+- **開発時** … Linux または Windows。Python 3.10+。Linux では `pip install -r requirements.txt` で Windows 専用パッケージはスキップされる。
+- **利用時（デスクトップアプリ）** … Windows 10/11 または Mac。トースト通知は **Windows のみ**（win10toast / pywin32）。Mac ではトレイ・ミニポート・「ボード」ボタン等は利用可能で、トーストは表示されない。
 
 ## セットアップ・起動
+
+**Linux（開発環境）:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+**Windows（開発または利用）:**
 
 ```powershell
 cd 02_3_WL_Desktop_app
@@ -46,6 +63,10 @@ python app.py
 
 ## MSI ビルド（配布用）
 
+**MSI は Windows 上でビルドしてください。** Linux で `./build_msi.sh` を実行すると「Windows で PowerShell を実行してください」と案内されます。
+
+**Windows で PowerShell を開き:**
+
 ```powershell
 cd 02_3_WL_Desktop_app
 .\build_msi.ps1
@@ -57,7 +78,7 @@ cd 02_3_WL_Desktop_app
 
 ## 設定
 
-- `config.json` … `user_id`、`personal_path`、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ。複数指定でどのボードに付箋が追加されても通知）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL（本番: `http://wl-sticky-note.local/`）、アバター・音声のON/OFFなど
+- `config.json` … `user_id`、`personal_path`、**`board_system_url`**（Board System の API ベース URL。例: 本番 `https://wl-ai-board.internal.wonder-link.co.jp/api/bs`。設定すると「ボード」クリック・パーソナルで Board System のパーソナルボードを開ける）、**`board_system_personal_id`**（メールログインで設定される user id。空のときは初回にメール入力）、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL、アバター・音声のON/OFFなど
 - 環境変数 `WLINKO_USER_ID` でユーザーIDを指定可能。`AI_BOARD_URL`, `POSTIT_BOARD_URL` でURLを上書き可能（`.env` やシステム環境変数）
 - **ミニポートの送信先** … `mini_port_api_url`（例: `https://wl-ai-board.internal.wonder-link.co.jp/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
 - **自動更新** … `update_check_url` に JSON の URL を設定すると、起動時に更新チェックし、トレイメニュー「更新を確認」で手動チェック・インストールが可能。未設定時は更新チェックを行わない。
@@ -90,6 +111,11 @@ cd 02_3_WL_Desktop_app
 - **フォルダ＋起動手順** … 本フォルダを ZIP で配布。メンバーは Python 3.10+ を入れ、`.\start_app.ps1` で起動。本番向けの `config.json` を同梱するとよい。
 
 本番連携（https://wl-ai-board.internal.wonder-link.co.jp/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
+
+## ユーザー管理・Board System との共通化
+
+- **ユーザーデータベース** … デスクトップアプリの「ボード」・パーソナルで利用するユーザーは、Board System の API（`/users/by_email` など）で解決する。Board System と Linko は同一の PostgreSQL の `users` テーブルを参照するため、**ユーザーは共通**である。
+- **ユーザー登録** … 新規ユーザーは Board System 側で登録する（Board System の管理画面または API `POST /users`）。登録済みメールアドレスをデスクトップアプリの初回メール入力で入力すると、そのユーザーに紐づきパーソナルボードが開く。Linko と Board System で「同じ画面で登録」する場合は、Board System のユーザー管理画面を共通の登録窓口として利用する。
 
 ## 今後の拡張（開発プラン）
 - AIボード・付箋ボードとの連携（受付モード切替時の通知など）

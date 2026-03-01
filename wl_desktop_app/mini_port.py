@@ -22,7 +22,7 @@ except ImportError as e:
     print("エラー:", e)
     sys.exit(1)
 
-from config_loader import load_config, get_app_base_dir
+from config_loader import load_config, save_config, get_board_system_personal_url, get_app_base_dir
 
 # 画像表示用（PIL が無い環境ではリン子はテキストボタンのみ）
 # CTkImage は内部で PIL.Image と PIL.ImageTk を参照するため、先に両方 import する
@@ -60,6 +60,42 @@ def _taskboard_url():
     """ミニウィンドウのリン子クリックで開く Task ボードの URL。"""
     cfg = load_config()
     return (cfg.get("mini_port_taskboard_url") or "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard").strip()
+
+
+def _prompt_email_and_resolve_personal():
+    """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。"""
+    import tkinter as tk
+    from tkinter import simpledialog
+    cfg = load_config()
+    board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
+    if not board_url:
+        return None
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    email = simpledialog.askstring(
+        "Wonder Linko - パーソナルボード",
+        "各自のパーソナルボードを開くため、登録済みのメールアドレスを入力してください:",
+        parent=root,
+    )
+    root.destroy()
+    if not email or not isinstance(email, str) or "@" not in email:
+        return None
+    email = email.strip()
+    try:
+        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        user_id = data.get("id")
+        if user_id is None:
+            return None
+        cfg["board_system_url"] = board_url
+        cfg["board_system_personal_id"] = str(user_id)
+        save_config(cfg)
+        return get_board_system_personal_url(cfg)
+    except Exception:
+        return None
 
 
 def _send_content(text: str) -> Tuple[bool, str]:
@@ -386,6 +422,18 @@ class MiniPortWindow(ctk.CTk):
             self._remove_placeholder()
 
     def _open_taskboard(self):
+        """「ボード」クリック: 各自の Board System パーソナルボードを開く。未設定時はメール入力で解決してから開く。"""
+        cfg = load_config()
+        personal_url = get_board_system_personal_url(cfg)
+        if personal_url:
+            webbrowser.open(personal_url)
+            return
+        board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
+        if board_url:
+            url = _prompt_email_and_resolve_personal()
+            if url:
+                webbrowser.open(url)
+                return
         webbrowser.open(_taskboard_url())
 
     def _position_bottom_right(self, compact: bool = True):

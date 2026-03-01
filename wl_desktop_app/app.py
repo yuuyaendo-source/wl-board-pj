@@ -118,11 +118,11 @@ def _make_icon_image():
 
 
 def _personal_url():
-    """このユーザー用のパーソナルモードURL。Board System でログイン済みなら Board System のパーソナル、そうでなければ linko のパーソナル。"""
-    board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
-    board_id = (_config.get("board_system_personal_id") or "").strip()
-    if board_url and board_id:
-        return f"{board_url}/personal/{board_id}"
+    """このユーザー用のパーソナルモードURL。Board System でログイン済みなら Board System のパーソナル（/boards/personal/{id}）、そうでなければ linko のパーソナル。"""
+    from config_loader import get_board_system_personal_url
+    url = get_board_system_personal_url()
+    if url:
+        return url
     base = _config.get("ai_board_url", "http://127.0.0.1:5000/").rstrip("/")
     path = (_config.get("personal_path") or "").strip()
     if path:
@@ -456,7 +456,10 @@ def _board_system_login_clicked(*args):
                     duration_sec=4,
                     force_show=True,
                 )
-                webbrowser.open(f"{board_url}/personal/{user_id}")
+                from config_loader import get_board_system_personal_url
+                personal_url = get_board_system_personal_url(_config)
+                if personal_url:
+                    webbrowser.open(personal_url)
                 return
         if r.status_code == 404:
             notifications.show_toast("Wonder Linko", "このメールアドレスは未登録です。Board System でユーザーを登録してください。", duration_sec=5, force_show=True)

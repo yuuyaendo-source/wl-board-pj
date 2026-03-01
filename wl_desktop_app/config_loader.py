@@ -90,3 +90,26 @@ def save_config(cfg):
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
+
+
+def get_board_system_frontend_base(cfg=None):
+    """Board System のフロントエンドベースURL。board_system_url が API ベース（/api/bs 付き）ならそれを除く。"""
+    if cfg is None:
+        cfg = load_config()
+    base = (cfg.get("board_system_url") or "").strip().rstrip("/")
+    if not base:
+        return ""
+    if base.endswith("/api/bs"):
+        return base[:-len("/api/bs")].rstrip("/")
+    return base
+
+
+def get_board_system_personal_url(cfg=None):
+    """各自の Board System パーソナルボードのURL。未設定時は None。"""
+    if cfg is None:
+        cfg = load_config()
+    frontend = get_board_system_frontend_base(cfg)
+    pid = (cfg.get("board_system_personal_id") or "").strip()
+    if not frontend or not pid:
+        return None
+    return f"{frontend}/boards/personal/{pid}"

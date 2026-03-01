@@ -2,6 +2,8 @@
   "postit_board_id": "wl",
   "postit_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/",
   "ai_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/",
+  "board_system_url": "https://wl-ai-board.internal.wonder-link.co.jp/api/bs",
+  "board_system_personal_id": "",
   "user_id": "xxxx",
   "personal_path": "asakawa",
   "open_personal_on_start": true,
