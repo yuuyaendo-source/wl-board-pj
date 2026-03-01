@@ -402,8 +402,11 @@ function PersonalCalendarPanel({
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <a
-          href={`${API_BASE}/auth/google?user_id=${ownerId}`}
-          target="_blank"
+          href={
+            typeof window !== "undefined"
+              ? `${window.location.origin}/api/bs/auth/google?user_id=${ownerId}`
+              : `${API_BASE}/auth/google?user_id=${ownerId}`
+          }
           rel="noopener noreferrer"
           className="text-[var(--primary)] underline hover:opacity-80"
         >

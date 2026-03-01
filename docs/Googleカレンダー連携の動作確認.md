@@ -125,3 +125,4 @@ GOOGLE_CALENDAR_REDIRECT_URI=http://localhost:8000/auth/google/callback
 | コールバックで「redirect_uri_mismatch」 | Google Cloud Console の「承認済みのリダイレクト URI」と .env の `GOOGLE_CALENDAR_REDIRECT_URI` が**完全に一致**しているか（http/https、ポート、パス）。 |
 | コールバック後に 404 | ローカルでは 8000 にリダイレクトされるため 404 になり得る。フロントの URL（例: 3000/personal/1）を手動で開く。 |
 | 「予定を取得」で 503 | 上記 1〜2 が済んでいるか。`user_google_tokens` に該当 user_id のトークンが保存されているか。 |
+| 「OAuth session expired or invalid」 | 認可開始とコールバックが同じサーバ・DBに届いていない可能性。証明書でリクエストがブロックされていないか確認。本番では Let's Encrypt 等でブラウザが信頼する証明書を使用すること。 |
