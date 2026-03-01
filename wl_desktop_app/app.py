@@ -402,17 +402,11 @@ def _show_notification_help(*args):
 def _show_email_login_dialog() -> str | None:
     """メールログイン用のメールアドレス入力ダイアログ。入力値を返す。キャンセル時は None。"""
     try:
-        import tkinter as tk
-        from tkinter import simpledialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        email = simpledialog.askstring(
+        from dialog_utils import ask_string_large
+        email = ask_string_large(
             "Wonder Linko - Board System ログイン",
             "Board System のパーソナルボードを開くには、登録済みのメールアドレスを入力してください:",
-            parent=root,
         )
-        root.destroy()
         return email.strip() if email and isinstance(email, str) else None
     except Exception:
         return None
@@ -524,17 +518,11 @@ def run_tray():
 def _show_display_name_dialog(current_name: str = "") -> str | None:
     """表示名入力ダイアログを表示し、入力された名前を返す。キャンセル時は None。"""
     try:
-        import tkinter as tk
-        from tkinter import simpledialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
+        from dialog_utils import ask_string_large
         prompt = "ミニポートから投稿したときに付箋に表示する名前を入力してください:"
         if current_name:
             prompt += "\n（現在: " + current_name + "）"
-        name = simpledialog.askstring("Wonder Linko - 表示名", prompt, parent=root)
-        root.destroy()
-        return name
+        return ask_string_large("Wonder Linko - 表示名", prompt, initial_value=current_name)
     except Exception:
         return None
 

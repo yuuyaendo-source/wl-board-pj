@@ -65,29 +65,16 @@ def _taskboard_url():
 def _prompt_email_and_resolve_personal(parent=None):
     """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。
     parent: ダイアログの親ウィンドウ（MiniPortWindow 等）。None のときは新規 Tk() を作成。"""
-    import tkinter as tk
-    from tkinter import simpledialog
+    from dialog_utils import ask_string_large
     cfg = load_config()
     board_url = get_effective_board_system_url(cfg)
     if not board_url:
         return None
-    if parent is None:
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        dialog_parent = root
-    else:
-        dialog_parent = parent
-    email = simpledialog.askstring(
+    email = ask_string_large(
         "Wonder Linko - パーソナルボード",
         "各自のパーソナルボードを開くため、登録済みのメールアドレスを入力してください:",
-        parent=dialog_parent,
+        parent=parent,
     )
-    if parent is None:
-        try:
-            dialog_parent.destroy()
-        except Exception:
-            pass
     if not email or not isinstance(email, str) or "@" not in email:
         return None
     email = email.strip()
