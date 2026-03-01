@@ -4,6 +4,9 @@
 新サーバで DB を空の状態で立ち上げた場合、パーソナルボードで投稿するにはこのスクリプトか
 移行スクリプトで users を用意する必要がある。
 
+※ 通常のユーザー登録は Board System の「ユーザー管理」画面（または API POST /users）で行う。
+  ここで登録する users と Board System のユーザー管理は同じ users テーブルを共用する。
+
 使い方（ホストで実行する場合）:
   cd /var/www/wlinko-pj/board-system/backend
   source .venv/bin/activate

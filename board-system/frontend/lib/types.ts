@@ -29,6 +29,8 @@ export interface PlacementWithNote {
 export interface User {
   id: number;
   name: string;
+  email: string | null;
+  call_name: string | null;
   role: string | null;
 }
 

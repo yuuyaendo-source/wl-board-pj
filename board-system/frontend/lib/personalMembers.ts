@@ -8,6 +8,8 @@ export interface PersonalMember {
   slug: string;
   ownerId: number;
   name: string;
+  email?: string | null;
+  call_name?: string | null;
 }
 
 /** API の /users からメンバー一覧を取得。メンバー増減に対応する */
@@ -31,6 +33,8 @@ export function usePersonalMembers(): {
           slug: String(u.id),
           ownerId: u.id,
           name: u.name,
+          email: u.email ?? undefined,
+          call_name: u.call_name ?? undefined,
         }))
       );
     } catch (e) {

@@ -62,23 +62,32 @@ def _taskboard_url():
     return (cfg.get("mini_port_taskboard_url") or "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard").strip()
 
 
-def _prompt_email_and_resolve_personal():
-    """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。"""
+def _prompt_email_and_resolve_personal(parent=None):
+    """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。
+    parent: ダイアログの親ウィンドウ（MiniPortWindow 等）。None のときは新規 Tk() を作成。"""
     import tkinter as tk
     from tkinter import simpledialog
     cfg = load_config()
     board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
     if not board_url:
         return None
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
+    if parent is None:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        dialog_parent = root
+    else:
+        dialog_parent = parent
     email = simpledialog.askstring(
         "Wonder Linko - パーソナルボード",
         "各自のパーソナルボードを開くため、登録済みのメールアドレスを入力してください:",
-        parent=root,
+        parent=dialog_parent,
     )
-    root.destroy()
+    if parent is None:
+        try:
+            dialog_parent.destroy()
+        except Exception:
+            pass
     if not email or not isinstance(email, str) or "@" not in email:
         return None
     email = email.strip()
@@ -430,7 +439,8 @@ class MiniPortWindow(ctk.CTk):
             return
         board_url = (cfg.get("board_system_url") or "").strip().rstrip("/")
         if board_url:
-            url = _prompt_email_and_resolve_personal()
+            # 親に self（ミニポート窓）を渡し、名前入力と取り違えないようにする
+            url = _prompt_email_and_resolve_personal(parent=self)
             if url:
                 webbrowser.open(url)
                 return
