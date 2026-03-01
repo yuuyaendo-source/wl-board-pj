@@ -15,6 +15,10 @@ services:
       # ※ Gemini は使用しない（コメントアウト）
       # GEMINI_API_KEY: ${GEMINI_API_KEY}
       # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      # Google カレンダー連携（パーソナル「今日の予定」）。未設定時は連携無効・ボタンで 503
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
       POSTIT_BOARD_URL: http://sticky-note:3000
       # Nginx経由のリクエストを信頼
       FORWARDED_ALLOW_IPS: "*"
