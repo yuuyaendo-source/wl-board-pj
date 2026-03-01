@@ -59,6 +59,8 @@ def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) 
     expiry = None
     if data.get("expires_in"):
         expiry = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
+        # PostgreSQL TIMESTAMP WITHOUT TIME ZONE 用に naive UTC に変換
+        expiry = expiry.replace(tzinfo=None)
     return {
         "access_token": data["access_token"],
         "refresh_token": data.get("refresh_token"),
@@ -261,7 +263,8 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             if new_token is not None:
                 row.access_token = new_token
                 if new_expiry:
-                    row.token_expiry = new_expiry
+                    # PostgreSQL TIMESTAMP WITHOUT TIME ZONE 用に naive に変換
+                    row.token_expiry = new_expiry.replace(tzinfo=None) if getattr(new_expiry, "tzinfo", None) else new_expiry
                 row.updated_at = datetime.utcnow()
                 await db.flush()
         else:
