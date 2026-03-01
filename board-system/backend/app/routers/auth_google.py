@@ -6,6 +6,7 @@ PKCE: 認可開始時に自前で code_verifier を生成して DB に保存し�
 """
 import asyncio
 import json
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,7 @@ from app.db import get_db
 from app.models import OAuthPkceState, PersonalSummaryCache, User, UserGoogleToken
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 GOOGLE_SCOPE = ["https://www.googleapis.com/auth/calendar.readonly"]
 PKCE_TTL_SECONDS = 600
@@ -82,6 +84,7 @@ async def auth_google_start(
         await db.execute(delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id)))
         db.add(OAuthPkceState(state=str(user_id), code_verifier=code_verifier, expires_at=expires_at))
         await db.flush()
+        logger.info("PKCE state saved for state=%s (user_id=%s)", user_id, user_id)
         return RedirectResponse(url=authorization_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -113,8 +116,11 @@ async def auth_google_callback(
     row = result.scalar_one_or_none()
     code_verifier = row.code_verifier if row else None
     if row:
+        logger.info("PKCE state found for state=%s, deleting", state)
         await db.delete(row)
         await db.flush()
+    else:
+        logger.warning("PKCE state not found for state=%s (expired or not saved)", state)
 
     if not code_verifier:
         raise HTTPException(
