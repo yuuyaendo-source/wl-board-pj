@@ -72,7 +72,7 @@ bdist_msi_options = {
     "add_to_path": False,
     "all_users": False,
     "initial_target_dir": r"[LocalAppDataFolder]\WonderLink\WonderLinko",
-    "target_name": "WonderLinko.msi",
+    "output_name": "WonderLinko.msi",  # 旧 target_name（cx_Freeze 7+ で変更）
     "upgrade_code": "{B29E4C50-1A2B-4C3D-9E5F-6A7B8C9D0E1F}",
     "summary_data": {
         "author": "Wonder Linko",
