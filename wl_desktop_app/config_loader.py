@@ -30,7 +30,7 @@ def _get_defaults():
         "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
-        "personal_path": "asakawa",  # デモ用: パーソナルモードのパス（/asakawa でAIボード・デスクトップアプリ同一ページ）
+        "personal_path": "",  # Board System 利用時は未使用。レガシー AI ボード用パス（例: /asakawa）。空でよい。
         "open_personal_on_start": False,
         "avatar_visible": True,
         "sound_enabled": True,

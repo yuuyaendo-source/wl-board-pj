@@ -1,14 +1,21 @@
 {
   "postit_board_id": "wl",
-  "user_id": "xxxx",
-  "personal_path": "xxxx",
-  "open_personal_on_start": true,
+  "postit_board_url": "http://127.0.0.1:3000/",
+  "mini_port_api_url": "http://127.0.0.1:3000/board/wl",
+  "mini_port_taskboard_url": "http://127.0.0.1:3000/boards/taskboard",
+  "board_system_url": "http://127.0.0.1:8000",
+  "update_check_url": "",
+  "user_id": "",
+  "display_name": "",
+  "board_system_personal_id": "",
+  "tray_click_action": "postit",
+  "postit_poll_interval_sec": 60,
+  "notifications_enabled": true,
   "avatar_visible": false,
   "sound_enabled": false,
   "toast_duration_sec": 8,
-  "postit_poll_interval_sec": 60,
-  "tray_click_action": "postit",
   "toast_icon_path": "",
-  "ai_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/",
-  "postit_board_url": "https://wl-ai-board.internal.wonder-link.co.jp/"
+  "open_personal_on_start": false,
+  "personal_path": "",
+  "ai_board_url": "http://127.0.0.1:5000/"
 }

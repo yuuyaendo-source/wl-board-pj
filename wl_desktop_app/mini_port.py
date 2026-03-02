@@ -88,6 +88,9 @@ def _prompt_email_and_resolve_personal(parent=None):
             return None
         cfg["board_system_url"] = board_url
         cfg["board_system_personal_id"] = str(user_id)
+        cfg["user_id"] = str(user_id)
+        if (data.get("call_name") or data.get("name") or "").strip():
+            cfg["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
         save_config(cfg)
         return get_board_system_personal_url(cfg)
     except Exception:

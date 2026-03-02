@@ -455,6 +455,9 @@ def _board_system_login_clicked(*args):
             if user_id is not None:
                 _config["board_system_url"] = board_url
                 _config["board_system_personal_id"] = str(user_id)
+                _config["user_id"] = str(user_id)
+                if (data.get("call_name") or data.get("name") or "").strip():
+                    _config["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
                 save_config(_config)
                 notifications.show_toast(
                     "Wonder Linko",
@@ -563,6 +566,9 @@ def _prompt_board_system_login_if_needed():
             if user_id is not None:
                 _config["board_system_url"] = board_url
                 _config["board_system_personal_id"] = str(user_id)
+                _config["user_id"] = str(user_id)
+                if (data.get("call_name") or data.get("name") or "").strip():
+                    _config["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
                 save_config(_config)
                 notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
     except Exception:
