@@ -497,15 +497,6 @@ def build_menu(icon):
         pystray.MenuItem("ミニポートを表示", show_miniport),
         pystray.MenuItem("ミニポートを非表示", hide_miniport),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Board System でメールログイン", _board_system_login_clicked),
-        pystray.MenuItem("パーソナルモードを開く", open_personal_mode),
-        pystray.MenuItem("最後のお知らせを開く", open_last_notification, enabled=True),
-        pystray.MenuItem("付箋ボード接続テスト", _test_postit_connection),
-        pystray.MenuItem("テストお知らせ（付箋ボードURL付き）", lambda *_: notifications.show_toast(
-            "テスト", "新しい付箋が投稿されました。", url=_config.get("postit_board_url"), duration_sec=5
-        )),
-        pystray.MenuItem("通知が表示されない場合", _show_notification_help),
-        pystray.Menu.SEPARATOR,
         pystray.MenuItem("通知を表示", _toggle_notifications, checked=lambda *_: _config.get("notifications_enabled", True)),
         pystray.MenuItem("アバターを表示", toggle_avatar, checked=lambda *_: _config.get("avatar_visible", True)),
         pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
