@@ -5,17 +5,21 @@
 """
 import logging
 import os
+import threading
 from collections import deque
-from datetime import datetime
+
 
 
 _BUFFER_MAXLEN = 50
 _buffer: deque = deque(maxlen=_BUFFER_MAXLEN)
 _logger: logging.Logger | None = None
+_log_path: str = ""
 
 
 class BufferHandler(logging.Handler):
-    """直近 N 件のログをメモリに保持するハンドラ。"""
+    """直近 N 件のログをメモリに保持するハンドラ（スレッドセーフ）。"""
+
+    _lock = threading.Lock()
 
     def __init__(self, buffer: deque):
         super().__init__()
@@ -24,20 +28,22 @@ class BufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
         try:
             msg = self.format(record)
-            self._buffer.append(msg)
+            with self._lock:
+                self._buffer.append(msg)
         except Exception:
             self.handleError(record)
 
 
 def setup_app_log() -> logging.Logger:
     """ログを初期化し、ファイルとバッファに出力する Logger を返す。起動時に1回呼ぶ。"""
-    global _logger
+    global _logger, _log_path
     if _logger is not None:
         return _logger
 
     from config_loader import get_app_base_dir
     base_dir = get_app_base_dir()
-    log_path = os.path.join(base_dir, "WonderLinko.log")
+    _log_path = os.path.join(base_dir, "WonderLinko.log")
+    log_path = _log_path
 
     logger = logging.getLogger("WonderLinko")
     logger.setLevel(logging.DEBUG)
@@ -68,9 +74,27 @@ def setup_app_log() -> logging.Logger:
     return logger
 
 
+def log_info(msg: str):
+    """
+    メッセージをログに必ず追加する（バッファ＋ファイル）。
+    トレイや別スレッドから呼んでも確実に残るようにする。
+    """
+    from datetime import datetime
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] WonderLinko: {msg}"
+    with BufferHandler._lock:
+        _buffer.append(line)
+    if _log_path:
+        try:
+            with open(_log_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+
 def get_recent_log_lines() -> list[str]:
     """直近のログ行を最大50行、古い順で返す。"""
-    return list(_buffer)
+    with BufferHandler._lock:
+        return list(_buffer)
 
 
 def get_log_file_path() -> str:

@@ -4,7 +4,7 @@
   "mini_port_api_url": "http://127.0.0.1:3000/board/wl",
   "mini_port_taskboard_url": "http://127.0.0.1:3000/boards/taskboard",
   "board_system_url": "http://127.0.0.1:8000",
-  "update_check_url": "",
+  "update_check_url": "https://wl-ai-board.internal.wonder-link.co.jp/api/bs/desktop-app/latest.json",
   "user_id": "",
   "display_name": "",
   "board_system_personal_id": "",

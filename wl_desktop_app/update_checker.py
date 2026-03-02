@@ -19,6 +19,15 @@ except ImportError:
     requests = None
 
 
+def _log(msg: str):
+    """ログに確実に残す（別スレッドから呼ばれるため app_log.log_info を使用）。"""
+    try:
+        from app_log import log_info
+        log_info(msg)
+    except Exception:
+        pass
+
+
 def _version_tuple(version_str: str) -> tuple:
     """バージョン文字列を比較用タプルに変換。例: "1.0.1" -> (1, 0, 1)。"""
     if not version_str or not isinstance(version_str, str):
@@ -48,6 +57,7 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
         log.warning("更新チェック: requests が利用できないためスキップ")
         return False, "", ""
     try:
+        _log(f"更新チェック GET 実行: {check_url}")
         log.info("更新チェック GET: %s", check_url)
         r = requests.get(check_url, timeout=timeout)
         log.info("更新チェック 応答: status=%s", r.status_code)
@@ -117,6 +127,7 @@ def check_and_notify(current_version: str, check_url: str, on_result):
     on_result はメインスレッドから呼びたい場合は、呼び出し側で after 等でラップすること。
     """
     def run():
+        _log("更新チェック バックグラウンドスレッド開始")
         result = check_for_update(current_version, check_url)
         try:
             on_result(*result)

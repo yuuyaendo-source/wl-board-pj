@@ -99,7 +99,7 @@ import startup
 from version import __version__
 from update_checker import check_for_update, check_and_notify, download_and_install
 
-from app_log import setup_app_log, get_recent_log_lines
+from app_log import setup_app_log, get_recent_log_lines, log_info
 
 # ログ初期化（直近50行表示・更新チェックの GET 記録用）
 setup_app_log()
@@ -401,9 +401,11 @@ def _on_update_check_result(has_update: bool, latest_version: str, download_url:
 
 def _check_update_clicked(*args):
     """トレイメニュー「更新を確認」."""
+    log_info("更新メニュー クリック")
     _config = load_config()
     url = (_config.get("update_check_url") or "").strip()
     if not url:
+        log_info("更新チェック: update_check_url が未設定のためスキップ")
         notifications.show_toast(
             "Wonder Linko",
             "更新チェックの URL が設定されていません（config.json の update_check_url）",
@@ -412,6 +414,7 @@ def _check_update_clicked(*args):
         )
         return
 
+    log_info(f"更新チェック開始: 手動 url={url}")
     logging.getLogger("WonderLinko").info("更新チェック開始: 手動（トレイメニュー）")
 
     def on_result(has_update, latest_version, download_url):
