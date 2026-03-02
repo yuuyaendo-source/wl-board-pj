@@ -51,6 +51,7 @@ if getattr(sys, "frozen", False):
         sys.path.insert(0, _lib_dir)
     _diagnostic_frozen_env()
 
+import logging
 import threading
 import warnings
 import webbrowser
@@ -98,8 +99,32 @@ import startup
 from version import __version__
 from update_checker import check_for_update, check_and_notify, download_and_install
 
+from app_log import setup_app_log, get_recent_log_lines
 
-# メニューから参照するためグローバルに設定を保持
+# ログ初期化（直近50行表示・更新チェックの GET 記録用）
+setup_app_log()
+
+
+def _show_recent_log(*args):
+    """トレイメニュー「最新ログを表示」: 直近50行のログをウィンドウで表示する。"""
+    def show():
+        import tkinter as tk
+        parent = _miniport_window
+        win = tk.Toplevel(parent) if parent else tk.Tk()
+        win.title("Wonder Linko - 最新ログ（直近50行）")
+        win.geometry("720x420")
+        text = tk.Text(win, wrap=tk.WORD, font=("Consolas", 9), state=tk.NORMAL)
+        text.pack(expand=True, fill=tk.BOTH, padx=4, pady=4)
+        lines = get_recent_log_lines()
+        content = "\n".join(lines) if lines else "(ログがまだありません。更新チェックや操作を行うとここに表示されます。)"
+        text.insert("1.0", content)
+        text.see(tk.END)
+        text.config(state=tk.DISABLED)
+        win.focus_force()
+
+    _schedule_on_main(show)
+
+
 _config = {}
 _icon = None
 _miniport_window = None
@@ -387,6 +412,8 @@ def _check_update_clicked(*args):
         )
         return
 
+    logging.getLogger("WonderLinko").info("更新チェック開始: 手動（トレイメニュー）")
+
     def on_result(has_update, latest_version, download_url):
         _schedule_on_main(lambda: _on_update_check_result(has_update, latest_version, download_url))
 
@@ -507,6 +534,7 @@ def build_menu(icon):
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
         pystray.MenuItem("更新を確認", _check_update_clicked),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("最新ログを表示", _show_recent_log),
         pystray.MenuItem("終了", quit_app),
     )
 
@@ -659,6 +687,7 @@ def main():
     _cfg = load_config()
     _update_url = (_cfg.get("update_check_url") or "").strip()
     if _update_url:
+        logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")
 
         def _on_startup_update_result(has_update, latest_version, _download_url):
             if has_update:

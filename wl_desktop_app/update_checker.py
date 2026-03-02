@@ -5,6 +5,7 @@ JSON 形式: {"version": "1.0.1", "url": "https://.../WonderLinko.msi"}
 
 MSI は「ファイル使用中」を避けるため、msiexec でインストーラーを起動したら自プロセスを即終了する。
 """
+import logging
 import os
 import re
 import sys
@@ -39,22 +40,31 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
     更新チェック用 URL に GET し、新しいバージョンがあればその情報を返す。
     戻り値: (has_update: bool, latest_version: str, download_url: str)
     """
+    log = logging.getLogger("WonderLinko")
     if not check_url or not (check_url := check_url.strip()):
+        log.info("更新チェック: URL が空のためスキップ")
         return False, "", ""
     if not requests:
+        log.warning("更新チェック: requests が利用できないためスキップ")
         return False, "", ""
     try:
+        log.info("更新チェック GET: %s", check_url)
         r = requests.get(check_url, timeout=timeout)
+        log.info("更新チェック 応答: status=%s", r.status_code)
         r.raise_for_status()
         data = r.json()
         latest = (data.get("version") or "").strip()
         url = (data.get("url") or "").strip()
         if not latest or not url:
+            log.info("更新チェック: version または url が空のためスキップ")
             return False, "", ""
         if is_newer(latest, current_version):
+            log.info("更新あり: 現在=%s 最新=%s url=%s", current_version, latest, url)
             return True, latest, url
+        log.info("更新なし: 現在=%s 最新=%s", current_version, latest)
         return False, latest, ""
-    except Exception:
+    except Exception as e:
+        log.exception("更新チェック エラー: %s", e)
         return False, "", ""
 
 
