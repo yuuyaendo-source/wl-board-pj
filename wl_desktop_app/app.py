@@ -339,7 +339,11 @@ def _on_update_check_result(has_update: bool, latest_version: str, download_url:
     if not has_update:
         notifications.show_toast("Wonder Linko", f"最新版です（v{__version__}）", duration_sec=2, force_show=True)
         return
-    msg = f"新しいバージョン {latest_version} が利用可能です。\n今すぐダウンロードしてインストールしますか？"
+    msg = (
+        f"新しいバージョン {latest_version} が利用可能です。\n"
+        "更新を開始すると、アプリは自動的に終了し、インストール画面が表示されます。\n\n"
+        "今すぐ更新しますか？"
+    )
     try:
         import ctypes
         ret = ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 更新", 0x04)  # MB_YESNO
@@ -347,19 +351,27 @@ def _on_update_check_result(has_update: bool, latest_version: str, download_url:
             return
     except Exception:
         return
-    ok, err = download_and_install(download_url)
-    if ok:
-        notifications.show_toast(
-            "Wonder Linko",
-            "インストーラーを起動しました。表示される手順に従ってインストールし、完了後にアプリを再起動してください。",
-            duration_sec=6,
-            force_show=True,
-        )
+
+    notifications.show_toast(
+        "Wonder Linko",
+        "更新を開始します。完了後、自動的に起動しない場合は手動で起動してください。",
+        duration_sec=5,
+        force_show=True,
+    )
+
+    def _do_install():
+        ok, err = download_and_install(download_url)
+        if not ok:
+            try:
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(None, "更新のインストールに失敗しました。\n\n" + err, "Wonder Linko", 0x10)
+            except Exception:
+                pass
+
+    if _miniport_window is not None:
+        _miniport_window.after(1000, _do_install)
     else:
-        try:
-            ctypes.windll.user32.MessageBoxW(None, "更新のインストールに失敗しました。\n\n" + err, "Wonder Linko", 0x10)
-        except Exception:
-            pass
+        _do_install()
 
 
 def _check_update_clicked(*args):

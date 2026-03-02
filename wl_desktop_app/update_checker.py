@@ -2,12 +2,15 @@
 """
 自動更新: 更新チェック用 URL から JSON を取得し、バージョン比較・MSI ダウンロード・インストールを実行する。
 JSON 形式: {"version": "1.0.1", "url": "https://.../WonderLinko.msi"}
+
+MSI は「ファイル使用中」を避けるため、msiexec でインストーラーを起動したら自プロセスを即終了する。
 """
 import os
 import re
 import sys
 import tempfile
 import threading
+import subprocess
 
 try:
     import requests
@@ -57,8 +60,8 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
 
 def download_and_install(download_url: str, timeout: int = 120):
     """
-    MSI をダウンロードし、インストーラーを起動する。
-    戻り値: (success: bool, message: str)
+    MSI をダウンロードし、msiexec でインストールを開始して、自プロセスを終了する。
+    成功時は sys.exit(0) で即終了するため戻り値は返らない。失敗時のみ (False, message) を返す。
     """
     if not download_url or not (download_url := download_url.strip()):
         return False, "URL が空です"
@@ -66,24 +69,32 @@ def download_and_install(download_url: str, timeout: int = 120):
         return False, "requests が利用できません"
     if sys.platform != "win32":
         return False, "Windows のみ対応しています"
+
     try:
         r = requests.get(download_url, timeout=timeout, stream=True)
         r.raise_for_status()
+
         fd, path = tempfile.mkstemp(suffix=".msi")
         try:
-            with os.fdopen(fd, "wb") as f:
+            os.close(fd)
+            with open(path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=65536):
                     if chunk:
                         f.write(chunk)
-            # インストーラーを起動（既存のアプリはユーザーが終了するか、MSI が促す）
-            os.startfile(path)
-            return True, ""
         except Exception:
             try:
                 os.unlink(path)
             except Exception:
                 pass
             raise
+
+        # msiexec: /i インストール, /passive 進行状況のみで自動進行, /norestart 再起動しない
+        cmd = ["msiexec.exe", "/i", path, "/passive", "/norestart"]
+        subprocess.Popen(cmd)
+
+        # ファイルロックを解放するため、自プロセスを即終了する
+        sys.exit(0)
+
     except requests.exceptions.RequestException as e:
         return False, f"ダウンロードに失敗しました: {str(e)[:80]}"
     except Exception as e:
