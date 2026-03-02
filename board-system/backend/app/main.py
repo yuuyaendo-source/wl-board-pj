@@ -5,9 +5,11 @@ Board System (Wonder Linko) - FastAPI エントリポイント。
 """
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db import init_db
@@ -15,6 +17,9 @@ import app.models  # noqa: F401 — モデルを Base に登録してから crea
 from app.routers import auth_google, board_placements, boards, daily_reset, personal, sticky_notes, users
 
 logger = logging.getLogger(__name__)
+
+# デスクトップアプリ自動更新用リリース置き場（backend/desktop_app_releases）
+_DESKTOP_APP_RELEASES_DIR = Path(__file__).resolve().parent.parent / "desktop_app_releases"
 
 
 @asynccontextmanager
@@ -53,6 +58,10 @@ app.include_router(boards.router)
 app.include_router(daily_reset.router)
 app.include_router(personal.router)
 app.include_router(auth_google.router)
+
+# デスクトップアプリ自動更新: /desktop-app/latest.json と /desktop-app/WonderLinko.msi を配信
+if _DESKTOP_APP_RELEASES_DIR.is_dir():
+    app.mount("/desktop-app", StaticFiles(directory=str(_DESKTOP_APP_RELEASES_DIR)), name="desktop_app_releases")
 
 
 @app.get("/health")

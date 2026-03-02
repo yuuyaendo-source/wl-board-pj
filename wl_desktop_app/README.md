@@ -104,6 +104,13 @@ cd 02_3_WL_Desktop_app
 
 配布用 MSI とこの JSON を同一オリジンまたは CORS 許可された場所に置き、本番の `config.json` に `update_check_url` を設定してビルドすると、ユーザーはトレイからワンクリックで更新できる。
 
+**Board System 内で配布する場合**（推奨）: 同じリポジトリの `board-system/backend/desktop_app_releases/` に MSI と `latest.json` を配置すると、Board System の API から配信される。このときの URL は次のとおり。
+
+- 更新チェック用: `https://<Board System のドメイン>/api/bs/desktop-app/latest.json`
+- 例（本番）: `https://wl-ai-board.internal.wonder-link.co.jp/api/bs/desktop-app/latest.json`
+
+クライアントの `config.json` には上記の `latest.json` の URL を `update_check_url` に設定する。詳細は `board-system/backend/desktop_app_releases/README.md` を参照。
+
 ## 配布方法
 
 - **MSI（推奨）** … `.\build_msi.ps1` で `dist\WonderLinko.msi` を生成し配布。メンバーはインストーラーでインストール（Python 不要）。**exe が許可されない環境ではこちらを使用すること。**

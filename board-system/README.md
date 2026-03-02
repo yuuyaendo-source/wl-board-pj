@@ -78,6 +78,7 @@ docker exec -it linko-backend alembic upgrade head   # 初回のみ
 |--------------|--------|------|
 | [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker、マイグレーション |
 | [frontend/](frontend/README.md) | あり | Next.js、ボード別パス、環境変数 |
+| [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップアプリ自動更新用。MSI と latest.json を置くと `/api/bs/desktop-app/` から配信 |
 
 ## 関連ドキュメント
 

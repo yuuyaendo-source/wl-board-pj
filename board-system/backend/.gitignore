@@ -8,3 +8,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# デスクトップアプリ MSI はデプロイ時にコピーするためリポジトリに含めない
+desktop_app_releases/*.msi
