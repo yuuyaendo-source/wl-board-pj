@@ -52,6 +52,9 @@ if getattr(sys, "frozen", False):
     _diagnostic_frozen_env()
 
 import logging
+import os
+import subprocess
+import sys
 import threading
 import warnings
 import webbrowser
@@ -97,7 +100,7 @@ import notifications
 from postit_poll import start_postit_poll, fetch_summary_with_error
 import startup
 from version import __version__
-from update_checker import check_for_update, check_and_notify, download_and_install
+from update_checker import check_for_update, check_and_notify, download_and_install, wait_for_network
 
 from app_log import setup_app_log, get_recent_log_lines, log_info
 
@@ -362,7 +365,7 @@ def _schedule_on_main(fn):
 def _on_update_check_result(has_update: bool, latest_version: str, download_url: str):
     """更新チェック結果を処理。メインスレッドから呼ばれる想定。"""
     if not has_update:
-        notifications.show_toast("Wonder Linko", f"最新版です（v{__version__}）", duration_sec=2, force_show=True)
+        notifications.show_toast("Wonder Linko", "現在最新バージョンです。", duration_sec=2, force_show=True)
         return
     msg = (
         f"新しいバージョン {latest_version} が利用可能です。\n"
@@ -379,7 +382,7 @@ def _on_update_check_result(has_update: bool, latest_version: str, download_url:
 
     notifications.show_toast(
         "Wonder Linko",
-        "更新を開始します。完了後、自動的に起動しない場合は手動で起動してください。",
+        "更新を開始します。完了後、アプリは自動的に起動します。",
         duration_sec=5,
         force_show=True,
     )
@@ -400,7 +403,7 @@ def _on_update_check_result(has_update: bool, latest_version: str, download_url:
 
 
 def _check_update_clicked(*args):
-    """トレイメニュー「更新を確認」."""
+    """トレイメニュー「アプリをアップデート」."""
     log_info("更新メニュー クリック")
     _config = load_config()
     url = (_config.get("update_check_url") or "").strip()
@@ -535,7 +538,7 @@ def build_menu(icon):
         pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
         pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
-        pystray.MenuItem("更新を確認", _check_update_clicked),
+        pystray.MenuItem("アプリをアップデート", _check_update_clicked),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("最新ログを表示", _show_recent_log),
         pystray.MenuItem("終了", quit_app),
@@ -620,8 +623,73 @@ def _change_display_name(*args):
         notifications.show_toast("Wonder Linko", "表示名を「" + name + "」に変更しました。", duration_sec=2)
 
 
+def _wait_for_process_exit(pid: int):
+    """指定 PID のプロセスが終了するまで待つ（Windows: OpenProcess + WaitForSingleObject）。"""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32  # type: ignore
+            SYNCHRONIZE = 0x00100000
+            INFINITE = 0xFFFFFFFF
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if handle:
+                try:
+                    kernel32.WaitForSingleObject(handle, INFINITE)
+                finally:
+                    kernel32.CloseHandle(handle)
+        except Exception:
+            import time
+            while True:
+                try:
+                    os.kill(pid, 0)
+                except (OSError, ProcessLookupError):
+                    break
+                time.sleep(0.5)
+    else:
+        import time
+        while True:
+            try:
+                os.kill(pid, 0)
+            except (OSError, ProcessLookupError):
+                break
+            time.sleep(0.5)
+
+
+def _launch_self():
+    """自分自身（exe または python app.py）を新プロセスで起動する。"""
+    exe = sys.executable
+    if getattr(sys, "frozen", False):
+        flags = 0
+        if sys.platform == "win32":
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        subprocess.Popen([exe], creationflags=flags)
+    else:
+        args = [a for a in sys.argv[1:] if not a.startswith("--after-update-wait")]
+        subprocess.Popen([exe, sys.argv[0]] + args)
+
+
 def main():
     global _config, _miniport_window, _miniport_visible
+
+    # アップデート完了後の自動再起動用: --after-update-wait=PID のときはインストーラー終了を待ってから再起動して終了
+    for i, arg in enumerate(sys.argv):
+        if arg == "--after-update-wait" and i + 1 < len(sys.argv):
+            try:
+                pid = int(sys.argv[i + 1])
+                _wait_for_process_exit(pid)
+                _launch_self()
+            except (ValueError, OSError):
+                pass
+            return
+        if arg.startswith("--after-update-wait="):
+            try:
+                pid = int(arg.split("=", 1)[1])
+                _wait_for_process_exit(pid)
+                _launch_self()
+            except (ValueError, OSError):
+                pass
+            return
+
     _config = load_config()
 
     # 表示名未設定時は起動時に名前入力を促す
@@ -687,20 +755,37 @@ def main():
     tray_thread.start()
 
     # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
+    # ネットワーク確立（Ping）を待ってからチェックする（update_network_check_host が設定時）
     _cfg = load_config()
     _update_url = (_cfg.get("update_check_url") or "").strip()
     if _update_url:
-        logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")
+        _network_host = (_cfg.get("update_network_check_host") or "").strip()
+        _interval = int(_cfg.get("update_network_check_interval_sec") or 5)
+        _max_wait = int(_cfg.get("update_network_check_max_wait_sec") or 180)
 
-        def _on_startup_update_result(has_update, latest_version, _download_url):
-            if has_update:
-                _schedule_on_main(lambda: notifications.show_toast(
-                    "Wonder Linko",
-                    f"新しいバージョン {latest_version} が利用可能です。トレイの「更新を確認」からインストールできます。",
-                    duration_sec=6,
-                ))
+        def _startup_update_check():
+            if _network_host:
+                log_info("更新チェック: ネットワーク確立を待機中")
+                if not wait_for_network(_network_host, _interval, _max_wait):
+                    return
+            log_info("更新チェック開始: 起動時")
+            logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")
 
-        check_and_notify(__version__, _update_url, _on_startup_update_result)
+            def _on_startup_update_result(has_update, latest_version, _download_url):
+                if has_update:
+                    _schedule_on_main(lambda: notifications.show_toast(
+                        "Wonder Linko",
+                        f"新しいバージョン {latest_version} が利用可能です。トレイの「アプリをアップデート」からインストールできます。",
+                        duration_sec=6,
+                    ))
+
+            check_and_notify(__version__, _update_url, _on_startup_update_result)
+    else:
+        _startup_update_check = None
+
+    if _update_url and _startup_update_check is not None:
+        _update_thread = threading.Thread(target=_startup_update_check, daemon=True)
+        _update_thread.start()
 
     # ミニポートのメインループ（メインスレッド）。終了時はトレイの「終了」で quit が呼ばれる
     if _miniport_window is not None:

@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import subprocess
+import time
 
 try:
     import requests
@@ -26,6 +27,30 @@ def _log(msg: str):
         log_info(msg)
     except Exception:
         pass
+
+
+def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180) -> bool:
+    """
+    Ping が通るまで待つ。ネットワーク確立後の更新チェック用。
+    戻り値: 成功で True、タイムアウトで False。
+    """
+    if not host or not (host := host.strip()):
+        return True
+    deadline = time.monotonic() + max_wait_sec
+    while time.monotonic() < deadline:
+        try:
+            if sys.platform == "win32":
+                r = subprocess.run(["ping", "-n", "1", host], timeout=5, capture_output=True)
+            else:
+                r = subprocess.run(["ping", "-c", "1", "-W", "3", host], timeout=5, capture_output=True)
+            if r.returncode == 0:
+                _log(f"ネットワーク確立: {host} へ Ping 成功")
+                return True
+        except Exception:
+            pass
+        time.sleep(interval_sec)
+    _log(f"ネットワーク待機タイムアウト: {host} へ {max_wait_sec}秒以内に Ping 不通")
+    return False
 
 
 def _version_tuple(version_str: str) -> tuple:
@@ -110,7 +135,20 @@ def download_and_install(download_url: str, timeout: int = 120):
 
         # msiexec: /i インストール, /passive 進行状況のみで自動進行, /norestart 再起動しない
         cmd = ["msiexec.exe", "/i", path, "/passive", "/norestart"]
-        subprocess.Popen(cmd)
+        p = subprocess.Popen(cmd)
+
+        # インストーラー終了後にアプリを自動再起動するため、同じ exe を --after-update-wait=PID で起動（親が終了しても子は残る）
+        try:
+            exe = sys.executable
+            launcher_cmd = [exe, f"--after-update-wait={p.pid}"]
+            if sys.platform == "win32":
+                CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+                subprocess.Popen(launcher_cmd, creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS)
+            else:
+                subprocess.Popen(launcher_cmd)
+        except Exception:
+            pass
 
         # ファイルロックを解放するため、自プロセスを即終了する
         sys.exit(0)

@@ -42,6 +42,9 @@ def _get_defaults():
         "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.co.jp/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "",  # 更新チェック用 JSON の URL。空ならチェックしない。例: https://example.com/wonderlinko/latest.json
+        "update_network_check_host": "172.16.1.4",  # 起動時更新チェック前に Ping でネットワーク確立を待つ先。空なら待たない
+        "update_network_check_interval_sec": 5,
+        "update_network_check_max_wait_sec": 180,
         "board_system_url": "",  # Board System のベース URL。設定時はメールログインでパーソナルボードを開ける
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
     }
@@ -86,6 +89,9 @@ def save_config(cfg):
     out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.co.jp/board/wl"))
     out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard"))
     out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
+    out["update_network_check_host"] = cfg.get("update_network_check_host", defaults.get("update_network_check_host", ""))
+    out["update_network_check_interval_sec"] = cfg.get("update_network_check_interval_sec", defaults.get("update_network_check_interval_sec", 5))
+    out["update_network_check_max_wait_sec"] = cfg.get("update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180))
     out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
