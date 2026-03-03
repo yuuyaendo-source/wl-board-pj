@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from app.config import settings
 from app.db import get_db
@@ -311,22 +310,16 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
     result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
     row = result.scalar_one_or_none()
     if row is None:
-        stmt = sqlite_upsert(PersonalSummaryCache).values(
+        row = PersonalSummaryCache(
             person_id=person_id,
             events=events_json,
             today=today_json,
         )
-        await db.execute(stmt)
+        db.add(row)
     else:
-        stmt = sqlite_upsert(PersonalSummaryCache).values(
-            person_id=person_id,
-            events=events_json,
-            today=today_json,
-        ).on_conflict_do_update(
-            index_elements=["person_id"],
-            set_={"events": events_json, "today": today_json, "updated_at": datetime.utcnow()},
-        )
-        await db.execute(stmt)
+        row.events = events_json
+        row.today = today_json
+        row.updated_at = datetime.utcnow()
     await db.flush()
     return len(events)
 
