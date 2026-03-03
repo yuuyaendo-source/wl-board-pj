@@ -384,7 +384,6 @@ function PersonalCalendarPanel({
           )}
           {hasToday && (
             <div>
-              <h3 className="mb-1 text-xs font-medium text-zinc-500">Today</h3>
               <ul className="flex flex-col gap-1 text-sm">
                 {today.map((t, i) => (
                   <li key={i} className="flex flex-col gap-0.5">

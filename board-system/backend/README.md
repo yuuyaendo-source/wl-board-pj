@@ -76,9 +76,11 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
 | | GET | `/boards/morning` | Morning ボード View（MORNING 配置一覧） |
 | daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧（Logic 3） |
-| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（cron 10:15 用・テスト用） |
-| auth (Google) | POST | `/api/personal/{user_id}/calendar/refresh` | 指定ユーザーの今日の予定を取得し events・Today 短縮文を更新 |
-| auth (Google) | POST | `/api/personal/daily_calendar_refresh` | 全 Google 連携ユーザーの今日の予定・Today を更新（**毎日 8:00 の cron 用**） |
+| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（**毎朝 10:15 の cron 用**・テスト用） |
+| | POST | `/daily_reset/reset_meeting` | Meeting ボード（MORNING）をクリア（**毎朝 8:00 の cron 用**・手動リセットボタン用） |
+| | POST | `/daily_reset/run_8am` | **毎朝 8:00 用**: Meeting リセット＋全ユーザーカレンダー取得・Today 付箋更新（1本で実行） |
+| auth (Google) | POST | `/api/personal/{user_id}/calendar/refresh` | 指定ユーザーの今日の予定を取得し events・Today 短縮文・P付箋を更新 |
+| auth (Google) | POST | `/api/personal/daily_calendar_refresh` | 全 Google 連携ユーザーの今日の予定・Today 付箋を更新（run_8am のカレンダー部分のみ） |
 
 - **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
 - **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
@@ -106,9 +108,10 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 
 5. **Google カレンダー連携（今日の予定・Today）**  
    - 取得範囲: **その日 0:00〜23:59**（`CALENDAR_TIMEZONE`、既定 Asia/Tokyo）。  
-   - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存。  
-   - 毎日 8:00: `POST /api/personal/daily_calendar_refresh` を cron で呼ぶと、Google 連携済みユーザー全員の今日の予定を取得し、Today をクリア＆短縮文で更新する。  
-   - 連携直後: OAuth コールバック後に自動で 1 回、今日の予定取得＋Today 更新を行う。
+   - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存し、**要約を P 付箋として Personal の Today レーンに配置**。  
+   - **毎日 8:00**: `POST /daily_reset/run_8am` を cron で呼ぶと、(1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に表示＆要約を P 付箋で Today レーンに配置。  
+   - **毎日 10:15**: `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー（Meeting ボードに反映）。  
+   - 連携直後: OAuth コールバック後に自動で 1 回、今日の予定取得＋Today 付箋更新を行う。
 
 - 環境変数: `OLLAMA_URL`（必須・例: http://172.16.1.251:11434/v1）、`OLLAMA_MODEL`（任意・既定: llama3.2）
 

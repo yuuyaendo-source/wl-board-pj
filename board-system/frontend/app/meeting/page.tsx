@@ -45,6 +45,18 @@ export default function MeetingBoardPage() {
     }
   }, [fetchMorning]);
 
+  const handleResetMeeting = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await api.dailyReset.resetMeeting();
+      await fetchMorning();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "リセットに失敗しました");
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchMorning]);
+
   const byOwner = users.reduce(
     (acc, u) => {
       acc[u.id] = morningPlacements.filter((p) => p.owner_id === u.id);
@@ -67,6 +79,14 @@ export default function MeetingBoardPage() {
           className="rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
         >
           {syncing ? "反映中…" : "Todayを反映（ミーティング前に実施してください）"}
+        </button>
+        <button
+          type="button"
+          onClick={handleResetMeeting}
+          disabled={syncing}
+          className="rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          リセット
         </button>
       </div>
       <div className="flex flex-col gap-6">

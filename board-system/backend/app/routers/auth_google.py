@@ -20,7 +20,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
-from app.models import OAuthPkceState, PersonalSummaryCache, User, UserGoogleToken
+from app.models import (
+    BoardPlacement,
+    BoardType,
+    Lane,
+    OAuthPkceState,
+    PersonalSummaryCache,
+    StickyNote,
+    User,
+    UserGoogleToken,
+)
+from app.models.sticky_note import NoteStatus
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -320,6 +330,36 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
         row.events = events_json
         row.today = today_json
         row.updated_at = datetime.utcnow()
+    await db.flush()
+
+    # 要約を P 付箋として Personal の Today レーンに配置（既存の Today は削除してから追加）
+    await db.execute(
+        delete(BoardPlacement).where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.lane == Lane.TODAY,
+        )
+    )
+    await db.flush()
+    for sort_order, item in enumerate(today_items):
+        label = (item.get("label") or item.get("summary") or "").strip() or "(無題)"
+        note = StickyNote(
+            content=label,
+            author_id=None,
+            status=NoteStatus.ACTIVE,
+            postit_board_id=None,
+            postit_note_id=None,
+        )
+        db.add(note)
+        await db.flush()
+        placement = BoardPlacement(
+            note_id=note.id,
+            board_type=BoardType.PERSONAL,
+            owner_id=user_id,
+            lane=Lane.TODAY,
+            sort_order=sort_order,
+        )
+        db.add(placement)
     await db.flush()
     return len(events)
 

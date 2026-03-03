@@ -84,3 +84,48 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
 
     await db.flush()
     return {"ok": True, "created": created}
+
+
+@router.post("/reset_meeting")
+async def reset_meeting(db: AsyncSession = Depends(get_db)):
+    """
+    Meeting ボード（MORNING）の内容を全削除する。
+    毎日 8:00 の cron 用および手動リセットボタン用。
+    """
+    result = await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/run_8am")
+async def run_8am(db: AsyncSession = Depends(get_db)):
+    """
+    毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、
+    今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
+    cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
+    """
+    from app.config import settings
+    from app.models import UserGoogleToken
+    from app.routers.auth_google import _refresh_user_calendar_and_today
+    import logging
+    log = logging.getLogger(__name__)
+
+    await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.flush()
+
+    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+        log.info("run_8am: Google Calendar 未設定のためカレンダー取得をスキップ")
+        return {"ok": True, "refreshed": [], "failed": []}
+
+    result = await db.execute(select(UserGoogleToken.user_id).distinct())
+    user_ids = [r[0] for r in result.all()]
+    refreshed = []
+    failed = []
+    for uid in user_ids:
+        try:
+            await _refresh_user_calendar_and_today(uid, db)
+            refreshed.append(uid)
+        except Exception as e:
+            log.warning("run_8am user_id=%s: %s", uid, e)
+            failed.append(uid)
+    return {"ok": True, "refreshed": refreshed, "failed": failed}
