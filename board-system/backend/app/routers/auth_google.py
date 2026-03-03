@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -332,16 +332,18 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
         row.updated_at = datetime.utcnow()
     await db.flush()
 
-    # 要約を P 付箋として Personal の Today レーンに配置（既存の Today は削除してから追加）
-    await db.execute(
-        delete(BoardPlacement).where(
-            BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.owner_id == user_id,
-            BoardPlacement.lane == Lane.TODAY,
+    # 要約を P 付箋として Personal の Today レーンに追加（既存の付箋はそのまま）
+    next_sort = 0
+    if today_items:
+        r = await db.execute(
+            select(func.coalesce(func.max(BoardPlacement.sort_order), -1)).where(
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.owner_id == user_id,
+                BoardPlacement.lane == Lane.TODAY,
+            )
         )
-    )
-    await db.flush()
-    for sort_order, item in enumerate(today_items):
+        next_sort = (r.scalar() or 0) + 1
+    for i, item in enumerate(today_items):
         label = (item.get("label") or item.get("summary") or "").strip() or "(無題)"
         note = StickyNote(
             content=label,
@@ -357,7 +359,7 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
             board_type=BoardType.PERSONAL,
             owner_id=user_id,
             lane=Lane.TODAY,
-            sort_order=sort_order,
+            sort_order=next_sort + i,
         )
         db.add(placement)
     await db.flush()
