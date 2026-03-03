@@ -204,6 +204,11 @@ async def auth_google_callback(
     # フロントのパーソナルボードへ。本番は basePath /boards のため oauth_success_redirect_base で /boards を指定すること
     base = (settings.oauth_success_redirect_base or "").strip().rstrip("/")
     path = f"{base}/personal/{user_id}".lstrip("/")
+    # 連携直後に今日の予定を取得して Today を更新
+    try:
+        await _refresh_user_calendar_and_today(user_id, db)
+    except Exception as e:
+        logger.warning("OAuth コールバック後のカレンダー取得に失敗: %s", e)
     return RedirectResponse(url=f"/{path}", status_code=302)
 
 
@@ -215,9 +220,22 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         return []
 
     def _fetch():
+        from zoneinfo import ZoneInfo
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         from google.auth.transport.requests import Request
+
+        tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = timezone.utc
+        # その日 0:00〜23:59（ローカル）で取得
+        now_local = datetime.now(tz)
+        start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)  # 翌日 0:00（その日 23:59:59.999 まで含む）
+        time_min = start.isoformat()
+        time_max = end.isoformat()
 
         creds = Credentials(
             token=row.access_token,
@@ -232,13 +250,10 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             creds.refresh(Request())
             refreshed = True
         service = build("calendar", "v3", credentials=creds)
-        now = datetime.now(timezone.utc)
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1)
         events_result = service.events().list(
             calendarId="primary",
-            timeMin=start.isoformat(),
-            timeMax=end.isoformat(),
+            timeMin=time_min,
+            timeMax=time_max,
             singleEvents=True,
             orderBy="startTime",
         ).execute()
@@ -276,40 +291,79 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         return []
 
 
-@router.post("/api/personal/{user_id}/calendar/refresh")
-async def refresh_personal_calendar(
-    user_id: int,
-    db: AsyncSession = Depends(get_db),
-):
-    """指定ユーザーの Google カレンダーから今日の予定を取得し、PersonalSummaryCache.events に保存。"""
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
-        raise HTTPException(status_code=503, detail="Google Calendar is not configured")
-    result = await db.execute(select(User).where(User.id == user_id))
-    if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="User not found")
+async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> int:
+    """
+    指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、
+    PersonalSummaryCache の events と today（LLM 短縮文）を上書き保存する。
+    戻り値: 取得した予定件数。トークンなし・エラー時は 0。
+    """
     events = await _fetch_today_events_for_user(user_id, db)
-    if not events:
-        return {"ok": True, "events_count": 0}
     person_id = str(user_id)
     events_json = json.dumps(events)
+    today_items = []
+    if events:
+        try:
+            from app.ai import run_today_short_summaries
+            today_items = await asyncio.to_thread(run_today_short_summaries, events)
+        except Exception as e:
+            logger.warning("Today 短縮文生成に失敗 user_id=%s: %s", user_id, e)
+    today_json = json.dumps(today_items)
     result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
     row = result.scalar_one_or_none()
     if row is None:
         stmt = sqlite_upsert(PersonalSummaryCache).values(
             person_id=person_id,
             events=events_json,
-            today="[]",
+            today=today_json,
         )
         await db.execute(stmt)
     else:
         stmt = sqlite_upsert(PersonalSummaryCache).values(
             person_id=person_id,
             events=events_json,
-            today=row.today or "[]",
+            today=today_json,
         ).on_conflict_do_update(
             index_elements=["person_id"],
-            set_={"events": events_json, "updated_at": datetime.utcnow()},
+            set_={"events": events_json, "today": today_json, "updated_at": datetime.utcnow()},
         )
         await db.execute(stmt)
     await db.flush()
-    return {"ok": True, "events_count": len(events)}
+    return len(events)
+
+
+@router.post("/api/personal/daily_calendar_refresh")
+async def daily_calendar_refresh(db: AsyncSession = Depends(get_db)):
+    """
+    Google 連携済みユーザー全員について、今日の予定（0:00〜23:59 ローカル）を取得し、
+    PersonalSummaryCache の events と today（LLM 短縮文）をクリア＆更新する。
+    毎日 8:00 に cron 等で呼ぶ想定。
+    """
+    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+        raise HTTPException(status_code=503, detail="Google Calendar is not configured")
+    result = await db.execute(select(UserGoogleToken.user_id).distinct())
+    user_ids = [r[0] for r in result.all()]
+    refreshed = []
+    failed = []
+    for uid in user_ids:
+        try:
+            await _refresh_user_calendar_and_today(uid, db)
+            refreshed.append(uid)
+        except Exception as e:
+            logger.warning("daily_calendar_refresh user_id=%s: %s", uid, e)
+            failed.append(uid)
+    return {"ok": True, "refreshed": refreshed, "failed": failed}
+
+
+@router.post("/api/personal/{user_id}/calendar/refresh")
+async def refresh_personal_calendar(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、events と Today 短縮文を保存。"""
+    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+        raise HTTPException(status_code=503, detail="Google Calendar is not configured")
+    result = await db.execute(select(User).where(User.id == user_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    count = await _refresh_user_calendar_and_today(user_id, db)
+    return {"ok": True, "events_count": count}

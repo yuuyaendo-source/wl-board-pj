@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = None  # 例: https://wl-ai-board.example.com/auth/google/callback
+    # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
+    calendar_timezone: str = "Asia/Tokyo"
 
     # OAuth 成功後のリダイレクト先のプレフィックス。本番で Next basePath が /boards のときは "/boards" を指定
     oauth_success_redirect_base: str = ""
