@@ -21,7 +21,7 @@ const AWARENESS_TRELLO_URL =
 const EVALUATION_WEB_URL = "https://wonder-link.japaneast.cloudapp.azure.com/login";
 
 // 交通費精算（仮）リンク先は未定。URL が決まり次第ここを差し替えてください。
-const TRAVEL_EXPENSE_URL = "#";
+const TRAVEL_EXPENSE_URL = "https://transportation.internal.wonder-link.co.jp/";
 
 const INTERNAL_STUDY_ARCHIVE_URL = "http://wl-internal-study.local/";
 
