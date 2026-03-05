@@ -22,9 +22,11 @@ npm run dev
 | パス | 説明 |
 |------|------|
 | `/main` | Main Board（フリーキャンバス）。付箋をドラッグで配置。1行投稿。AI 仕分け付箋は ✨。 |
-| `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done。引き取り者を短縮名（例: 浅）で表示。 |
-| `/personal` | **Personal Board**。3レーン（Today / タスク / Done）。1行入力で投稿。付箋色：**緑**=タスクボードから取り込んだもの、**青**=パーソナルで投稿したもの、**灰**=Done。ゴミ箱・タスクリリースは横並び。タスクリリースで Personal 配置を削除すると Task ボードに戻る。 |
+| `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done、赤=応援要請。引き取り者を短縮名（例: 浅）で表示。 |
+| `/personal` | **Personal Board**。**4レーン**（応援要請 / Today / タスク / Done）。1行入力で投稿。付箋色：**緑**=タスクボードから取り込んだもの、**青**=パーソナルで投稿したもの、**灰**=Done、**赤**=応援要請。ゴミ箱・タスクリリースは横並び。タスクリリースで Personal 配置を削除すると Task ボードに戻る。Google カレンダー連携（OAuth）で「今日の予定」を表示可能。 |
 | `/meeting` | **Meeting**。参加者ごとに MORNING スナップショット表示。（毎朝 10:15 に反映）と「今の Today を反映（テスト用）」ボタン。 |
+| `/morning` | Morning ボード（`/meeting` と同機能の別ルート）。 |
+| `/task` | `/taskboard` へのリダイレクト（旧 URL 互換）。 |
 
 - 本番では basePath `/boards` のため、実際の URL は `/boards`、`/boards/taskboard`、`/boards/personal/:slug`、`/boards/meeting`。
 
@@ -34,6 +36,7 @@ npm run dev
 |------|------|-----|
 | `NEXT_PUBLIC_API_URL` | バックエンド API の URL | 開発: `http://localhost:8000`、本番: `https://wl-ai-board.internal.wonder-link.co.jp/api/bs` |
 | `NEXT_PUBLIC_LEGACY_BOARD_URL` | 付箋ボード（02_1）の URL（Task の付箋取り込み用） | 本番: `https://wl-ai-board.internal.wonder-link.co.jp` |
+| `NEXT_PUBLIC_BASE_PATH` | basePath の上書き（Docker 等で使用）。未設定時は `NODE_ENV=production` で `/boards` | Docker: `""` または `/boards` |
 
 本番ビルド時は `NEXT_PUBLIC_API_URL` を本番の API ベース URL に設定すること。`next.config.ts` で `NODE_ENV=production` 時に basePath `/boards` が自動付与される。
 
@@ -44,6 +47,7 @@ npm run dev
 - Framer Motion（アニメーション）
 - HTML5 D&D（Task 列・Personal レーン・ゴミ箱・タスクリリース・メンバードロップ）
 - カスタム DnD 型 `application/x-board-task-release`（タスクリリース可否を dragover で判定するため）
+- 主なコンポーネント: `PersonalBoardView`, `NoteCard`, `Nav`, `AddUserMenu`, `OneLineInput`, `ApiErrorBanner`, `LinkifiedText`
 
 ## 引き継ぎ・本番
 

@@ -6,8 +6,16 @@
 
 ```
 board-system/
-├── backend/     # FastAPI + SQLAlchemy (SQLite) + AI Worker
+├── backend/     # FastAPI + SQLAlchemy (SQLite/PostgreSQL) + AI Worker (Ollama)
 ├── frontend/    # Next.js App Router + Tailwind + Framer Motion
+├── deploy/      # デプロイ・ロールバック用シェルスクリプト
+├── nginx/       # Nginx 設定ファイル（本番・ステージング）
+├── docker-compose.yml          # ローカル開発用（PostgreSQL + backend + frontend + 付箋ボード）
+├── docker-compose.prod.yml     # 本番 Blue/Green デプロイ用
+├── docker-compose.db.yml       # DB (PostgreSQL) 単体起動用
+├── docker-compose.staging.yml  # ステージング用
+├── DEPLOY.md    # 本番デプロイ手順の要約
+├── .env.example # 環境変数テンプレート
 └── README.md
 ```
 
@@ -17,7 +25,7 @@ board-system/
 |------|------|------|
 | バックエンド API | 完了 | users / sticky_notes / board_placements、GET /boards/*、AI（triage / matrix / daily_reset） |
 | Task ボード | 完了 | **5列**（アイデア・短期タスク・長期タスク・重要・完了）。付箋色（黄/緑/灰）、引き取り者短縮名表示。付箋ボードから取り込むはメニューバー配置。 |
-| Personal ボード | 完了 | 3レーン（Today / タスク / Done）。付箋色：**緑**=タスク由来、**青**=パーソナル投稿、**灰**=Done。ゴミ箱・タスクリリースは横並び。Personal で Done にすると Task の「完了」に連動。Done→タスクに戻す対応済み。 |
+| Personal ボード | 完了 | **4レーン**（応援要請 / Today / タスク / Done）。付箋色：**緑**=タスク由来、**青**=パーソナル投稿、**灰**=Done、**赤**=応援要請。ゴミ箱・タスクリリースは横並び。Personal で Done にすると Task の「完了」に連動。Done→タスクに戻す対応済み。Google カレンダー連携（OAuth）で「今日の予定」を表示可能。 |
 | Meeting ボード | 完了 | 毎朝 **10:15** に Personal の Today を MORNING にコピー（cron で `POST /daily_reset/sync_to_morning`）。テスト用「今の Today を反映」ボタンあり。 |
 | 本番デプロイ | 完了 | 同一サーバで付箋ボード（3000）＋ API（8000）＋ フロント（3001）、Nginx で `/boards` に配信。 |
 
@@ -52,7 +60,7 @@ Docker で付箋ボード・Board System・PostgreSQL をまとめて起動し�
 
 ```powershell
 cd board-system
-copy .env.example .env   # 任意: GEMINI_API_KEY を設定
+copy .env.example .env   # 任意: OLLAMA_URL 等を設定
 docker compose up -d --build
 docker exec -it linko-backend alembic upgrade head   # 初回のみ
 ```
@@ -76,9 +84,11 @@ docker exec -it linko-backend alembic upgrade head   # 初回のみ
 
 | ディレクトリ | README | 内容 |
 |--------------|--------|------|
-| [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker、マイグレーション |
+| [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker（Ollama）、マイグレーション |
 | [frontend/](frontend/README.md) | あり | Next.js、ボード別パス、環境変数 |
 | [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップアプリ自動更新用。MSI と latest.json を置くと `/api/bs/desktop-app/` から配信 |
+| deploy/ | なし | `deploy.sh`（Blue/Green デプロイ）、`rollback.sh`、`deploy-staging.sh`、`stop-staging.sh` |
+| nginx/ | なし | Nginx 設定ファイル（`nginx.conf`、本番用、ステージング用） |
 
 ## 関連ドキュメント
 
