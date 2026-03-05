@@ -228,6 +228,7 @@ export default function PersonalBoardView({
           today={summary?.today ?? []}
           loading={summaryLoading}
           onRefresh={fetchSummary}
+          onAfterCalendarRefresh={fetchPersonal}
         />
       </div>
     </div>
@@ -335,12 +336,14 @@ function PersonalCalendarPanel({
   today,
   loading,
   onRefresh,
+  onAfterCalendarRefresh,
 }: {
   ownerId: number;
   events: SummaryEvent[];
   today: SummaryTodayItem[];
   loading: boolean;
   onRefresh: () => void;
+  onAfterCalendarRefresh?: () => void;
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const hasEvents = events.length > 0;
@@ -349,13 +352,14 @@ function PersonalCalendarPanel({
     setRefreshing(true);
     try {
       await api.personalCalendarRefresh(ownerId);
-      onRefresh();
+      await onRefresh();
+      if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
     } catch {
       // ignore
     } finally {
       setRefreshing(false);
     }
-  }, [ownerId, onRefresh]);
+  }, [ownerId, onRefresh, onAfterCalendarRefresh]);
 
   return (
     <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-4">
@@ -394,14 +398,7 @@ function PersonalCalendarPanel({
           disabled={refreshing}
           className="text-zinc-500 underline hover:text-zinc-700 disabled:opacity-50"
         >
-          {refreshing ? "取得中..." : "予定を取得"}
-        </button>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="text-zinc-500 underline hover:text-zinc-700"
-        >
-          更新
+          {refreshing ? "更新中..." : "予定を更新"}
         </button>
       </div>
     </div>
