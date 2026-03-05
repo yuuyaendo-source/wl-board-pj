@@ -123,7 +123,7 @@ export default function Nav() {
         rel="noopener noreferrer"
         className="rounded-xl px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100"
       >
-        交通費精算（仮）
+        交通費精算
       </a>
 
       <a
