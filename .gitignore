@@ -42,3 +42,9 @@ build/
 
 #Docs
 old_docs/
+
+# Windows Build artifacts
+/build/
+/dist/
+*.exe
+*.dll
