@@ -103,20 +103,9 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
 | | GET | `/boards/morning` | Morning ボード View（MORNING 配置一覧） |
 | daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧（Logic 3） |
-| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（cron 10:15 用） |
+| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（cron 10:15 用・テスト用） |
 
-### パーソナルサマリ・カレンダー連携 API
-
-| 種別 | メソッド | パス | 説明 |
-|------|----------|------|------|
-| personal | GET | `/api/personal/{person_id}/summary` | パーソナルサマリ取得（events + today）。linko-system 用 |
-| | POST | `/api/personal/{person_id}/today` | Today 項目保存（カレンダーキーワード連携） |
-| | POST | `/api/personal/{person_id}/events` | 今日の予定保存（Google カレンダー取得結果等） |
-| auth | GET | `/auth/google?user_id=` | Google OAuth 開始（PKCE 対応、Google へリダイレクト） |
-| | GET | `/auth/google/callback` | Google OAuth コールバック（トークン保存後 Personal へリダイレクト） |
-| | POST | `/auth/google/refresh-calendar?user_id=` | Google カレンダーから今日の予定を再取得 |
-
-- **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey/red）を付与。
+- **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
 - **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
 - **Personal レーン**: INBOX、TODAY、DONE、HELP_REQUEST（応援要請）の 4 レーン。HELP_REQUEST にすると Task ボードでは付箋が赤色表示になる。
 - **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
@@ -141,7 +130,15 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 4. **Meeting スナップショット**  
    `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
 
+5. **Google カレンダー連携（今日の予定・Today）**  
+   - 取得範囲: **その日 0:00〜23:59**（`CALENDAR_TIMEZONE`、既定 Asia/Tokyo）。  
+   - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存し、**要約を P 付箋として Personal の Today レーンに配置**。  
+   - **毎日 8:00**: `POST /daily_reset/run_8am` を cron で呼ぶと、(1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に表示＆要約を P 付箋で Today レーンに配置。  
+   - **毎日 10:15**: `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー（Meeting ボードに反映）。  
+   - **日次スケジュール（日本時間）**: バックエンドに組み込みの APScheduler が **Asia/Tokyo** で動作。`SCHEDULER_ENABLED=true`（既定）のとき、**毎日 8:00 JST** に `run_8am`、**毎日 10:15 JST** に `sync_to_morning` を自サーバへ POST する。無効にする場合は `SCHEDULER_ENABLED=false`。`SCHEDULER_BASE_URL` で自サーバ URL を指定（既定: http://127.0.0.1:8000）。
+
 - 環境変数: `OLLAMA_URL`（必須・例: http://172.16.1.251:11434/v1）、`OLLAMA_MODEL`（任意・既定: llama3.2）
+- **スケジューラ**: 日次 8:00 / 10:15 JST は **内蔵 APScheduler** で実行されるため、**外部 cron は不要**。Docker やリバースプロキシでアプリの URL が `http://127.0.0.1:8000` でない場合は、`.env` で `SCHEDULER_BASE_URL` をアプリから見た自サーバの URL に設定すること（例: `http://backend:8000`）。
 
 ## 本番（Ubuntu）: 起動とログ
 

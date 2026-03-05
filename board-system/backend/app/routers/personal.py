@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 
 from app.db import get_db
 from app.models.personal_summary import PersonalSummaryCache
@@ -83,16 +82,16 @@ async def post_personal_today(
         raise HTTPException(status_code=400, detail="person_id is required")
     today_json = json.dumps([item.model_dump() for item in body.items])
 
-    # upsert: 存在すれば today のみ更新、無ければ新規挿入（events は []）
-    stmt = sqlite_upsert(PersonalSummaryCache).values(
-        person_id=person_id,
-        events="[]",
-        today=today_json,
-    ).on_conflict_do_update(
-        index_elements=["person_id"],
-        set_={"today": today_json, "updated_at": datetime.utcnow()},
+    result = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
     )
-    await db.execute(stmt)
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = PersonalSummaryCache(person_id=person_id, events="[]", today=today_json)
+        db.add(row)
+    else:
+        row.today = today_json
+        row.updated_at = datetime.utcnow()
     await db.flush()
     return {"ok": True}
 
@@ -116,21 +115,10 @@ async def post_personal_events(
     )
     row = result.scalar_one_or_none()
     if row is None:
-        stmt = sqlite_upsert(PersonalSummaryCache).values(
-            person_id=person_id,
-            events=events_json,
-            today="[]",
-        )
-        await db.execute(stmt)
+        row = PersonalSummaryCache(person_id=person_id, events=events_json, today="[]")
+        db.add(row)
     else:
-        stmt = sqlite_upsert(PersonalSummaryCache).values(
-            person_id=person_id,
-            events=events_json,
-            today=row.today or "[]",
-        ).on_conflict_do_update(
-            index_elements=["person_id"],
-            set_={"events": events_json, "updated_at": datetime.utcnow()},
-        )
-        await db.execute(stmt)
+        row.events = events_json
+        row.updated_at = datetime.utcnow()
     await db.flush()
     return {"ok": True}

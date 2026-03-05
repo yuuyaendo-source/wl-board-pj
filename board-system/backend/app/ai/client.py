@@ -24,14 +24,19 @@ def _get_session() -> requests.Session:
     return _session
 
 
-def generate_json(prompt: str) -> dict | None:
+def generate_json(prompt: str) -> dict | list | None:
     """
-    プロンプトを送り、応答から JSON を1つ抽出して dict で返す。
+    プロンプトを送り、応答から JSON を1つ抽出して dict または list で返す。
     失敗時・OLLAMA_URL 未設定時は None。
+    OLLAMA_URL は OpenAI 互換のベース（例: http://host:11434/v1）。末尾の /v1 が無い場合は自動で付与。
+    404 の場合はモデルが未 pull の可能性あり（ollama pull <model>）。
     """
     if not settings.ollama_url:
         return None
-    url = f"{settings.ollama_url.rstrip('/')}/chat/completions"
+    base = settings.ollama_url.rstrip("/")
+    if not base.endswith("/v1"):
+        base = f"{base}/v1"
+    url = f"{base}/chat/completions"
     payload = {
         "model": settings.ollama_model,
         "messages": [{"role": "user", "content": prompt}],
@@ -55,7 +60,14 @@ def generate_json(prompt: str) -> dict | None:
                 text = m.group(1).strip()
         return json.loads(text)
     except requests.RequestException as e:
-        logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, str(e)[:300])
+        msg = str(e)[:300]
+        if "404" in msg:
+            logger.warning(
+                "[Rinko AI] Ollama API 404 — URL またはモデルを確認してください。OLLAMA_URL は http://host:11434 または http://host:11434/v1、モデルは ollama pull %s で取得してください。",
+                settings.ollama_model,
+            )
+        else:
+            logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, msg)
         return None
     except json.JSONDecodeError as e:
         logger.warning("[Rinko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200])

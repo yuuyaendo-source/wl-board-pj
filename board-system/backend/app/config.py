@@ -46,9 +46,23 @@ class Settings(BaseSettings):
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = None  # 例: https://wl-ai-board.example.com/auth/google/callback
+    # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
+    calendar_timezone: str = "Asia/Tokyo"
 
     # OAuth 成功後のリダイレクト先のプレフィックス。本番で Next basePath が /boards のときは "/boards" を指定
     oauth_success_redirect_base: str = ""
+
+    # 日次スケジュール（日本時間 8:00 run_8am / 10:15 sync_to_morning）。無効にする場合は false
+    scheduler_enabled: bool = True
+    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
+    scheduler_base_url: str = "http://127.0.0.1:8000"
+
+    @field_validator("scheduler_base_url")
+    @classmethod
+    def strip_scheduler_base_url(cls, v: str | None) -> str:
+        if v is None:
+            return "http://127.0.0.1:8000"
+        return (v or "").strip().rstrip("/")
 
     @field_validator("oauth_success_redirect_base")
     @classmethod

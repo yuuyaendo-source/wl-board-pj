@@ -228,6 +228,7 @@ export default function PersonalBoardView({
           today={summary?.today ?? []}
           loading={summaryLoading}
           onRefresh={fetchSummary}
+          onAfterCalendarRefresh={fetchPersonal}
         />
       </div>
     </div>
@@ -335,70 +336,49 @@ function PersonalCalendarPanel({
   today,
   loading,
   onRefresh,
+  onAfterCalendarRefresh,
 }: {
   ownerId: number;
   events: SummaryEvent[];
   today: SummaryTodayItem[];
   loading: boolean;
   onRefresh: () => void;
+  onAfterCalendarRefresh?: () => void;
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const hasEvents = events.length > 0;
-  const hasToday = today.length > 0;
 
   const handleRefreshFromGoogle = useCallback(async () => {
     setRefreshing(true);
     try {
       await api.personalCalendarRefresh(ownerId);
-      onRefresh();
+      await onRefresh();
+      if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
     } catch {
       // ignore
     } finally {
       setRefreshing(false);
     }
-  }, [ownerId, onRefresh]);
+  }, [ownerId, onRefresh, onAfterCalendarRefresh]);
 
   return (
     <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-4">
       <h2 className="mb-3 font-semibold text-zinc-700">今日の予定（カレンダー連携）</h2>
       {loading ? (
         <p className="text-sm text-zinc-500">読み込み中...</p>
-      ) : !hasEvents && !hasToday ? (
+      ) : !hasEvents ? (
         <p className="text-sm text-zinc-500">
           カレンダー連携するとここに今日の予定が表示されます。
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
-          {hasEvents && (
-            <div>
-              <h3 className="mb-1 text-xs font-medium text-zinc-500">予定</h3>
-              <ul className="flex flex-col gap-1 text-sm">
-                {events.map((ev, i) => (
-                  <li key={i} className="flex flex-col gap-0.5">
-                    <span className="text-zinc-500">{formatSummaryTime(ev.start, ev.end)}</span>
-                    <span>{ev.summary || "(無題)"}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {hasToday && (
-            <div>
-              <h3 className="mb-1 text-xs font-medium text-zinc-500">Today</h3>
-              <ul className="flex flex-col gap-1 text-sm">
-                {today.map((t, i) => (
-                  <li key={i} className="flex flex-col gap-0.5">
-                    {t.label && <span className="text-[var(--primary)] font-medium">{t.label}</span>}
-                    <span>{t.summary || "(無題)"}</span>
-                    {t.start && (
-                      <span className="text-zinc-500">{formatSummaryTime(t.start, t.end)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+        <ul className="flex flex-col gap-1 text-sm">
+          {events.map((ev, i) => (
+            <li key={i} className="flex flex-col gap-0.5">
+              <span className="text-zinc-500">{formatSummaryTime(ev.start, ev.end)}</span>
+              <span>{ev.summary || "(無題)"}</span>
+            </li>
+          ))}
+        </ul>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <a
@@ -418,14 +398,7 @@ function PersonalCalendarPanel({
           disabled={refreshing}
           className="text-zinc-500 underline hover:text-zinc-700 disabled:opacity-50"
         >
-          {refreshing ? "取得中..." : "予定を取得"}
-        </button>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="text-zinc-500 underline hover:text-zinc-700"
-        >
-          更新
+          {refreshing ? "更新中..." : "予定を更新"}
         </button>
       </div>
     </div>

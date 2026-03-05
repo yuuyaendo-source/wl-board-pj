@@ -32,8 +32,17 @@ async def lifespan(app: FastAPI):
         logger.info("[Rinko AI] OLLAMA_URL 設定済み — 自動振り分け・スコアリングが有効です (model=%s)", settings.ollama_model)
     else:
         logger.warning("[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
+    try:
+        from app.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        logger.warning("スケジューラ起動をスキップ: %s", e)
     yield
-    # シャットダウン時は特になし（engine はアプリ終了で閉じる）
+    try:
+        from app.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+    except Exception:
+        pass
 
 
 app = FastAPI(

@@ -133,5 +133,11 @@ export const api = {
     /** 全ユーザーの Personal Today を MORNING にコピー（毎朝 10:15 の cron 用・テスト用） */
     syncToMorning: () =>
       fetchApi<{ ok: boolean; created: number }>("/daily_reset/sync_to_morning", { method: "POST" }),
+    /** Meeting ボード（MORNING）をクリア。毎日 8:00 の cron 用・手動リセットボタン用 */
+    resetMeeting: () =>
+      fetchApi<{ ok: boolean }>("/daily_reset/reset_meeting", { method: "POST" }),
+    /** 毎日 8:00 用: Meeting リセット＋全ユーザーカレンダー取得・Today 付箋更新 */
+    run8am: () =>
+      fetchApi<{ ok: boolean; refreshed: number[]; failed: number[] }>("/daily_reset/run_8am", { method: "POST" }),
   },
 };
