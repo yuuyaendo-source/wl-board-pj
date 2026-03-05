@@ -1,16 +1,15 @@
 # Board System Backend (Wonder Rinko)
 
 4ボード（Main / Task / Personal / Morning）用の FastAPI バックエンド。  
-SQLite（開発）を async SQLAlchemy + aiosqlite で利用。本番は PostgreSQL + asyncpg。`DATABASE_URL` の変更のみで移行可能。
+SQLite（開発）を async SQLAlchemy + aiosqlite で利用。将来は PostgreSQL へ `DATABASE_URL` の変更のみで移行可能。
 
 ## 技術スタック
 
 - **Framework**: FastAPI
 - **ORM**: SQLAlchemy 2.0（非同期）
-- **DB ドライバ**: aiosqlite（SQLite）。本番は `postgresql+asyncpg`
+- **DB ドライバ**: aiosqlite（SQLite）。本番は `postgresql+asyncpg` を想定
 - **設定**: pydantic-settings + .env
-- **AI（フェーズ3）**: Ollama（ローカル LLM）による自動仕分け・マトリクススコア・日次リセット
-- **Google カレンダー連携**: OAuth 2.0（google-auth-oauthlib + google-api-python-client）でパーソナルの「今日の予定」を取得
+- **AI（フェーズ3）**: Google Gemini（自動仕分け・マトリクススコア・日次リセット）
 
 ## セットアップ
 
@@ -40,16 +39,13 @@ backend/
 │   ├── versions/      # マイグレーションスクリプト
 │   └── env.py         # 非同期対応
 ├── app/
-│   ├── ai/            # Rinko Core（client, triage, matrix, daily_reset）
-│   ├── config.py      # 設定（DATABASE_URL, OLLAMA_URL, Google OAuth 等）
+│   ├── ai/            # Rinko Core（triage, matrix, daily_reset）
+│   ├── config.py      # 設定（DATABASE_URL, GEMINI_API_KEY 等）
 │   ├── db.py          # 非同期エンジン・セッション・Base
 │   ├── main.py        # FastAPI アプリ
-│   ├── models/        # User, UserFace, StickyNote, BoardPlacement, PersonalSummaryCache, OAuthPkceState, UserGoogleToken
-│   ├── routers/       # users, sticky_notes, boards, board_placements, daily_reset, personal, auth_google
-│   ├── schemas/       # Pydantic スキーマ
-│   └── services/      # orchestrator（AI 自動振り分けオーケストレーター）
-├── desktop_app_releases/  # デスクトップアプリ自動更新用（latest.json + MSI）
-├── scripts/       # migrate_sqlite_to_pg.py, seed_personal_members.py
+│   ├── models/        # User, StickyNote, BoardPlacement
+│   ├── routers/       # users, sticky_notes, boards, daily_reset
+│   └── schemas/       # Pydantic スキーマ
 ├── alembic.ini
 ├── .env.example
 ├── requirements.txt
@@ -63,43 +59,20 @@ alembic upgrade head   # 最新まで適用
 alembic revision --autogenerate -m "説明"   # 変更から新規リビジョン生成
 ```
 
-## API（実装済み）
-
-### コア API
+## API（フェーズ2・3 実装済み）
 
 | 種別 | メソッド | パス | 説明 |
 |------|----------|------|------|
 | 死活 | GET | `/health` | ヘルスチェック |
-| users | GET | `/users` | ユーザー一覧 |
-| | POST | `/users` | ユーザー作成（email 一意） |
-| | GET | `/users/by-email?email=` | メールでユーザー検索（デスクトップログイン・ Linko 解決用） |
-| | GET | `/users/{id}` | ユーザー1件取得 |
-| | PATCH | `/users/{id}` | ユーザー更新 |
-| | DELETE | `/users/{id}` | ユーザー削除（パーソナル付箋をタスクへリリース後削除） |
-| 顔画像 | GET | `/users/{id}/faces` | 顔画像一覧 |
-| | POST | `/users/{id}/faces` | 顔画像追加（JSON base64 / multipart 両対応） |
-| | GET | `/users/{id}/faces/{face_id}/image` | 顔画像取得 |
-| | DELETE | `/users/{id}/faces/{face_id}` | 顔画像削除 |
-| sticky_notes | GET | `/sticky_notes` | 付箋一覧 |
-| | POST | `/sticky_notes` | 付箋作成（Main Board に配置、AI で Task/Personal にも自動配置） |
-| | POST | `/sticky_notes/import_from_postit` | 付箋ボードから一括取り込み（重複スキップ、AI 自動振り分け） |
-| | POST | `/sticky_notes/personal` | パーソナルボードに直接投稿（create + move_to_personal を1トランザクションで） |
-| | POST | `/sticky_notes/sync_from_postit` | 付箋ボードで追記された内容を同期 |
-| | GET | `/sticky_notes/{id}` | 付箋1件取得 |
-| | PATCH | `/sticky_notes/{id}` | 付箋更新（付箋ボード連携時は双方に反映） |
-| | DELETE | `/sticky_notes/{id}` | 付箋削除（付箋ボード連携時はグレー化） |
-| | DELETE | `/sticky_notes/by_postit?board_id=&note_id=` | 付箋ボード削除連携 |
+| users | GET/POST | `/users` | 一覧・作成 |
+| sticky_notes | GET/POST | `/sticky_notes` | 一覧・作成（作成時 MAIN＋**AI で Task/Personal にも自動配置**） |
+| | GET/PATCH/DELETE | `/sticky_notes/{id}` | 1件取得・更新・削除 |
 | | POST | `/sticky_notes/{id}/move_to_personal` | Personal に配置（body: `owner_id`, `lane`） |
 | | POST | `/sticky_notes/{id}/release_to_task_board` | Task Board に配置 |
 | board_placements | GET/POST | `/board_placements` | 一覧（`?board_type=&owner_id=`）・作成 |
 | | GET/PATCH/DELETE | `/board_placements/{id}` | 1件取得・更新・削除 |
-
-### ボード View API
-
-| 種別 | メソッド | パス | 説明 |
-|------|----------|------|------|
 | boards | GET | `/boards/main` | Main ボード View |
-| | GET | `/boards/task` | Task ボード View（5列。各配置に `taken_by`, `task_color` 付与） |
+| | GET | `/boards/task` | Task ボード View（5列対応。各配置に `taken_by`, `task_color` 付与） |
 | | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
 | | GET | `/boards/morning` | Morning ボード View（MORNING 配置一覧） |
 | daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧（Logic 3） |
@@ -107,12 +80,11 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 
 - **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
 - **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
-- **Personal レーン**: INBOX、TODAY、DONE、HELP_REQUEST（応援要請）の 4 レーン。HELP_REQUEST にすると Task ボードでは付箋が赤色表示になる。
 - **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
 
-## AI Worker（Rinko Core）
+## フェーズ3: AI Worker（Rinko Core）
 
-`OLLAMA_URL` を .env に設定すると以下が有効になる。オーケストレーター（`services/orchestrator.py`）が Triage → Matrix Scoring → 配置を一貫で実行。
+`OLLAMA_URL` を .env に設定すると以下が有効になる。
 
 1. **Auto-Triage（Logic 1）**  
    `POST /sticky_notes` で Main に投稿すると、LLM が「タスクか情報か」「担当者明記か」を判定。  
