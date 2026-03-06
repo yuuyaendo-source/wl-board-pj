@@ -18,13 +18,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "oauth_pkce_state",
-        sa.Column("state", sa.String(length=64), nullable=False),
-        sa.Column("code_verifier", sa.Text(), nullable=False),
-        sa.Column("expires_at", sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint("state"),
-    )
+    # 既にテーブルがある環境（手動作成や以前の適用）でもエラーにしない
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS oauth_pkce_state (
+            state VARCHAR(64) NOT NULL,
+            code_verifier TEXT NOT NULL,
+            expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            PRIMARY KEY (state)
+        )
+    """)
 
 
 def downgrade() -> None:
