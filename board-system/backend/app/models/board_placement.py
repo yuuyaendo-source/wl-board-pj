@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -54,6 +54,8 @@ class BoardPlacement(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # カレンダー更新で作成した Today 付箋の識別用（'calendar' | NULL）
+    placement_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     note = relationship("StickyNote", back_populates="board_placements")
     owner = relationship("User", back_populates="board_placements_owned")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { flushSync } from "react-dom";
 import { api, API_BASE } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
@@ -136,9 +136,32 @@ export default function PersonalBoardView({
   );
 
   const handleDrop = useCallback(
-    async (placementId: number, targetLane: LaneType) => {
+    async (placementId: number, targetLane: LaneType, targetIndex?: number) => {
       setError(null);
-      // 楽観的更新: 1回の操作で即反映
+      const sourceLane = (Object.keys(byLane) as LaneType[]).find((k) =>
+        byLane[k].some((p) => p.id === placementId)
+      );
+      const isSameLane = sourceLane === targetLane;
+
+      if (isSameLane && targetIndex !== undefined) {
+        const list = [...byLane[targetLane]];
+        const fromIdx = list.findIndex((p) => p.id === placementId);
+        if (fromIdx < 0) return;
+        const [removed] = list.splice(fromIdx, 1);
+        let insertIdx = targetIndex;
+        if (insertIdx > fromIdx) insertIdx -= 1;
+        list.splice(insertIdx, 0, removed);
+        setByLane((prev) => ({ ...prev, [targetLane]: list }));
+        await api.boardPlacements.reorderPersonalLane({
+          owner_id: ownerId,
+          lane: targetLane,
+          placement_ids: list.map((p) => p.id),
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchPersonal();
+        return;
+      }
+
       setByLane((prev) => {
         let placement: PlacementWithNote | null = null;
         const next = { ...prev };
@@ -157,7 +180,7 @@ export default function PersonalBoardView({
       await delay(REFETCH_DELAY_MS);
       await fetchPersonal();
     },
-    [fetchPersonal]
+    [ownerId, byLane, fetchPersonal]
   );
 
   const handleTrashDrop = useCallback(
@@ -217,7 +240,7 @@ export default function PersonalBoardView({
             lane={key}
             label={label}
             placements={byLane[key]}
-            onDrop={(placementId) => handleDrop(placementId, key)}
+            onDrop={(placementId, targetIndex) => handleDrop(placementId, key, targetIndex)}
             onRefresh={fetchPersonal}
             onAppendContent={handleAppendContent}
           />
@@ -416,11 +439,12 @@ function LaneColumn({
   lane: LaneType;
   label: string;
   placements: PlacementWithNote[];
-  onDrop: (placementId: number) => void | Promise<void>;
+  onDrop: (placementId: number, targetIndex?: number) => void | Promise<void>;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
 }) {
   const [over, setOver] = useState(false);
+  const columnRef = useRef<HTMLDivElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -432,11 +456,30 @@ function LaneColumn({
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
-    if (id) await Promise.resolve(onDrop(Number(id)));
+    if (!id) return;
+    const placementId = Number(id);
+    let targetIndex: number | undefined;
+    if (columnRef.current) {
+      const container = columnRef.current.querySelector("[data-lane-cards]");
+      if (container) {
+        const cards = Array.from(container.querySelectorAll("[data-placement-id]"));
+        const y = e.clientY;
+        for (let i = 0; i < cards.length; i++) {
+          const r = (cards[i] as HTMLElement).getBoundingClientRect();
+          if (y < r.top + r.height / 2) {
+            targetIndex = i;
+            break;
+          }
+          targetIndex = i + 1;
+        }
+      }
+    }
+    await Promise.resolve(onDrop(placementId, targetIndex));
   };
 
   return (
     <div
+      ref={columnRef}
       className={`rounded-xl border-2 border-dashed border-[var(--border)] p-4 transition-colors ${
         over ? "border-[var(--primary)] bg-green-50/50" : "bg-white"
       }`}
@@ -445,10 +488,10 @@ function LaneColumn({
       onDrop={handleDrop}
     >
       <h2 className="mb-3 font-semibold text-zinc-700">{label}</h2>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2" data-lane-cards>
         {placements.map((p) => (
-          <NoteCard
-            key={p.id}
+          <div key={p.id} data-placement-id={p.id}>
+            <NoteCard
             placement={p}
             draggable
             showPersonalBadge={p.is_from_task === false && lane !== "HELP_REQUEST"}
@@ -465,6 +508,7 @@ function LaneColumn({
             onAppendContent={onAppendContent}
             onDragEnd={onRefresh}
           />
+          </div>
         ))}
       </div>
     </div>

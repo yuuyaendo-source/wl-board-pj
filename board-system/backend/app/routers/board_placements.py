@@ -8,6 +8,7 @@ from app.schemas.board_placement import (
     BoardPlacementCreate,
     BoardPlacementResponse,
     BoardPlacementUpdate,
+    ReorderPersonalLaneBody,
 )
 
 router = APIRouter(prefix="/board_placements", tags=["board_placements"])
@@ -24,6 +25,7 @@ def _placement_response(p: BoardPlacement) -> BoardPlacementResponse:
         position_y=p.position_y,
         matrix_quadrant=p.matrix_quadrant,
         sort_order=p.sort_order,
+        placement_source=getattr(p, "placement_source", None),
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -61,6 +63,32 @@ async def create_board_placement(body: BoardPlacementCreate, db: AsyncSession = 
     await db.flush()
     await db.refresh(placement)
     return _placement_response(placement)
+
+
+@router.post("/reorder_personal_lane", status_code=200)
+async def reorder_personal_lane(
+    body: ReorderPersonalLaneBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    パーソナルボードの指定レーン内で、placement_ids の順に sort_order を 0,1,2,... で更新する。
+    """
+    if not body.placement_ids:
+        return {"ok": True}
+    result = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.id.in_(body.placement_ids),
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == body.owner_id,
+            BoardPlacement.lane == body.lane,
+        )
+    )
+    placements = {p.id: p for p in result.scalars().all()}
+    for order, pid in enumerate(body.placement_ids):
+        if pid in placements:
+            placements[pid].sort_order = order
+    await db.flush()
+    return {"ok": True}
 
 
 @router.get("/{placement_id}", response_model=BoardPlacementResponse)

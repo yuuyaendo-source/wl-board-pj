@@ -107,6 +107,12 @@ export const api = {
         sort_order?: number;
       }
     ) => fetchApi<unknown>(`/board_placements/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    /** パーソナルボードの同一レーン内で並び替え。placement_ids の順に sort_order を更新 */
+    reorderPersonalLane: (body: { owner_id: number; lane: LaneType; placement_ids: number[] }) =>
+      fetchApi<{ ok: boolean }>("/board_placements/reorder_personal_lane", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     delete: (placementId: number) =>
       fetchApi<undefined>(`/board_placements/${placementId}`, { method: "DELETE" }),
   },

@@ -332,7 +332,34 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
         row.updated_at = datetime.utcnow()
     await db.flush()
 
-    # 要約を P 付箋として Personal の Today レーンに追加（既存の付箋はそのまま）
+    # カレンダー由来の Today 付箋を削除してから今回分を追加（重複防止）
+    PLACEMENT_SOURCE_CALENDAR = "calendar"
+    r_cal = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.lane == Lane.TODAY,
+            BoardPlacement.placement_source == PLACEMENT_SOURCE_CALENDAR,
+        )
+    )
+    cal_placements = list(r_cal.scalars().all())
+    note_ids_to_check = [p.note_id for p in cal_placements]
+    for p in cal_placements:
+        await db.delete(p)
+    await db.flush()
+    # 他に参照が無い付箋だけ削除
+    for nid in note_ids_to_check:
+        r_other = await db.execute(
+            select(BoardPlacement.id).where(BoardPlacement.note_id == nid).limit(1)
+        )
+        if r_other.scalar_one_or_none() is None:
+            r_note = await db.execute(select(StickyNote).where(StickyNote.id == nid))
+            note_row = r_note.scalar_one_or_none()
+            if note_row:
+                await db.delete(note_row)
+    await db.flush()
+
+    # 要約を P 付箋として Personal の Today レーンに追加
     next_sort = 0
     if today_items:
         r = await db.execute(
@@ -360,6 +387,7 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
             owner_id=user_id,
             lane=Lane.TODAY,
             sort_order=next_sort + i,
+            placement_source=PLACEMENT_SOURCE_CALENDAR,
         )
         db.add(placement)
     await db.flush()

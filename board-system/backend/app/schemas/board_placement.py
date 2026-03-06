@@ -34,6 +34,7 @@ class BoardPlacementResponse(BaseModel):
     position_y: float | None
     matrix_quadrant: int | None
     sort_order: int
+    placement_source: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -43,6 +44,13 @@ class BoardPlacementResponse(BaseModel):
 class MoveToPersonalBody(BaseModel):
     owner_id: int
     lane: Lane = Lane.INBOX
+
+
+class ReorderPersonalLaneBody(BaseModel):
+    """同一レーン内の並び替え。placement_ids の順に sort_order を 0,1,2,... で設定する。"""
+    owner_id: int
+    lane: Lane
+    placement_ids: list[int]
 
 
 class TakenByUser(BaseModel):
