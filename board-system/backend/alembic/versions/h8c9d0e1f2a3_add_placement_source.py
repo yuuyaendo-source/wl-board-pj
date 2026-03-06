@@ -8,7 +8,6 @@ Create Date: 2026-03-06
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision: str = "h8c9d0e1f2a3"
@@ -18,11 +17,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "board_placements",
-        sa.Column("placement_source", sa.String(length=32), nullable=True),
+    # 既にカラムがある環境（手動追加や再実行）でもエラーにしない
+    op.execute(
+        "ALTER TABLE board_placements ADD COLUMN IF NOT EXISTS placement_source VARCHAR(32) NULL"
     )
 
 
 def downgrade() -> None:
-    op.drop_column("board_placements", "placement_source")
+    op.execute(
+        "ALTER TABLE board_placements DROP COLUMN IF EXISTS placement_source"
+    )
