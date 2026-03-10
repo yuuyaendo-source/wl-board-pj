@@ -190,6 +190,7 @@ async def get_board_morning(db: AsyncSession = Depends(get_db)):
             sort_order=p.sort_order,
             note_content=n.content,
             note_status=n.status.value,
+            placement_source=p.placement_source,
         )
         for p, n in rows
     ]

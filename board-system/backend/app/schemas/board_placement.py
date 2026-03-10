@@ -73,6 +73,7 @@ class BoardPlacementWithNoteResponse(BaseModel):
     sort_order: int
     note_content: str
     note_status: str
+    placement_source: str | None = None  # MORNING で 'news' のときニュース枠用
     is_from_task: bool = False
     # Task 用: 誰が引き取ったか・付箋の色（yellow=未引き取り, green=引き取り中, grey=Done, red=応援要請）
     taken_by: list[TakenByUser] = []

@@ -146,4 +146,14 @@ export const api = {
     run8am: () =>
       fetchApi<{ ok: boolean; refreshed: number[]; failed: number[] }>("/daily_reset/run_8am", { method: "POST" }),
   },
+
+  /** 朝会ニュース: RSS→Ollama要約→MORNING付箋 */
+  news: {
+    /** ニュースを取得して要約し、Meeting ボードに付箋として追加 */
+    fetch: () =>
+      fetchApi<{ ok: boolean; created?: number; skipped?: boolean; reason?: string; error?: string }>("/news/fetch", { method: "POST" }),
+    /** ニュース付箋のみクリア（毎日 10:00 自動・手動ボタン用） */
+    clear: () =>
+      fetchApi<{ ok: boolean; deleted: number }>("/news/clear", { method: "POST" }),
+  },
 };

@@ -50,6 +50,14 @@ def start_scheduler() -> None:
         minute=0,
         id="run_8am",
     )
+    # 毎日 10:00 JST: ニュース付箋のみクリア
+    _scheduler.add_job(
+        lambda: _post("/news/clear"),
+        "cron",
+        hour=10,
+        minute=0,
+        id="clear_news",
+    )
     # 毎日 10:15 JST: Personal Today を MORNING にコピー（Meeting ボード反映）
     _scheduler.add_job(
         lambda: _post("/daily_reset/sync_to_morning"),
@@ -58,9 +66,30 @@ def start_scheduler() -> None:
         minute=15,
         id="sync_to_morning",
     )
+    # 毎日 10:15 JST: ニュース取得・要約して MORNING に付箋追加
+    _scheduler.add_job(
+        lambda: _post("/news/fetch"),
+        "cron",
+        hour=10,
+        minute=15,
+        id="fetch_news",
+    )
+    if getattr(settings, "scheduler_news_interval_minutes", 0) not in (None, 0):
+        try:
+            interval_min = int(settings.scheduler_news_interval_minutes)
+            if interval_min >= 1:
+                _scheduler.add_job(
+                    lambda: _post("/news/fetch"),
+                    "interval",
+                    minutes=interval_min,
+                    id="fetch_news_interval",
+                )
+                logger.info("ニュース取得を %s 分間隔で追加（テスト用）", interval_min)
+        except (TypeError, ValueError):
+            pass
     _scheduler.start()
     logger.info(
-        "日次スケジューラ開始（日本時間 Asia/Tokyo）: 8:00 run_8am, 10:15 sync_to_morning (BASE_URL=%s)",
+        "日次スケジューラ開始（日本時間 Asia/Tokyo）: 8:00 run_8am, 10:00 clear_news, 10:15 sync_to_morning + fetch_news (BASE_URL=%s)",
         settings.scheduler_base_url,
     )
 

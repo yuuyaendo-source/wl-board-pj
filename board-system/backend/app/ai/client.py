@@ -24,6 +24,41 @@ def _get_session() -> requests.Session:
     return _session
 
 
+def generate_text(prompt: str) -> str | None:
+    """
+    プロンプトを送り、応答のテキスト（Markdown 等）をそのまま返す。
+    OLLAMA_URL 未設定時は None。JSON 抽出は行わない。
+    """
+    if not settings.ollama_url:
+        return None
+    base = settings.ollama_url.rstrip("/")
+    if not base.endswith("/v1"):
+        base = f"{base}/v1"
+    url = f"{base}/chat/completions"
+    payload = {
+        "model": settings.ollama_model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    try:
+        sess = _get_session()
+        r = sess.post(url, json=payload, timeout=120)
+        r.raise_for_status()
+        data = r.json()
+        choices = data.get("choices") or []
+        if not choices:
+            return None
+        content = (choices[0].get("message") or {}).get("content")
+        if content is None:
+            return None
+        return str(content).strip() or None
+    except requests.RequestException as e:
+        logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, str(e)[:300])
+        return None
+    except Exception as e:
+        logger.warning("[Rinko AI] Ollama 呼び出しエラー: %s — %s", type(e).__name__, str(e)[:300])
+        return None
+
+
 def generate_json(prompt: str) -> dict | list | None:
     """
     プロンプトを送り、応答から JSON を1つ抽出して dict または list で返す。

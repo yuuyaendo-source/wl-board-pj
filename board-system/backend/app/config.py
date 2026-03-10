@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     # OAuth 成功後のリダイレクト先のプレフィックス。本番で Next basePath が /boards のときは "/boards" を指定
     oauth_success_redirect_base: str = ""
 
-    # 日次スケジュール（日本時間 8:00 run_8am / 10:15 sync_to_morning）。無効にする場合は false
+    # 日次スケジュール（日本時間 8:00 run_8am / 10:00 clear_news / 10:15 sync_to_morning + fetch_news）。無効にする場合は false
     scheduler_enabled: bool = True
+    # テスト用: ニュース取得を N 分ごとに実行（0 または未設定で無効）。例: 3 で 3 分ごと
+    scheduler_news_interval_minutes: int = 0
     # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
     scheduler_base_url: str = "http://127.0.0.1:8000"
 
