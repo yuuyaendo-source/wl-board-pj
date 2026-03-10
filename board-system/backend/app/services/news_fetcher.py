@@ -14,15 +14,17 @@ logger = logging.getLogger(__name__)
 
 RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
 RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
+RSS_MAKUAKE = "https://b.hatena.ne.jp/search/text?q=Makuake&mode=rss"
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。
-今日の朝会（Meeting）のために、以下のニュース一覧からトピックを2つ選んで紹介してください。
+今日の朝会（Meeting）のために、以下のニュース一覧からトピックを2つだけ厳選して紹介してください。
 
 【条件】
-1. 「💻 テック」から1つ、「🤣 おもしろ」から1つを選んでください。
-2. 堅苦しくならず、「おはようございます！今日のリン子ピックアップです✨」という感じで、絵文字を使って楽しくまとめてください。
-3. 選んだニュースの最後には、必ずMarkdown形式でリンクを貼ってください。
+1. 「💻 テック」「🤣 おもしろ」「🎁 新商品(Makuake)」の中から、今日の朝会が一番盛り上がりそうなトピックを合計2つ厳選してください。
+2. もし「🎁 新商品(Makuake)」を選ぶ場合は、「こんな面白いアイデア商品が出るみたいですよ！」と、ワクワクする感じで紹介してください。
+3. 堅苦しくならず、「おはようございます！今日のリン子ピックアップです✨」という感じで、絵文字を使って楽しくまとめてください。
+4. 選んだニュースの最後には、必ずMarkdown形式でリンクを貼ってください。
    出力例： [👉 記事を詳しく読む](URLをそのまま入れる)
 
 【今日のニュース一覧】
@@ -41,11 +43,15 @@ def _format_entry(entry: Any, tag: str) -> str:
 
 def fetch_rss_text() -> str:
     """
-    テック・おもしろ RSS からそれぞれ上位 TOP_N 件を取得し、
+    テック・おもしろ・Makuake の RSS からそれぞれ上位 TOP_N 件を取得し、
     ジャンルタグと URL 付きの1つのテキストにフォーマットして返す。
     """
     lines = []
-    for url, tag in [(RSS_IT, "[💻 テック]"), (RSS_FUN, "[🤣 おもしろ]")]:
+    for url, tag in [
+        (RSS_IT, "[💻 テック]"),
+        (RSS_FUN, "[🤣 おもしろ]"),
+        (RSS_MAKUAKE, "[🎁 新商品(Makuake)]"),
+    ]:
         try:
             parsed = feedparser.parse(url)
             entries = getattr(parsed, "entries", [])[:TOP_N]
