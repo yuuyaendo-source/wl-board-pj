@@ -29,7 +29,13 @@ async def lifespan(app: FastAPI):
     from app.db import seed_personal_users
     await seed_personal_users()
     if settings.ollama_url:
-        logger.info("[Rinko AI] OLLAMA_URL 設定済み — 自動振り分け・スコアリングが有効です (model=%s)", settings.ollama_model)
+        tgt = f" [LLM_TARGET={settings.llm_target}]" if settings.llm_target else ""
+        model_line = settings.ollama_model or "自動（Ollama のローカルモデル一覧から解決）"
+        logger.info(
+            "[Rinko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
+            model_line,
+            tgt,
+        )
     else:
         logger.warning("[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
     try:

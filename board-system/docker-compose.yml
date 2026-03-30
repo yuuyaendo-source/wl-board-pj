@@ -36,7 +36,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
+      LLM_TARGET: ${LLM_TARGET:-}
+      OLLAMA_URL_1: ${OLLAMA_URL_1:-}
+      OLLAMA_URL_2: ${OLLAMA_URL_2:-}
+      OLLAMA_URL_3: ${OLLAMA_URL_3:-}
+      OLLAMA_MODEL_1: ${OLLAMA_MODEL_1:-}
+      OLLAMA_MODEL_2: ${OLLAMA_MODEL_2:-}
+      OLLAMA_MODEL_3: ${OLLAMA_MODEL_3:-}
       # GEMINI_API_KEY: ${GEMINI_API_KEY}
       # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       POSTIT_BOARD_URL: http://sticky-note:3000

@@ -3,7 +3,7 @@
 設定。環境変数から読み込み（.env 対応）。
 将来的に PostgreSQL へ切り替える場合は DATABASE_URL を変更するだけにする。
 """
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -13,18 +13,60 @@ class Settings(BaseSettings):
     # DB: SQLite (開発) は sqlite+aiosqlite。本番は postgresql+asyncpg 等に変更
     database_url: str = "sqlite+aiosqlite:///./board.db"
 
+    # 社内 LLM Docker を複数台切り替え: 1〜3 を指定すると OLLAMA_URL_n / OLLAMA_MODEL_n を採用。
+    # 未設定なら従来どおり OLLAMA_URL / OLLAMA_MODEL のみ。
+    llm_target: int | None = Field(default=None, ge=1, le=3)
+
     # ローカル LLM（Ollama）。未設定なら自動仕分け・スコアリングはスキップ
     ollama_url: str | None = None
+    ollama_url_1: str | None = None
+    ollama_url_2: str | None = None
+    ollama_url_3: str | None = None
 
-    @field_validator("ollama_url")
+    @field_validator(
+        "ollama_url",
+        "ollama_url_1",
+        "ollama_url_2",
+        "ollama_url_3",
+        mode="before",
+    )
     @classmethod
-    def strip_ollama_url(cls, v: str | None) -> str | None:
+    def strip_optional_ollama_urls(cls, v: str | None) -> str | None:
         if v is None:
             return None
         v = (v or "").strip().rstrip("/")
         return v if v else None
 
-    ollama_model: str = "llama3.2"
+    # 未設定・空なら Ollama から自動解決（/api/tags の最新 modified_at 優先）。指定時は固定モデル
+    ollama_model: str | None = None
+    ollama_model_1: str | None = None
+    ollama_model_2: str | None = None
+    ollama_model_3: str | None = None
+    # 自動解決したモデル名のキャッシュ秒数（同一エンドポイントへの連続呼び出し抑制）
+    ollama_model_auto_cache_ttl_seconds: int = 600
+
+    @field_validator("ollama_model", mode="before")
+    @classmethod
+    def ollama_model_empty_to_none(cls, v: object) -> str | None:
+        if v is None or v == "":
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+    @field_validator("llm_target", mode="before")
+    @classmethod
+    def llm_target_empty_to_none(cls, v: object) -> int | None:
+        if v is None or v == "":
+            return None
+        return int(v)
+
+    @field_validator("ollama_model_1", "ollama_model_2", "ollama_model_3", mode="before")
+    @classmethod
+    def optional_model_strip(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
 
     # Gemini API（未使用: ローカル LLM 利用のためコメントアウト）
     # gemini_api_key: str | None = None
@@ -80,6 +122,22 @@ class Settings(BaseSettings):
             return None
         v = (v or "").strip().rstrip("/")
         return v if v else None
+
+    @model_validator(mode="after")
+    def resolve_llm_target(self) -> "Settings":
+        """LLM_TARGET 指定時は対応する URL/モデルへ集約（各 Docker のデフォルトを分けて保持可能）。"""
+        t = self.llm_target
+        if t is None:
+            return self
+        urls = {1: self.ollama_url_1, 2: self.ollama_url_2, 3: self.ollama_url_3}
+        models = {1: self.ollama_model_1, 2: self.ollama_model_2, 3: self.ollama_model_3}
+        chosen_url = urls[t] or self.ollama_url
+        chosen_model = models[t] or self.ollama_model
+        if not chosen_url:
+            raise ValueError(
+                f"LLM_TARGET={t} のときは OLLAMA_URL_{t} か、フォールバック用の OLLAMA_URL を設定してください。"
+            )
+        return self.model_copy(update={"ollama_url": chosen_url, "ollama_model": chosen_model})
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
