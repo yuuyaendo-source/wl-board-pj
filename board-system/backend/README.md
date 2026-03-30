@@ -114,9 +114,42 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 - 環境変数: `OLLAMA_URL`（必須・例: http://172.16.1.251:11434/v1）、`OLLAMA_MODEL`（**省略可**・未設定時は Ollama の `/api/tags` で **modified_at が最も新しいモデル**を採用し、失敗時は `/v1/models` を参照）。固定モデルにしたいときだけ指定。`OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS`（既定 600）で自動解決結果のキャッシュ時間を変更可能。社内 LLM Docker が複数ある場合は `LLM_TARGET=1|2|3` と `OLLAMA_URL_1..3` / 任意で `OLLAMA_MODEL_1..3`（番号別モデル固定時のみ）。詳細は `.env.example`。
 - **スケジューラ**: 日次 8:00 / 10:15 JST は **内蔵 APScheduler** で実行されるため、**外部 cron は不要**。Docker やリバースプロキシでアプリの URL が `http://127.0.0.1:8000` でない場合は、`.env` で `SCHEDULER_BASE_URL` をアプリから見た自サーバの URL に設定すること（例: `http://backend:8000`）。
 
-## 本番（Ubuntu）: 起動とログ
+## 本番（Docker）
+
+**ホスト上で `pip install` する必要はありません。** `backend/Dockerfile` のビルド時に `requirements.txt` がインストールされます（PEP 668 の対象外）。
+
+更新手順の例（リポジトリの `docker-compose.prod.yml` / `deploy/deploy.sh` に合わせる）:
+
+```bash
+cd /var/www/wlinko-pj/board-system   # デプロイ先のパス
+docker compose -f docker-compose.prod.yml build backend
+docker compose -f docker-compose.prod.yml up -d backend   # 実際の -p やファイルは環境に合わせる
+# マイグレーション（backend コンテナ内）
+docker compose -f docker-compose.prod.yml exec backend alembic -c /app/alembic.ini upgrade head
+```
+
+- ログ: `docker compose ... logs -f backend`
+- 詳細はリポジトリの [DEPLOY.md](../DEPLOY.md) や [docs/デプロイとマイグレーション手順.md](../docs/デプロイとマイグレーション手順.md) を参照。
+
+## 本番（Ubuntu ホスト直起動・非 Docker）: 起動とログ
 
 - **ログはファイルに残さない**。確認時だけ別ターミナルで `tail -f` する想定。
+
+### 依存のインストール（Ubuntu 24.04 など PEP 668 対応 OS）
+
+システムの `python3` にそのまま `pip install` すると **`externally-managed-environment`** で拒否されます。**仮想環境内の pip** を使ってください。
+
+```bash
+cd /path/to/board-system/backend
+sudo apt install -y python3-venv python3-full   # 初回のみ（venv が無い場合）
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+alembic upgrade head
+```
+
+- systemd の `ExecStart` は **`/path/to/board-system/backend/.venv/bin/uvicorn`** のように venv 内のバイナリを指定する。
 
 ### 起動（本番では --reload なし）
 

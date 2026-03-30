@@ -1,4 +1,4 @@
 # -*- coding: utf-8 -*-
-from app.services.orchestrator import process_new_note_ai
-
-__all__ = ["process_new_note_ai"]
+# orchestrator 等はサブモジュールから直接 import すること。
+# ここで process_new_note_ai を読み込むと、client → llm_settings → services パッケージ初期化時に
+# orchestrator → app.ai → client へ戻り循環インポートになる。
