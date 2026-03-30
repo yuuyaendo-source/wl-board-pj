@@ -71,14 +71,25 @@ export default function AdminSystemPage() {
         </Link>
       </p>
       <h1 className="mb-2 text-xl font-semibold text-zinc-800">システム管理</h1>
-      <p className="mb-6 text-sm text-zinc-600">LLM 切替（Ollama エンドポイント 1〜3）。URL は環境変数の OLLAMA_URL_n / OLLAMA_URL で定義します。</p>
+      <p className="mb-6 text-sm text-zinc-600">
+        運用向けの設定をまとめます。項目は今後追加できます。
+      </p>
 
       {loading && <p className="text-sm text-zinc-500">読込中…</p>}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {!loading && status && (
-        <div className="space-y-4 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-medium text-zinc-800">LLM 切替</h2>
+        <section
+          id="llm"
+          className="space-y-4 scroll-mt-20 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm"
+          aria-labelledby="llm-heading"
+        >
+          <h2 id="llm-heading" className="text-sm font-medium text-zinc-800">
+            LLM切替
+          </h2>
+          <p className="text-xs text-zinc-500">
+            Ollama エンドポイント 1〜3 の切替。URL は環境変数の OLLAMA_URL_n / OLLAMA_URL で定義します。
+          </p>
           <div className="text-xs text-zinc-500 space-y-1">
             <p>環境変数 LLM_TARGET: {status.env_llm_target ?? "（未設定）"}</p>
             <p>DB 上書き: {status.db_llm_target ?? "（なし・env に従う）"}</p>
@@ -137,7 +148,7 @@ export default function AdminSystemPage() {
               </button>
             )}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

@@ -7,10 +7,19 @@ import type { PersonalMember } from "@/lib/personalMembers";
 interface AddUserMenuProps {
   members: PersonalMember[];
   onSuccess: () => void;
+  /** 指定時は親（管理メニュー等）が開閉を制御し、トリガーボタンは表示しない */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
-  const [open, setOpen] = useState(false);
+export default function AddUserMenu({ members, onSuccess, open: controlledOpen, onOpenChange }: AddUserMenuProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined && onOpenChange !== undefined;
+  const open = controlled ? controlledOpen : internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlled) onOpenChange(next);
+    else setInternalOpen(next);
+  };
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [callName, setCallName] = useState("");
@@ -99,15 +108,21 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
     }
   };
 
+  const panelBoxClass = controlled
+    ? "fixed right-4 top-14 z-50 w-[min(24rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg"
+    : "absolute right-0 top-full z-50 mt-1 w-96 max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg";
+
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="rounded-xl px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
-      >
-        ユーザー管理
-      </button>
+    <div className={controlled ? "contents" : "relative"}>
+      {!controlled && (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="rounded-xl px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+        >
+          ユーザー管理
+        </button>
+      )}
 
       {open && (
         <>
@@ -116,7 +131,7 @@ export default function AddUserMenu({ members, onSuccess }: AddUserMenuProps) {
             aria-hidden
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-full z-50 mt-1 w-96 max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg">
+          <div className={panelBoxClass}>
             <p className="mb-3 text-sm font-medium text-zinc-700">メンバー管理（共通ユーザーDB）</p>
             <p className="mb-3 text-xs text-zinc-500">
               ここで登録したユーザーはパーソナルボード・デスクトップアプリのメールログインで共通利用されます。メールを登録するとデスクトップアプリで「ボード」からパーソナルを開けます。

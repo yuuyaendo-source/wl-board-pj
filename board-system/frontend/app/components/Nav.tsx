@@ -29,6 +29,10 @@ export default function Nav() {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [systemSubOpen, setSystemSubOpen] = useState(false);
+  const [userPanelOpen, setUserPanelOpen] = useState(false);
+  const adminRef = useRef<HTMLDivElement>(null);
   const { members: personalMembers, loading: membersLoading, refetch: refetchMembers } = usePersonalMembers();
 
   useEffect(() => {
@@ -36,12 +40,17 @@ export default function Nav() {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
       }
+      if (adminRef.current && !adminRef.current.contains(e.target as Node)) {
+        setAdminMenuOpen(false);
+        setSystemSubOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const isPersonalPage = pathname?.startsWith("/personal/");
+  const isAdminPage = pathname?.startsWith("/admin/");
 
   return (
     <nav className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-white px-4 py-2 shadow-sm">
@@ -144,14 +153,76 @@ export default function Nav() {
           付箋ボード
         </a>
       
-      <div className="ml-auto flex items-center gap-2">
-        <Link
-          href="/admin/system"
-          className="rounded-xl px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
-        >
-          システム管理
-        </Link>
-        <AddUserMenu members={personalMembers} onSuccess={refetchMembers} />
+      <div className="ml-auto flex items-center gap-2" ref={adminRef}>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setAdminMenuOpen((o) => !o)}
+            className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-colors ${
+              isAdminPage || userPanelOpen ? "bg-zinc-200 text-zinc-800" : "text-zinc-600 hover:bg-zinc-100"
+            }`}
+            aria-haspopup="menu"
+            aria-expanded={adminMenuOpen}
+          >
+            管理 ▾
+          </button>
+          {adminMenuOpen && (
+            <ul
+              className="absolute right-0 top-full z-50 mt-1 min-w-[220px] list-none rounded-xl border border-[var(--border)] bg-white py-1 shadow-lg"
+              role="menu"
+            >
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full px-4 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-100"
+                  onClick={() => {
+                    setUserPanelOpen(true);
+                    setAdminMenuOpen(false);
+                    setSystemSubOpen(false);
+                  }}
+                >
+                  ユーザー管理
+                </button>
+              </li>
+              <li role="none" className="border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-zinc-700 hover:bg-zinc-100"
+                  onClick={() => setSystemSubOpen((s) => !s)}
+                  aria-expanded={systemSubOpen}
+                >
+                  <span>システム管理</span>
+                  <span className="text-zinc-400">{systemSubOpen ? "▾" : "▸"}</span>
+                </button>
+                {systemSubOpen && (
+                  <ul className="list-none border-t border-[var(--border)] bg-zinc-50 py-1" role="menu">
+                    <li role="none">
+                      <Link
+                        href="/admin/system#llm"
+                        role="menuitem"
+                        className="block px-4 py-2 pl-6 text-sm text-zinc-700 hover:bg-zinc-100"
+                        onClick={() => {
+                          setAdminMenuOpen(false);
+                          setSystemSubOpen(false);
+                        }}
+                      >
+                        LLM切替
+                      </Link>
+                    </li>
+                  </ul>
+                )}
+              </li>
+            </ul>
+          )}
+        </div>
+        <AddUserMenu
+          members={personalMembers}
+          onSuccess={refetchMembers}
+          open={userPanelOpen}
+          onOpenChange={setUserPanelOpen}
+        />
       </div>
     </nav>
   );
