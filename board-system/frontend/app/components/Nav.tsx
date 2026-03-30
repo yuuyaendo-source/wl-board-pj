@@ -145,8 +145,13 @@ export default function Nav() {
         </a>
       
       <div className="ml-auto flex items-center gap-2">
+        <Link
+          href="/admin/system"
+          className="rounded-xl px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+        >
+          システム管理
+        </Link>
         <AddUserMenu members={personalMembers} onSuccess={refetchMembers} />
-       
       </div>
     </nav>
   );

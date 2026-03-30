@@ -11,6 +11,7 @@ from app.models.oauth_pkce_state import OAuthPkceState
 from app.models.user import User
 from app.models.user_face import UserFace
 from app.models.user_google_token import UserGoogleToken
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "Lane",
     "PersonalSummaryCache",
     "UserGoogleToken",
+    "SystemSetting",
 ]

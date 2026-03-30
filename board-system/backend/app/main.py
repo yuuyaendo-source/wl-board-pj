@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import init_db
 import app.models  # noqa: F401 — モデルを Base に登録してから create_all するため
-from app.routers import auth_google, board_placements, boards, daily_reset, news, personal, sticky_notes, users
+from app.routers import admin_llm, auth_google, board_placements, boards, daily_reset, news, personal, sticky_notes, users
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     from app.db import seed_personal_users
     await seed_personal_users()
-    if settings.ollama_url:
-        tgt = f" [LLM_TARGET={settings.llm_target}]" if settings.llm_target else ""
-        model_line = settings.ollama_model or "自動（Ollama のローカルモデル一覧から解決）"
+    from app.services.llm_settings import get_effective_llm_target_sync, get_resolved_ollama_sync
+
+    url, model_ov = get_resolved_ollama_sync()
+    if url:
+        eff = get_effective_llm_target_sync()
+        tgt = f" [effective_LLM_TARGET={eff}]" if eff is not None else ""
+        model_line = model_ov or "自動（Ollama のローカルモデル一覧から解決）"
         logger.info(
             "[Rinko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
             model_line,
@@ -74,6 +78,7 @@ app.include_router(daily_reset.router)
 app.include_router(news.router)
 app.include_router(personal.router)
 app.include_router(auth_google.router)
+app.include_router(admin_llm.router)
 
 # デスクトップアプリ自動更新: /desktop-app/latest.json と /desktop-app/WonderLinko.msi を配信
 if _DESKTOP_APP_RELEASES_DIR.is_dir():

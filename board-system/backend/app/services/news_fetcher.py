@@ -8,7 +8,7 @@ from typing import Any
 import feedparser
 
 from app.ai.client import generate_text
-from app.config import settings
+from app.services.llm_settings import ollama_configured_sync
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,8 @@ def fetch_and_summarize_news() -> str | None:
     RSS を取得し、Ollama で要約テキスト（Markdown）を生成する。
     OLLAMA_URL 未設定時・失敗時は None。
     """
-    if not settings.ollama_url:
-        logger.info("ニュース要約: OLLAMA_URL が未設定のためスキップ")
+    if not ollama_configured_sync():
+        logger.info("ニュース要約: OLLAMA が未設定のためスキップ")
         return None
     news_text = fetch_rss_text()
     if not news_text.strip():

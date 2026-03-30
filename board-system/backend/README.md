@@ -64,6 +64,8 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | 種別 | メソッド | パス | 説明 |
 |------|----------|------|------|
 | 死活 | GET | `/health` | ヘルスチェック |
+| admin | GET | `/admin/llm` | 実効 LLM スロット・解決 URL・モデルモード（DB 上書きと env を表示） |
+| admin | PUT | `/admin/llm` | body `{"llm_target":1}` など 1〜3 で DB に保存即反映、`{"llm_target":null}` で DB 上書き解除（env の `LLM_TARGET` に従う） |
 | users | GET/POST | `/users` | 一覧・作成 |
 | sticky_notes | GET/POST | `/sticky_notes` | 一覧・作成（作成時 MAIN＋**AI で Task/Personal にも自動配置**） |
 | | GET/PATCH/DELETE | `/sticky_notes/{id}` | 1件取得・更新・削除 |

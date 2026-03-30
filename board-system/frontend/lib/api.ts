@@ -147,6 +147,30 @@ export const api = {
       fetchApi<{ ok: boolean; refreshed: number[]; failed: number[] }>("/daily_reset/run_8am", { method: "POST" }),
   },
 
+  /** 管理: LLM スロット（DB で環境変数 LLM_TARGET を上書き） */
+  admin: {
+    llm: {
+      get: () =>
+        fetchApi<{
+          db_llm_target: number | null;
+          env_llm_target: number | null;
+          effective_llm_target: number | null;
+          resolved_url: string | null;
+          model_override: string | null;
+          model_mode: string;
+        }>("/admin/llm"),
+      put: (body: { llm_target: number | null }) =>
+        fetchApi<{
+          db_llm_target: number | null;
+          env_llm_target: number | null;
+          effective_llm_target: number | null;
+          resolved_url: string | null;
+          model_override: string | null;
+          model_mode: string;
+        }>("/admin/llm", { method: "PUT", body: JSON.stringify(body) }),
+    },
+  },
+
   /** 朝会ニュース: RSS→Ollama要約→MORNING付箋 */
   news: {
     /** ニュースを取得して要約し、Meeting ボードに付箋として追加 */

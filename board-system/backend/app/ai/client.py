@@ -19,6 +19,7 @@ from typing import Any
 import requests
 
 from app.config import settings
+from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 _session: requests.Session | None = None
@@ -107,16 +108,20 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
     return None
 
 
-def resolve_ollama_model_for_request(v1_base: str, *, force_refresh: bool = False) -> str | None:
+def resolve_ollama_model_for_request(
+    ollama_url: str,
+    model_override: str | None,
+    *,
+    force_refresh: bool = False,
+) -> str | None:
     """
     chat/completions 用の model 文字列を返す。
-    settings.ollama_model があればそれを優先。なければキャッシュまたは Ollama へ問い合わせ。
+    model_override があれば固定モデル。なければキャッシュまたは Ollama へ問い合わせ。
     """
-    override = settings.ollama_model
-    if override:
-        return override
+    if model_override:
+        return model_override
 
-    root, v1_norm = _split_root_and_v1(settings.ollama_url or v1_base)
+    root, v1_norm = _split_root_and_v1(ollama_url)
     key = _cache_key_v1(v1_norm)
     ttl = max(30, int(settings.ollama_model_auto_cache_ttl_seconds))
     now = time.monotonic()
@@ -157,14 +162,15 @@ def _post_chat_completions(v1_base: str, model: str, prompt: str, timeout: int) 
 def generate_text(prompt: str) -> str | None:
     """
     プロンプトを送り、応答のテキスト（Markdown 等）をそのまま返す。
-    OLLAMA_URL 未設定時は None。JSON 抽出は行わない。
+    実効 OLLAMA URL 未設定時は None。JSON 抽出は行わない。
     """
-    if not settings.ollama_url:
+    url, model_ov = get_resolved_ollama_sync()
+    if not url:
         return None
-    _, v1_base = _split_root_and_v1(settings.ollama_url)
+    _, v1_base = _split_root_and_v1(url)
 
     for attempt in range(2):
-        model = resolve_ollama_model_for_request(v1_base, force_refresh=(attempt > 0))
+        model = resolve_ollama_model_for_request(url, model_ov, force_refresh=(attempt > 0))
         if not model:
             return None
         try:
@@ -198,16 +204,17 @@ def generate_text(prompt: str) -> str | None:
 def generate_json(prompt: str) -> dict | list | None:
     """
     プロンプトを送り、応答から JSON を1つ抽出して dict または list で返す。
-    失敗時・OLLAMA_URL 未設定時は None。
+    失敗時・実効 OLLAMA URL 未設定時は None。
     OLLAMA_URL は OpenAI 互換のベース（例: http://host:11434/v1）。末尾の /v1 が無い場合は自動で付与。
     404 の場合はモデル不一致の可能性 — 自動解決キャッシュを捨てて再試行する。
     """
-    if not settings.ollama_url:
+    url, model_ov = get_resolved_ollama_sync()
+    if not url:
         return None
-    _, v1_base = _split_root_and_v1(settings.ollama_url)
+    _, v1_base = _split_root_and_v1(url)
 
     for attempt in range(2):
-        model = resolve_ollama_model_for_request(v1_base, force_refresh=(attempt > 0))
+        model = resolve_ollama_model_for_request(url, model_ov, force_refresh=(attempt > 0))
         if not model:
             return None
         try:

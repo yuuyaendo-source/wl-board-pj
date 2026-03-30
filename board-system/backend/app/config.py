@@ -123,21 +123,31 @@ class Settings(BaseSettings):
         v = (v or "").strip().rstrip("/")
         return v if v else None
 
+    def resolve_ollama_for_target(self, target: int | None) -> tuple[str | None, str | None]:
+        """
+        スロット target（None = 環境の OLLAMA_URL のみ）に対応する (base_url, model_override)。
+        model_override が None のときは Ollama 側でモデル自動解決。
+        """
+        if target is None:
+            return self.ollama_url, self.ollama_model
+        urls = {1: self.ollama_url_1, 2: self.ollama_url_2, 3: self.ollama_url_3}
+        models = {1: self.ollama_model_1, 2: self.ollama_model_2, 3: self.ollama_model_3}
+        u = urls.get(target) or self.ollama_url
+        m = models.get(target) or self.ollama_model
+        return u, m
+
     @model_validator(mode="after")
-    def resolve_llm_target(self) -> "Settings":
-        """LLM_TARGET 指定時は対応する URL/モデルへ集約（各 Docker のデフォルトを分けて保持可能）。"""
+    def validate_llm_env(self) -> "Settings":
+        """環境変数 LLM_TARGET 指定時、対応 URL が取れることを起動時に検証。"""
         t = self.llm_target
         if t is None:
             return self
-        urls = {1: self.ollama_url_1, 2: self.ollama_url_2, 3: self.ollama_url_3}
-        models = {1: self.ollama_model_1, 2: self.ollama_model_2, 3: self.ollama_model_3}
-        chosen_url = urls[t] or self.ollama_url
-        chosen_model = models[t] or self.ollama_model
-        if not chosen_url:
+        u, _ = self.resolve_ollama_for_target(t)
+        if not u:
             raise ValueError(
                 f"LLM_TARGET={t} のときは OLLAMA_URL_{t} か、フォールバック用の OLLAMA_URL を設定してください。"
             )
-        return self.model_copy(update={"ollama_url": chosen_url, "ollama_model": chosen_model})
+        return self
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
