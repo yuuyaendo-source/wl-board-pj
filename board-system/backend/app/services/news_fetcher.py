@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 
 RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
 RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
-RSS_MAKUAKE = "https://b.hatena.ne.jp/search/text?q=Makuake&sort=recent&mode=rss"
+RSS_ITEM = "https://www.gizmodo.jp/index.xml"
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。
 今日の朝会（Meeting）のために、以下のニュース一覧からトピックを3つ厳選して紹介してください。
 
 【条件】
-1. 「💻 テック」「🤣 おもしろ」「🎁 新商品(Makuake)」の中から、今日の朝会が一番盛り上がりそうなトピックを合計3つ厳選してください。
-2. もし「🎁 新商品(Makuake)」を選ぶ場合は、「こんな面白いアイデア商品が出るみたいですよ！」と、ワクワクする感じで紹介してください。
+1. 「💻 テック」「🤣 おもしろ」「🎁 新商品(Gizmodo)」の中から、今日の朝会が一番盛り上がりそうなトピックを合計3つ厳選してください。
+2. もし「🎁 新商品(Gizmodo)」を選ぶ場合は、「こんな面白いアイデア商品が出るみたいですよ！」と、ワクワクする感じで紹介してください。
 3. 堅苦しくならず、「おはようございます！今日のリン子ピックアップです✨」という感じで、絵文字を使って楽しくまとめてください。
 4. 選んだ3つのニュースそれぞれについて、紹介文の直後に必ずMarkdown形式のリンクを1行で書いてください。
    - ニュース一覧の「URL:」の後に書いてあるURLを、そのままコピーして使ってください。
@@ -53,7 +53,7 @@ def fetch_rss_text() -> str:
     for url, tag in [
         (RSS_IT, "[💻 テック]"),
         (RSS_FUN, "[🤣 おもしろ]"),
-        (RSS_MAKUAKE, "[🎁 新商品(Makuake)]"),
+        (RSS_ITEM, "[🎁 新商品(Gizmodo)]"),
     ]:
         try:
             parsed = feedparser.parse(url)
