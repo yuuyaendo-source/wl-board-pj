@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
 RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
-RSS_MAKUAKE = "https://b.hatena.ne.jp/search/text?q=Makuake&mode=rss"
+RSS_MAKUAKE = "https://b.hatena.ne.jp/search/text?q=Makuake&sort=recent&mode=rss"
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。
