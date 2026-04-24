@@ -140,3 +140,24 @@
     background: #4caf50;
     color: white;
 }
+
+@media (max-width: 767px) {
+    .panel {
+        left: 0;
+        right: 0;
+        top: 52px;
+        width: 100%;
+        max-width: 100%;
+        height: calc(100dvh - 52px);
+        max-height: calc(100dvh - 52px);
+    }
+
+    .header h2 {
+        font-size: 1.05rem;
+    }
+
+    .actions {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+}

@@ -202,9 +202,9 @@ export default function BoardPage() {
         // ボード相対の中央X座標
         const centerX = scrollLeft + (viewportWidth / 2) - 100; // 中央から付箋幅の半分を引く
 
-        // ボード相対の下部Y座標（ツールバー付近）
-        // ツールバーは下部20px + パディング約50px。下から300pxの位置に配置。
-        const bottomY = scrollTop + viewportHeight - 300;
+        // ボード相対の下部Y座標（ツールバー付近）— スマホは高めの UI のため下オフセットを大きくする
+        const bottomOffset = viewportWidth < 768 ? 420 : 300;
+        const bottomY = scrollTop + viewportHeight - bottomOffset;
 
         const newNote = {
             id: `${timestamp}-${random}`,

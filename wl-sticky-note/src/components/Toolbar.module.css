@@ -7,18 +7,36 @@
     background: white;
     padding: 5px 28px;
     min-width: 560px;
+    max-width: calc(100vw - 24px);
     border-radius: 24px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     display: flex;
     align-items: center;
     gap: 12px;
     z-index: 100;
+    box-sizing: border-box;
+}
+
+/* 付箋作成＋色選択: デスクトップは横、モバイルは .primaryBlock で縦積み */
+.primaryBlock {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    flex-wrap: nowrap;
+    flex: 0 0 auto;
 }
 
 .group {
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+.colorGroup {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 280px;
 }
 
 /* 付箋作成: 横書きで1行表示（縦書きにならないように） */
@@ -154,4 +172,98 @@
     width: 1px;
     height: 22px;
     background: #eee;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+/* primary 内の区切り: スマホでは非表示（.dividerInPrimary + メディアクエリ） */
+.dividerInPrimary {
+    margin: 0 4px 0 8px;
+}
+
+/* 拡大・各種アイコン: デスクトップでは .toolbar の横一列の一部として扱う */
+@media (min-width: 768px) {
+    .secondaryBlock {
+        display: contents;
+    }
+}
+
+@media (max-width: 767px) {
+    .toolbar {
+        min-width: 0;
+        width: min(100%, calc(100vw - 20px));
+        max-width: calc(100vw - 20px);
+        padding: 10px 12px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+        bottom: max(8px, env(safe-area-inset-bottom));
+        left: 50%;
+        transform: translateX(-50%);
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        border-radius: 16px;
+        max-height: min(85vh, calc(100dvh - 100px));
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .primaryBlock {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .primaryBlock .group:first-child {
+        display: flex;
+        justify-content: center;
+    }
+
+    .addButton {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .dividerInPrimary {
+        display: none;
+    }
+
+    .colorGroup {
+        max-width: none;
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        justify-items: center;
+        row-gap: 6px;
+        column-gap: 6px;
+        padding: 4px 0;
+    }
+
+    .toolbar > .divider {
+        display: block;
+        width: 100%;
+        height: 1px;
+        min-height: 0;
+        flex-shrink: 0;
+    }
+
+    .secondaryBlock {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 4px 8px;
+    }
+
+    .secondaryBlock .divider {
+        display: none;
+    }
+
+    .iconBtn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
 }
