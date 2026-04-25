@@ -191,27 +191,28 @@
 @media (max-width: 767px) {
     .toolbar {
         min-width: 0;
-        width: min(100%, calc(100vw - 20px));
-        max-width: calc(100vw - 20px);
-        padding: 10px 12px;
-        padding-bottom: max(10px, env(safe-area-inset-bottom));
-        bottom: max(8px, env(safe-area-inset-bottom));
-        left: 50%;
-        transform: translateX(-50%);
+        width: 86px;
+        max-width: 86px;
+        padding: 8px 6px;
+        top: calc(56px + env(safe-area-inset-top));
+        right: max(6px, env(safe-area-inset-right));
+        bottom: 12px;
+        left: auto;
+        transform: none;
         flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
-        border-radius: 16px;
-        max-height: min(85vh, calc(100dvh - 100px));
+        align-items: center;
+        gap: 8px;
+        border-radius: 14px;
+        max-height: calc(100dvh - (68px + env(safe-area-inset-top) + env(safe-area-inset-bottom)));
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .primaryBlock {
         flex-direction: column;
-        align-items: stretch;
+        align-items: center;
         width: 100%;
-        gap: 8px;
+        gap: 6px;
     }
 
     .primaryBlock .group:first-child {
@@ -222,6 +223,13 @@
     .addButton {
         width: 100%;
         max-width: 100%;
+        min-width: 0;
+        padding: 8px 4px;
+        border-radius: 12px;
+        font-size: 0.82rem;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        letter-spacing: 0.08em;
     }
 
     .dividerInPrimary {
@@ -232,16 +240,16 @@
         max-width: none;
         width: 100%;
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: 1fr;
         justify-items: center;
         row-gap: 6px;
-        column-gap: 6px;
+        column-gap: 0;
         padding: 4px 0;
     }
 
     .toolbar > .divider {
         display: block;
-        width: 100%;
+        width: 80%;
         height: 1px;
         min-height: 0;
         flex-shrink: 0;
@@ -249,11 +257,12 @@
 
     .secondaryBlock {
         display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
+        flex-direction: column;
+        flex-wrap: nowrap;
         align-items: center;
-        justify-content: center;
-        gap: 4px 8px;
+        justify-content: flex-start;
+        gap: 6px;
+        width: 100%;
     }
 
     .secondaryBlock .divider {
@@ -261,9 +270,9 @@
     }
 
     .iconBtn {
-        width: 44px;
-        height: 44px;
-        min-width: 44px;
-        min-height: 44px;
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
     }
 }

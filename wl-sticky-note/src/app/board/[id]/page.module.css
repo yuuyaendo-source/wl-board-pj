@@ -68,6 +68,10 @@
 }
 
 @media (max-width: 767px) {
+    .boardContainer {
+        padding-right: calc(92px + env(safe-area-inset-right));
+    }
+
     .header {
         padding: 8px 12px;
         padding-top: max(8px, env(safe-area-inset-top));
