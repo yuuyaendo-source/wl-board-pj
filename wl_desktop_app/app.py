@@ -135,11 +135,29 @@ _miniport_visible = True
 
 
 def _make_icon_image():
-    """トレイ用のシンプルなアイコン画像（64x64）。"""
+    """トレイ用のアイコン画像。
+    1. assets/tray_icon.png または assets/toast_icon.png があれば読み込んで利用
+    2. 旧 top-level の toast_icon.png があればそれを利用
+    3. どれも無ければ緑の丸デザインをコード生成（最終フォールバック）
+    """
+    try:
+        from config_loader import get_app_base_dir
+        base = get_app_base_dir()
+    except Exception:
+        base = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(base, "assets", "tray_icon.png"),
+        os.path.join(base, "assets", "toast_icon.png"),
+        os.path.join(base, "toast_icon.png"),
+    ):
+        if Image is not None and os.path.isfile(candidate):
+            try:
+                return Image.open(candidate).convert("RGBA")
+            except Exception:
+                pass
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # 丸で「R」の代わりにリンク風の丸
     d.ellipse([4, 4, size - 4, size - 4], fill=(0, 200, 120), outline=(0, 255, 200))
     d.ellipse([16, 16, size - 16, size - 16], fill=(0, 60, 40))
     return img

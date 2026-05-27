@@ -46,12 +46,19 @@ def _get_toast_icon_path():
         path = ""
     except Exception:
         path = ""
-    # デフォルト: アプリと同じ緑の丸デザインの PNG を生成（exe 時は exe と同じフォルダ）
+    # デフォルト: 新 assets/toast_icon.png を優先。なければ旧 top-level、最終フォールバックとして
+    # 緑の丸デザインの PNG を自動生成（exe 時は exe と同じフォルダ）
     try:
         from config_loader import get_app_base_dir
         app_dir = get_app_base_dir()
     except Exception:
         app_dir = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(app_dir, "assets", "toast_icon.png"),
+        os.path.join(app_dir, "toast_icon.png"),
+    ):
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
     default_path = os.path.join(app_dir, "toast_icon.png")
     if not os.path.isfile(default_path):
         try:

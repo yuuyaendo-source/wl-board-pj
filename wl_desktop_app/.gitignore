@@ -2,7 +2,9 @@
 __pycache__/
 *.pyc
 .env
-toast_icon.png
+# 旧ランタイム生成の top-level toast_icon.png はコミット対象外。
+# 新しい assets/ 配下のアイコンセットは配布物なのでコミット対象 (除外しない)。
+/toast_icon.png
 dist/
 build/
 *.spec

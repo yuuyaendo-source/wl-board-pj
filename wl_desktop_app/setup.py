@@ -13,6 +13,19 @@ from cx_Freeze import Executable, setup
 include_files = []
 if os.path.exists("config.json"):
     include_files.append(("config.json", "config.json"))
+# 新規: assets/ ディレクトリ配下（リン子アイコン群）を丸ごと同梱。
+# 旧 top-level の toast_icon.png は assets/toast_icon.png に移動済み。
+# notifications / mini_port のコードは「assets/ を最優先、なければ top-level」の順で探す。
+if os.path.isdir("assets"):
+    for dirpath, _dirnames, filenames in os.walk("assets"):
+        for name in filenames:
+            # ビルド用スクリプト・ソース PNG はランタイムに不要なので除外
+            if dirpath.endswith("source") or name == "build_icons.py":
+                continue
+            src = os.path.join(dirpath, name)
+            dest = src.replace("\\", "/")
+            include_files.append((src, dest))
+# 旧 top-level の toast_icon.png が残っていれば互換用に同梱
 if os.path.exists("toast_icon.png"):
     include_files.append(("toast_icon.png", "toast_icon.png"))
 if os.path.exists("docs/Windows通知がオフになった場合.md"):
@@ -80,11 +93,15 @@ bdist_msi_options = {
     },
 }
 
+# exe / msi installer のアイコン。assets/linko.ico が無い場合は icon 未指定で続行する
+_ICON_PATH = "assets/linko.ico" if os.path.exists("assets/linko.ico") else None
+
 executables = [
     Executable(
         "app.py",
         base="gui",  # cx_Freeze 8 では "gui"（コンソール非表示）。旧 "Win32GUI" は "gui" に変更済み
         target_name="WonderLinko.exe",
+        icon=_ICON_PATH,
         shortcut_name="Wonder Linko",
         shortcut_dir="DesktopFolder",
     )

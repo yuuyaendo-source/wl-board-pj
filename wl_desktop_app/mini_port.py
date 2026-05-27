@@ -132,7 +132,14 @@ def _send_content(text: str) -> Tuple[bool, str]:
 
 
 def _rinko_icon_path() -> str:
-    return os.path.normpath(os.path.abspath(os.path.join(get_app_base_dir(), "toast_icon.png")))
+    base = get_app_base_dir()
+    for candidate in (
+        os.path.join(base, "assets", "toast_icon.png"),
+        os.path.join(base, "toast_icon.png"),
+    ):
+        if os.path.isfile(candidate):
+            return os.path.normpath(os.path.abspath(candidate))
+    return os.path.normpath(os.path.abspath(os.path.join(base, "assets", "toast_icon.png")))
 
 
 class MiniPortWindow(ctk.CTk):
