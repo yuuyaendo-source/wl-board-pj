@@ -109,7 +109,15 @@ cd 02_3_WL_Desktop_app
 - 更新チェック用: `https://<Board System のドメイン>/api/bs/desktop-app/latest.json`
 - 例（本番）: `https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json`
 
-クライアントの `config.json` には上記の `latest.json` の URL を `update_check_url` に設定する。詳細は `board-system/backend/desktop_app_releases/README.md` を参照。
+クライアントの `config.json` には上記の `latest.json` の URL を `update_check_url` に設定する。
+
+⚠️ **重要**: backend Dockerfile が `desktop_app_releases/` をイメージにビルド時 COPY しているため、
+**ホスト側のファイルを差し替えただけでは反映されません**。新バージョンリリース時は
+`board-system/deploy/deploy.sh` で backend を blue/green 再ビルドする必要があります。
+詳細な手順は次を参照:
+
+- `wl_desktop_app/docs/v3_リリース手順.md` — 完全なリリース手順 + トラブルシューティング
+- `board-system/backend/desktop_app_releases/README.md` — アップロード手順
 
 ## 配布方法
 
