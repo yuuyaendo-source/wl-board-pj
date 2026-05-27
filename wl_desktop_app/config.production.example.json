@@ -22,10 +22,12 @@
   "open_personal_on_start": false,
   "personal_path": "",
   "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/",
+  "linko_server_url": "https://linko-board.internal.wonder-link.com",
   "features": {
     "taskbar_mode": false,
     "linko_avatar": false,
     "visitor_notify": false,
+    "visitor_notify_sound": false,
     "brainstorm": false
   }
 }

@@ -895,6 +895,13 @@ def main():
     # 重複起動された別プロセスからの「前面化」依頼を監視 (show_request ファイル)
     _start_show_request_watcher()
 
+    # Phase 3: 来客通知 (features.visitor_notify が ON のときだけ接続を開始)
+    try:
+        from visitor_notify_client import start_visitor_notify
+        start_visitor_notify()
+    except Exception as e:
+        log_info(f"[visitor_notify] 起動エラー: {e}")
+
     # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
     # ネットワーク確立（Ping）を待ってからチェックする（update_network_check_host が設定時）
     _cfg = load_config()

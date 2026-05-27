@@ -38,8 +38,13 @@ _FEATURE_ROWS = [
     ),
     (
         "visitor_notify",
-        "来客通知 (リン子の音声でお知らせ)",
-        "受付に来客があったとき、リン子の声 + トースト通知でお知らせします。Chatwork 通知とは併用されます。",
+        "来客通知 (トーストでお知らせ)",
+        "受付 (入口) で来客が検知されたとき、トースト通知でお知らせします。Chatwork 通知とは併用されます。",
+    ),
+    (
+        "visitor_notify_sound",
+        "来客通知に音声も鳴らす (visitor_notify が ON の場合)",
+        "上記がONのとき、リン子の音声 (受付で再生されたものと同じ) もデスクトップで鳴らします。会議中などは OFF 推奨。",
     ),
     (
         "brainstorm",
@@ -139,6 +144,7 @@ class SettingsDialog(ctk.CTkToplevel):
         features = dict(self._cfg.get("features") or {})
         for key, var in self._feature_vars.items():
             features[key] = bool(var.get())
+        prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
         self._cfg["features"] = features
         try:
             save_config(self._cfg)
@@ -149,6 +155,17 @@ class SettingsDialog(ctk.CTkToplevel):
             except Exception:
                 print("config save failed:", e, flush=True)
             return
+        # 来客通知の ON/OFF が変わったら接続を切替
+        new_visitor_notify = bool(features.get("visitor_notify"))
+        if new_visitor_notify != prev_visitor_notify:
+            try:
+                from visitor_notify_client import start_visitor_notify, stop_visitor_notify
+                if new_visitor_notify:
+                    start_visitor_notify()
+                else:
+                    stop_visitor_notify()
+            except Exception as e:
+                print(f"visitor_notify toggle failed: {e}", flush=True)
         self._on_close()
 
     def _on_close(self) -> None:

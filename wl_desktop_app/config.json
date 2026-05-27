@@ -18,10 +18,12 @@
   "open_personal_on_start": false,
   "personal_path": "",
   "ai_board_url": "http://127.0.0.1:5000/",
+  "linko_server_url": "http://127.0.0.1:5000",
   "features": {
     "taskbar_mode": false,
     "linko_avatar": false,
     "visitor_notify": false,
+    "visitor_notify_sound": false,
     "brainstorm": false
   }
 }

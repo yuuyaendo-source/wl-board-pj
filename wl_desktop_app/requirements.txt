@@ -5,6 +5,8 @@ Pillow>=10.0.0
 requests>=2.31.0
 customtkinter>=5.2.0
 pynput>=1.7.6
+# Phase 3 (来客通知): linko-system の visitor_arrived event を subscribe するため
+python-socketio[client]>=5.11.0
 # Windows のみ（トースト通知用）。Linux/macOS ではスキップされる
 pywin32>=306; sys_platform == "win32"
 winotify>=1.1.0; sys_platform == "win32"
