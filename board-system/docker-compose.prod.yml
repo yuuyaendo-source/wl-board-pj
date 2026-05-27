@@ -42,15 +42,15 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.co.jp/api/bs}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.com/api/bs}
         NEXT_PUBLIC_BASE_PATH: "/boards"
-        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.co.jp}
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.com}
     container_name: linko-frontend-${COLOR}
     ports:
       - "${PORT_FRONTEND}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.co.jp/api/bs}
-      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.co.jp}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wl-ai-board.internal.wonder-link.com/api/bs}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wl-ai-board.internal.wonder-link.com}
     networks:
       - linko-net
     restart: always
@@ -69,7 +69,7 @@ services:
 
 
       BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-ai-board.internal.wonder-link.co.jp/boards
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-ai-board.internal.wonder-link.com/boards
       DATA_DIR: /app/data
     volumes:
       # blue/green で同じボリュームを共有し、デプロイ切り替えで付箋が消えないようにする

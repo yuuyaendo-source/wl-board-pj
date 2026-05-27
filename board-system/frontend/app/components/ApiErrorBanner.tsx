@@ -35,7 +35,7 @@ export default function ApiErrorBanner({ error, onRetry }: ApiErrorBannerProps) 
       <p className="mb-2 font-medium text-amber-900 dark:text-amber-200">エラー: {error}</p>
       {showApiUrlHint && (
         <div className="mb-4 text-sm text-amber-800 dark:text-amber-300">
-          <p className="mb-1">本番では <code className="rounded bg-amber-100 px-1 dark:bg-amber-900/50">NEXT_PUBLIC_API_URL</code> を API の URL（例: https://wl-ai-board.internal.wonder-link.co.jp/api/bs）に設定し、ビルドし直してください。</p>
+          <p className="mb-1">本番では <code className="rounded bg-amber-100 px-1 dark:bg-amber-900/50">NEXT_PUBLIC_API_URL</code> を API の URL（例: https://wl-ai-board.internal.wonder-link.com/api/bs）に設定し、ビルドし直してください。</p>
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">接続先: {API_URL}</p>
         </div>
       )}

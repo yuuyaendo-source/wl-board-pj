@@ -39,8 +39,8 @@ def _get_defaults():
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
         "notifications_enabled": True,  # トースト通知の表示（アプリ内でオン/オフ。Windows の設定とは別）
-        "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.co.jp/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
-        "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard",  # リン子クリックで開く Task ボード URL
+        "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
+        "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "",  # 更新チェック用 JSON の URL。空ならチェックしない。例: https://example.com/wonderlinko/latest.json
         "update_network_check_host": "172.16.1.4",  # 起動時更新チェック前に Ping でネットワーク確立を待つ先。空なら待たない
         "update_network_check_interval_sec": 5,
@@ -64,8 +64,8 @@ def load_config():
             pass
     cfg["ai_board_url"] = os.environ.get("AI_BOARD_URL", cfg["ai_board_url"]).rstrip("/") + "/"
     cfg["postit_board_url"] = os.environ.get("POSTIT_BOARD_URL", cfg["postit_board_url"]).rstrip("/") + "/"
-    cfg["mini_port_api_url"] = (os.environ.get("MINI_PORT_API_URL", cfg.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.co.jp/board/wl"))).rstrip("/")
-    cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard"))).strip()
+    cfg["mini_port_api_url"] = (os.environ.get("MINI_PORT_API_URL", cfg.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"))).rstrip("/")
+    cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))).strip()
     cfg["board_system_url"] = (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "").strip().rstrip("/")
     return cfg
 
@@ -86,8 +86,8 @@ def save_config(cfg):
     out["tray_click_action"] = cfg.get("tray_click_action", defaults.get("tray_click_action", "postit"))
     out["toast_icon_path"] = cfg.get("toast_icon_path", defaults.get("toast_icon_path", ""))
     out["notifications_enabled"] = cfg.get("notifications_enabled", defaults.get("notifications_enabled", True))
-    out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.co.jp/board/wl"))
-    out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.co.jp/boards/taskboard"))
+    out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"))
+    out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))
     out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
     out["update_network_check_host"] = cfg.get("update_network_check_host", defaults.get("update_network_check_host", ""))
     out["update_network_check_interval_sec"] = cfg.get("update_network_check_interval_sec", defaults.get("update_network_check_interval_sec", 5))

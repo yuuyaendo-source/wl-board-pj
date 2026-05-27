@@ -14,7 +14,7 @@
 ```json
 {
   "version": "2.0.0",
-  "url": "https://wl-ai-board.internal.wonder-link.co.jp/api/bs/desktop-app/WonderLinko.msi"
+  "url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
 }
 ```
 
@@ -36,7 +36,7 @@
 デスクトップアプリの `config.json` に次を設定する。
 
 ```json
-"update_check_url": "https://wl-ai-board.internal.wonder-link.co.jp/api/bs/desktop-app/latest.json"
+"update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json"
 ```
 
 ※ 本番の Board System の API ベース URL に合わせて変更してください。

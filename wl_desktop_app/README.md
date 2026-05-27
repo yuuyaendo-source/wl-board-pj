@@ -78,9 +78,9 @@ cd 02_3_WL_Desktop_app
 
 ## 設定
 
-- `config.json` … `user_id`、`personal_path`、**`board_system_url`**（Board System の API ベース URL。例: 本番 `https://wl-ai-board.internal.wonder-link.co.jp/api/bs`。設定すると「ボード」クリック・パーソナルで Board System のパーソナルボードを開ける）、**`board_system_personal_id`**（メールログインで設定される user id。空のときは初回にメール入力）、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL、アバター・音声のON/OFFなど
+- `config.json` … `user_id`、`personal_path`、**`board_system_url`**（Board System の API ベース URL。例: 本番 `https://wl-ai-board.internal.wonder-link.com/api/bs`。設定すると「ボード」クリック・パーソナルで Board System のパーソナルボードを開ける）、**`board_system_personal_id`**（メールログインで設定される user id。空のときは初回にメール入力）、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL、アバター・音声のON/OFFなど
 - 環境変数 `WLINKO_USER_ID` でユーザーIDを指定可能。`AI_BOARD_URL`, `POSTIT_BOARD_URL` でURLを上書き可能（`.env` やシステム環境変数）
-- **ミニポートの送信先** … `mini_port_api_url`（例: `https://wl-ai-board.internal.wonder-link.co.jp/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
+- **ミニポートの送信先** … `mini_port_api_url`（例: `https://wl-ai-board.internal.wonder-link.com/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
 - **自動更新** … `update_check_url` に JSON の URL を設定すると、起動時に更新チェックし、トレイメニュー「更新を確認」で手動チェック・インストールが可能。未設定時は更新チェックを行わない。
 
 ## 自動更新（update_check_url）
@@ -107,7 +107,7 @@ cd 02_3_WL_Desktop_app
 **Board System 内で配布する場合**（推奨）: 同じリポジトリの `board-system/backend/desktop_app_releases/` に MSI と `latest.json` を配置すると、Board System の API から配信される。このときの URL は次のとおり。
 
 - 更新チェック用: `https://<Board System のドメイン>/api/bs/desktop-app/latest.json`
-- 例（本番）: `https://wl-ai-board.internal.wonder-link.co.jp/api/bs/desktop-app/latest.json`
+- 例（本番）: `https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json`
 
 クライアントの `config.json` には上記の `latest.json` の URL を `update_check_url` に設定する。詳細は `board-system/backend/desktop_app_releases/README.md` を参照。
 
@@ -117,7 +117,7 @@ cd 02_3_WL_Desktop_app
 - **単体 exe** … `.\build_exe.ps1` で `dist\WonderRinko.exe` を生成。exe 実行が許可されている場合のみ。
 - **フォルダ＋起動手順** … 本フォルダを ZIP で配布。メンバーは Python 3.10+ を入れ、`.\start_app.ps1` で起動。本番向けの `config.json` を同梱するとよい。
 
-本番連携（https://wl-ai-board.internal.wonder-link.co.jp/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
+本番連携（https://wl-ai-board.internal.wonder-link.com/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
 
 ## ユーザー管理・Board System との共通化
 
