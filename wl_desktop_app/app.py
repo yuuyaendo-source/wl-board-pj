@@ -306,6 +306,28 @@ def _toggle_notifications(icon=None, item=None):
     notifications.show_toast("Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True)
 
 
+def open_settings(icon=None, item=None):
+    """トレイメニュー「設定...」/ ミニポート「設定」から呼ばれて設定ダイアログを開く。
+
+    pystray のコールバックは別スレッドで走るため、Tk ウィジェットの生成は
+    ミニポートの Tk メインスレッド上で行う必要がある。``after`` で dispatch する。
+    """
+    def _open():
+        try:
+            from settings_dialog import open_settings_dialog
+            open_settings_dialog(master=_miniport_window)
+        except Exception as e:
+            print("open_settings failed:", e, flush=True)
+    if _miniport_window is not None:
+        try:
+            _miniport_window.after(0, _open)
+            return
+        except Exception:
+            pass
+    # ミニポートが未作成の状況では直接呼ぶ (起動初期のフォールバック)。
+    _open()
+
+
 def toggle_miniport(icon=None, item=None):
     """トレイメニュー「ミニポート」の表示/非表示トグル。"""
     if _miniport_window is None:
@@ -556,6 +578,7 @@ def build_menu(icon):
         pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
         pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
+        pystray.MenuItem("設定...", open_settings),
         pystray.MenuItem("アプリをアップデート", _check_update_clicked),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("最新ログを表示", _show_recent_log),

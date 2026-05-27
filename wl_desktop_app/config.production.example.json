@@ -21,5 +21,11 @@
   "toast_icon_path": "",
   "open_personal_on_start": false,
   "personal_path": "",
-  "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/"
+  "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/",
+  "features": {
+    "taskbar_mode": false,
+    "linko_avatar": false,
+    "visitor_notify": false,
+    "brainstorm": false
+  }
 }

@@ -306,10 +306,11 @@ class MiniPortWindow(ctk.CTk):
         self._setup_drag()
 
     def _setup_context_menu(self):
-        """右クリックで通知オン/オフ・ミニポート非表示のメニューを表示。"""
+        """右クリックで通知オン/オフ・設定・ミニポート非表示のメニューを表示。"""
         import tkinter as tk
         self._ctx_menu = tk.Menu(self, tearoff=0)
         self._ctx_menu.add_command(label="", command=self._ctx_toggle_notifications)
+        self._ctx_menu.add_command(label="設定...", command=self._ctx_open_settings)
         self._ctx_menu.add_command(label="ミニポートを非表示にする", command=self._ctx_hide_miniport)
         for widget in (self.frame, self.compact_frame):
             widget.bind("<Button-3>", self._on_right_click)
@@ -328,6 +329,16 @@ class MiniPortWindow(ctk.CTk):
     def _ctx_toggle_notifications(self):
         if self._on_notifications_toggle:
             self._on_notifications_toggle()
+
+    def _ctx_open_settings(self):
+        """右クリック「設定...」で設定ダイアログを開く。
+        Tk メインスレッド (= ミニポート) から呼ばれるので after で再ディスパッチ不要。
+        """
+        try:
+            from settings_dialog import open_settings_dialog
+            open_settings_dialog(master=self)
+        except Exception as e:
+            print("settings open failed:", e, flush=True)
 
     def _ctx_hide_miniport(self):
         if self._on_hide:

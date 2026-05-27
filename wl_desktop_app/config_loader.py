@@ -47,6 +47,17 @@ def _get_defaults():
         "update_network_check_max_wait_sec": 180,
         "board_system_url": "",  # Board System のベース URL。設定時はメールログインでパーソナルボードを開ける
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
+        # 機能フラグ。v2 で追加。基本 OFF でユーザーが任意で ON にする (詳細は docs/v2_拡張計画.md)。
+        # taskbar_mode: ミニポートではなく通常 window としてタスクバーにも出す
+        # linko_avatar: ミニポートにリン子の 2D アバター (表情切替) を表示
+        # visitor_notify: 受付の来客通知 (リン子サーバ Socket.IO 受信) を音声 + トーストで出す
+        # brainstorm: チャット/音声でリン子と業務サポート的なブレストをする
+        "features": {
+            "taskbar_mode": False,
+            "linko_avatar": False,
+            "visitor_notify": False,
+            "brainstorm": False,
+        },
     }
 
 
@@ -59,7 +70,13 @@ def load_config():
     if os.path.isfile(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg.update(json.load(f))
+                loaded = json.load(f)
+            # features は辞書なので update でネスト構造が落ちないようにマージ
+            if isinstance(loaded.get("features"), dict):
+                merged_features = dict(cfg.get("features") or {})
+                merged_features.update(loaded["features"])
+                loaded["features"] = merged_features
+            cfg.update(loaded)
         except Exception:
             pass
     cfg["ai_board_url"] = os.environ.get("AI_BOARD_URL", cfg["ai_board_url"]).rstrip("/") + "/"
@@ -94,8 +111,35 @@ def save_config(cfg):
     out["update_network_check_max_wait_sec"] = cfg.get("update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180))
     out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
+    # features は辞書を丸ごと保存（未知キーも保つ）
+    src_features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
+    out["features"] = {**(defaults.get("features") or {}), **src_features}
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
+
+
+def is_feature_enabled(name: str, cfg=None) -> bool:
+    """features フラグの ON/OFF を取得 (未定義時は False)。
+
+    例:
+        if is_feature_enabled("visitor_notify"):
+            ...
+    """
+    if cfg is None:
+        cfg = load_config()
+    features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
+    return bool(features.get(name, False))
+
+
+def set_feature(name: str, enabled: bool, cfg=None):
+    """features フラグを更新して保存する。"""
+    if cfg is None:
+        cfg = load_config()
+    features = dict(cfg.get("features") or {})
+    features[name] = bool(enabled)
+    cfg["features"] = features
+    save_config(cfg)
+    return cfg
 
 
 def get_board_system_frontend_base(cfg=None):
