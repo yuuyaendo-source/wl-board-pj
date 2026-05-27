@@ -56,6 +56,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import warnings
 import webbrowser
 from urllib.parse import quote_plus
@@ -132,6 +133,95 @@ _config = {}
 _icon = None
 _miniport_window = None
 _miniport_visible = True
+
+# 単一インスタンス制御。クリックするたびにミニポートとトレイが増殖するのを防ぐ。
+# Windows: 名前付き mutex で先発プロセスを検出
+# 重複検知時は %LOCALAPPDATA%\WonderLink\show_request ファイルを置いて
+# 先発プロセスにミニポート前面化を依頼してから自プロセスを即終了する。
+_SINGLE_INSTANCE_MUTEX_HANDLE = None
+_SHOW_REQUEST_STOP = False
+
+
+def _show_request_dir() -> str:
+    """show_request / pid ファイルの置き場所。LOCALAPPDATA があれば優先、無ければユーザーホーム配下。"""
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "WonderLink")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def _show_request_path() -> str:
+    return os.path.join(_show_request_dir(), "show_request")
+
+
+def _acquire_single_instance_lock() -> bool:
+    """Windows の named mutex で単一インスタンスを保証。
+
+    戻り値:
+        True  ロック取得成功 (自プロセスが正規の起動主体)
+        False 他プロセスが既に取得済み (自プロセスは終了すべき)
+    """
+    global _SINGLE_INSTANCE_MUTEX_HANDLE
+    if sys.platform != "win32":
+        # Linux / macOS は配布対象外。開発時はロックなしで動かす。
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+        ERROR_ALREADY_EXISTS = 183
+        # Local\ プレフィックス: per-session (RDP 等で別セッションは別 mutex 扱い)
+        mutex_name = "Local\\WonderLinkoDesktopAppSingleInstance"
+        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.GetLastError.restype = wintypes.DWORD
+        h = kernel32.CreateMutexW(None, False, mutex_name)
+        if not h:
+            # CreateMutexW 自体が失敗した場合は fail-open (ロックなしで起動)
+            return True
+        if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+            return False
+        _SINGLE_INSTANCE_MUTEX_HANDLE = h
+        return True
+    except Exception:
+        return True
+
+
+def _signal_existing_instance_to_show() -> None:
+    """重複起動時、先発プロセスに前面化を依頼する。"""
+    try:
+        with open(_show_request_path(), "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
+    except Exception:
+        pass
+
+
+def _start_show_request_watcher() -> None:
+    """show_request ファイルを監視し、検出したらミニポートを前面化するスレッドを起動。"""
+    path = _show_request_path()
+
+    def loop():
+        while not _SHOW_REQUEST_STOP:
+            try:
+                if os.path.isfile(path):
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
+                    if _miniport_window is not None:
+                        try:
+                            _miniport_window.after(0, _miniport_show)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            time.sleep(1.0)
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
 
 
 def _make_icon_image():
@@ -713,6 +803,7 @@ def main():
     global _config, _miniport_window, _miniport_visible
 
     # アップデート完了後の自動再起動用: --after-update-wait=PID のときはインストーラー終了を待ってから再起動して終了
+    # この経路はロック取得しない (中継プロセスなので)。新インスタンスがロックを取る。
     for i, arg in enumerate(sys.argv):
         if arg == "--after-update-wait" and i + 1 < len(sys.argv):
             try:
@@ -730,6 +821,12 @@ def main():
             except (ValueError, OSError):
                 pass
             return
+
+    # 単一インスタンス制御: 既に他プロセスが起動中なら、先発に前面化を依頼して自プロセスは終了
+    if not _acquire_single_instance_lock():
+        _signal_existing_instance_to_show()
+        log_info("既に Wonder Linko が起動中のため、ミニポートの前面化のみ依頼して終了します。")
+        return
 
     _config = load_config()
 
@@ -794,6 +891,9 @@ def main():
     # トレイを別スレッドで開始（メインスレッドはミニポートの mainloop で使用）
     tray_thread = threading.Thread(target=run_tray, daemon=True)
     tray_thread.start()
+
+    # 重複起動された別プロセスからの「前面化」依頼を監視 (show_request ファイル)
+    _start_show_request_watcher()
 
     # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
     # ネットワーク確立（Ping）を待ってからチェックする（update_network_check_host が設定時）
