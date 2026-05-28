@@ -11,8 +11,11 @@ import sys
 from cx_Freeze import Executable, setup
 
 include_files = []
-if os.path.exists("config.json"):
-    include_files.append(("config.json", "config.json"))
+# 重要: config.json は msi にバンドルしない。
+# msi の上書きインストールで既存ユーザの設定 (features.visitor_notify 等) が
+# リセットされる事故を防ぐため。
+# 新規インストール時は config_loader.py の defaults (= 本番 URL) で動作。
+# 初期化が必要な値があれば config_loader を経由して初回起動時に save_config する。
 # 新規: assets/ ディレクトリ配下（リン子アイコン群）を丸ごと同梱。
 # 旧 top-level の toast_icon.png は assets/toast_icon.png に移動済み。
 # notifications / mini_port のコードは「assets/ を最優先、なければ top-level」の順で探す。

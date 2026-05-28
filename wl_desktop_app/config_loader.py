@@ -23,9 +23,12 @@ def _default_user_id():
 
 
 def _get_defaults():
+    # 注意: msi に config.json はバンドルしない設計 (v3.1.4 以降)。
+    # 新規インストール時はこれらの defaults でそのまま動作する必要があるので、
+    # **本番想定の URL** を defaults として持つ。開発時は環境変数か個別 config.json で override。
     return {
-        "ai_board_url": "http://127.0.0.1:5000/",
-        "postit_board_url": "http://127.0.0.1:3000/",
+        "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/",
+        "postit_board_url": "https://wl-ai-board.internal.wonder-link.com/",
         "postit_board_id": "wl",  # トレイクリックで開くデフォルトボード。本番: wl（AI-Board連携先）
         "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
@@ -41,14 +44,14 @@ def _get_defaults():
         "notifications_enabled": True,  # トースト通知の表示（アプリ内でオン/オフ。Windows の設定とは別）
         "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
-        "update_check_url": "",  # 更新チェック用 JSON の URL。空ならチェックしない。例: https://example.com/wonderlinko/latest.json
+        "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_host": "172.16.1.4",  # 起動時更新チェック前に Ping でネットワーク確立を待つ先。空なら待たない
         "update_network_check_interval_sec": 5,
         "update_network_check_max_wait_sec": 180,
-        "board_system_url": "",  # Board System のベース URL。設定時はメールログインでパーソナルボードを開ける
+        "board_system_url": "https://wl-ai-board.internal.wonder-link.com/api/bs",  # Board System のベース URL
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
         # linko-system (AI-Board) の Socket.IO サーバ URL。features.visitor_notify=True のときに接続して来客通知を受ける
-        "linko_server_url": "",
+        "linko_server_url": "https://linko-board.internal.wonder-link.com",
         # 機能フラグ。v2 で追加。基本 OFF でユーザーが任意で ON にする (詳細は docs/v2_拡張計画.md)。
         # taskbar_mode: ミニポートではなく通常 window としてタスクバーにも出す
         # linko_avatar: ミニポートにリン子の 2D アバター (表情切替) を表示
