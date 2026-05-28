@@ -896,11 +896,16 @@ def main():
     _start_show_request_watcher()
 
     # Phase 3: 来客通知 (features.visitor_notify が ON のときだけ接続を開始)
+    log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")
     try:
         from visitor_notify_client import start_visitor_notify
-        start_visitor_notify()
+        log_info("[visitor_notify] visitor_notify_client の import 成功")
+        result = start_visitor_notify()
+        log_info(f"[visitor_notify] start_visitor_notify 完了: result={result}")
     except Exception as e:
+        import traceback
         log_info(f"[visitor_notify] 起動エラー: {e}")
+        log_info(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
     # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
     # ネットワーク確立（Ping）を待ってからチェックする（update_network_check_host が設定時）

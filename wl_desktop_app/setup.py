@@ -78,6 +78,9 @@ build_exe_options = {
         # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
         "socketio", "engineio", "websocket",
         "bidict",  # python-socketio の依存
+        # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
+        # 静的解析が拾い損ねる可能性があるため。
+        "visitor_notify_client", "settings_dialog",
     ],
     "packages": ["customtkinter", "pynput", "socketio", "engineio"],
     "zip_exclude_packages": ["*"],

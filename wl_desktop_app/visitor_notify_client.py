@@ -63,9 +63,12 @@ def start_visitor_notify() -> bool:
     """
     global _client, _thread
 
+    log_info("[visitor_notify] start_visitor_notify() entered")
+
     if _sio is None:
         log_warn("[visitor_notify] python-socketio がインストールされていないため起動できません。")
         return False
+    log_info(f"[visitor_notify] socketio loaded ok (version={getattr(_sio, '__version__', '?')})")
 
     try:
         from config_loader import load_config, is_feature_enabled
@@ -74,10 +77,14 @@ def start_visitor_notify() -> bool:
         return False
 
     cfg = load_config()
-    if not is_feature_enabled("visitor_notify", cfg):
+    enabled = is_feature_enabled("visitor_notify", cfg)
+    log_info(f"[visitor_notify] features.visitor_notify={enabled}")
+    if not enabled:
+        log_info("[visitor_notify] features.visitor_notify=False のためスキップ")
         return False
 
     url = (cfg.get("linko_server_url") or "").strip()
+    log_info(f"[visitor_notify] linko_server_url={url!r}")
     if not url:
         log_warn("[visitor_notify] linko_server_url が空のため接続をスキップ。設定で URL を指定してください。")
         return False
@@ -99,12 +106,17 @@ def start_visitor_notify() -> bool:
         try:
             log_info(f"[visitor_notify] {url} へ接続を試みます…")
             _client.connect(url, transports=["websocket", "polling"])
+            log_info("[visitor_notify] connect() returned, waiting for events")
             _client.wait()
+            log_info("[visitor_notify] wait() returned (loop ended)")
         except Exception as e:
+            import traceback
             log_warn(f"[visitor_notify] 接続エラー: {e}")
+            log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
     _thread = threading.Thread(target=runner, name="visitor_notify_client", daemon=True)
     _thread.start()
+    log_info("[visitor_notify] runner スレッドを起動しました")
     return True
 
 
