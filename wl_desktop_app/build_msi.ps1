@@ -10,6 +10,16 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+Write-Host "Installing runtime dependencies (requirements.txt)..." -ForegroundColor Yellow
+# 重要: ビルド時の Python 環境に requirements.txt の全パッケージが必要。
+# cx_Freeze は import 解析で見つけたパッケージしかバンドルしないため、
+# requirements.txt が未 install だと python-socketio などが msi に入らない。
+pip install -q -r requirements.txt
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "requirements.txt install failed."
+    exit 1
+}
+
 Write-Host "Installing cx_Freeze and freeze-core..." -ForegroundColor Yellow
 # freeze-core は cx_Freeze の Windows 用依存。Python バージョンに合った wheel を入れるため明示的にアップグレード
 pip install -q --upgrade freeze-core cx_Freeze
@@ -19,6 +29,10 @@ $pyVer = (python -c "import sys; print(sys.version_info.major, sys.version_info.
 if ($pyVer -match "3\.(1[3-9]|[2-9][0-9])") {
     pip install -q python-msilib 2>$null
 }
+
+# build/ と dist/ をクリーンしてから再ビルド (cx_Freeze の cache で旧依存が残るのを防ぐ)
+if (Test-Path build) { Remove-Item -Recurse -Force build }
+if (Test-Path dist)  { Remove-Item -Recurse -Force dist }
 
 Write-Host "Building MSI..." -ForegroundColor Yellow
 python setup.py bdist_msi
@@ -37,6 +51,19 @@ if ($msiPath) {
         Write-Host "PIL _imaging: bundled ($($pilPyd.Name))" -ForegroundColor Gray
     } else {
         Write-Error "_imaging*.pyd is not in build. Do not distribute this MSI."
+        exit 1
+    }
+    # Phase 3 (来客通知) で socketio が必須。バンドル漏れチェック
+    $sioDir = Get-ChildItem -Path "build" -Recurse -Directory -Filter "socketio" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($sioDir) {
+        Write-Host "python-socketio: bundled ($($sioDir.FullName))" -ForegroundColor Gray
+    } else {
+        Write-Error "python-socketio is not bundled. visitor_notify will not work. Aborting."
+        exit 1
+    }
+    $eioDir = Get-ChildItem -Path "build" -Recurse -Directory -Filter "engineio" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $eioDir) {
+        Write-Error "python-engineio is not bundled. visitor_notify will not work. Aborting."
         exit 1
     }
     Write-Host "Distribute the MSI for installation." -ForegroundColor Cyan
