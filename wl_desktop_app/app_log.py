@@ -74,13 +74,9 @@ def setup_app_log() -> logging.Logger:
     return logger
 
 
-def log_info(msg: str):
-    """
-    メッセージをログに必ず追加する（バッファ＋ファイル）。
-    トレイや別スレッドから呼んでも確実に残るようにする。
-    """
+def _emit(level: str, msg: str) -> None:
     from datetime import datetime
-    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [INFO] WonderLinko: {msg}"
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [{level}] WonderLinko: {msg}"
     with BufferHandler._lock:
         _buffer.append(line)
     if _log_path:
@@ -89,6 +85,21 @@ def log_info(msg: str):
                 f.write(line + "\n")
         except Exception:
             pass
+
+
+def log_info(msg: str):
+    """メッセージをログに INFO で記録する（バッファ＋ファイル）。"""
+    _emit("INFO", msg)
+
+
+def log_warn(msg: str):
+    """メッセージをログに WARN で記録する（バッファ＋ファイル）。"""
+    _emit("WARN", msg)
+
+
+def log_error(msg: str):
+    """メッセージをログに ERROR で記録する（バッファ＋ファイル）。"""
+    _emit("ERROR", msg)
 
 
 def get_recent_log_lines() -> list[str]:
