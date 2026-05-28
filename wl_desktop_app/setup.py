@@ -74,8 +74,9 @@ build_exe_options = {
     "includes": [
         "pystray", "winotify", "win10toast", "win10toast_click", "requests",
         "customtkinter", "pynput",
-        # Phase 3 (来客通知): python-socketio[client] とその依存
-        "socketio", "engineio", "websocket", "websockets",
+        # Phase 3 (来客通知): python-socketio[client] とその依存。
+        # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
+        "socketio", "engineio", "websocket",
         "bidict",  # python-socketio の依存
     ],
     "packages": ["customtkinter", "pynput", "socketio", "engineio"],
