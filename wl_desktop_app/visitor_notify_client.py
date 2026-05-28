@@ -170,22 +170,37 @@ def _handle_visitor_arrived(data: dict) -> None:
     title_map = {"entrance": "入口", "office_lobby": "ロビー", "meeting_room": "会議室"}
     title = title_map.get(location, "来客")
 
-    log_info(f"[visitor_notify] visitor_arrived 受信: name={name} location={location}")
+    log_info(f"[visitor_notify] visitor_arrived 受信: name={name} location={location} audio_url={audio_url!r}")
+
+    # クリック時に開く URL (linko-board の entrance 画面)。これを渡すと winotify (Action Center) 経路で
+    # 確実にトーストが出る (win10toast-click にフォールバックすると表示されない環境がある)。
+    click_url = ""
+    try:
+        from config_loader import load_config
+        click_url = (load_config().get("linko_server_url") or "").rstrip("/") + "/entrance"
+    except Exception:
+        pass
 
     # トースト
     try:
         from notifications import show_toast
-
-        show_toast(title, message, duration_sec=8, force_show=False)
+        log_info(f"[visitor_notify] show_toast 呼び出し: title={title!r} click_url={click_url!r}")
+        show_toast(title, message, url=click_url or None, duration_sec=8, force_show=False)
+        log_info("[visitor_notify] show_toast 完了")
     except Exception as e:
+        import traceback
         log_warn(f"[visitor_notify] トースト表示失敗: {e}")
+        log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
     # 音声 (opt-in)
     try:
         from config_loader import is_feature_enabled
 
         if is_feature_enabled("visitor_notify_sound") and audio_url:
+            log_info("[visitor_notify] 音声再生を開始 (visitor_notify_sound=True)")
             _play_visitor_audio(audio_url)
+        else:
+            log_info(f"[visitor_notify] 音声再生スキップ (sound_enabled={is_feature_enabled('visitor_notify_sound')}, audio_url={'有り' if audio_url else '無し'})")
     except Exception as e:
         log_warn(f"[visitor_notify] 音声再生失敗: {e}")
 
