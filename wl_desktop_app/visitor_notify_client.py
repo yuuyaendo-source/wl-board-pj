@@ -166,20 +166,28 @@ def _handle_visitor_arrived(data: dict) -> None:
     location = (data.get("location") or "entrance").strip()
     message = (data.get("message") or f"{name} さんが来訪されました").strip()
     audio_url = (data.get("audio_url") or "").strip()
+    server_click_url = (data.get("click_url") or "").strip()
 
     title_map = {"entrance": "入口", "office_lobby": "ロビー", "meeting_room": "会議室"}
     title = title_map.get(location, "来客")
 
-    log_info(f"[visitor_notify] visitor_arrived 受信: name={name} location={location} audio_url={audio_url!r}")
+    log_info(
+        f"[visitor_notify] visitor_arrived 受信: name={name} location={location} "
+        f"audio_url={audio_url!r} click_url={server_click_url!r}"
+    )
 
-    # クリック時に開く URL (linko-board の entrance 画面)。これを渡すと winotify (Action Center) 経路で
-    # 確実にトーストが出る (win10toast-click にフォールバックすると表示されない環境がある)。
-    click_url = ""
-    try:
-        from config_loader import load_config
-        click_url = (load_config().get("linko_server_url") or "").rstrip("/") + "/entrance"
-    except Exception:
-        pass
+    # クリック時に開く URL の優先順:
+    # 1. サーバが渡してきた click_url (Chatwork と同じ remote_unlock パネル URL)
+    # 2. linko_server_url + /entrance (フォールバック)
+    # url を渡すと winotify (Action Center) 経路で確実にトーストが出る
+    # (win10toast-click にフォールバックすると表示されない環境がある)。
+    click_url = server_click_url
+    if not click_url:
+        try:
+            from config_loader import load_config
+            click_url = (load_config().get("linko_server_url") or "").rstrip("/") + "/entrance"
+        except Exception:
+            click_url = ""
 
     # トースト
     try:
