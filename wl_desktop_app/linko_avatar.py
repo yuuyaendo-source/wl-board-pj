@@ -30,6 +30,9 @@ class _LinkoAvatar:
         self._current_pose = "normal"
         self._lipsync_thread: Optional[threading.Thread] = None
         self._lipsync_stop = threading.Event()
+        self._idle_thread: Optional[threading.Thread] = None
+        self._idle_stop = threading.Event()
+        self._is_speaking = False  # 喋り中は idle を止める
         self._ui_callback: Optional[Callable[[str], None]] = None
         self._lock = threading.Lock()
 
@@ -75,6 +78,7 @@ class _LinkoAvatar:
         duration_sec を渡すと自動停止、None なら stop_lipsync() を呼ぶまで継続。
         """
         self.stop_lipsync(base_pose=base_pose, wait=True)
+        self._is_speaking = True
         self._lipsync_stop.clear()
 
         def loop():
@@ -84,6 +88,7 @@ class _LinkoAvatar:
                 time.sleep(random.uniform(0.10, 0.18))
                 if duration_sec is not None and (time.time() - start) >= duration_sec:
                     break
+            self._is_speaking = False
             self.set_pose(base_pose)
 
         self._lipsync_thread = threading.Thread(
@@ -93,6 +98,7 @@ class _LinkoAvatar:
 
     def stop_lipsync(self, base_pose: str = "normal", wait: bool = False) -> None:
         self._lipsync_stop.set()
+        self._is_speaking = False
         t = self._lipsync_thread
         if wait and t is not None:
             try:
@@ -102,10 +108,50 @@ class _LinkoAvatar:
         self._lipsync_thread = None
         self.set_pose(base_pose)
 
+    def start_idle_animation(self, base_pose: str = "normal") -> None:
+        """アイドルアニメ: 30-60 秒に 1 回、200ms だけ 'happy' (目閉じ笑顔) にして
+        まばたき + ふっと笑む演出。喋っている間はスキップ (lipsync 優先)。
+        Clippy 化を避けるため、ごく控えめに動く。
+        """
+        self.stop_idle_animation(wait=True)
+        self._idle_stop.clear()
+
+        def loop():
+            while not self._idle_stop.is_set():
+                # 30-60 秒のランダム待機 (1秒刻みで stop check)
+                wait_sec = random.randint(30, 60)
+                for _ in range(wait_sec):
+                    if self._idle_stop.is_set():
+                        return
+                    time.sleep(1.0)
+                if self._is_speaking or self._idle_stop.is_set():
+                    continue
+                # 200ms だけ happy
+                self.set_pose("happy")
+                time.sleep(0.2)
+                if not self._idle_stop.is_set() and not self._is_speaking:
+                    self.set_pose(base_pose)
+
+        self._idle_thread = threading.Thread(
+            target=loop, name="linko_avatar_idle", daemon=True
+        )
+        self._idle_thread.start()
+
+    def stop_idle_animation(self, wait: bool = False) -> None:
+        self._idle_stop.set()
+        t = self._idle_thread
+        if wait and t is not None:
+            try:
+                t.join(timeout=1.0)
+            except Exception:
+                pass
+        self._idle_thread = None
+
 
 # --- モジュール公開関数 (シングルトン) ----------------------------------------
 
 _singleton: Optional[_LinkoAvatar] = None
+_speech_bubble = None  # SpeechBubble インスタンス (mini_port から register)
 
 
 def init(size: int = 96) -> bool:
@@ -150,3 +196,44 @@ def start_lipsync(duration_sec: Optional[float] = None, base_pose: str = "normal
 def stop_lipsync(base_pose: str = "normal") -> None:
     if _singleton is not None:
         _singleton.stop_lipsync(base_pose=base_pose)
+
+
+def start_idle_animation() -> None:
+    if _singleton is not None:
+        _singleton.start_idle_animation()
+
+
+def stop_idle_animation() -> None:
+    if _singleton is not None:
+        _singleton.stop_idle_animation()
+
+
+def register_speech_bubble(bubble) -> None:
+    """SpeechBubble インスタンスを登録。say() で吹き出しを使うため。"""
+    global _speech_bubble
+    _speech_bubble = bubble
+
+
+def say(
+    text: str,
+    duration_sec: Optional[float] = None,
+    base_pose: str = "normal",
+) -> None:
+    """音声に同期して吹き出し + 口パクを開始する統合 API。
+
+    Phase 2.1: 1 発話 (toast) ベース。
+    Phase 5a (ブレスト): _speech_bubble.append_text() を直接呼んで streaming する想定。
+
+    duration_sec: 音声長 (秒)。None なら吹き出しは出さず lipsync のみ。
+    """
+    if _speech_bubble is not None and text:
+        try:
+            _speech_bubble.show_message(text, duration_sec=duration_sec or 3.0)
+        except Exception as e:
+            print(f"[linko_avatar] speech bubble error: {e}", flush=True)
+    if duration_sec is not None and duration_sec > 0:
+        start_lipsync(duration_sec=duration_sec, base_pose=base_pose)
+
+
+def is_speaking() -> bool:
+    return _singleton is not None and _singleton._is_speaking

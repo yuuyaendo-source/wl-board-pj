@@ -192,6 +192,8 @@ def _handle_visitor_arrived(data: dict) -> None:
     name = (data.get("name") or "来客").strip() or "来客"
     location = (data.get("location") or "entrance").strip()
     message = (data.get("message") or f"{name} さんが来訪されました").strip()
+    # audio_text: 読み上げテキスト (吹き出し用)。無ければ message を流用。
+    audio_text = (data.get("audio_text") or message or "").strip()
     audio_url = (data.get("audio_url") or "").strip()
     server_click_url = (data.get("click_url") or "").strip()
 
@@ -227,22 +229,23 @@ def _handle_visitor_arrived(data: dict) -> None:
         log_warn(f"[visitor_notify] トースト表示失敗: {e}")
         log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
-    # 音声 (opt-in)
+    # 音声 (opt-in) + アバター連動 (Phase 2.1: 吹き出し + 口パク)
     try:
         from config_loader import is_feature_enabled
 
         if is_feature_enabled("visitor_notify_sound") and audio_url:
             log_info("[visitor_notify] 音声再生を開始 (visitor_notify_sound=True)")
-            _play_visitor_audio(audio_url)
+            _play_visitor_audio(audio_url, audio_text=audio_text)
         else:
             log_info(f"[visitor_notify] 音声再生スキップ (sound_enabled={is_feature_enabled('visitor_notify_sound')}, audio_url={'有り' if audio_url else '無し'})")
     except Exception as e:
         log_warn(f"[visitor_notify] 音声再生失敗: {e}")
 
 
-def _play_visitor_audio(audio_url: str) -> None:
+def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:
     """audio_url の WAV をダウンロードして winsound で再生 (Windows のみ)。
     audio_url は相対パスもしくは絶対 URL。相対なら linko_server_url を補う。
+    audio_text を渡すと features.linko_avatar=True のとき吹き出し + 口パク連動。
     """
     if requests is None:
         return
@@ -289,15 +292,23 @@ def _play_visitor_audio(audio_url: str) -> None:
         except Exception:
             duration_sec = None
 
-        # Phase 2: features.linko_avatar=True なら口パク開始
+        # Phase 2.1: features.linko_avatar=True なら 吹き出し + 口パク を同時開始
         try:
             from config_loader import is_feature_enabled
             if is_feature_enabled("linko_avatar"):
                 import linko_avatar
                 if linko_avatar.is_ready():
-                    linko_avatar.start_lipsync(duration_sec=duration_sec, base_pose="normal")
+                    if duration_sec is not None and duration_sec > 0:
+                        # audio_text があれば吹き出しに表示 + lipsync。無ければ lipsync のみ
+                        linko_avatar.say(
+                            text=audio_text,
+                            duration_sec=duration_sec,
+                            base_pose="normal",
+                        )
+                    else:
+                        linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
         except Exception as _e:
-            log_warn(f"[visitor_notify] lipsync start 失敗: {_e}")
+            log_warn(f"[visitor_notify] lipsync/bubble start 失敗: {_e}")
 
         # winsound.SND_ASYNC で再生 (ブロックしない)
         import winsound
