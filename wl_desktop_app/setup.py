@@ -21,9 +21,12 @@ include_files = []
 # notifications / mini_port のコードは「assets/ を最優先、なければ top-level」の順で探す。
 if os.path.isdir("assets"):
     for dirpath, _dirnames, filenames in os.walk("assets"):
+        # ランタイムに不要なディレクトリは丸ごとスキップ
+        if any(part in ("source", "old") for part in os.path.normpath(dirpath).split(os.sep)):
+            continue
         for name in filenames:
-            # ビルド用スクリプト・ソース PNG はランタイムに不要なので除外
-            if dirpath.endswith("source") or name == "build_icons.py":
+            # ビルド用スクリプトも除外
+            if name in ("build_icons.py", "build_avatar.py"):
                 continue
             src = os.path.join(dirpath, name)
             dest = src.replace("\\", "/")
@@ -83,7 +86,7 @@ build_exe_options = {
         "bidict",  # python-socketio の依存
         # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
         # 静的解析が拾い損ねる可能性があるため。
-        "visitor_notify_client", "settings_dialog",
+        "visitor_notify_client", "settings_dialog", "linko_avatar",
     ],
     "packages": ["customtkinter", "pynput", "socketio", "engineio"],
     "zip_exclude_packages": ["*"],

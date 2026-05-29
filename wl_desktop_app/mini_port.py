@@ -235,6 +235,9 @@ class MiniPortWindow(ctk.CTk):
             )
         self.btn_rinko.pack(side="left", padx=(0, 8))
 
+        # Phase 2: features.linko_avatar=True なら btn_rinko に 2D アバターを表示
+        self._init_avatar()
+
         self.btn_post = ctk.CTkButton(
             self.compact_frame,
             text="投稿",
@@ -304,6 +307,71 @@ class MiniPortWindow(ctk.CTk):
         self.btn_send.pack(side="right")
 
         self._setup_drag()
+
+    # --- Phase 2: 2D アバター ------------------------------------------------
+    def _init_avatar(self) -> None:
+        """features.linko_avatar=True なら btn_rinko を 2D アバター表示に切替。"""
+        self._avatar_enabled = False
+        self._avatar_ctk_images: dict = {}
+        try:
+            from config_loader import is_feature_enabled
+            if not is_feature_enabled("linko_avatar"):
+                return
+            import linko_avatar
+            if not linko_avatar.is_ready():
+                if not linko_avatar.init(64):
+                    print("[linko_avatar] init failed (画像が見つからない)", flush=True)
+                    return
+            self._avatar_enabled = True
+            # ボタンを大きめに (顔が見えるサイズ)
+            self._avatar_size = (60, 60)
+            try:
+                self.btn_rinko.configure(width=64, height=64, corner_radius=32)
+            except Exception:
+                pass
+            # COMPACT_H を上げて余裕を持たせる
+            self.COMPACT_H = 80
+            # 初期ポーズ
+            self._set_avatar_pose("normal")
+            # アバターポーズ変化時の UI 更新フックを登録
+            linko_avatar.set_ui_callback(self._on_avatar_pose_change)
+            # window 位置を更新サイズで取り直す
+            try:
+                self._position_bottom_right(compact=True)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[linko_avatar] init exception: {e}", flush=True)
+
+    def _on_avatar_pose_change(self, pose: str) -> None:
+        """linko_avatar の lipsync スレッドから呼ばれる。Tk メインスレッドへ dispatch。"""
+        try:
+            self.after(0, lambda p=pose: self._set_avatar_pose(p))
+        except Exception:
+            pass
+
+    def _set_avatar_pose(self, pose: str) -> None:
+        if not getattr(self, "_avatar_enabled", False):
+            return
+        try:
+            import linko_avatar
+            img = linko_avatar.get_image(pose)
+        except Exception:
+            return
+        if img is None:
+            return
+        if pose not in self._avatar_ctk_images:
+            try:
+                self._avatar_ctk_images[pose] = ctk.CTkImage(
+                    light_image=img, dark_image=img, size=self._avatar_size,
+                )
+            except Exception:
+                return
+        try:
+            self.btn_rinko.configure(image=self._avatar_ctk_images[pose])
+            self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
+        except Exception:
+            pass
 
     def _setup_context_menu(self):
         """右クリックで通知オン/オフ・設定・ミニポート非表示のメニューを表示。"""

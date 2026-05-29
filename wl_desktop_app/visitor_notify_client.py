@@ -277,6 +277,28 @@ def _play_visitor_audio(audio_url: str) -> None:
         os.close(fd)
         with open(path, "wb") as f:
             f.write(r.content)
+        # WAV の長さを計算して lipsync を同期
+        duration_sec = None
+        try:
+            import wave as _wave
+            with _wave.open(path, "rb") as _wf:
+                _frames = _wf.getnframes()
+                _rate = _wf.getframerate()
+                if _rate:
+                    duration_sec = _frames / float(_rate)
+        except Exception:
+            duration_sec = None
+
+        # Phase 2: features.linko_avatar=True なら口パク開始
+        try:
+            from config_loader import is_feature_enabled
+            if is_feature_enabled("linko_avatar"):
+                import linko_avatar
+                if linko_avatar.is_ready():
+                    linko_avatar.start_lipsync(duration_sec=duration_sec, base_pose="normal")
+        except Exception as _e:
+            log_warn(f"[visitor_notify] lipsync start 失敗: {_e}")
+
         # winsound.SND_ASYNC で再生 (ブロックしない)
         import winsound
 
