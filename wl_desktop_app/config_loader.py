@@ -35,8 +35,8 @@ def _get_defaults():
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
         "personal_path": "",  # Board System 利用時は未使用。レガシー AI ボード用パス（例: /asakawa）。空でよい。
         "open_personal_on_start": False,
-        "avatar_visible": True,
-        "sound_enabled": True,
+        # 旧 tray menu「アバターを表示」「音声ON」が読んでいた設定。v3.1.7 で UI 削除済 (dead)。
+        # 既存ユーザ config.json にあれば残るが、コードは参照しない。
         "toast_duration_sec": 8,
         "postit_poll_interval_sec": 60,  # 付箋ボードの新付箋チェック間隔（0で無効）
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"

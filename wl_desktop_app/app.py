@@ -309,29 +309,6 @@ def open_last_notification(*args):
     open_personal_mode()
 
 
-def toggle_avatar(icon, item):
-    """アバター表示/非表示をトグル（将来のアバターウィンドウ用に設定のみ保存）。"""
-    _config["avatar_visible"] = not _config.get("avatar_visible", True)
-    save_config(_config)
-    visible = _config["avatar_visible"]
-    notifications.show_toast(
-        "Wonder Rinko",
-        "アバター表示: " + ("ON" if visible else "OFF") + "（準備中）",
-        duration_sec=3,
-    )
-
-
-def toggle_sound(icon, item):
-    """音声ON/OFFをトグル。"""
-    _config["sound_enabled"] = not _config.get("sound_enabled", True)
-    save_config(_config)
-    notifications.show_toast(
-        "Wonder Rinko",
-        "音声: " + ("ON" if _config["sound_enabled"] else "OFF"),
-        duration_sec=3,
-    )
-
-
 def toggle_startup(icon, item):
     """PC起動時に自動で起動するかどうかをトグル。"""
     if sys.platform != "win32":
@@ -645,8 +622,6 @@ def build_menu(icon):
     """トレイメニューを組み立てる。"""
     global _config
     _config = load_config()
-    avatar_visible = _config.get("avatar_visible", True)
-    sound_enabled = _config.get("sound_enabled", True)
     tray_action = _config.get("tray_click_action", "postit")
 
     tray_click_submenu = pystray.Menu(
@@ -664,8 +639,6 @@ def build_menu(icon):
         pystray.MenuItem("ミニポートを非表示", hide_miniport),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("通知を表示", _toggle_notifications, checked=lambda *_: _config.get("notifications_enabled", True)),
-        pystray.MenuItem("アバターを表示", toggle_avatar, checked=lambda *_: _config.get("avatar_visible", True)),
-        pystray.MenuItem("音声ON", toggle_sound, checked=lambda *_: _config.get("sound_enabled", True)),
         pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
         pystray.MenuItem("設定...", open_settings),
