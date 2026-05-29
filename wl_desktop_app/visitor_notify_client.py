@@ -103,16 +103,43 @@ def start_visitor_notify() -> bool:
     _register_handlers(_client)
 
     def runner():
-        try:
-            log_info(f"[visitor_notify] {url} へ接続を試みます…")
-            _client.connect(url, transports=["websocket", "polling"])
-            log_info("[visitor_notify] connect() returned, waiting for events")
-            _client.wait()
-            log_info("[visitor_notify] wait() returned (loop ended)")
-        except Exception as e:
-            import traceback
-            log_warn(f"[visitor_notify] 接続エラー: {e}")
-            log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
+        """
+        socketio.Client の reconnection=True は「接続後の切断」のみカバーし、
+        **初回 connect() の失敗は再試行しない**。スリープ復帰時のネットワーク
+        未確立、CATO/VPN 遅延、Flask 起動直後等で初回失敗するとそのまま諦めて
+        二度と接続しない問題があるため、自前の retry loop でラップする。
+        """
+        import time as _time
+        # backoff: 5s, 10s, 20s, 30s, 30s, ...
+        backoff_schedule = [5, 10, 20, 30]
+        attempt = 0
+        while not _stop_event.is_set():
+            attempt += 1
+            try:
+                log_info(f"[visitor_notify] {url} へ接続を試みます… (attempt={attempt})")
+                _client.connect(url, transports=["websocket", "polling"])
+                log_info("[visitor_notify] connect() returned, waiting for events")
+                _client.wait()
+                log_info("[visitor_notify] wait() returned (loop ended)")
+                # client.wait() がリターン = 正常切断 or stop。次のループへ
+                if _stop_event.is_set():
+                    break
+                # disconnect 後の reconnection は socketio 内蔵が処理。
+                # ここに来たということは諦めて runner も終わるが、念のためリトライ
+                attempt = 0  # 一度成功したのでカウンタリセット
+            except Exception as e:
+                import traceback
+                log_warn(f"[visitor_notify] 接続エラー (attempt={attempt}): {e}")
+                if attempt == 1:
+                    # 初回失敗時だけ traceback を出す (以降の retry は短く)
+                    log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
+            # backoff 待機
+            wait_sec = backoff_schedule[min(attempt - 1, len(backoff_schedule) - 1)]
+            log_info(f"[visitor_notify] {wait_sec}秒後に再試行します")
+            for _ in range(wait_sec):
+                if _stop_event.is_set():
+                    return
+                _time.sleep(1)
 
     _thread = threading.Thread(target=runner, name="visitor_notify_client", daemon=True)
     _thread.start()
