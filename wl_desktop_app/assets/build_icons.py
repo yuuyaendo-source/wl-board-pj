@@ -23,19 +23,31 @@ from pathlib import Path
 from PIL import Image
 
 ASSETS_DIR = Path(__file__).resolve().parent
-SOURCE = ASSETS_DIR / "source" / "Linko_ver1.png"
+# v3.2.0 から Phase 2 で導入した新モデル (linko_v2.1) と統一するため、
+# アイコンも linko_v2.1_normal.png をベースに生成する。
+SOURCE = ASSETS_DIR / "source" / "linko_v2.1_normal.png"
 
 
 def remove_background(img: Image.Image, tolerance: int = 25) -> Image.Image:
-    """四隅の中央値を背景色とみなし、近い色のピクセルを透過化する。"""
+    """四隅から背景色を検出して透過化する。
+
+    既に四隅が透過済 (alpha<50) なら何もしない (誤って黒い部分まで消すのを防ぐ)。
+    四隅が同色なら単色背景とみなしてその色を抜く。
+    """
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     px = img.load()
     w, h = img.size
-    samples = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    rs = sorted(s[0] for s in samples)
-    gs = sorted(s[1] for s in samples)
-    bs = sorted(s[2] for s in samples)
+    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
+    # 四隅の最大 alpha が低ければ既に透過済みとみなす
+    max_corner_alpha = max(c[3] for c in corners)
+    if max_corner_alpha < 50:
+        print("detected: already transparent at corners, skipping bg removal")
+        return img
+
+    rs = sorted(c[0] for c in corners)
+    gs = sorted(c[1] for c in corners)
+    bs = sorted(c[2] for c in corners)
     br, bg, bb = rs[len(rs) // 2], gs[len(gs) // 2], bs[len(bs) // 2]
     print(f"detected bg color: rgb({br}, {bg}, {bb})")
 

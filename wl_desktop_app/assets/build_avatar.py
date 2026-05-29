@@ -29,17 +29,18 @@ SIZES = [48, 64, 96, 128, 160]
 
 
 def remove_background(img: Image.Image, tolerance: int = 25) -> Image.Image:
-    """四隅の中央値を背景色とみなし、近い色のピクセルを透過化する。"""
+    """四隅から背景色を検出して透過化する。既に透過済みなら触らない。"""
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     px = img.load()
     w, h = img.size
-    samples = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    rs = sorted(s[0] for s in samples)
-    gs = sorted(s[1] for s in samples)
-    bs = sorted(s[2] for s in samples)
+    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
+    if max(c[3] for c in corners) < 50:
+        return img
+    rs = sorted(c[0] for c in corners)
+    gs = sorted(c[1] for c in corners)
+    bs = sorted(c[2] for c in corners)
     br, bg, bb = rs[len(rs) // 2], gs[len(gs) // 2], bs[len(bs) // 2]
-
     data = img.getdata()
     new_data = []
     for r, g, b, a in data:
