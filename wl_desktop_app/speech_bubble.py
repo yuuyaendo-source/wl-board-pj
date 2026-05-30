@@ -22,14 +22,10 @@ except ImportError as e:
     print("customtkinter が見つかりません。pip install -r requirements.txt を実行してください。", e)
     raise
 
+from theme import Theme, IS_WINDOWS
+
 
 class SpeechBubble:
-    BUBBLE_FG_LIGHT = "#ffffff"
-    BUBBLE_FG_DARK = "#1b5e20"
-    BUBBLE_BORDER_LIGHT = "#5a9e5c"
-    BUBBLE_BORDER_DARK = "#7bc47f"
-    TEXT_COLOR_LIGHT = "#1b5e20"
-    TEXT_COLOR_DARK = "#e8f5e9"
     PAD_X = 14
     PAD_Y = 10
     MAX_WIDTH = 260
@@ -131,43 +127,49 @@ class SpeechBubble:
             top = ctk.CTkToplevel(self._parent)
             top.overrideredirect(True)
             top.attributes("-topmost", True)
-            key = "#010101"
-            try:
-                top.configure(fg_color=key)
-                top.attributes("-transparentcolor", key)
-                self._tail_bg = key
-            except Exception:
-                top.configure(fg_color=(self.BUBBLE_FG_LIGHT, self.BUBBLE_FG_DARK))
-                self._tail_bg = self.BUBBLE_FG_LIGHT
+            # Windows のみ transparentcolor で外枠を透明化。非 Windows は黒い四角が
+            # 残るため使わず、尻尾の背景を白 (吹き出し色) に合わせて馴染ませる。
+            if IS_WINDOWS:
+                try:
+                    key = Theme.TRANSPARENT_KEY
+                    top.configure(fg_color=key)
+                    top.attributes("-transparentcolor", key)
+                    self._tail_bg = key
+                except Exception:
+                    top.configure(fg_color=Theme.BUBBLE_FG)
+                    self._tail_bg = Theme.BUBBLE_FG[0]
+            else:
+                top.configure(fg_color=Theme.BUBBLE_FG)
+                self._tail_bg = Theme.BUBBLE_FG[0]
 
             # 吹き出し本体 (角丸白 + 緑太枠)
             frame = ctk.CTkFrame(
                 top,
-                corner_radius=18,
+                corner_radius=Theme.RADIUS_BUBBLE,
                 border_width=2,
-                border_color=(self.BUBBLE_BORDER_LIGHT, self.BUBBLE_BORDER_DARK),
-                fg_color=(self.BUBBLE_FG_LIGHT, self.BUBBLE_FG_DARK),
+                border_color=Theme.BUBBLE_BORDER,
+                fg_color=Theme.BUBBLE_FG,
             )
             frame.pack(padx=2, pady=(2, 0))
             label = ctk.CTkLabel(
                 frame,
                 text="",
                 font=ctk.CTkFont(size=14),
-                text_color=(self.TEXT_COLOR_LIGHT, self.TEXT_COLOR_DARK),
+                text_color=Theme.BUBBLE_TEXT,
                 wraplength=self.MAX_WIDTH,
                 justify="left",
             )
             label.pack(padx=self.PAD_X, pady=self.PAD_Y)
 
-            # 尻尾 ▼ (吹き出しの下、右寄り = アバター側を指す)
+            # 尻尾 ▼ (吹き出しの下・中央 = 真下のアバター中心を指す)
             tail = ctk.CTkLabel(
                 top,
                 text="▼",
                 font=ctk.CTkFont(size=22),
-                text_color=(self.BUBBLE_BORDER_LIGHT, self.BUBBLE_BORDER_DARK),
+                text_color=Theme.BUBBLE_BORDER,
                 fg_color=self._tail_bg,
             )
-            tail.pack(anchor="e", padx=(0, 28), pady=0)
+            tail.pack(anchor="center", pady=0)
 
             self._top = top
             self._label = label
@@ -187,8 +189,8 @@ class SpeechBubble:
             px = self._parent.winfo_rootx()
             py = self._parent.winfo_rooty()
             pw = self._parent.winfo_width() or 240
-            # ミニポートの真上、右寄せ
-            x = px + pw - bw
+            # ミニポートの真上・中央寄せ (尻尾が中央のアバターを指すように)
+            x = px + (pw - bw) / 2
             y = py - bh - 4
             if y < 0:
                 y = py + (self._parent.winfo_height() or 140) + 4

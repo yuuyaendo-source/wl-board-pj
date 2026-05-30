@@ -23,6 +23,7 @@ except ImportError as e:
     sys.exit(1)
 
 from config_loader import load_config, save_config, get_board_system_personal_url, get_effective_board_system_url, get_app_base_dir
+from theme import Theme, apply_window_transparency
 
 # 画像表示用（PIL が無い環境ではリン子はテキストボタンのみ）
 # CTkImage は内部で PIL.Image と PIL.ImageTk を参照するため、先に両方 import する
@@ -179,31 +180,21 @@ class MiniPortWindow(ctk.CTk):
         self.title("Rinko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        # 外枠の長方形を消すため Toplevel 背景を透明キーカラーにして
-        # 角丸フレームだけを見せる (Windows のみ -transparentcolor 対応)。
-        # さらに枠ごと軽く透過させて作業の邪魔になりにくくする (-alpha)。
-        self._transparent_key = "#010101"  # ほぼ黒。UI で使わない色をキーに
         self.resizable(False, False)
-        try:
-            self.configure(fg_color=self._transparent_key)
-            self.attributes("-transparentcolor", self._transparent_key)
-            self.attributes("-alpha", 0.9)  # 枠ごと薄く透過
-        except Exception:
-            # 非対応環境では従来通り淡い背景
-            self.configure(fg_color=("#ddf2de", "#2a7d2e"))
-            try:
-                self.attributes("-alpha", 0.9)
-            except Exception:
-                pass
+        # 外枠の長方形を消すため、Windows では transparentcolor で角丸フレームだけを
+        # 見せる。非 Windows は transparentcolor 非対応 (黒い四角が残る) のため、
+        # ウィンドウ背景をサーフェス色にして角丸の外を馴染ませる。
+        # いずれも -alpha で枠ごと軽く透過し、作業の邪魔になりにくくする。
+        self._transparent_key = apply_window_transparency(self, fg_fallback=Theme.SURFACE)
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
         self.frame = ctk.CTkFrame(
             self,
-            corner_radius=24,
+            corner_radius=Theme.RADIUS_CARD,
             border_width=2,
-            border_color=("#7bc47f", "#3d8b40"),
-            fg_color=("#f0faf0", "#2a7d2e"),
+            border_color=Theme.SURFACE_BORDER,
+            fg_color=Theme.SURFACE,
         )
         self.frame.pack(fill="both", expand=True, padx=0, pady=0)
 
@@ -224,10 +215,11 @@ class MiniPortWindow(ctk.CTk):
         use_icon = _HAS_PIL and os.path.isfile(icon_path)
 
         if avatar_on:
-            # 大型アバター (Label) + 縦並びボタン
-            self.COMPACT_W = 270
-            self.COMPACT_H = 150
-            avatar_size = 120
+            # マスコット案: アバターを主役にカード上部へ大きく配置し、
+            # その下に「投稿 (主) / ボード (副)」を横並びのピルで置く。
+            self.COMPACT_W = 264
+            self.COMPACT_H = 224
+            avatar_size = 140
             self._avatar_size = (avatar_size, avatar_size)
             if use_icon:
                 try:
@@ -246,25 +238,29 @@ class MiniPortWindow(ctk.CTk):
                 width=avatar_size,
                 height=avatar_size,
             )
-            self.btn_rinko.pack(side="left", padx=(2, 8))
+            self.btn_rinko.pack(side="top", pady=(2, 8))
             self._bind_avatar_click_drag(self.btn_rinko)
 
+            # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
             self._button_frame = ctk.CTkFrame(self.compact_frame, fg_color="transparent")
-            self._button_frame.pack(side="left", fill="y", pady=18)
-            self.btn_board = ctk.CTkButton(
-                self._button_frame, text="📋 ボード", width=104, height=42,
-                corner_radius=21, font=ctk.CTkFont(size=14),
-                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
-                command=self._open_taskboard,
-            )
-            self.btn_board.pack(fill="x", pady=(0, 10))
+            self._button_frame.pack(side="top", fill="x")
             self.btn_post = ctk.CTkButton(
-                self._button_frame, text="📝 投稿", width=104, height=42,
-                corner_radius=21, font=ctk.CTkFont(size=14),
-                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                self._button_frame, text="📝 投稿", width=116, height=40,
+                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
-            self.btn_post.pack(fill="x")
+            self.btn_post.pack(side="left", expand=True, fill="x", padx=(0, 5))
+            self.btn_board = ctk.CTkButton(
+                self._button_frame, text="📋 ボード", width=116, height=40,
+                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14),
+                fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                text_color=Theme.SECONDARY_TEXT,
+                border_width=1, border_color=Theme.SECONDARY_BORDER,
+                command=self._open_taskboard,
+            )
+            self.btn_board.pack(side="left", expand=True, fill="x", padx=(5, 0))
         else:
             # 従来の軽量レイアウト (アイコン丸ボタン + 投稿)
             self.COMPACT_W = 180
@@ -277,7 +273,7 @@ class MiniPortWindow(ctk.CTk):
                     self.btn_rinko = ctk.CTkButton(
                         self.compact_frame, image=self._rinko_image, text="",
                         width=44, height=40, corner_radius=22,
-                        fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                        fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
                         command=self._open_taskboard,
                     )
                 except Exception:
@@ -286,14 +282,16 @@ class MiniPortWindow(ctk.CTk):
                 self.btn_rinko = ctk.CTkButton(
                     self.compact_frame, text="ボード", width=56, height=40,
                     corner_radius=20, font=ctk.CTkFont(size=13),
-                    fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                    fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                    text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
             self.btn_rinko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
                 self.compact_frame, text="投稿", width=70, height=40,
-                corner_radius=20, font=ctk.CTkFont(size=14),
-                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                corner_radius=20, font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
             self.btn_post.pack(side="left")
@@ -309,11 +307,11 @@ class MiniPortWindow(ctk.CTk):
             width=320,
             height=72,
             font=ctk.CTkFont(size=14),
-            corner_radius=12,
+            corner_radius=Theme.RADIUS_INPUT,
             border_width=1,
             wrap="word",
-            fg_color=("#fff", "#263238"),
-            border_color=("#5a9e5c", "#2e7d32"),
+            fg_color=Theme.INPUT_FG,
+            border_color=Theme.INPUT_BORDER,
         )
         self.textbox.pack(pady=(0, 6), fill="x")
         self.textbox.bind("<Control-Return>", self._on_send_shortcut)
@@ -328,7 +326,7 @@ class MiniPortWindow(ctk.CTk):
             send_f,
             text="",
             font=ctk.CTkFont(size=12),
-            text_color=("#1b5e20", "#a5d6a7"),
+            text_color=Theme.FEEDBACK_INFO,
         )
         self.label_feedback.pack(side="left", padx=(0, 8))
         self.btn_close = ctk.CTkButton(
@@ -338,8 +336,11 @@ class MiniPortWindow(ctk.CTk):
             height=32,
             corner_radius=16,
             font=ctk.CTkFont(size=13),
-            fg_color=("#5a9e5c", "#1b5e20"),
-            hover_color=("#4a8e4c", "#145214"),
+            fg_color=Theme.SECONDARY,
+            hover_color=Theme.SECONDARY_HOVER,
+            text_color=Theme.SECONDARY_TEXT,
+            border_width=1,
+            border_color=Theme.SECONDARY_BORDER,
             command=self._hide_input,
         )
         self.btn_close.pack(side="right", padx=(0, 6))
@@ -349,14 +350,49 @@ class MiniPortWindow(ctk.CTk):
             width=80,
             height=32,
             corner_radius=16,
-            font=ctk.CTkFont(size=13),
-            fg_color=("#3d8b40", "#1b5e20"),
-            hover_color=("#2e7d32", "#145214"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=Theme.PRIMARY,
+            hover_color=Theme.PRIMARY_HOVER,
+            text_color=Theme.PRIMARY_TEXT,
             command=self._on_send,
         )
         self.btn_send.pack(side="right")
 
         self._setup_drag()
+        # 質感用の背景画像 (assets/card_bg.png) があれば角丸カードに敷く。
+        # 無ければ単色サーフェスのまま (安全フォールバック)。マスコット表示時のみ。
+        self._apply_card_background()
+
+    def _apply_card_background(self) -> None:
+        """assets/card_bg.png があればマスコットカードの背景に敷いて質感を上げる。
+
+        - PNG は角丸 + 淡いグラデ + 柔らかい影込みで事前生成する (assets/build_card_bg.py)。
+        - 画像が無い / PIL が無い / マスコット表示でない場合は何もしない (単色サーフェスのまま)。
+        - 失敗してもアプリは従来通り動くよう、すべて best-effort。
+        """
+        self._card_bg_image = None
+        self._card_bg_label = None
+        try:
+            if not getattr(self, "_avatar_on", False) or not _HAS_PIL:
+                return
+            assets_dir = os.path.join(get_app_base_dir(), "assets")
+            light_path = os.path.join(assets_dir, "card_bg.png")
+            dark_path = os.path.join(assets_dir, "card_bg_dark.png")
+            if not os.path.isfile(light_path):
+                return
+            import PIL.Image
+            light_src = PIL.Image.open(light_path).convert("RGBA")
+            dark_src = PIL.Image.open(dark_path).convert("RGBA") if os.path.isfile(dark_path) else light_src
+            w, h = int(self.COMPACT_W), int(self.COMPACT_H)
+            self._card_bg_image = ctk.CTkImage(light_image=light_src, dark_image=dark_src, size=(w, h))
+            # 角丸グラデ PNG をカード上部 (マスコット表示領域) に最背面で敷く。
+            # PNG の角丸半径はフレームの border 半径と揃えてあるので、縁は二重にならず
+            # きれいに重なる。コンテンツ (compact_frame / input_frame) は上に描かれる。
+            self._card_bg_label = ctk.CTkLabel(self.frame, text="", image=self._card_bg_image)
+            self._card_bg_label.place(x=0, y=0, anchor="nw")
+            self._card_bg_label.lower()
+        except Exception as e:
+            print(f"[mini_port] card background skipped: {e}", flush=True)
 
     # --- Phase 2: 2D アバター + 吹き出し ------------------------------------
     def _init_avatar(self) -> None:
@@ -374,9 +410,10 @@ class MiniPortWindow(ctk.CTk):
             if not getattr(self, "_avatar_on", False):
                 return
             import linko_avatar
-            # アバターのソース画像は 128px 用を読む
+            # アバターのソース画像は 160px を優先して読む (140px 表示でも鮮明)。
+            # 160px セットが無い環境では従来の 128px にフォールバック。
             if not linko_avatar.is_ready():
-                if not linko_avatar.init(128):
+                if not (linko_avatar.init(160) or linko_avatar.init(128)):
                     print("[linko_avatar] init failed (画像が見つからない)", flush=True)
                     return
             self._avatar_enabled = True
@@ -397,17 +434,17 @@ class MiniPortWindow(ctk.CTk):
                 linko_avatar.start_idle_animation()
             except Exception as e:
                 print(f"[linko_avatar] idle animation start failed: {e}", flush=True)
-            # 「リン子を閉じる」ボタン: アバターの左上角に小さく置く
-            # (右側のボード/投稿ボタン列と重ならない位置)
+            # 「リン子を閉じる」ボタン: カードの右上角に小さく置く
+            # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
                     self.frame, text="✕", width=22, height=22, corner_radius=11,
                     font=ctk.CTkFont(size=12, weight="bold"),
-                    fg_color=("#cfe8d0", "#3d8b40"), hover_color=("#f0a0a0", "#c0392b"),
-                    text_color=("#1b5e20", "#ffffff"),
+                    fg_color=Theme.CLOSE_FG, hover_color=Theme.CLOSE_HOVER,
+                    text_color=Theme.CLOSE_TEXT,
                     command=self._on_close_clicked,
                 )
-                self.btn_close_mini.place(relx=0.0, rely=0.0, x=6, y=6, anchor="nw")
+                self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
             except Exception as e:
                 print(f"[linko_avatar] close button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
@@ -620,7 +657,7 @@ class MiniPortWindow(ctk.CTk):
             return
         self.textbox.delete("1.0", "end")
         self.textbox.insert("1.0", self.PLACEHOLDER_TEXT)
-        self.textbox.configure(text_color=("#2e5c30", "#9ccc9e"))
+        self.textbox.configure(text_color=Theme.PLACEHOLDER_TEXT)
         self._placeholder_visible = True
 
     def _remove_placeholder(self):
@@ -628,7 +665,7 @@ class MiniPortWindow(ctk.CTk):
             return
         self._placeholder_visible = False
         self.textbox.delete("1.0", "end")
-        self.textbox.configure(text_color=("#1a1a1a", "#e0e0e0"))
+        self.textbox.configure(text_color=Theme.INPUT_TEXT)
 
     def _on_textbox_focus_in(self, event=None):
         if self._placeholder_visible:
@@ -687,7 +724,7 @@ class MiniPortWindow(ctk.CTk):
         text = self.textbox.get("1.0", "end").strip()
         if not text or text == self.PLACEHOLDER_TEXT:
             return
-        self.label_feedback.configure(text="送信中…", text_color=("#1b5e20", "#a5d6a7"))
+        self.label_feedback.configure(text="送信中…", text_color=Theme.FEEDBACK_INFO)
         self.btn_send.configure(state="disabled")
         # 送信は別スレッドで実行し、結果を after で UI に反映（フリーズ防止・確実に完了）
         def do_send():
@@ -702,7 +739,7 @@ class MiniPortWindow(ctk.CTk):
         if ok:
             self.label_feedback.configure(
                 text="✓ 送信しました（表示されない場合は付箋ボードを再読み込み）",
-                text_color=("#2e7d32", "#81c784"),
+                text_color=Theme.FEEDBACK_OK,
             )
             self.textbox.delete("1.0", "end")
             if self._feedback_job:
@@ -710,7 +747,7 @@ class MiniPortWindow(ctk.CTk):
             # 1.5秒後にフィードバックを消して元のサイズ（リン子+投稿のみ）に戻す
             self._feedback_job = self.after(1500, self._clear_feedback_and_hide)
         else:
-            self.label_feedback.configure(text=msg[:60], text_color=("#c62828", "#ef5350"))
+            self.label_feedback.configure(text=msg[:60], text_color=Theme.FEEDBACK_ERROR)
             if self._feedback_job:
                 self.after_cancel(self._feedback_job)
             self._feedback_job = self.after(3000, self._clear_feedback)
