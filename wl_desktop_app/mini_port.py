@@ -179,21 +179,28 @@ class MiniPortWindow(ctk.CTk):
         self.title("Rinko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        # 緑基調の背景・透明度40%増し（不透明度60%）・背景色は30%明るく
-        self.attributes("-alpha", 0.6)
-        self.configure(fg_color=("#ddf2de", "#2a7d2e"))
+        # はっきり表示 (透過廃止)。
+        # 外枠の長方形を消すため、Toplevel 背景を透明キーカラーにして
+        # 角丸フレームだけが見えるようにする (Windows のみ -transparentcolor 対応)。
+        self._transparent_key = "#010101"  # ほぼ黒。UI で使わない色をキーに
         self.resizable(False, False)
+        try:
+            self.configure(fg_color=self._transparent_key)
+            self.attributes("-transparentcolor", self._transparent_key)
+        except Exception:
+            # 非対応環境では従来通り淡い背景
+            self.configure(fg_color=("#ddf2de", "#2a7d2e"))
 
     def _build_ui(self):
-        # 緑基調のメインフレーム（ドラッグ用にバインドする）・背景30%明るく
+        # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
         self.frame = ctk.CTkFrame(
             self,
             corner_radius=24,
-            border_width=1,
-            border_color=("#9dd4a0", "#2a7d2e"),
+            border_width=2,
+            border_color=("#7bc47f", "#3d8b40"),
             fg_color=("#f0faf0", "#2a7d2e"),
         )
-        self.frame.pack(fill="both", expand=True, padx=2, pady=2)
+        self.frame.pack(fill="both", expand=True, padx=0, pady=0)
 
         # features.linko_avatar の値でレイアウトを分岐
         try:
@@ -225,10 +232,11 @@ class MiniPortWindow(ctk.CTk):
                     )
                 except Exception:
                     use_icon = False
-            # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立
+            # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立。
+            # 画像があるときは text を必ず空に (画像とテキストの重なり防止)。
             self.btn_rinko = ctk.CTkLabel(
                 self.compact_frame,
-                text="" if use_icon else "リン子",
+                text="" if use_icon else "📷",
                 image=self._rinko_image if use_icon else None,
                 width=avatar_size,
                 height=avatar_size,
@@ -384,6 +392,18 @@ class MiniPortWindow(ctk.CTk):
                 linko_avatar.start_idle_animation()
             except Exception as e:
                 print(f"[linko_avatar] idle animation start failed: {e}", flush=True)
+            # 「リン子を閉じる」ボタン (右上に小さく重ねる)
+            try:
+                self.btn_close_mini = ctk.CTkButton(
+                    self.frame, text="✕", width=24, height=24, corner_radius=12,
+                    font=ctk.CTkFont(size=13, weight="bold"),
+                    fg_color=("#cfe8d0", "#3d8b40"), hover_color=("#f0a0a0", "#c0392b"),
+                    text_color=("#1b5e20", "#ffffff"),
+                    command=self._on_close_clicked,
+                )
+                self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
+            except Exception as e:
+                print(f"[linko_avatar] close button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
             try:
                 self._position_bottom_right(compact=True)
@@ -391,6 +411,16 @@ class MiniPortWindow(ctk.CTk):
                 pass
         except Exception as e:
             print(f"[linko_avatar] init exception: {e}", flush=True)
+
+    def _on_close_clicked(self) -> None:
+        """「リン子を閉じる」: ミニポートと吹き出しを隠す。再表示はトレイ / ショートカットから。"""
+        try:
+            if self._speech_bubble is not None:
+                self._speech_bubble.hide()
+        except Exception:
+            pass
+        if self._on_hide:
+            self._on_hide()
 
     def _bind_avatar_click_drag(self, widget) -> None:
         """アバター Label に「クリック (吹き出し) と ドラッグ (移動)」を両立させる。
@@ -472,7 +502,7 @@ class MiniPortWindow(ctk.CTk):
             except Exception:
                 return
         try:
-            self.btn_rinko.configure(image=self._avatar_ctk_images[pose])
+            self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
             self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
         except Exception:
             pass

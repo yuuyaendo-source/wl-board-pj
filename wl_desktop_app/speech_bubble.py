@@ -118,7 +118,9 @@ class SpeechBubble:
     # --- 内部 ---------------------------------------------------------------
 
     def _ensure_window(self) -> None:
-        """Toplevel を 1 個だけ作る (同期)。既存があれば何もしない。"""
+        """Toplevel を 1 個だけ作る (同期)。既存があれば何もしない。
+        漫画風: 角丸白背景 + 緑の太枠 + 下に尻尾 ▼。外側は transparentcolor で透過。
+        """
         if self._top is not None:
             try:
                 self._top.deiconify()
@@ -129,29 +131,44 @@ class SpeechBubble:
             top = ctk.CTkToplevel(self._parent)
             top.overrideredirect(True)
             top.attributes("-topmost", True)
+            key = "#010101"
             try:
-                top.attributes("-alpha", 0.97)
+                top.configure(fg_color=key)
+                top.attributes("-transparentcolor", key)
+                self._tail_bg = key
             except Exception:
-                pass
-            top.configure(fg_color=("#f0faf0", "#2a7d2e"))
+                top.configure(fg_color=(self.BUBBLE_FG_LIGHT, self.BUBBLE_FG_DARK))
+                self._tail_bg = self.BUBBLE_FG_LIGHT
 
+            # 吹き出し本体 (角丸白 + 緑太枠)
             frame = ctk.CTkFrame(
                 top,
-                corner_radius=14,
-                border_width=1,
+                corner_radius=18,
+                border_width=2,
                 border_color=(self.BUBBLE_BORDER_LIGHT, self.BUBBLE_BORDER_DARK),
                 fg_color=(self.BUBBLE_FG_LIGHT, self.BUBBLE_FG_DARK),
             )
-            frame.pack(padx=4, pady=4)
+            frame.pack(padx=2, pady=(2, 0))
             label = ctk.CTkLabel(
                 frame,
                 text="",
-                font=ctk.CTkFont(size=13),
+                font=ctk.CTkFont(size=14),
                 text_color=(self.TEXT_COLOR_LIGHT, self.TEXT_COLOR_DARK),
                 wraplength=self.MAX_WIDTH,
                 justify="left",
             )
             label.pack(padx=self.PAD_X, pady=self.PAD_Y)
+
+            # 尻尾 ▼ (吹き出しの下、右寄り = アバター側を指す)
+            tail = ctk.CTkLabel(
+                top,
+                text="▼",
+                font=ctk.CTkFont(size=22),
+                text_color=(self.BUBBLE_BORDER_LIGHT, self.BUBBLE_BORDER_DARK),
+                fg_color=self._tail_bg,
+            )
+            tail.pack(anchor="e", padx=(0, 28), pady=0)
+
             self._top = top
             self._label = label
         except Exception as e:
