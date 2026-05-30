@@ -61,7 +61,7 @@ class SettingsDialog(ctk.CTkToplevel):
     """設定ダイアログ Window。シングルトンで運用する想定。"""
 
     WIDTH = 520
-    HEIGHT = 520
+    HEIGHT = 600
 
     def __init__(self, master=None):
         super().__init__(master)
@@ -91,6 +91,22 @@ class SettingsDialog(ctk.CTkToplevel):
     # --- UI 構築 -----------------------------------------------------------
     def _build_ui(self) -> None:
         pad = 12
+
+        # 下部ボタンを先に bottom に確保 (features が増えても必ず見える)
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=pad, pady=(6, pad), side="bottom")
+        ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
+        ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
+            side="right", padx=(0, 8)
+        )
+        # アップデート確認ボタン (左寄せ)
+        ctk.CTkButton(
+            btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
+            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        ).pack(side="left")
+
+        # タイトル
         title = ctk.CTkLabel(self, text="Wonder Linko 設定", font=("", 16, "bold"))
         title.pack(pady=(pad, 4), padx=pad, anchor="w")
 
@@ -100,7 +116,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(name_frame, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
         ctk.CTkEntry(name_frame, textvariable=self._display_name_var).pack(fill="x", pady=(2, 0))
 
-        # 区切り
+        # 機能見出し
         ctk.CTkLabel(self, text="機能 (任意でON)", font=("", 14, "bold")).pack(
             padx=pad, anchor="w", pady=(0, 2)
         )
@@ -109,32 +125,28 @@ class SettingsDialog(ctk.CTkToplevel):
             text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
             text_color=("gray40", "gray60"),
             anchor="w",
-        ).pack(padx=pad, anchor="w", pady=(0, pad))
+        ).pack(padx=pad, anchor="w", pady=(0, 4))
+
+        # 機能チェックボックスはスクロール可能領域に (項目が増えても見切れない)
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(0, pad))
 
         features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
         for key, label, desc in _FEATURE_ROWS:
             var = tk.BooleanVar(value=bool(features.get(key, False)))
             self._feature_vars[key] = var
-            row = ctk.CTkFrame(self, fg_color="transparent")
-            row.pack(fill="x", padx=pad, pady=(0, 6))
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=(0, 6))
             cb = ctk.CTkCheckBox(row, text=label, variable=var)
             cb.pack(anchor="w")
             ctk.CTkLabel(
                 row,
                 text=desc,
                 text_color=("gray40", "gray60"),
-                wraplength=self.WIDTH - 60,
+                wraplength=self.WIDTH - 80,
                 justify="left",
                 anchor="w",
             ).pack(fill="x", padx=(28, 0))
-
-        # ボタン
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=pad, pady=(pad, pad), side="bottom")
-        ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
-            side="right", padx=(8, 0)
-        )
-        ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
 
     # --- ハンドラ ----------------------------------------------------------
     def _on_save(self) -> None:
@@ -167,6 +179,35 @@ class SettingsDialog(ctk.CTkToplevel):
             except Exception as e:
                 print(f"visitor_notify toggle failed: {e}", flush=True)
         self._on_close()
+
+    def _on_update_clicked(self) -> None:
+        """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
+        from tkinter import messagebox
+        try:
+            from update_checker import check_for_update, download_and_install
+            from version import __version__
+            from config_loader import load_config
+        except Exception as e:
+            messagebox.showerror("アップデート", f"更新モジュールの読み込みに失敗: {e}")
+            return
+        url = (load_config().get("update_check_url") or "").strip()
+        if not url:
+            messagebox.showinfo("アップデート", "更新チェック URL が設定されていません。")
+            return
+        has_update, latest, download_url = check_for_update(__version__, url)
+        if not has_update:
+            messagebox.showinfo("アップデート", f"最新版です (v{__version__})。")
+            return
+        if not messagebox.askyesno(
+            "アップデート",
+            f"新しいバージョン {latest} があります。\n"
+            "更新を開始するとアプリは一度終了し、完了後に自動で起動します。\n\n今すぐ更新しますか？",
+        ):
+            return
+        # download_and_install は成功時 sys.exit する (バッチ経由で更新)
+        ok, err = download_and_install(download_url)
+        if not ok:
+            messagebox.showerror("アップデート", f"更新に失敗しました:\n{err}")
 
     def _on_close(self) -> None:
         global _dialog_instance

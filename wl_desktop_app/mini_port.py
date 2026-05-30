@@ -434,7 +434,7 @@ class MiniPortWindow(ctk.CTk):
                 linko_avatar.start_idle_animation()
             except Exception as e:
                 print(f"[linko_avatar] idle animation start failed: {e}", flush=True)
-            # 「リン子を閉じる」ボタン: カードの右上角に小さく置く
+            # カード右上に ⚙ (設定) と ✕ (閉じる) を横並びで置く
             # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
@@ -445,8 +445,18 @@ class MiniPortWindow(ctk.CTk):
                     command=self._on_close_clicked,
                 )
                 self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
+
+                self.btn_settings_mini = ctk.CTkButton(
+                    self.frame, text="⚙", width=22, height=22, corner_radius=11,
+                    font=ctk.CTkFont(size=13),
+                    fg_color=Theme.CLOSE_FG, hover_color=Theme.SECONDARY_HOVER,
+                    text_color=Theme.CLOSE_TEXT,
+                    command=self._ctx_open_settings,
+                )
+                # ✕ の左隣 (22px + 余白 6px ぶん内側)
+                self.btn_settings_mini.place(relx=1.0, rely=0.0, x=-36, y=8, anchor="ne")
             except Exception as e:
-                print(f"[linko_avatar] close button failed: {e}", flush=True)
+                print(f"[linko_avatar] close/settings button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
             try:
                 self._position_bottom_right(compact=True)
