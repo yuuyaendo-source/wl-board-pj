@@ -143,41 +143,50 @@ def download_and_install(download_url: str, timeout: int = 120):
         if size < 1_000_000:
             return False, f"ダウンロードした MSI が小さすぎます ({size} bytes)"
 
-        install_log = os.path.join(tempfile.gettempdir(), "WonderLinko_install.log")
+        tmp = tempfile.gettempdir()
+        install_log = os.path.join(tmp, "WonderLinko_install.log")
+        trace_log = os.path.join(tmp, "WonderLinko_update_trace.log")
         exe = sys.executable
         pid = os.getpid()
         # UpgradeCode (setup.py の bdist_msi_options と一致させること)
         upgrade_code = "{B29E4C50-1A2B-4C3D-9E5F-6A7B8C9D0E1F}"
 
-        bat_path = os.path.join(tempfile.gettempdir(), "wonderlinko_update.bat")
-        # 注意: バッチ内の % は %% にエスケープ
+        bat_path = os.path.join(tmp, "wonderlinko_update.bat")
+        # ASCII のみ (日本語は chcp 依存で文字化け・失敗の原因)。各ステップを trace_log に追記。
         bat = f"""@echo off
-chcp 65001 >nul
-echo [WonderLinko update] waiting for app (PID {pid}) to exit...
+echo [update] started %DATE% %TIME% >> "{trace_log}"
+echo [update] waiting for PID {pid} >> "{trace_log}"
 :waitloop
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
 if not errorlevel 1 (
   ping -n 2 127.0.0.1 >nul
   goto waitloop
 )
-echo [WonderLinko update] uninstalling old version (if any)...
+echo [update] uninstalling old (UpgradeCode) >> "{trace_log}"
 msiexec /x {upgrade_code} /qn /norestart
-echo [WonderLinko update] installing new version...
+echo [update] installing new msi >> "{trace_log}"
 msiexec /i "{msi_path}" /passive /norestart /l*v "{install_log}"
-echo [WonderLinko update] launching app...
+echo [update] msiexec exit=%errorlevel% >> "{trace_log}"
+echo [update] launching app >> "{trace_log}"
 start "" "{exe}"
+echo [update] done >> "{trace_log}"
 del "%~f0"
 """
-        with open(bat_path, "w", encoding="utf-8") as f:
+        with open(bat_path, "w", encoding="ascii", errors="replace") as f:
             f.write(bat)
 
-        CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        # DETACHED_PROCESS のみ (CREATE_NO_WINDOW と併用すると起動しないことがある)。
+        # 親 (このアプリ) が終了してもバッチは独立して走り続ける。
         DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
         subprocess.Popen(
             ["cmd.exe", "/c", bat_path],
-            creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+            creationflags=DETACHED_PROCESS,
+            close_fds=True,
+            cwd=tmp,
         )
-        _log(f"更新バッチを起動: {bat_path} (install log: {install_log})。アプリを終了します。")
+        _log(f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。")
+        # バッチが waitloop に入る猶予を与えてから終了
+        time.sleep(0.5)
         sys.exit(0)
 
     except requests.exceptions.RequestException as e:

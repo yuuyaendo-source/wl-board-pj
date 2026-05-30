@@ -235,21 +235,30 @@ def say(
     text: str,
     duration_sec: Optional[float] = None,
     base_pose: str = "normal",
+    lipsync: bool = True,
 ) -> None:
-    """音声に同期して吹き出し + 口パクを開始する統合 API。
+    """吹き出し + (任意で) 口パくを開始する統合 API。
 
     Phase 2.1: 1 発話 (toast) ベース。
     Phase 5a (ブレスト): _speech_bubble.append_text() を直接呼んで streaming する想定。
 
-    duration_sec: 音声長 (秒)。None なら吹き出しは出さず lipsync のみ。
+    duration_sec: 音声長 (秒)。lipsync=True かつ duration_sec が None/0 のときは
+      text の長さから概算 (wav 長が取れなくても口パくさせる)。
+    lipsync: False なら吹き出しのみ (アバタークリックの挨拶など、音声なしの場面)。
     """
     if _speech_bubble is not None and text:
         try:
             _speech_bubble.show_message(text, duration_sec=duration_sec or 3.0)
         except Exception as e:
-            print(f"[linko_avatar] speech bubble error: {e}", flush=True)
-    if duration_sec is not None and duration_sec > 0:
-        start_lipsync(duration_sec=duration_sec, base_pose=base_pose)
+            _log(f"[linko_avatar] speech bubble error: {e}")
+    if lipsync:
+        lip_dur = duration_sec
+        if (lip_dur is None or lip_dur <= 0) and text:
+            # wav 長が取れない/未指定でも text 長から概算 (1 文字 ~0.15 秒、最低 2 秒)
+            lip_dur = max(2.0, len(text) * 0.15)
+            _log(f"[linko_avatar] say: duration 概算 {lip_dur:.1f}s (text {len(text)}字)")
+        if lip_dur and lip_dur > 0:
+            start_lipsync(duration_sec=lip_dur, base_pose=base_pose)
 
 
 def is_speaking() -> bool:

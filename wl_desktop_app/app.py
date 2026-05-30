@@ -898,12 +898,10 @@ def main():
             logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")
 
             def _on_startup_update_result(has_update, latest_version, download_url):
+                # ユーザー方針: アップデートは任意。起動時に自動でダイアログを出さない。
+                # 更新があってもログに残すだけ。実行はトレイ「アプリをアップデート」から手動。
                 if has_update:
-                    # 起動時に更新があれば、その場で確認ダイアログ → Yes で自動インストール。
-                    # (以前は「トレイから」と案内するだけで、トレイ操作を忘れると更新されなかった)
-                    _schedule_on_main(
-                        lambda: _on_update_check_result(True, latest_version, download_url)
-                    )
+                    log_info(f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)")
 
             check_and_notify(__version__, _update_url, _on_startup_update_result)
     else:
