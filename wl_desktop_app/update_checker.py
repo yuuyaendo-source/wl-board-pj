@@ -156,12 +156,20 @@ def download_and_install(download_url: str, timeout: int = 120):
         bat = f"""@echo off
 echo [update] started %DATE% %TIME% >> "{trace_log}"
 echo [update] waiting for PID {pid} >> "{trace_log}"
+set WL_WAIT=0
 :waitloop
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
-if not errorlevel 1 (
-  ping -n 2 127.0.0.1 >nul
-  goto waitloop
+if errorlevel 1 goto afterwait
+set /a WL_WAIT+=1
+if %WL_WAIT% GEQ 20 (
+  echo [update] timeout - force killing PID {pid} >> "{trace_log}"
+  taskkill /F /PID {pid} >nul 2>&1
+  ping -n 3 127.0.0.1 >nul
+  goto afterwait
 )
+ping -n 2 127.0.0.1 >nul
+goto waitloop
+:afterwait
 echo [update] uninstalling old (UpgradeCode) >> "{trace_log}"
 msiexec /x {upgrade_code} /qn /norestart
 echo [update] installing new msi >> "{trace_log}"
