@@ -195,87 +195,97 @@ class MiniPortWindow(ctk.CTk):
         )
         self.frame.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # --- 通常時: アバター (左) + 縦並びボタン (右) ---
-        self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        self.compact_frame.pack(fill="both", expand=True, padx=10, pady=8)
-
-        # features.linko_avatar の値で大型 (128px) / 軽量 (44px) を選択
+        # features.linko_avatar の値でレイアウトを分岐
         try:
             from config_loader import is_feature_enabled
             avatar_on = is_feature_enabled("linko_avatar")
         except Exception:
             avatar_on = False
-        avatar_btn_size = 128 if avatar_on else 44
-        avatar_img_size = avatar_btn_size - 4
+        self._avatar_on = avatar_on
 
+        # --- 通常時フレーム ---
+        self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.compact_frame.pack(fill="both", expand=True, padx=8, pady=6)
+
+        self._rinko_image = None  # 参照保持 (GC 防止)
         icon_path = _rinko_icon_path()
         use_icon = _HAS_PIL and os.path.isfile(icon_path)
-        self._rinko_image = None  # 参照を保持してアイコンが消えないようにする
-        if use_icon:
-            try:
-                self._rinko_image = ctk.CTkImage(
-                    light_image=icon_path,
-                    dark_image=icon_path,
-                    size=(avatar_img_size, avatar_img_size),
-                )
-                self.btn_rinko = ctk.CTkButton(
-                    self.compact_frame,
-                    image=self._rinko_image,
-                    text="",
-                    width=avatar_btn_size,
-                    height=avatar_btn_size,
-                    corner_radius=avatar_btn_size // 2,
-                    fg_color=("#5a9e5c", "#1b5e20"),
-                    hover_color=("#4a8e4c", "#145214"),
-                    command=self._on_avatar_click,
-                )
-            except Exception:
-                use_icon = False
-        if not use_icon:
-            self.btn_rinko = ctk.CTkButton(
+
+        if avatar_on:
+            # 大型アバター (Label) + 縦並びボタン
+            self.COMPACT_W = 270
+            self.COMPACT_H = 150
+            avatar_size = 120
+            self._avatar_size = (avatar_size, avatar_size)
+            if use_icon:
+                try:
+                    self._rinko_image = ctk.CTkImage(
+                        light_image=icon_path, dark_image=icon_path,
+                        size=(avatar_size, avatar_size),
+                    )
+                except Exception:
+                    use_icon = False
+            # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立
+            self.btn_rinko = ctk.CTkLabel(
                 self.compact_frame,
-                text="リン子",
-                width=avatar_btn_size,
-                height=avatar_btn_size,
-                corner_radius=avatar_btn_size // 2,
-                font=ctk.CTkFont(size=13),
-                fg_color=("#5a9e5c", "#1b5e20"),
-                hover_color=("#4a8e4c", "#145214"),
-                command=self._on_avatar_click,
+                text="" if use_icon else "リン子",
+                image=self._rinko_image if use_icon else None,
+                width=avatar_size,
+                height=avatar_size,
             )
-        self.btn_rinko.pack(side="left", padx=(0, 10))
+            self.btn_rinko.pack(side="left", padx=(2, 8))
+            self._bind_avatar_click_drag(self.btn_rinko)
 
-        # 右側: 縦並びボタン
-        self._button_frame = ctk.CTkFrame(self.compact_frame, fg_color="transparent")
-        self._button_frame.pack(side="left", fill="y")
+            self._button_frame = ctk.CTkFrame(self.compact_frame, fg_color="transparent")
+            self._button_frame.pack(side="left", fill="y", pady=18)
+            self.btn_board = ctk.CTkButton(
+                self._button_frame, text="📋 ボード", width=104, height=42,
+                corner_radius=21, font=ctk.CTkFont(size=14),
+                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                command=self._open_taskboard,
+            )
+            self.btn_board.pack(fill="x", pady=(0, 10))
+            self.btn_post = ctk.CTkButton(
+                self._button_frame, text="📝 投稿", width=104, height=42,
+                corner_radius=21, font=ctk.CTkFont(size=14),
+                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                command=self._show_input,
+            )
+            self.btn_post.pack(fill="x")
+        else:
+            # 従来の軽量レイアウト (アイコン丸ボタン + 投稿)
+            self.COMPACT_W = 180
+            self.COMPACT_H = 56
+            if use_icon:
+                try:
+                    self._rinko_image = ctk.CTkImage(
+                        light_image=icon_path, dark_image=icon_path, size=(36, 36),
+                    )
+                    self.btn_rinko = ctk.CTkButton(
+                        self.compact_frame, image=self._rinko_image, text="",
+                        width=44, height=40, corner_radius=22,
+                        fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                        command=self._open_taskboard,
+                    )
+                except Exception:
+                    use_icon = False
+            if not use_icon:
+                self.btn_rinko = ctk.CTkButton(
+                    self.compact_frame, text="ボード", width=56, height=40,
+                    corner_radius=20, font=ctk.CTkFont(size=13),
+                    fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                    command=self._open_taskboard,
+                )
+            self.btn_rinko.pack(side="left", padx=(0, 8))
+            self.btn_post = ctk.CTkButton(
+                self.compact_frame, text="投稿", width=70, height=40,
+                corner_radius=20, font=ctk.CTkFont(size=14),
+                fg_color=("#5a9e5c", "#1b5e20"), hover_color=("#4a8e4c", "#145214"),
+                command=self._show_input,
+            )
+            self.btn_post.pack(side="left")
 
-        self.btn_board = ctk.CTkButton(
-            self._button_frame,
-            text="📋 ボード",
-            width=96,
-            height=40,
-            corner_radius=20,
-            font=ctk.CTkFont(size=13),
-            fg_color=("#5a9e5c", "#1b5e20"),
-            hover_color=("#4a8e4c", "#145214"),
-            command=self._open_taskboard,
-        )
-        self.btn_board.pack(fill="x", pady=(0, 8))
-
-        self.btn_post = ctk.CTkButton(
-            self._button_frame,
-            text="📝 投稿",
-            width=96,
-            height=40,
-            corner_radius=20,
-            font=ctk.CTkFont(size=13),
-            fg_color=("#5a9e5c", "#1b5e20"),
-            hover_color=("#4a8e4c", "#145214"),
-            command=self._show_input,
-        )
-        self.btn_post.pack(fill="x")
-
-        # Phase 2: features.linko_avatar=True なら btn_rinko に 2D アバターを表示 + 吹き出し連動
+        # Phase 2: アバター有効時の lipsync / 吹き出しを初期化
         self._init_avatar()
 
         # --- 入力表示時: テキストエリア + 閉じる + 送信 ---
@@ -348,20 +358,16 @@ class MiniPortWindow(ctk.CTk):
         self._avatar_ctk_images: dict = {}
         self._speech_bubble = None
         try:
-            from config_loader import is_feature_enabled
-            if not is_feature_enabled("linko_avatar"):
+            if not getattr(self, "_avatar_on", False):
                 return
             import linko_avatar
-            # アバターのソース画像は 128px 用を読む (btn 表示サイズと同じ)
+            # アバターのソース画像は 128px 用を読む
             if not linko_avatar.is_ready():
                 if not linko_avatar.init(128):
                     print("[linko_avatar] init failed (画像が見つからない)", flush=True)
                     return
             self._avatar_enabled = True
-            self._avatar_size = (124, 124)
-            # 大型レイアウトに合わせて COMPACT 窓を拡大
-            self.COMPACT_W = 240
-            self.COMPACT_H = 140
+            # _avatar_size は _build_ui で (120,120) に設定済み
             # 初期ポーズ
             self._set_avatar_pose("normal")
             # アバターポーズ変化時の UI 更新フックを登録
@@ -386,20 +392,59 @@ class MiniPortWindow(ctk.CTk):
         except Exception as e:
             print(f"[linko_avatar] init exception: {e}", flush=True)
 
-    def _on_avatar_click(self) -> None:
-        """アバターをクリックされたとき。
+    def _bind_avatar_click_drag(self, widget) -> None:
+        """アバター Label に「クリック (吹き出し) と ドラッグ (移動)」を両立させる。
 
-        Phase 2.1: 軽い挨拶を吹き出しに出す (Clippy にならない程度の遊び心)
+        移動量が閾値未満なら click、超えたら drag とみなす。
+        """
+        self._avatar_press_x = 0
+        self._avatar_press_y = 0
+        self._avatar_moved = False
+        widget.bind("<Button-1>", self._on_avatar_press)
+        widget.bind("<B1-Motion>", self._on_avatar_drag)
+        widget.bind("<ButtonRelease-1>", self._on_avatar_release)
+
+    def _on_avatar_press(self, event):
+        self._avatar_press_x = event.x_root
+        self._avatar_press_y = event.y_root
+        self._avatar_moved = False
+        self._drag_win_x = self.winfo_x()
+        self._drag_win_y = self.winfo_y()
+        self._drag_start_x = event.x_root
+        self._drag_start_y = event.y_root
+
+    def _on_avatar_drag(self, event):
+        dx = event.x_root - self._drag_start_x
+        dy = event.y_root - self._drag_start_y
+        if abs(event.x_root - self._avatar_press_x) > 5 or abs(event.y_root - self._avatar_press_y) > 5:
+            self._avatar_moved = True
+        self._drag_start_x = event.x_root
+        self._drag_start_y = event.y_root
+        self._drag_win_x += dx
+        self._drag_win_y += dy
+        self.geometry(f"+{self._drag_win_x}+{self._drag_win_y}")
+        if not self._input_visible:
+            self._last_compact_x = self._drag_win_x
+            self._last_compact_y = self._drag_win_y
+
+    def _on_avatar_release(self, event):
+        if not self._avatar_moved:
+            self._on_avatar_click()
+
+    def _on_avatar_click(self) -> None:
+        """アバターをクリック (移動なし) されたとき。
+
+        Phase 2.1: 軽い挨拶を吹き出しに出す (口パクなし、音声なし、Clippy 回避の遊び心)
         Phase 5a: ここからチャット (ブレスト) を開く想定。
         """
         try:
             if self._avatar_enabled:
                 import linko_avatar
-                linko_avatar.say("こんにちは、リン子です。", duration_sec=2.5)
+                # duration_sec=None で吹き出しのみ (口パク・音声なし)
+                linko_avatar.say("こんにちは、リン子です。何かあったら呼んでくださいね。", duration_sec=None)
                 return
         except Exception:
             pass
-        # フォールバック: 既存挙動 (ボードを開く)
         self._open_taskboard()
 
     def _on_avatar_pose_change(self, pose: str) -> None:
