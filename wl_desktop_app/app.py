@@ -897,13 +897,13 @@ def main():
             log_info("更新チェック開始: 起動時")
             logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")
 
-            def _on_startup_update_result(has_update, latest_version, _download_url):
+            def _on_startup_update_result(has_update, latest_version, download_url):
                 if has_update:
-                    _schedule_on_main(lambda: notifications.show_toast(
-                        "Wonder Linko",
-                        f"新しいバージョン {latest_version} が利用可能です。トレイの「アプリをアップデート」からインストールできます。",
-                        duration_sec=6,
-                    ))
+                    # 起動時に更新があれば、その場で確認ダイアログ → Yes で自動インストール。
+                    # (以前は「トレイから」と案内するだけで、トレイ操作を忘れると更新されなかった)
+                    _schedule_on_main(
+                        lambda: _on_update_check_result(True, latest_version, download_url)
+                    )
 
             check_and_notify(__version__, _update_url, _on_startup_update_result)
     else:
