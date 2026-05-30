@@ -105,8 +105,18 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
 
 def download_and_install(download_url: str, timeout: int = 120):
     """
-    MSI をダウンロードし、msiexec でインストールを開始して、自プロセスを終了する。
-    成功時は sys.exit(0) で即終了するため戻り値は返らない。失敗時のみ (False, message) を返す。
+    MSI をダウンロードし、更新バッチ経由でインストール → アプリ再起動する。
+
+    旧実装は「自 exe が起動中のまま msiexec を起動」していたため、exe の
+    ファイルロックでインストールが完了せず、バージョンが上がらない問題があった。
+    本実装は **バッチ経由** で:
+      1. 自プロセス (PID) の完全終了を待つ
+      2. 旧バージョンを UpgradeCode で検出してサイレントアンインストール
+         (cx_Freeze MSI のメジャーアップグレードが効かず製品が並存するのを防ぐ)
+      3. 新 MSI をインストール (/l*v で詳細ログを %TEMP% に出力)
+      4. 新 exe を起動
+    することで確実に上書き更新する。
+    成功時は sys.exit(0) で終了。失敗時のみ (False, message) を返す。
     """
     if not download_url or not (download_url := download_url.strip()):
         return False, "URL が空です"
@@ -116,45 +126,64 @@ def download_and_install(download_url: str, timeout: int = 120):
         return False, "Windows のみ対応しています"
 
     try:
+        _log(f"更新 DL 開始: {download_url}")
         r = requests.get(download_url, timeout=timeout, stream=True)
         r.raise_for_status()
 
-        fd, path = tempfile.mkstemp(suffix=".msi")
-        try:
-            os.close(fd)
-            with open(path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
-        except Exception:
-            try:
-                os.unlink(path)
-            except Exception:
-                pass
-            raise
+        msi_path = os.path.join(
+            tempfile.gettempdir(), f"WonderLinko_update_{int(time.time())}.msi"
+        )
+        size = 0
+        with open(msi_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=65536):
+                if chunk:
+                    f.write(chunk)
+                    size += len(chunk)
+        _log(f"更新 DL 完了: {msi_path} ({size} bytes)")
+        if size < 1_000_000:
+            return False, f"ダウンロードした MSI が小さすぎます ({size} bytes)"
 
-        # msiexec: /i インストール, /passive 進行状況のみで自動進行, /norestart 再起動しない
-        cmd = ["msiexec.exe", "/i", path, "/passive", "/norestart"]
-        p = subprocess.Popen(cmd)
+        install_log = os.path.join(tempfile.gettempdir(), "WonderLinko_install.log")
+        exe = sys.executable
+        pid = os.getpid()
+        # UpgradeCode (setup.py の bdist_msi_options と一致させること)
+        upgrade_code = "{B29E4C50-1A2B-4C3D-9E5F-6A7B8C9D0E1F}"
 
-        # インストーラー終了後にアプリを自動再起動するため、同じ exe を --after-update-wait=PID で起動（親が終了しても子は残る）
-        try:
-            exe = sys.executable
-            launcher_cmd = [exe, f"--after-update-wait={p.pid}"]
-            if sys.platform == "win32":
-                CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-                DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-                subprocess.Popen(launcher_cmd, creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS)
-            else:
-                subprocess.Popen(launcher_cmd)
-        except Exception:
-            pass
+        bat_path = os.path.join(tempfile.gettempdir(), "wonderlinko_update.bat")
+        # 注意: バッチ内の % は %% にエスケープ
+        bat = f"""@echo off
+chcp 65001 >nul
+echo [WonderLinko update] waiting for app (PID {pid}) to exit...
+:waitloop
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if not errorlevel 1 (
+  ping -n 2 127.0.0.1 >nul
+  goto waitloop
+)
+echo [WonderLinko update] uninstalling old version (if any)...
+msiexec /x {upgrade_code} /qn /norestart
+echo [WonderLinko update] installing new version...
+msiexec /i "{msi_path}" /passive /norestart /l*v "{install_log}"
+echo [WonderLinko update] launching app...
+start "" "{exe}"
+del "%~f0"
+"""
+        with open(bat_path, "w", encoding="utf-8") as f:
+            f.write(bat)
 
-        # ファイルロックを解放するため、自プロセスを即終了する
+        CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        subprocess.Popen(
+            ["cmd.exe", "/c", bat_path],
+            creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+        )
+        _log(f"更新バッチを起動: {bat_path} (install log: {install_log})。アプリを終了します。")
         sys.exit(0)
 
     except requests.exceptions.RequestException as e:
         return False, f"ダウンロードに失敗しました: {str(e)[:80]}"
+    except SystemExit:
+        raise
     except Exception as e:
         return False, str(e)[:80]
 
