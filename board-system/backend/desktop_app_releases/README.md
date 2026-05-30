@@ -22,11 +22,29 @@
 - `version`: `wl_desktop_app/version.py` と一致させる
 - `url`: クライアントが MSI を取得する **絶対 URL**
 
-## ⚠️ 重要: ファイル更新だけでは反映されない
+## 反映方法 (v3.2.3 以降: bind mount 化)
 
-backend Dockerfile は `COPY . .` でこのフォルダを **イメージにビルド時焼き込み**
-しているため、ホスト側ファイルを差し替えただけではコンテナから見えません。
-**blue/green デプロイで backend イメージを作り直す** ことが必須です。
+docker-compose.prod.yml で このフォルダを backend コンテナに **bind mount**
+しているため、**ホスト側のファイルを差し替えるだけで即反映** されます
+(backend 再ビルド・deploy.sh 不要)。
+
+```yaml
+# docker-compose.prod.yml backend.volumes
+- ./backend/desktop_app_releases:/app/desktop_app_releases
+```
+
+FastAPI の StaticFiles はリクエストごとにディスクを読むため、
+`latest.json` / `*.msi` を置けばコンテナ再起動すら不要です。
+
+⚠️ **初回のみ**: この bind mount を有効化するには 1 度だけ `./deploy/deploy.sh`
+(または `docker compose ... up -d`) で compose 変更を反映する必要があります。
+以降は git pull / scp だけで反映されます。
+
+### 旧仕様 (参考・v3.2.2 以前)
+
+bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込んでいたため、
+ファイル差し替え後に deploy.sh で再ビルドが必須でした。「git pull / deploy.sh
+忘れで古い latest.json が配信され続ける」事故が頻発したため bind mount 化。
 
 ## アップロード手順 (新バージョンリリース時)
 
@@ -47,13 +65,12 @@ backend Dockerfile は `COPY . .` でこのフォルダを **イメージにビ�
    scp dist\WonderLinko.msi devuser01@wl-board-sys-sv:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
    ```
 
-4. **本番サーバで反映**
+4. **本番サーバで反映** (bind mount 化後)
    ```bash
    ssh devuser01@wl-board-sys-sv
    cd /var/www/wlinko-pj
-   git pull                        # latest.json 更新を取得
-   cd board-system
-   ./deploy/deploy.sh              # blue/green デプロイ (backend を再ビルド)
+   git pull                        # latest.json 更新を取得 → bind mount で即反映
+   # deploy.sh は不要 (frontend/backend のコード変更時のみ)
    ```
 
 5. **反映確認**

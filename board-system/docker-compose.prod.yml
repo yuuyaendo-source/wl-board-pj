@@ -34,6 +34,13 @@ services:
       POSTIT_BOARD_URL: http://sticky-note:3000
       # Nginx経由のリクエストを信頼
       FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      # デスクトップアプリ配布物 (latest.json / *.msi) を bind mount。
+      # これによりホスト側のファイルを差し替えるだけで即配信され、
+      # backend イメージの再ビルド (deploy.sh) が不要になる。
+      # Dockerfile の COPY . . でイメージにも焼かれるが、mount が上書きするので
+      # ホスト側が常に最新として参照される。
+      - ./backend/desktop_app_releases:/app/desktop_app_releases
     networks:
       - linko-net
     restart: always
