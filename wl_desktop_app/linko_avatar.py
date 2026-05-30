@@ -19,6 +19,12 @@ from typing import Callable, Optional
 
 from PIL import Image
 
+try:
+    from app_log import log_info as _log
+except Exception:  # pragma: no cover
+    def _log(msg: str) -> None:
+        print(msg, flush=True)
+
 VOWELS = ["a", "i", "u", "e", "o"]
 EMOTIONS = ["normal", "happy", "sad", "angry", "funny"]
 
@@ -38,15 +44,20 @@ class _LinkoAvatar:
 
     def load(self, base_dir: str) -> bool:
         ok = True
+        missing = []
         for pose in VOWELS + EMOTIONS:
             path = os.path.join(base_dir, "assets", "avatar", f"{pose}_{self.size}.png")
             if os.path.isfile(path):
                 try:
                     self._images[pose] = Image.open(path).convert("RGBA")
-                except Exception:
+                except Exception as e:
                     ok = False
+                    missing.append(f"{pose}(open失敗:{e})")
             else:
                 ok = False
+                missing.append(f"{pose}(無)")
+        _log(f"[linko_avatar] load size={self.size} 読込={len(self._images)}/10 ok={ok}"
+             + (f" 欠落={missing}" if missing else ""))
         return ok
 
     def get_image(self, pose: Optional[str] = None) -> Optional[Image.Image]:
@@ -55,9 +66,11 @@ class _LinkoAvatar:
 
     def set_ui_callback(self, cb: Callable[[str], None]) -> None:
         self._ui_callback = cb
+        _log(f"[linko_avatar] set_ui_callback registered={cb is not None}")
 
     def set_pose(self, pose: str) -> None:
         if pose not in self._images:
+            _log(f"[linko_avatar] set_pose skip: '{pose}' が images に無い (keys={list(self._images.keys())})")
             return
         with self._lock:
             self._current_pose = pose
@@ -65,8 +78,10 @@ class _LinkoAvatar:
         if cb is not None:
             try:
                 cb(pose)
-            except Exception:
-                pass
+            except Exception as e:
+                _log(f"[linko_avatar] set_pose callback error: {e}")
+        else:
+            _log("[linko_avatar] set_pose: _ui_callback が None")
 
     def start_lipsync(
         self,
@@ -80,6 +95,7 @@ class _LinkoAvatar:
         self.stop_lipsync(base_pose=base_pose, wait=True)
         self._is_speaking = True
         self._lipsync_stop.clear()
+        _log(f"[linko_avatar] start_lipsync duration={duration_sec} images={len(self._images)} cb={self._ui_callback is not None}")
 
         def loop():
             start = time.time()
@@ -115,6 +131,7 @@ class _LinkoAvatar:
         """
         self.stop_idle_animation(wait=True)
         self._idle_stop.clear()
+        _log(f"[linko_avatar] start_idle_animation images={len(self._images)} cb={self._ui_callback is not None}")
 
         def loop():
             while not self._idle_stop.is_set():

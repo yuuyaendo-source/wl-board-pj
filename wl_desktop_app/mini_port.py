@@ -533,22 +533,35 @@ class MiniPortWindow(ctk.CTk):
         try:
             import linko_avatar
             img = linko_avatar.get_image(pose)
-        except Exception:
+        except Exception as e:
+            self._avatar_log(f"_set_avatar_pose get_image error: {e}")
             return
         if img is None:
+            self._avatar_log(f"_set_avatar_pose: img None for '{pose}'")
             return
         if pose not in self._avatar_ctk_images:
             try:
                 self._avatar_ctk_images[pose] = ctk.CTkImage(
                     light_image=img, dark_image=img, size=self._avatar_size,
                 )
-            except Exception:
+            except Exception as e:
+                self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
                 return
         try:
             self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
             self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
+            if not getattr(self, "_pose_logged_once", False):
+                self._avatar_log(f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}")
+                self._pose_logged_once = True
+        except Exception as e:
+            self._avatar_log(f"_set_avatar_pose configure error: {e}")
+
+    def _avatar_log(self, msg: str) -> None:
+        try:
+            from app_log import log_info
+            log_info("[mini_port] " + msg)
         except Exception:
-            pass
+            print("[mini_port] " + msg, flush=True)
 
     def _setup_context_menu(self):
         """右クリックで通知オン/オフ・設定・ミニポート非表示のメニューを表示。"""
