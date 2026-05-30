@@ -183,12 +183,16 @@ del "%~f0"
         with open(bat_path, "w", encoding="ascii", errors="replace") as f:
             f.write(bat)
 
-        # DETACHED_PROCESS のみ (CREATE_NO_WINDOW と併用すると起動しないことがある)。
-        # 親 (このアプリ) が終了してもバッチは独立して走り続ける。
-        DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        # CREATE_NEW_CONSOLE で完全に独立したコンソールプロセスとして起動する。
+        # DETACHED_PROCESS だけだとバッチが親 (このアプリ) のジョブオブジェクトに
+        # 残り、os._exit でアプリを終了したときにバッチも道連れで kill され、
+        # PID 待ちループの途中で死んでいた (更新が進まない真因)。
+        # 新コンソールにすることで親から切り離され、アプリ終了後も走り続ける。
+        # (更新中だけ小さな黒いコンソール窓が一瞬見えるが、進行が分かる利点もある)
+        CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
         subprocess.Popen(
             ["cmd.exe", "/c", bat_path],
-            creationflags=DETACHED_PROCESS,
+            creationflags=CREATE_NEW_CONSOLE,
             close_fds=True,
             cwd=tmp,
         )
