@@ -523,10 +523,11 @@ class MiniPortWindow(ctk.CTk):
         try:
             if self._avatar_enabled:
                 import linko_avatar
-                # lipsync=False で吹き出しのみ (口パク・音声なし)
+                # lipsync=True: 音声は無いが吹き出しのテキストに合わせて口パクさせる
+                # (duration は text 長から概算される)
                 linko_avatar.say(
                     "こんにちは、リン子です。何かあったら呼んでくださいね。",
-                    duration_sec=None, lipsync=False,
+                    duration_sec=None, lipsync=True,
                 )
                 return
         except Exception:
