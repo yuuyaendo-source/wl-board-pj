@@ -179,17 +179,22 @@ class MiniPortWindow(ctk.CTk):
         self.title("Rinko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        # はっきり表示 (透過廃止)。
-        # 外枠の長方形を消すため、Toplevel 背景を透明キーカラーにして
-        # 角丸フレームだけが見えるようにする (Windows のみ -transparentcolor 対応)。
+        # 外枠の長方形を消すため Toplevel 背景を透明キーカラーにして
+        # 角丸フレームだけを見せる (Windows のみ -transparentcolor 対応)。
+        # さらに枠ごと軽く透過させて作業の邪魔になりにくくする (-alpha)。
         self._transparent_key = "#010101"  # ほぼ黒。UI で使わない色をキーに
         self.resizable(False, False)
         try:
             self.configure(fg_color=self._transparent_key)
             self.attributes("-transparentcolor", self._transparent_key)
+            self.attributes("-alpha", 0.9)  # 枠ごと薄く透過
         except Exception:
             # 非対応環境では従来通り淡い背景
             self.configure(fg_color=("#ddf2de", "#2a7d2e"))
+            try:
+                self.attributes("-alpha", 0.9)
+            except Exception:
+                pass
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
@@ -392,16 +397,17 @@ class MiniPortWindow(ctk.CTk):
                 linko_avatar.start_idle_animation()
             except Exception as e:
                 print(f"[linko_avatar] idle animation start failed: {e}", flush=True)
-            # 「リン子を閉じる」ボタン (右上に小さく重ねる)
+            # 「リン子を閉じる」ボタン: アバターの左上角に小さく置く
+            # (右側のボード/投稿ボタン列と重ならない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
-                    self.frame, text="✕", width=24, height=24, corner_radius=12,
-                    font=ctk.CTkFont(size=13, weight="bold"),
+                    self.frame, text="✕", width=22, height=22, corner_radius=11,
+                    font=ctk.CTkFont(size=12, weight="bold"),
                     fg_color=("#cfe8d0", "#3d8b40"), hover_color=("#f0a0a0", "#c0392b"),
                     text_color=("#1b5e20", "#ffffff"),
                     command=self._on_close_clicked,
                 )
-                self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
+                self.btn_close_mini.place(relx=0.0, rely=0.0, x=6, y=6, anchor="nw")
             except Exception as e:
                 print(f"[linko_avatar] close button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
