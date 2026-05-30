@@ -185,14 +185,16 @@ del "%~f0"
             cwd=tmp,
         )
         _log(f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。")
-        # バッチが waitloop に入る猶予を与えてから終了
+        # バッチが waitloop に入る猶予を与えてから終了。
+        # 重要: sys.exit(0) は SystemExit を投げるが、Tk / pystray のイベント
+        # コールバック内 (設定パネルのボタン・トレイメニュー) では握りつぶされ、
+        # プロセスが終了しない → バッチが PID 待ちループから抜けられず更新が止まる。
+        # os._exit(0) は例外を投げず即座にプロセスを終了するので確実。
         time.sleep(0.5)
-        sys.exit(0)
+        os._exit(0)
 
     except requests.exceptions.RequestException as e:
         return False, f"ダウンロードに失敗しました: {str(e)[:80]}"
-    except SystemExit:
-        raise
     except Exception as e:
         return False, str(e)[:80]
 
