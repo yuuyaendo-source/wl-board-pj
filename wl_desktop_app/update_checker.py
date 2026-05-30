@@ -103,6 +103,54 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
         return False, "", ""
 
 
+def _find_wonderlinko_product_codes():
+    """レジストリの Uninstall キーから WonderLinko の ProductCode ({GUID}) を全部集める。
+
+    cx_Freeze の MSI はメジャーアップグレードが効かず、新バージョンを入れても旧版が
+    並存する (古い方が起動する) ため、ここで列挙した ProductCode を msiexec /x で
+    個別にアンインストールしてから新版を入れる。
+    """
+    codes = []
+    try:
+        import winreg
+    except Exception:
+        return codes
+    roots = [
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+    ]
+    for root, path in roots:
+        try:
+            key = winreg.OpenKey(root, path)
+        except OSError:
+            continue
+        try:
+            count = winreg.QueryInfoKey(key)[0]
+            for i in range(count):
+                try:
+                    sub = winreg.EnumKey(key, i)
+                except OSError:
+                    break
+                if not sub.startswith("{"):
+                    continue
+                try:
+                    sk = winreg.OpenKey(key, sub)
+                    name = winreg.QueryValueEx(sk, "DisplayName")[0]
+                    sk.Close()
+                except OSError:
+                    continue
+                if name and ("WonderLinko" in name or "Wonder Linko" in name or "WonderRinko" in name):
+                    if sub not in codes:
+                        codes.append(sub)
+        finally:
+            try:
+                key.Close()
+            except Exception:
+                pass
+    return codes
+
+
 def download_and_install(download_url: str, timeout: int = 120):
     """
     MSI をダウンロードし、更新バッチ経由でインストール → アプリ再起動する。
@@ -148,8 +196,20 @@ def download_and_install(download_url: str, timeout: int = 120):
         trace_log = os.path.join(tmp, "WonderLinko_update_trace.log")
         exe = sys.executable
         pid = os.getpid()
-        # UpgradeCode (setup.py の bdist_msi_options と一致させること)
-        upgrade_code = "{B29E4C50-1A2B-4C3D-9E5F-6A7B8C9D0E1F}"
+
+        # 既存の WonderLinko 製品 (ProductCode) を列挙して個別アンインストールする。
+        # msiexec /x は ProductCode が必要 (UpgradeCode では効かない) ため、
+        # レジストリから全 ProductCode を引いて 1 つずつ /x する。これで並存を解消。
+        product_codes = _find_wonderlinko_product_codes()
+        _log(f"既存製品 ProductCode: {product_codes}")
+        if product_codes:
+            uninstall_block = "\n".join(
+                f'echo [update] uninstall {c} >> "{trace_log}"\n'
+                f'msiexec /x {c} /qn /norestart'
+                for c in product_codes
+            )
+        else:
+            uninstall_block = f'echo [update] no existing product found >> "{trace_log}"'
 
         bat_path = os.path.join(tmp, "wonderlinko_update.bat")
         # ASCII のみ (日本語は chcp 依存で文字化け・失敗の原因)。各ステップを trace_log に追記。
@@ -170,8 +230,8 @@ if %WL_WAIT% GEQ 20 (
 ping -n 2 127.0.0.1 >nul
 goto waitloop
 :afterwait
-echo [update] uninstalling old (UpgradeCode) >> "{trace_log}"
-msiexec /x {upgrade_code} /qn /norestart
+echo [update] uninstalling old products >> "{trace_log}"
+{uninstall_block}
 echo [update] installing new msi >> "{trace_log}"
 msiexec /i "{msi_path}" /passive /norestart /l*v "{install_log}"
 echo [update] msiexec exit=%errorlevel% >> "{trace_log}"
