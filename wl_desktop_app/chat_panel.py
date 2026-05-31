@@ -60,6 +60,7 @@ class ChatPanel(ctk.CTkToplevel):
         self._messages: list[dict] = []  # [{role, content}]
         self._streaming = False
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
+        self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
         self._build_ui()
         self._position_near(master)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -107,6 +108,15 @@ class ChatPanel(ctk.CTkToplevel):
         self._chat = ctk.CTkTextbox(self, wrap="word", font=ctk.CTkFont(size=13))
         self._chat.pack(fill="both", expand=True, padx=10, pady=(10, 6))
         self._chat.configure(state="disabled")
+
+        # 直前のリン子回答を付箋ボードへ投稿するボタン
+        self._note_btn = ctk.CTkButton(
+            self, text="📝 リン子の回答を付箋にする", height=32,
+            command=self._on_make_note, state="disabled",
+            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        )
+        self._note_btn.pack(fill="x", padx=10, pady=(0, 6))
 
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(fill="x", padx=10, pady=(0, 10))
@@ -187,6 +197,7 @@ class ChatPanel(ctk.CTkToplevel):
             self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
         finally:
             self._messages.append({"role": "assistant", "content": acc})
+            self._last_assistant_text = acc
             self._streaming = False
             self.after(0, self._end_assistant)
             try:
@@ -222,6 +233,35 @@ class ChatPanel(ctk.CTkToplevel):
     def _end_assistant(self) -> None:
         try:
             self._send_btn.configure(state="normal")
+            if (self._last_assistant_text or "").strip():
+                self._note_btn.configure(state="normal")
+        except Exception:
+            pass
+
+    def _on_make_note(self) -> None:
+        """直前のリン子の回答を付箋ボードへ投稿する。既存の _send_content を流用。"""
+        text = (self._last_assistant_text or "").strip()
+        if not text:
+            return
+        self._note_btn.configure(state="disabled", text="📝 投稿中…")
+
+        def do_post():
+            ok, msg = (False, "送信処理が見つかりません")
+            try:
+                from mini_port import _send_content  # 遅延 import (循環回避)
+                ok, msg = _send_content(text)
+            except Exception as e:
+                ok, msg = False, str(e)[:80]
+            self.after(0, lambda: self._on_note_done(ok, msg))
+
+        threading.Thread(target=do_post, daemon=True).start()
+
+    def _on_note_done(self, ok: bool, msg: str) -> None:
+        self._append_line("システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}")
+        try:
+            self._note_btn.configure(
+                state="normal", text="📝 リン子の回答を付箋にする"
+            )
         except Exception:
             pass
 
