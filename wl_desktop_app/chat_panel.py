@@ -61,11 +61,45 @@ class ChatPanel(ctk.CTkToplevel):
         self._streaming = False
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._build_ui()
+        self._position_near(master)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.lift()
         self.focus_force()
         # 開いた直後にあいさつ (LLM を使わず固定文)
         self._append_line("リン子", "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。")
+
+    def _position_near(self, master) -> None:
+        """ミニポートの近くにパネルを配置する (カーソル移動を減らす)。
+        既定はミニポートの左隣。画面外にはみ出る場合は右・上へ寄せる。
+        """
+        if master is None:
+            return
+        try:
+            self.update_idletasks()
+            master.update_idletasks()
+            mx = master.winfo_rootx()
+            my = master.winfo_rooty()
+            mw = master.winfo_width() or 264
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            pw, ph = self.WIDTH, self.HEIGHT
+            # まずミニポートの左隣
+            x = mx - pw - 8
+            if x < 0:
+                # 左に入らなければ右隣
+                x = mx + mw + 8
+                if x + pw > sw:
+                    # それも無理なら画面右端に寄せる
+                    x = max(0, sw - pw - 8)
+            # 縦はミニポートの下端に合わせる (パネル下端をミニポート下端付近に)
+            y = my - ph + (master.winfo_height() or 224)
+            if y < 0:
+                y = 8
+            if y + ph > sh:
+                y = max(0, sh - ph - 8)
+            self.geometry(f"{pw}x{ph}+{int(x)}+{int(y)}")
+        except Exception:
+            pass
 
     # --- UI ----------------------------------------------------------------
     def _build_ui(self) -> None:
@@ -108,14 +142,17 @@ class ChatPanel(ctk.CTkToplevel):
     def _stream_response(self) -> None:
         self._streaming = True
         url = _brainstorm_url()
-        # リン子の発言を開始 (口パク連動)
+        # リン子の発言枠を開始 (口パクは最初のトークンが来てから = 実際に喋り出すタイミング)
         self.after(0, self._begin_assistant)
-        try:
-            import linko_avatar
-            if linko_avatar.is_ready():
-                linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
-        except Exception:
-            pass
+        lipsync_started = False
+
+        def _start_lipsync_once():
+            try:
+                import linko_avatar
+                if linko_avatar.is_ready():
+                    linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
+            except Exception:
+                pass
 
         acc = ""
         try:
@@ -140,6 +177,9 @@ class ChatPanel(ctk.CTkToplevel):
                             continue
                         tok = obj.get("token")
                         if tok:
+                            if not lipsync_started:
+                                lipsync_started = True
+                                _start_lipsync_once()  # 最初のトークンで口パク開始
                             acc += tok
                             self.after(0, lambda t=tok: self._append_assistant_token(t))
         except Exception as e:
