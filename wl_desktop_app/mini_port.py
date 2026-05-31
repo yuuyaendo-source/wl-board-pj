@@ -521,10 +521,18 @@ class MiniPortWindow(ctk.CTk):
         Phase 5a: ここからチャット (ブレスト) を開く想定。
         """
         try:
+            # features.brainstorm が ON ならアバタークリックでチャットパネルを開く
+            try:
+                from config_loader import is_feature_enabled
+                if is_feature_enabled("brainstorm"):
+                    from chat_panel import open_chat_panel
+                    open_chat_panel(master=self)
+                    return
+            except Exception as e:
+                print(f"[chat_panel] open failed: {e}", flush=True)
             if self._avatar_enabled:
                 import linko_avatar
-                # lipsync=True: 音声は無いが吹き出しのテキストに合わせて口パクさせる
-                # (duration は text 長から概算される)
+                # brainstorm OFF のときは挨拶を吹き出し + 口パク
                 linko_avatar.say(
                     "こんにちは、リン子です。何かあったら呼んでくださいね。",
                     duration_sec=None, lipsync=True,

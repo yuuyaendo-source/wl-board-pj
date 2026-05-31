@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db import init_db
 import app.models  # noqa: F401 — モデルを Base に登録してから create_all するため
-from app.routers import admin_llm, auth_google, board_placements, boards, daily_reset, news, personal, sticky_notes, users
+from app.routers import admin_llm, auth_google, board_placements, boards, brainstorm, daily_reset, news, personal, sticky_notes, users
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ app.include_router(news.router)
 app.include_router(personal.router)
 app.include_router(auth_google.router)
 app.include_router(admin_llm.router)
+app.include_router(brainstorm.router)
 
 # デスクトップアプリ自動更新: /desktop-app/latest.json と /desktop-app/WonderLinko.msi を配信
 if _DESKTOP_APP_RELEASES_DIR.is_dir():
