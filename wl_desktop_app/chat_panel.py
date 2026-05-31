@@ -61,6 +61,7 @@ class ChatPanel(ctk.CTkToplevel):
         self._streaming = False
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
+        self._pending_attachment = None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
         self._build_ui()
         self._position_near(master)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -118,6 +119,22 @@ class ChatPanel(ctk.CTkToplevel):
         )
         self._note_btn.pack(fill="x", padx=10, pady=(0, 6))
 
+        # 添付資料の状態表示 + 添付ボタン (社内 LLM だけに渡る。外部送信なし)
+        attach_row = ctk.CTkFrame(self, fg_color="transparent")
+        attach_row.pack(fill="x", padx=10, pady=(0, 6))
+        self._attach_label = ctk.CTkLabel(
+            attach_row, text="📎 添付なし", anchor="w",
+            text_color=("gray40", "gray60"), font=ctk.CTkFont(size=12),
+        )
+        self._attach_label.pack(side="left", fill="x", expand=True)
+        self._attach_btn = ctk.CTkButton(
+            attach_row, text="📎 資料を添付", width=110, height=28,
+            command=self._on_attach,
+            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        )
+        self._attach_btn.pack(side="right")
+
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(fill="x", padx=10, pady=(0, 10))
         self._entry = ctk.CTkTextbox(bottom, height=60, wrap="word", font=ctk.CTkFont(size=13))
@@ -134,6 +151,41 @@ class ChatPanel(ctk.CTkToplevel):
         self._on_send()
         return "break"
 
+    # 添付資料は context window に収まるよう上限を設ける (超過分は末尾カット)
+    MAX_ATTACH_CHARS = 12000
+
+    def _on_attach(self) -> None:
+        """ローカルファイルを選んでテキスト抽出し、次の送信に同梱する。
+        抽出は端末内で行い、テキストは社内 LLM (board-system→Ollama) にのみ渡る。外部送信なし。
+        """
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="リン子に読ませる資料を選択",
+            filetypes=[
+                ("対応ファイル", "*.txt *.md *.csv *.json *.log *.py *.pdf *.docx"),
+                ("すべて", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        import os
+        name = os.path.basename(path)
+        text, err = _extract_text(path)
+        if err:
+            self._append_line("システム", f"資料の読み込みに失敗: {err}")
+            return
+        if not (text or "").strip():
+            self._append_line("システム", "資料からテキストを抽出できませんでした (画像 PDF など)。")
+            return
+        truncated = False
+        if len(text) > self.MAX_ATTACH_CHARS:
+            text = text[: self.MAX_ATTACH_CHARS]
+            truncated = True
+        self._pending_attachment = {"name": name, "text": text}
+        label = f"📎 {name} ({len(text)}字{'・以降省略' if truncated else ''})"
+        self._attach_label.configure(text=label)
+        self._append_line("システム", f"資料「{name}」を添付しました。質問を入力して送信してください。")
+
     def _on_send(self) -> None:
         if self._streaming:
             return
@@ -144,8 +196,22 @@ class ChatPanel(ctk.CTkToplevel):
             self._append_line("システム", "requests が利用できないため送信できません。")
             return
         self._entry.delete("1.0", "end")
-        self._append_line("あなた", text)
-        self._messages.append({"role": "user", "content": text})
+
+        # 添付資料があれば、LLM に渡す content の先頭に資料を前置 (表示はユーザ入力のみ)
+        attach = self._pending_attachment
+        if attach:
+            llm_content = (
+                f"【添付資料: {attach['name']}】\n{attach['text']}\n\n"
+                f"【質問・指示】\n{text}"
+            )
+            self._append_line("あなた", f"[📎 {attach['name']}] {text}")
+            self._pending_attachment = None
+            self._attach_label.configure(text="📎 添付なし")
+        else:
+            llm_content = text
+            self._append_line("あなた", text)
+
+        self._messages.append({"role": "user", "content": llm_content})
         self._send_btn.configure(state="disabled")
         threading.Thread(target=self._stream_response, daemon=True).start()
 
@@ -277,6 +343,48 @@ class ChatPanel(ctk.CTkToplevel):
             self.destroy()
         except Exception:
             pass
+
+
+def _extract_text(path: str):
+    """ローカルファイルからテキストを抽出する。戻り値: (text, error_message)。
+    txt/md 系は標準で常に対応。pdf は pypdf、docx は python-docx (無ければエラー文)。
+    すべて端末内処理 (外部送信なし)。
+    """
+    import os
+    ext = os.path.splitext(path)[1].lower()
+    text_exts = (".txt", ".md", ".csv", ".json", ".log", ".py", ".ini", ".yaml", ".yml", ".html", ".xml")
+    try:
+        if ext in text_exts or ext == "":
+            for enc in ("utf-8", "utf-8-sig", "cp932"):
+                try:
+                    with open(path, "r", encoding=enc) as f:
+                        return f.read(), None
+                except UnicodeDecodeError:
+                    continue
+            return None, "文字コードを判別できませんでした"
+        if ext == ".pdf":
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                return None, "PDF 対応ライブラリ (pypdf) が無い環境です"
+            reader = PdfReader(path)
+            parts = []
+            for page in reader.pages:
+                try:
+                    parts.append(page.extract_text() or "")
+                except Exception:
+                    continue
+            return "\n".join(parts), None
+        if ext == ".docx":
+            try:
+                import docx
+            except ImportError:
+                return None, "Word 対応ライブラリ (python-docx) が無い環境です"
+            d = docx.Document(path)
+            return "\n".join(p.text for p in d.paragraphs), None
+        return None, f"未対応の形式です ({ext})"
+    except Exception as e:
+        return None, str(e)[:100]
 
 
 def open_chat_panel(master=None) -> ChatPanel:

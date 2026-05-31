@@ -84,12 +84,14 @@ build_exe_options = {
         # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
         "socketio", "engineio", "websocket",
         "bidict",  # python-socketio の依存
+        # Phase 5a 資料添付: PDF/Word テキスト抽出
+        "pypdf", "docx",
         # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
         # 静的解析が拾い損ねる可能性があるため。
         "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
         "theme", "chat_panel",
     ],
-    "packages": ["customtkinter", "pynput", "socketio", "engineio"],
+    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx"],
     "zip_exclude_packages": ["*"],
 }
 
