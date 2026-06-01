@@ -232,6 +232,15 @@ class ChatPanel(ctk.CTkToplevel):
 
         acc = ""
         try:
+            from security import assert_http_url
+            assert_http_url(url, load_config(), purpose="brainstorm")
+        except ValueError as e:
+            self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
+            self._messages.append({"role": "assistant", "content": ""})
+            self._streaming = False
+            self.after(0, self._end_assistant)
+            return
+        try:
             with requests.post(
                 url, json={"messages": self._messages}, stream=True, timeout=(10, 120)
             ) as r:

@@ -88,6 +88,15 @@ def start_visitor_notify() -> bool:
     if not url:
         log_warn("[visitor_notify] linko_server_url が空のため接続をスキップ。設定で URL を指定してください。")
         return False
+    try:
+        from security import validate_http_url
+        ok, err = validate_http_url(url, cfg, purpose="socketio_connect")
+        if not ok:
+            log_warn(f"[visitor_notify] linko_server_url を拒否: {err}")
+            return False
+    except Exception as e:
+        log_warn(f"[visitor_notify] URL 検証エラー: {e}")
+        return False
 
     if _thread is not None and _thread.is_alive():
         log_info("[visitor_notify] 既に接続スレッドが動作中のためスキップ。")
@@ -210,13 +219,17 @@ def _handle_visitor_arrived(data: dict) -> None:
     # 2. linko_server_url + /entrance (フォールバック)
     # url を渡すと winotify (Action Center) 経路で確実にトーストが出る
     # (win10toast-click にフォールバックすると表示されない環境がある)。
-    click_url = server_click_url
-    if not click_url:
-        try:
-            from config_loader import load_config
-            click_url = (load_config().get("linko_server_url") or "").rstrip("/") + "/entrance"
-        except Exception:
-            click_url = ""
+    try:
+        from config_loader import load_config
+        from security import filter_allowed_url
+
+        cfg_notify = load_config()
+        click_url = filter_allowed_url(server_click_url, cfg_notify, purpose="visitor_click") if server_click_url else None
+        if not click_url:
+            fallback = (cfg_notify.get("linko_server_url") or "").rstrip("/") + "/entrance"
+            click_url = filter_allowed_url(fallback, cfg_notify, purpose="visitor_click") or ""
+    except Exception:
+        click_url = ""
 
     # トースト
     try:
@@ -267,6 +280,18 @@ def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:
         else:
             log_warn(f"[visitor_notify] audio_url が相対だが linko_server_url 未設定: {audio_url}")
             return
+
+    try:
+        from config_loader import load_config
+        from security import validate_http_url
+
+        ok, err = validate_http_url(full_url, load_config(), purpose="visitor_audio")
+        if not ok:
+            log_warn(f"[visitor_notify] 音声 URL を拒否: {err} ({full_url!r})")
+            return
+    except Exception as e:
+        log_warn(f"[visitor_notify] 音声 URL 検証エラー: {e}")
+        return
 
     try:
         r = requests.get(full_url, timeout=20)

@@ -29,5 +29,10 @@
     "visitor_notify": false,
     "visitor_notify_sound": false,
     "brainstorm": false
+  },
+  "security": {
+    "allowed_host_suffixes": [".internal.wonder-link.com"],
+    "allowed_hosts": ["localhost", "127.0.0.1"],
+    "allow_private_ips": false
   }
 }

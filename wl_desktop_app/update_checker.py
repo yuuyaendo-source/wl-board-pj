@@ -82,6 +82,15 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
         log.warning("更新チェック: requests が利用できないためスキップ")
         return False, "", ""
     try:
+        from config_loader import load_config
+        from security import validate_update_check_url, validate_msi_download_url
+
+        cfg = load_config()
+        ok, err = validate_update_check_url(check_url, cfg)
+        if not ok:
+            log.warning("更新チェック: URL 拒否: %s", err)
+            _log(f"更新チェック URL 拒否: {err}")
+            return False, "", ""
         _log(f"更新チェック GET 実行: {check_url}")
         log.info("更新チェック GET: %s", check_url)
         r = requests.get(check_url, timeout=timeout)
@@ -92,6 +101,11 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
         url = (data.get("url") or "").strip()
         if not latest or not url:
             log.info("更新チェック: version または url が空のためスキップ")
+            return False, "", ""
+        ok_dl, err_dl = validate_msi_download_url(url, cfg)
+        if not ok_dl:
+            log.warning("更新チェック: ダウンロード URL 拒否: %s", err_dl)
+            _log(f"更新 DL URL 拒否: {err_dl}")
             return False, "", ""
         if is_newer(latest, current_version):
             log.info("更新あり: 現在=%s 最新=%s url=%s", current_version, latest, url)
@@ -174,6 +188,13 @@ def download_and_install(download_url: str, timeout: int = 120):
         return False, "Windows のみ対応しています"
 
     try:
+        from config_loader import load_config
+        from security import validate_msi_download_url
+
+        cfg = load_config()
+        ok, err = validate_msi_download_url(download_url, cfg)
+        if not ok:
+            return False, f"ダウンロード URL が許可されていません: {err}"
         _log(f"更新 DL 開始: {download_url}")
         r = requests.get(download_url, timeout=timeout, stream=True)
         r.raise_for_status()

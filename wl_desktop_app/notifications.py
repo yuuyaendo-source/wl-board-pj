@@ -25,7 +25,8 @@ def _open_last_notification_url():
     """最後のお知らせURLをブラウザで開く（トーストクリック時など）。"""
     url = get_last_notification_url()
     if url:
-        webbrowser.open(url)
+        from security import safe_webbrowser_open
+        safe_webbrowser_open(url)
 
 
 def _get_toast_icon_path():
@@ -83,7 +84,14 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
     """
     global _last_notification_url
     if url:
-        _last_notification_url = url
+        try:
+            from config_loader import load_config
+            from security import filter_allowed_url
+            url = filter_allowed_url(url, load_config(), purpose="toast")
+        except Exception:
+            url = None
+        if url:
+            _last_notification_url = url
 
     if not force_show:
         try:
@@ -144,13 +152,14 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
             pass
     print(f"[Notify] {title}: {message}")
     if url:
-        webbrowser.open(url)
+        from security import safe_webbrowser_open
+        safe_webbrowser_open(url)
 
 
 def open_last_notification():
     """最後のお知らせURLをブラウザで開く。"""
     url = get_last_notification_url()
     if url:
-        webbrowser.open(url)
-        return True
+        from security import safe_webbrowser_open
+        return safe_webbrowser_open(url)
     return False

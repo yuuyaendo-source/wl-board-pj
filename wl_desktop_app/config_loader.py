@@ -65,6 +65,12 @@ def _get_defaults():
             "visitor_notify_sound": False,
             "brainstorm": False,
         },
+        # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
+        "security": {
+            "allowed_host_suffixes": [".internal.wonder-link.com"],
+            "allowed_hosts": ["localhost", "127.0.0.1"],
+            "allow_private_ips": False,
+        },
     }
 
 
@@ -92,6 +98,11 @@ def load_config():
     cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))).strip()
     cfg["board_system_url"] = (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "").strip().rstrip("/")
     cfg["linko_server_url"] = (os.environ.get("LINKO_SERVER_URL", cfg.get("linko_server_url", "")) or "").strip().rstrip("/")
+    try:
+        from security import sanitize_config_urls
+        sanitize_config_urls(cfg, _get_defaults())
+    except Exception as e:
+        print(f"[security] config URL sanitize skipped: {e}", flush=True)
     return cfg
 
 
@@ -123,6 +134,13 @@ def save_config(cfg):
     # features は辞書を丸ごと保存（未知キーも保つ）
     src_features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
     out["features"] = {**(defaults.get("features") or {}), **src_features}
+    if isinstance(cfg.get("security"), dict):
+        out["security"] = cfg["security"]
+    try:
+        from security import sanitize_config_urls
+        sanitize_config_urls(out, defaults)
+    except Exception as e:
+        print(f"[security] config save sanitize skipped: {e}", flush=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
 
@@ -170,6 +188,13 @@ def get_board_system_personal_url(cfg=None):
     frontend = get_board_system_frontend_base(cfg)
     pid = (cfg.get("board_system_personal_id") or "").strip()
     if not frontend or not pid:
+        return None
+    try:
+        from security import validate_http_url, validate_personal_board_id
+        ok, _ = validate_http_url(frontend, cfg, purpose="personal_board")
+        if not ok or not validate_personal_board_id(pid):
+            return None
+    except Exception:
         return None
     return f"{frontend}/boards/personal/{pid}"
 

@@ -25,6 +25,13 @@ def fetch_summary(postit_board_url, board_id):
     """付箋ボードのサマリーを取得。失敗時は None。"""
     url = _postit_summary_url(postit_board_url, board_id)
     try:
+        from security import validate_http_url
+        ok, _ = validate_http_url(url, purpose="postit_poll")
+        if not ok:
+            return None
+    except Exception:
+        return None
+    try:
         r = requests.get(url, timeout=POLL_TIMEOUT_SEC)
         if r.status_code == 200:
             return r.json()
@@ -39,6 +46,13 @@ def fetch_summary_with_error(postit_board_url, board_id):
     接続テスト用。失敗時は理由を返す。
     """
     url = _postit_summary_url(postit_board_url, board_id)
+    try:
+        from security import validate_http_url
+        ok, err = validate_http_url(url, purpose="postit_poll")
+        if not ok:
+            return None, err or "URL が許可されていません"
+    except Exception as e:
+        return None, str(e)
     try:
         r = requests.get(url, timeout=POLL_TIMEOUT_SEC)
         if r.status_code == 200:

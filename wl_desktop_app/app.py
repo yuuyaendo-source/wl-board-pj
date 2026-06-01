@@ -280,25 +280,28 @@ def _postit_board_url():
 def open_tray_click_target(*args):
     """トレイアイコンクリックで開く先（設定に従う）。"""
     action = _config.get("tray_click_action", "postit")
+    from security import safe_webbrowser_open
+
     if action == "personal":
-        webbrowser.open(_personal_url())
+        safe_webbrowser_open(_personal_url(), _config)
         return
     if action == "last_notification":
         if notifications.open_last_notification():
             return
-        webbrowser.open(_personal_url())
+        safe_webbrowser_open(_personal_url(), _config)
         return
     # デフォルト: postit（付箋ボード）
     url = _postit_board_url()
     if url:
-        webbrowser.open(url)
+        safe_webbrowser_open(url, _config)
     else:
         open_personal_mode()
 
 
 def open_personal_mode(*args):
     """このユーザー用のパーソナルモード（個人用）をブラウザで開く。"""
-    webbrowser.open(_personal_url())
+    from security import safe_webbrowser_open
+    safe_webbrowser_open(_personal_url(), _config)
 
 
 def open_last_notification(*args):
@@ -584,6 +587,8 @@ def _board_system_login_clicked(*args):
         return
     try:
         import requests
+        from security import assert_http_url
+        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
         r = requests.get(
             f"{board_url}/users/by_email",
             params={"email": email},
@@ -606,9 +611,10 @@ def _board_system_login_clicked(*args):
                     force_show=True,
                 )
                 from config_loader import get_board_system_personal_url
+                from security import safe_webbrowser_open
                 personal_url = get_board_system_personal_url(_config)
                 if personal_url:
-                    webbrowser.open(personal_url)
+                    safe_webbrowser_open(personal_url, _config)
                 return
         if r.status_code == 404:
             notifications.show_toast("Wonder Linko", "このメールアドレスは未登録です。Board System でユーザーを登録してください。", duration_sec=5, force_show=True)
@@ -697,6 +703,8 @@ def _prompt_board_system_login_if_needed():
         return
     try:
         import requests
+        from security import assert_http_url
+        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
         r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
         if r.status_code == 200 and r.json():
             data = r.json()

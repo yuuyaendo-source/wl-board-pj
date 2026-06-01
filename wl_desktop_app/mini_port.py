@@ -80,6 +80,12 @@ def _prompt_email_and_resolve_personal(parent=None):
         return None
     email = email.strip()
     try:
+        from security import assert_http_url
+        assert_http_url(f"{board_url}/users/by_email", cfg, purpose="users_by_email")
+    except ValueError as e:
+        print(f"[mini_port] users/by_email blocked: {e}", flush=True)
+        return None
+    try:
         r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
         if r.status_code != 200:
             return None
@@ -118,6 +124,11 @@ def _send_content(text: str) -> Tuple[bool, str]:
         "author": author,
         "createdAt": int(time.time() * 1000),
     }
+    try:
+        from security import assert_http_url
+        assert_http_url(url, cfg, purpose="sticky_notes")
+    except ValueError as e:
+        return False, f"送信先が許可されていません: {str(e)[:80]}"
     try:
         r = requests.post(url, json={"boardId": board_id, "note": note}, timeout=10)
         if r.status_code in (200, 201):
@@ -721,18 +732,20 @@ class MiniPortWindow(ctk.CTk):
     def _open_taskboard(self):
         """「ボード」クリック: 各自の Board System パーソナルボードを開く。未設定時はメール入力で解決してから開く。"""
         cfg = load_config()
+        from security import safe_webbrowser_open
+
         personal_url = get_board_system_personal_url(cfg)
         if personal_url:
-            webbrowser.open(personal_url)
+            safe_webbrowser_open(personal_url, cfg)
             return
         board_url = get_effective_board_system_url(cfg)
         if board_url:
             # 親に self（ミニポート窓）を渡し、名前入力と取り違えないようにする
             url = _prompt_email_and_resolve_personal(parent=self)
             if url:
-                webbrowser.open(url)
+                safe_webbrowser_open(url, cfg)
                 return
-        webbrowser.open(_taskboard_url())
+        safe_webbrowser_open(_taskboard_url(), cfg)
 
     def _position_bottom_right(self, compact: bool = True):
         self.update_idletasks()
