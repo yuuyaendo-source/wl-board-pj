@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
 from typing import Optional
 
@@ -74,6 +75,11 @@ class ChatPanel(ctk.CTkToplevel):
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
         self._pending_attachment = None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        # 文単位ストリーミング TTS のパイプライン (voice 有効時のみ遅延起動)
+        self._sentence_q: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._audio_q: "queue.Queue" = queue.Queue(maxsize=6)
+        self._tts_workers_started = False
+        self._tts_cancel = threading.Event()
         self._build_ui()
         self._position_near(master)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -238,9 +244,12 @@ class ChatPanel(ctk.CTkToplevel):
             voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(_tts_url())
         except Exception:
             voice_planned = False
+        if voice_planned:
+            self._ensure_tts_workers()
         # リン子の発言枠を開始 (口パクは最初のトークンが来てから = 実際に喋り出すタイミング)
         self.after(0, self._begin_assistant)
         lipsync_started = False
+        sentence_buf = ""  # voice 時: 文区切りまでの未確定テキスト
 
         def _start_lipsync_once():
             try:
@@ -288,6 +297,9 @@ class ChatPanel(ctk.CTkToplevel):
                                     _start_lipsync_once()  # 無音時のみテキスト中に口パク
                             acc += tok
                             self.after(0, lambda t=tok: self._append_assistant_token(t))
+                            if voice_planned:
+                                # 文が完成するたびに TTS パイプラインへ投入 (低レイテンシ)
+                                sentence_buf = self._flush_sentences(sentence_buf + tok)
         except Exception as e:
             _log(f"[chat_panel] streaming エラー: {e}")
             self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
@@ -304,43 +316,93 @@ class ChatPanel(ctk.CTkToplevel):
                         linko_avatar.stop_lipsync(base_pose="normal")
                 except Exception:
                     pass
-            elif acc.strip():
-                # 応答全文をリン子の声で読み上げ (口パクは音声長に同期)。別スレッドで実行。
-                threading.Thread(
-                    target=self._speak_via_tts, args=(acc,), daemon=True
-                ).start()
+            else:
+                # 末尾の未確定テキスト (句点で終わらない最後の一文) を投入
+                tail = sentence_buf.strip()
+                if tail:
+                    self._sentence_q.put(tail)
 
-    def _speak_via_tts(self, text: str) -> None:
-        """応答テキストを linko-system の TTS で合成し、リン子の声で再生する。
-        失敗はログのみ (チャットは壊さない)。
-        """
-        if requests is None:
+    # --- 文単位ストリーミング TTS -----------------------------------------
+    _SENTENCE_ENDERS = "。．！？!?\n"
+
+    def _flush_sentences(self, buf: str) -> str:
+        """buf から完成した文 (句点等で終わる) を取り出し TTS キューへ。未確定の末尾を返す。"""
+        start = 0
+        for i, ch in enumerate(buf):
+            if ch in self._SENTENCE_ENDERS:
+                seg = buf[start:i + 1].strip()
+                if seg:
+                    self._sentence_q.put(seg)
+                start = i + 1
+        return buf[start:]
+
+    def _ensure_tts_workers(self) -> None:
+        """fetch (TTS 生成) と play (順次再生) のワーカースレッドを一度だけ起動。"""
+        if self._tts_workers_started:
             return
+        self._tts_workers_started = True
+        threading.Thread(target=self._tts_fetch_worker, daemon=True).start()
+        threading.Thread(target=self._tts_play_worker, daemon=True).start()
+
+    def _tts_fetch_worker(self) -> None:
+        """文を 1 つずつ取り出し TTS 合成 + DL して audio_q へ (再生と並行して先読み)。"""
+        while True:
+            sentence = self._sentence_q.get()
+            if sentence is None or self._tts_cancel.is_set():
+                break
+            item = self._fetch_sentence_audio(sentence)
+            if item:
+                self._audio_q.put(item)
+        self._audio_q.put(None)  # play worker へ終了通知
+
+    def _tts_play_worker(self) -> None:
+        """audio_q の WAV を順番にブロッキング再生 (文同士が重ならない)。"""
+        from audio_player import play_wav
+        while True:
+            item = self._audio_q.get()
+            if item is None or self._tts_cancel.is_set():
+                break
+            path, text, duration = item
+            try:
+                play_wav(path, text=text, duration_sec=duration, blocking=True,
+                         log_prefix="[chat_panel]")
+            except Exception as e:
+                _log(f"[chat_panel] 文音声 再生失敗: {e}")
+
+    def _fetch_sentence_audio(self, text: str):
+        """1 文を linko-system の TTS で合成し WAV をローカル DL。(path, text, duration) を返す。"""
+        if requests is None or not text.strip():
+            return None
         url = _tts_url()
-        if not url or not text.strip():
-            return
+        if not url:
+            return None
         try:
             from security import assert_http_url
             assert_http_url(url, load_config(), purpose="brainstorm_tts")
         except ValueError as e:
             _log(f"[chat_panel] TTS URL 拒否: {e}")
-            return
+            return None
         try:
             r = requests.post(url, json={"text": text}, timeout=(5, 60))
             if r.status_code != 200:
                 _log(f"[chat_panel] TTS HTTP {r.status_code}")
-                return
+                return None
             audio_url = (r.json() or {}).get("audio_url")
         except Exception as e:
             _log(f"[chat_panel] TTS 取得失敗: {e}")
-            return
+            return None
         if not audio_url:
-            return
+            return None
         try:
-            from audio_player import play_linko_audio
-            play_linko_audio(audio_url, text=text, log_prefix="[chat_panel]")
+            from audio_player import download_linko_wav
+            res = download_linko_wav(audio_url, log_prefix="[chat_panel]")
         except Exception as e:
-            _log(f"[chat_panel] 音声再生失敗: {e}")
+            _log(f"[chat_panel] 音声DL失敗: {e}")
+            return None
+        if not res:
+            return None
+        path, duration = res
+        return (path, text, duration)
 
     # --- テキスト表示ヘルパ (すべてメインスレッドで) ------------------------
     def _append_line(self, speaker: str, text: str) -> None:
@@ -403,6 +465,16 @@ class ChatPanel(ctk.CTkToplevel):
     def _on_close(self) -> None:
         global _panel_instance
         _panel_instance = None
+        # TTS パイプラインを停止 (ワーカーをアンブロックして終了させる)
+        self._tts_cancel.set()
+        try:
+            self._sentence_q.put_nowait(None)
+        except Exception:
+            pass
+        try:
+            self._audio_q.put_nowait(None)
+        except Exception:
+            pass
         try:
             import linko_avatar
             linko_avatar.stop_lipsync(base_pose="normal")
