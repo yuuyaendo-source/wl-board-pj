@@ -404,6 +404,10 @@ class ChatPanel(ctk.CTkToplevel):
             return None
         try:
             r = requests.post(url, json={"text": text}, timeout=(5, 60))
+            if r.status_code == 503:
+                # 受付保護の同時実行上限 or 一時的に合成不可。音声だけスキップ(テキストは残る)
+                _log("[chat_panel] TTS 混雑のため音声スキップ (503)")
+                return None
             if r.status_code != 200:
                 _log(f"[chat_panel] TTS HTTP {r.status_code}")
                 return None
