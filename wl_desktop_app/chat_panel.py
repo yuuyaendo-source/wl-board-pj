@@ -48,6 +48,18 @@ def _brainstorm_url() -> str:
     return base + "/brainstorm"
 
 
+def _tts_url() -> Optional[str]:
+    """linko-system の TTS エンドポイント URL。
+    linko_server_url (例 https://linko-board.internal.wonder-link.com) に /api/v2/tts を付ける。
+    linko_server_url 未設定なら None (= 音声なし)。
+    """
+    cfg = load_config()
+    base = (cfg.get("linko_server_url") or "").strip().rstrip("/")
+    if not base:
+        return None
+    return base + "/api/v2/tts"
+
+
 class ChatPanel(ctk.CTkToplevel):
     WIDTH = 420
     HEIGHT = 560
@@ -218,6 +230,14 @@ class ChatPanel(ctk.CTkToplevel):
     def _stream_response(self) -> None:
         self._streaming = True
         url = _brainstorm_url()
+        # 音声予定の判定: features.brainstorm_voice 有効 かつ linko_server_url 設定済み
+        # → True なら口パクは音声再生側 (play_linko_audio→say) に委ね、テキスト中は動かさない。
+        #   False なら従来どおり最初のトークンでテキスト中の口パクを開始する (無音時の見栄え)。
+        try:
+            from config_loader import is_feature_enabled
+            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(_tts_url())
+        except Exception:
+            voice_planned = False
         # リン子の発言枠を開始 (口パクは最初のトークンが来てから = 実際に喋り出すタイミング)
         self.after(0, self._begin_assistant)
         lipsync_started = False
@@ -264,7 +284,8 @@ class ChatPanel(ctk.CTkToplevel):
                         if tok:
                             if not lipsync_started:
                                 lipsync_started = True
-                                _start_lipsync_once()  # 最初のトークンで口パク開始
+                                if not voice_planned:
+                                    _start_lipsync_once()  # 無音時のみテキスト中に口パク
                             acc += tok
                             self.after(0, lambda t=tok: self._append_assistant_token(t))
         except Exception as e:
@@ -275,12 +296,51 @@ class ChatPanel(ctk.CTkToplevel):
             self._last_assistant_text = acc
             self._streaming = False
             self.after(0, self._end_assistant)
-            try:
-                import linko_avatar
-                if linko_avatar.is_ready():
-                    linko_avatar.stop_lipsync(base_pose="normal")
-            except Exception:
-                pass
+            if not voice_planned:
+                # テキスト中に動かした口パクを停止 (音声予定時は say() 側が制御)
+                try:
+                    import linko_avatar
+                    if linko_avatar.is_ready():
+                        linko_avatar.stop_lipsync(base_pose="normal")
+                except Exception:
+                    pass
+            elif acc.strip():
+                # 応答全文をリン子の声で読み上げ (口パクは音声長に同期)。別スレッドで実行。
+                threading.Thread(
+                    target=self._speak_via_tts, args=(acc,), daemon=True
+                ).start()
+
+    def _speak_via_tts(self, text: str) -> None:
+        """応答テキストを linko-system の TTS で合成し、リン子の声で再生する。
+        失敗はログのみ (チャットは壊さない)。
+        """
+        if requests is None:
+            return
+        url = _tts_url()
+        if not url or not text.strip():
+            return
+        try:
+            from security import assert_http_url
+            assert_http_url(url, load_config(), purpose="brainstorm_tts")
+        except ValueError as e:
+            _log(f"[chat_panel] TTS URL 拒否: {e}")
+            return
+        try:
+            r = requests.post(url, json={"text": text}, timeout=(5, 60))
+            if r.status_code != 200:
+                _log(f"[chat_panel] TTS HTTP {r.status_code}")
+                return
+            audio_url = (r.json() or {}).get("audio_url")
+        except Exception as e:
+            _log(f"[chat_panel] TTS 取得失敗: {e}")
+            return
+        if not audio_url:
+            return
+        try:
+            from audio_player import play_linko_audio
+            play_linko_audio(audio_url, text=text, log_prefix="[chat_panel]")
+        except Exception as e:
+            _log(f"[chat_panel] 音声再生失敗: {e}")
 
     # --- テキスト表示ヘルパ (すべてメインスレッドで) ------------------------
     def _append_line(self, speaker: str, text: str) -> None:

@@ -21,17 +21,8 @@ linko-system (受付サーバ) が ``visitor_arrived`` を全クライアント�
 """
 from __future__ import annotations
 
-import os
-import sys
-import tempfile
 import threading
-import urllib.parse
 from typing import Optional
-
-try:
-    import requests
-except ImportError:
-    requests = None
 
 try:
     import socketio as _sio
@@ -257,101 +248,9 @@ def _handle_visitor_arrived(data: dict) -> None:
 
 def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:
     """audio_url の WAV をダウンロードして winsound で再生 (Windows のみ)。
-    audio_url は相対パスもしくは絶対 URL。相対なら linko_server_url を補う。
-    audio_text を渡すと features.linko_avatar=True のとき吹き出し + 口パク連動。
+
+    共有プレイヤ audio_player.play_linko_audio へ委譲 (来客通知とブレストチャットで共通化)。
     """
-    if requests is None:
-        return
-    if sys.platform != "win32":
-        log_info("[visitor_notify] 音声再生は Windows のみ対応 (開発環境ではスキップ)。")
-        return
+    from audio_player import play_linko_audio
 
-    # 相対 URL を絶対に
-    full_url = audio_url
-    if not urllib.parse.urlparse(full_url).scheme:
-        try:
-            from config_loader import load_config
-
-            base = (load_config().get("linko_server_url") or "").rstrip("/")
-        except Exception:
-            base = ""
-        if base:
-            full_url = base + (audio_url if audio_url.startswith("/") else "/" + audio_url)
-        else:
-            log_warn(f"[visitor_notify] audio_url が相対だが linko_server_url 未設定: {audio_url}")
-            return
-
-    try:
-        from config_loader import load_config
-        from security import validate_http_url
-
-        ok, err = validate_http_url(full_url, load_config(), purpose="visitor_audio")
-        if not ok:
-            log_warn(f"[visitor_notify] 音声 URL を拒否: {err} ({full_url!r})")
-            return
-    except Exception as e:
-        log_warn(f"[visitor_notify] 音声 URL 検証エラー: {e}")
-        return
-
-    try:
-        r = requests.get(full_url, timeout=20)
-        r.raise_for_status()
-    except Exception as e:
-        log_warn(f"[visitor_notify] 音声ダウンロード失敗 ({full_url}): {e}")
-        return
-
-    fd, path = tempfile.mkstemp(suffix=".wav", prefix="linko_visitor_")
-    try:
-        os.close(fd)
-        with open(path, "wb") as f:
-            f.write(r.content)
-        # WAV の長さを計算して lipsync を同期
-        duration_sec = None
-        try:
-            import wave as _wave
-            with _wave.open(path, "rb") as _wf:
-                _frames = _wf.getnframes()
-                _rate = _wf.getframerate()
-                if _rate:
-                    duration_sec = _frames / float(_rate)
-        except Exception:
-            duration_sec = None
-
-        # Phase 2.1: features.linko_avatar=True なら 吹き出し + 口パク を同時開始
-        try:
-            from config_loader import is_feature_enabled
-            if is_feature_enabled("linko_avatar"):
-                import linko_avatar
-                if linko_avatar.is_ready():
-                    if duration_sec is not None and duration_sec > 0:
-                        # audio_text があれば吹き出しに表示 + lipsync。無ければ lipsync のみ
-                        linko_avatar.say(
-                            text=audio_text,
-                            duration_sec=duration_sec,
-                            base_pose="normal",
-                        )
-                    else:
-                        linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
-        except Exception as _e:
-            log_warn(f"[visitor_notify] lipsync/bubble start 失敗: {_e}")
-
-        # winsound.SND_ASYNC で再生 (ブロックしない)
-        import winsound
-
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        # 一時ファイルは数十秒後に削除 (再生完了後)
-        def _cleanup():
-            import time as _t
-            _t.sleep(30)
-            try:
-                os.unlink(path)
-            except Exception:
-                pass
-
-        threading.Thread(target=_cleanup, daemon=True).start()
-    except Exception as e:
-        log_warn(f"[visitor_notify] 再生エラー: {e}")
-        try:
-            os.unlink(path)
-        except Exception:
-            pass
+    play_linko_audio(audio_url, text=audio_text, log_prefix="[visitor_notify]")

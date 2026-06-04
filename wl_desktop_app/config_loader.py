@@ -58,12 +58,14 @@ def _get_defaults():
         # visitor_notify: 受付の来客通知 (visitor_arrived イベントを受信) をトーストで出す
         # visitor_notify_sound: visitor_notify が ON のとき、合わせて音声を再生する (opt-in)
         # brainstorm: チャット/音声でリン子と業務サポート的なブレストをする
+        # brainstorm_voice: ブレスト応答をリン子の声 (GPT-SoVITS) で読み上げる (既定 ON)
         "features": {
             "taskbar_mode": False,
             "linko_avatar": False,
             "visitor_notify": False,
             "visitor_notify_sound": False,
             "brainstorm": False,
+            "brainstorm_voice": True,
         },
         # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
         "security": {
