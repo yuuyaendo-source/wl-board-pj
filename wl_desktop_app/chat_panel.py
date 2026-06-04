@@ -11,8 +11,27 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import threading
 from typing import Optional
+
+# 絵文字・絵記号 (音声合成に渡すと無音スタブ→リトライで時間を浪費するため除去)
+_EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF"
+    "\U00002600-\U000027BF\U00002B00-\U00002BFF\U0000FE00-\U0000FE0F]+"
+)
+# 発話可能な文字 (英数・ひらがな・カタカナ・漢字・半角カナ)。1つも無ければ読み上げない。
+_SPEAKABLE_RE = re.compile(
+    "[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]"
+)
+
+
+def _clean_for_tts(text: str) -> str:
+    """TTS へ渡す前に絵文字を除去し、空白を整える。発話可能文字が無ければ空文字を返す。"""
+    cleaned = _EMOJI_RE.sub("", text).strip()
+    if not _SPEAKABLE_RE.search(cleaned):
+        return ""
+    return cleaned
 
 try:
     import customtkinter as ctk
@@ -318,7 +337,7 @@ class ChatPanel(ctk.CTkToplevel):
                     pass
             else:
                 # 末尾の未確定テキスト (句点で終わらない最後の一文) を投入
-                tail = sentence_buf.strip()
+                tail = _clean_for_tts(sentence_buf)
                 if tail:
                     self._sentence_q.put(tail)
 
@@ -326,11 +345,12 @@ class ChatPanel(ctk.CTkToplevel):
     _SENTENCE_ENDERS = "。．！？!?\n"
 
     def _flush_sentences(self, buf: str) -> str:
-        """buf から完成した文 (句点等で終わる) を取り出し TTS キューへ。未確定の末尾を返す。"""
+        """buf から完成した文 (句点等で終わる) を取り出し TTS キューへ。未確定の末尾を返す。
+        絵文字・記号だけの断片は読み上げない (SoVITS の無音スタブ→リトライを避ける)。"""
         start = 0
         for i, ch in enumerate(buf):
             if ch in self._SENTENCE_ENDERS:
-                seg = buf[start:i + 1].strip()
+                seg = _clean_for_tts(buf[start:i + 1])
                 if seg:
                     self._sentence_q.put(seg)
                 start = i + 1
