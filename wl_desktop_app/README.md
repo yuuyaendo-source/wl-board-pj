@@ -1,30 +1,54 @@
-# Wonder Rinko Desktop App (DT_APP)
+# Wonder Linko Desktop App (DT_APP)
 
-社員PCに常駐する「Personal Rinko Agent」。**各ユーザー用のパーソナルモード**（`/personal?user=xxx`）へワンクリックで誘導し、お知らせからのDeep Linkを提供する。
+社員PCに常駐する「Personal Linko Agent」。タスクトレイ常駐＋**ミニポート**（付箋クイック投稿）を起動時に表示し、各自の **Board System パーソナルボード**へワンクリックで誘導する。**来客通知**・**リン子アバター**・**ブレストチャット**などの機能は、設定でユーザーが任意に ON にする（既定はすべて OFF）。
+
+> バージョンは `version.py`（`__version__`）で一元管理。MSI/exe ビルドと更新チェックはこの値を参照する。
 
 ## 開発環境と利用環境
 
 - **開発環境** … **Linux** を想定。`pip install -r requirements.txt` は Linux でそのまま実行可能（Windows 専用のトースト用パッケージは自動でスキップされる）。**MSI ビルドは Windows で行う**（Linux で `./build_msi.sh` を実行すると案内メッセージが出る）。
-- **利用環境（配布先）** … **Windows** または **Mac**（デスクトップアプリ）。トースト通知・MSI 配布・スタートアップ登録は **Windows のみ**。**iPhone** ではデスクトップアプリは利用せず、Board System のパーソナルボード等はブラウザ（Safari 等）でアクセスする。
+- **利用環境（配布先）** … **Windows** が前提（トースト通知・MSI 配布・スタートアップ登録・音声再生は Windows のみ）。Mac では一部機能（トレイ・ミニポート・ボタン類）が動くが、トースト・音声・スタートアップ登録は無効。**iPhone** ではデスクトップアプリは使わず、Board System のパーソナルボード等をブラウザ（Safari 等）で開く。
 
 ## 機能
 
-- **ミニポート（付箋クイック投稿）** … 起動時に**画面上にミニポートを強制表示**。リン子ボタン・「投稿」で付箋を素早く投稿できる。トレイメニュー「ミニポート」「ミニポートを表示」「ミニポートを非表示」で任意に表示/非表示を切り替え可能。
-- **Windows MSI でインストール** … MSI でインストール後、デスクトップのショートカットから起動。起動するとタスクトレイに常駐し、ミニポートが画面上に表示される。
-- **タスクトレイ常駐** … アプリ本体はタスクトレイに常駐。トレイからミニポートの表示/非表示や各種メニューにアクセス。
-- **パーソナルモードを開く** … トレイの「パーソナルモードを開く」で、**このユーザー用**のパーソナル画面をブラウザで開く。`board_system_url` とメールログイン済みの場合は Board System のパーソナルボード（`/boards/personal/{id}`）、そうでなければ AIボードの `/personal?user=ユーザーID`。起動時に自動で開く動作は行わない。
-- **「ボード」ボタン（ミニポート）** … ミニポートの「ボード」をクリックすると**各自の Board System パーソナルボード**を開く。初回のみメールアドレスを入力すると、Board System のユーザーと紐づき `board_system_personal_id` が保存され、以降は同じ PC でそのままパーソナルが開く。`board_system_url` が未設定でも、`mini_port_taskboard_url`（タスクボードのURL）から API を推定するため、本番のデフォルト設定ならメール入力ダイアログが表示される。どちらも未設定の場合はタスクボードを開く。
-- **アイコンクリックで開く** … トレイアイコンをクリックすると設定した先（デフォルト: 付箋ボード）を開く。メニュー「アイコンクリックで開く」で付箋ボード／パーソナル／最後のお知らせを切り替え可能。
-- **PC起動時に自動で起動** … **初回起動時**にスタートアップへ自動登録し、**Windows 再起動後もミニポートが自動で表示**される。メニュー「PC起動時に自動で起動」でON/OFFを切り替え可能（レジストリのスタートアップに登録）。
-- **付箋ボード連携** … 付箋ボード（`postit_board_id`）を一定間隔でポーリングし、新付箋が増えたら「新しい付箋が投稿されました」とトースト。「最後のお知らせを開く」で該当ボードを開ける。
-- **右下トーストお知らせ** … 業務の邪魔にならない位置に通知。**表示中にクリック**するとそのお知らせのURLへ飛べる。トレイの「最後のお知らせを開く」でも開ける。トーストの**アイコン**は `toast_icon_path` で変更可能（未設定時はトレイと同じ緑の丸デザイン）。**Windows の設定で通知をオフにすると、アプリ・再インストールではオンに戻せません。** トレイメニュー「通知が表示されない場合」で手順を表示。詳細は `docs/Windows通知がオフになった場合.md`。
-- **アバター表示/非表示** … メニューでトグル（設定のみ保存。アバター表示は今後実装）。
-- **音声ON/OFF** … メニューでトグル。
+### 常時動作（既定 ON）
+
+- **ミニポート（付箋クイック投稿）** … 起動時に**画面上にミニポートを強制表示**。リン子ボタン・「投稿」で付箋を素早く投稿できる。トレイメニュー「ミニポート」「ミニポートを表示」「ミニポートを非表示」で表示/非表示を切り替え可能。
+- **タスクトレイ常駐** … アプリ本体はタスクトレイに常駐。トレイから各種メニューにアクセス。アイコンクリックで設定した先（既定: 付箋ボード）を開く。
+- **アイコンクリックで開く先の切替** … トレイ「アイコンクリックで開く」で、付箋ボード／パーソナル／最後のお知らせを切替可能（`tray_click_action`）。
+- **「ボード」ボタン（ミニポート）** … ミニポートの「ボード」で**各自の Board System パーソナルボード**を開く。初回はメールアドレスを入力すると Board System の `/users/by_email` でユーザーが解決され、`board_system_personal_id`・`user_id`・`display_name` が保存される（以降は同じ PC でそのまま開く）。
+- **付箋ボード連携（ポーリング）** … 付箋ボード（`postit_board_id` / `postit_board_ids`）を `postit_poll_interval_sec`（既定 60 秒、0 で無効）でポーリングし、新付箋が増えたら「新しい付箋が投稿されました」とトースト。「最後のお知らせを開く」で該当ボードを開ける。
+- **右下トーストお知らせ** … 業務の邪魔にならない位置に通知。**表示中にクリック**するとそのお知らせの URL へ飛べる。トーストの**アイコン**は `toast_icon_path` で変更可能（未設定時は `assets/` のアイコン）。**Windows の設定で通知をオフにすると、アプリ・再インストールではオンに戻せません。** トレイの「通知を表示」はアプリ内のオン/オフ（Windows の設定とは別）。詳細は `docs/Windows通知がオフになった場合.md`。
+- **表示名（付箋の投稿者名）** … 起動時に未設定なら入力を促す。トレイ「表示名を変更（付箋の投稿者名）」や設定ダイアログで変更可能（`display_name`）。
+- **PC起動時に自動で起動** … **MSI 版の初回起動時**にスタートアップへ自動登録（レジストリ）。トレイ「PC起動時に自動で起動」で ON/OFF。
+- **自動更新（任意）** … `update_check_url` を設定すると起動時にバックグラウンドで更新チェック（ダイアログは出さずログのみ）。トレイ「アプリをアップデート」や設定ダイアログの「アップデート確認」で手動チェック・インストール。
+- **設定ダイアログ** … トレイ「設定...」やミニポートの「設定」から開く。表示名と**機能フラグ（features）**の ON/OFF を 1 画面で切替。
+
+### 任意機能（features.* 既定 OFF・設定ダイアログで ON）
+
+| feature キー | 内容 |
+|--------------|------|
+| `taskbar_mode` | フローティングのミニポートではなく、通常 Window としてタスクバーに常駐する |
+| `linko_avatar` | ミニポートにリン子の **2D アバター**（11 ポーズ・表情切替・口パク・アイドルアニメ）を表示。`assets/avatar/` の画像を読み込む |
+| `visitor_notify` | 受付（linko-system）の `visitor_arrived` を Socket.IO で受信し、**来客をトースト通知**。クリックで remote_unlock パネル等を開く |
+| `visitor_notify_sound` | `visitor_notify` が ON のとき、受付で再生されたものと同じ**音声をデスクトップでも再生**（会議中は OFF 推奨。Windows のみ） |
+| `brainstorm` | アバタークリックで**リン子とのブレストチャット**を開く。Board System の `/brainstorm`（SSE ストリーミング）に会話履歴を送り、応答を 1 トークンずつ表示。**PDF/Word/テキストの添付**（端末内でテキスト抽出し社内 LLM にのみ渡す）、リン子の回答を**付箋ボードへ投稿**するボタン付き |
+
+> アバター・音声・ブレストは **CATO 経由で社内 LAN（linko-system / Board System）に到達できること**が前提。
+
+## トレイメニュー構成
+
+- 開く（設定で変更可）/ アイコンクリックで開く（付箋ボード・パーソナル・最後のお知らせ）
+- ミニポート（表示トグル）/ ミニポートを表示 / ミニポートを非表示
+- 通知を表示（アプリ内オン/オフ）/ PC起動時に自動で起動
+- 表示名を変更（付箋の投稿者名）/ 設定... / アプリをアップデート
+- 最新ログを表示 / 終了
 
 ## 必要な環境
 
-- **開発時** … Linux または Windows。Python 3.10+。Linux では `pip install -r requirements.txt` で Windows 専用パッケージはスキップされる。
-- **利用時（デスクトップアプリ）** … Windows 10/11 または Mac。トースト通知は **Windows のみ**（win10toast / pywin32）。Mac ではトレイ・ミニポート・「ボード」ボタン等は利用可能で、トーストは表示されない。
+- **開発時** … Linux または Windows。Python 3.10+。Linux では `pip install -r requirements.txt` で Windows 専用パッケージ（pywin32 / winotify / win10toast 系）はスキップされる。
+- **利用時** … Windows 10/11（推奨）。トースト通知・音声再生・スタートアップ登録は **Windows のみ**。
+- **主な依存**（`requirements.txt`） … pystray, Pillow, requests, customtkinter, pynput, python-socketio[client]（来客通知）, pypdf / python-docx（ブレストの資料添付）。
 
 ## セットアップ・起動
 
@@ -40,7 +64,7 @@ python app.py
 **Windows（開発または利用）:**
 
 ```powershell
-cd 02_3_WL_Desktop_app
+cd wl_desktop_app
 .\start_app.ps1
 ```
 
@@ -57,8 +81,8 @@ python app.py
 
 **exe ファイル単体の配布・実行は多くの社内環境で許可されない**ことがあります。そのため配布は **MSI 形式を推奨**します。
 
-- **MSI 形式（推奨）** … Windows インストーラー（.msi）で配布。多くの企業ポリシーで許可され、インストール・アンインストールが標準で管理できる。`.\build_msi.ps1` でビルド。**exe が許可されない環境では必ず MSI を使用してください。**
-- **単体 exe** … `.\build_exe.ps1` で `dist\WonderRinko.exe` を生成可能。exe の実行が許可されている環境のみで利用。
+- **MSI 形式（推奨）** … Windows インストーラー（.msi）で配布。`.\build_msi.ps1` でビルド。**exe が許可されない環境では必ず MSI を使用してください。**
+- **単体 exe** … `.\build_exe.ps1` で `dist\WonderRinko.exe` を生成。exe の実行が許可されている環境のみで利用。
 - **フォルダ＋起動手順** … 本フォルダを ZIP で配布し、メンバーに Python 3.10+ と `.\start_app.ps1` での起動を依頼する。
 
 ## MSI ビルド（配布用）
@@ -68,29 +92,62 @@ python app.py
 **Windows で PowerShell を開き:**
 
 ```powershell
-cd 02_3_WL_Desktop_app
+cd wl_desktop_app
 .\build_msi.ps1
 ```
 
-- 要: Python 3.10+（cx_Freeze を自動インストール）
-- 出力: `dist\WonderLinko.msi`（setup.py の target_name による）
-- 配布: MSI を渡し、メンバーはダブルクリックでインストール。インストール後、デスクトップの「Wonder Linko」を起動するとタスクトレイに常駐し、**ミニポートが画面上に表示**される。初回起動時に「PC起動時に自動で起動」が自動でONになり、**Windows 再起動後もミニポートが自動表示**される。インストール先の `config.json` はビルド時に同梱したものが使われるため、**ビルド前に本番用の config.json を置いておく**とよい。
+- 要: Python 3.10+。`build_msi.ps1` が `requirements.txt` と cx_Freeze / freeze-core を自動インストールし、`build/` `dist/` をクリーンしてからビルドする。
+- ビルド後に **PIL（`_imaging*.pyd`）と python-socketio / engineio のバンドル漏れを自動チェック**（漏れていれば配布せずエラー終了）。
+- 出力: `dist\WonderLinko.msi`（`setup.py` の `output_name` / `target_name=WonderLinko.exe`）。
+- インストール先: per-user の `C:\Users\<user>\AppData\Local\WonderLink\WonderLinko`（管理者不要）。
+- インストール後、デスクトップの「Wonder Linko」を起動するとタスクトレイに常駐し、**ミニポートが画面上に表示**される。初回起動時に「PC起動時に自動で起動」が自動で ON になる。
 
-## 設定
+> ⚠️ **config.json は MSI にバンドルしません**（v3.1.4 以降）。上書きインストールで既存ユーザーの設定（`features.*` 等）がリセットされる事故を防ぐためです。**新規インストール時は `config_loader.py` の defaults（＝本番 URL）でそのまま動作**します。本番 URL を変えたい場合は defaults を編集してビルドするか、各端末に `config.json` を配置してください。
 
-- `config.json` … `user_id`、`personal_path`、**`board_system_url`**（Board System の API ベース URL。例: 本番 `https://wl-ai-board.internal.wonder-link.com/api/bs`。設定すると「ボード」クリック・パーソナルで Board System のパーソナルボードを開ける）、**`board_system_personal_id`**（メールログインで設定される user id。空のときは初回にメール入力）、**`postit_board_id`**（トレイクリックで開くデフォルトボード。本番: `wl`）、**`postit_board_ids`**（新付箋を監視するボードIDの配列。未設定時は `postit_board_id` のみ）、`postit_poll_interval_sec`、**`tray_click_action`**、**`toast_icon_path`**、AIボードURL・付箋ボードURL、アバター・音声のON/OFFなど
-- 環境変数 `WLINKO_USER_ID` でユーザーIDを指定可能。`AI_BOARD_URL`, `POSTIT_BOARD_URL` でURLを上書き可能（`.env` やシステム環境変数）
-- **ミニポートの送信先** … `mini_port_api_url`（例: `https://wl-ai-board.internal.wonder-link.com/board/wl`）から POST 先を導出。**ここで指定したホスト・ポートは、ブラウザで開いている付箋ボードの URL と同一である必要があります。** 別のサーバーを指していると送信は成功しても表示されません。表示されない場合は付箋ボードのページを再読み込み（F5）してみてください。
-- **自動更新** … `update_check_url` に JSON の URL を設定すると、起動時に更新チェックし、トレイメニュー「更新を確認」で手動チェック・インストールが可能。未設定時は更新チェックを行わない。
+## 設定（config.json）
+
+`config.json` が無くても `config_loader.py` の defaults（本番 URL）で動作します。主なキー:
+
+| キー | 説明 |
+|------|------|
+| `user_id` | 利用者 ID（メールログインで Board System の user id に更新される。未設定時は `WLINKO_USER_ID` / `USERNAME`） |
+| `display_name` | 付箋の投稿者名（起動時に入力を促す） |
+| `board_system_url` | Board System の API ベース URL（例: `https://wl-ai-board.internal.wonder-link.com/api/bs`）。パーソナル・ブレストで使用 |
+| `board_system_personal_id` | メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルボードを開く |
+| `postit_board_id` / `postit_board_ids` | トレイクリックで開く既定ボード（本番: `wl`）／ 新付箋を監視するボード ID の配列 |
+| `postit_poll_interval_sec` | 付箋ポーリング間隔（既定 60 秒、0 で無効） |
+| `tray_click_action` | トレイクリックで開く先: `postit` / `personal` / `last_notification` |
+| `mini_port_api_url` | ミニポートの付箋投稿先（**ブラウザで開く付箋ボードと同一ホスト・ポートである必要あり**） |
+| `mini_port_taskboard_url` | リン子クリックで開く Task ボード URL |
+| `linko_server_url` | linko-system（受付サーバ）の URL。`features.visitor_notify` で接続して来客通知を受ける |
+| `ai_board_url` / `postit_board_url` | レガシー AI ボード URL（パーソナルのフォールバック等） |
+| `toast_icon_path` / `toast_duration_sec` / `notifications_enabled` | トーストのアイコン・表示秒数・アプリ内オン/オフ |
+| `update_check_url` | 更新チェック用 JSON の URL（`.json`・HTTPS 必須） |
+| `update_network_check_host` / `..._interval_sec` / `..._max_wait_sec` | 起動時更新チェック前に Ping でネットワーク確立を待つ先・間隔・最大待機 |
+| `features` | 任意機能フラグ（`taskbar_mode` / `linko_avatar` / `visitor_notify` / `visitor_notify_sound` / `brainstorm`） |
+| `security` | 外向き URL の許可設定（下記） |
+
+- 環境変数で上書き可能: `WLINKO_USER_ID`, `AI_BOARD_URL`, `POSTIT_BOARD_URL`, `MINI_PORT_API_URL`, `MINI_PORT_TASKBOARD_URL`, `BOARD_SYSTEM_URL`, `LINKO_SERVER_URL`（`.env` またはシステム環境変数）。
+- 本番用テンプレートは `config.production.example.json`。これを `config.json` にコピーして URL を環境に合わせてから配布/ビルドできる。
+
+### セキュリティ（外向き URL の許可リスト・`security.py`）
+
+config.json の改ざんや Socket.IO 由来の `click_url` で社外へ誘導されないよう、HTTP(S) 先をホワイトリストで制限します。
+
+- 既定で許可: `*.internal.wonder-link.com` サフィックスと `localhost` / `127.0.0.1`。
+- `config.json` の `security.allowed_host_suffixes` / `security.allowed_hosts` / `security.allow_private_ips` で調整。
+- 開発で LAN IP を使う場合（環境変数）: `WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.251`、`WLINKO_ALLOW_PRIVATE_IPS=1`。
+- 緊急時のみ許可リスト無効化: `WLINKO_DISABLE_URL_ALLOWLIST=1`。
+- `update_check_url` は HTTPS かつ `.json`、MSI ダウンロードは HTTPS かつ `.msi` を要求。`board_system_personal_id` は path インジェクション防止のため `[A-Za-z0-9_-]` のみ許可。
 
 ## 自動更新（update_check_url）
 
-`config.json` の **`update_check_url`** に、最新版情報の JSON を返す URL を設定すると次の動作をします。
+`config.json` の **`update_check_url`** に最新版情報の JSON を返す URL を設定すると次の動作をします。
 
-- **起動時**: バックグラウンドでその URL に GET し、現在より新しいバージョンがあればトーストで「新しいバージョン X が利用可能です。トレイの『更新を確認』からインストールできます。」と通知する。
-- **トレイメニュー「更新を確認」**: 同じ URL でチェックし、最新版なら「最新版です」、更新があれば「今すぐダウンロードしてインストールしますか？」と確認し、Yes で MSI をダウンロードしてインストーラーを起動する。
+- **起動時**: バックグラウンドでチェックし、新しいバージョンがあっても**ダイアログは出さずログに残すだけ**（更新は任意・手動）。`update_network_check_host` 設定時は Ping でネットワーク確立を待ってからチェック。
+- **トレイ「アプリをアップデート」/ 設定の「アップデート確認」**: チェックし、最新なら「最新版です」、更新があれば確認の上 MSI をダウンロードしてインストール。完了後にアプリが自動で再起動する。
 
-**サーバー側で用意する JSON**（例: `https://example.com/wonderlinko/latest.json`）:
+**サーバー側で用意する JSON**:
 
 ```json
 {
@@ -99,43 +156,33 @@ cd 02_3_WL_Desktop_app
 }
 ```
 
-- `version`: 最新のバージョン番号（例: 1.0.1）。現在のアプリより新しければ更新ありとみなす。
-- `url`: そのバージョンの MSI のダウンロード URL。
+- `version`: 最新のバージョン番号（現在のアプリより新しければ更新ありとみなす）。
+- `url`: そのバージョンの MSI の **HTTPS ダウンロード URL**（`.msi`）。
 
-配布用 MSI とこの JSON を同一オリジンまたは CORS 許可された場所に置き、本番の `config.json` に `update_check_url` を設定してビルドすると、ユーザーはトレイからワンクリックで更新できる。
+**Board System 内で配布する場合**（推奨）: 同じリポジトリの `board-system/backend/desktop_app_releases/` に MSI と `latest.json` を配置すると、Board System の API から配信される。
 
-**Board System 内で配布する場合**（推奨）: 同じリポジトリの `board-system/backend/desktop_app_releases/` に MSI と `latest.json` を配置すると、Board System の API から配信される。このときの URL は次のとおり。
-
-- 更新チェック用: `https://<Board System のドメイン>/api/bs/desktop-app/latest.json`
+- 更新チェック用 URL: `https://<Board System のドメイン>/api/bs/desktop-app/latest.json`
 - 例（本番）: `https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json`
 
-クライアントの `config.json` には上記の `latest.json` の URL を `update_check_url` に設定する。
+⚠️ **重要**: backend Dockerfile が `desktop_app_releases/` をビルド時 COPY しているため、**ホスト側のファイルを差し替えただけでは反映されません**。新バージョンリリース時は `board-system/deploy/deploy.sh` で backend を blue/green 再ビルドする必要があります。詳細:
 
-⚠️ **重要**: backend Dockerfile が `desktop_app_releases/` をイメージにビルド時 COPY しているため、
-**ホスト側のファイルを差し替えただけでは反映されません**。新バージョンリリース時は
-`board-system/deploy/deploy.sh` で backend を blue/green 再ビルドする必要があります。
-詳細な手順は次を参照:
-
-- `wl_desktop_app/docs/v3_リリース手順.md` — 完全なリリース手順 + トラブルシューティング
+- `docs/v3_リリース手順.md` — 完全なリリース手順 + トラブルシューティング
 - `board-system/backend/desktop_app_releases/README.md` — アップロード手順
-
-## 配布方法
-
-- **MSI（推奨）** … `.\build_msi.ps1` で `dist\WonderLinko.msi` を生成し配布。メンバーはインストーラーでインストール（Python 不要）。**exe が許可されない環境ではこちらを使用すること。**
-- **単体 exe** … `.\build_exe.ps1` で `dist\WonderRinko.exe` を生成。exe 実行が許可されている場合のみ。
-- **フォルダ＋起動手順** … 本フォルダを ZIP で配布。メンバーは Python 3.10+ を入れ、`.\start_app.ps1` で起動。本番向けの `config.json` を同梱するとよい。
-
-本番連携（https://wl-ai-board.internal.wonder-link.com/board/wl）を確認してから配布。詳細は wl-sticky-note の **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照。
 
 ## ユーザー管理・Board System との共通化
 
-- **ユーザーデータベース** … デスクトップアプリの「ボード」・パーソナルで利用するユーザーは、Board System の API（`/users/by_email` など）で解決する。Board System と Linko は同一の PostgreSQL の `users` テーブルを参照するため、**ユーザーは共通**である。
-- **ユーザー登録** … 新規ユーザーは Board System 側で登録する（Board System の管理画面または API `POST /users`）。登録済みメールアドレスをデスクトップアプリの初回メール入力で入力すると、そのユーザーに紐づきパーソナルボードが開く。Linko と Board System で「同じ画面で登録」する場合は、Board System のユーザー管理画面を共通の登録窓口として利用する。
+- **ユーザーデータベース** … パーソナル・ブレストで使うユーザーは Board System の API（`/users/by_email` など）で解決する。Board System と Linko は同一の PostgreSQL の `users` テーブルを参照するため、**ユーザーは共通**。
+- **ユーザー登録** … 新規ユーザーは Board System 側で登録する（管理画面または `POST /users`）。登録済みメールアドレスをデスクトップアプリの初回メール入力で入れると、そのユーザーに紐づきパーソナルボードが開く。
+
+## ドキュメント
+
+- `docs/v3_リリース手順.md` — MSI ビルド〜配信のリリース手順
+- `docs/v2_拡張計画.md` — features.* の拡張計画
+- `docs/MSI起動エラー_デバイス側の確認.md` — MSI 版が起動しないときのデバイス側チェック
+- `docs/Windows通知がオフになった場合.md` — 通知が出ないときの対処（`通知設定をリセットする.ps1` 同梱）
 
 ## 今後の拡張（開発プラン）
-- AIボード・付箋ボードとの連携（受付モード切替時の通知など）
 
-以下の機能は、付加価値のため優先度は低いが将来的に実装を考える
+- ブレストのリン子発言からの付箋投稿の高度化、音声入力との連携
+- アバターの演出強化・自律動作
 - 適切なタイミングでのニュース・付箋投稿の促し
-- アバターの表示ウィンドウと自律動作
-- 音声読み上げの実装

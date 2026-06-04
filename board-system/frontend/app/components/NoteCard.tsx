@@ -106,6 +106,10 @@ export default function NoteCard({
             }}
             placeholder="追記... (Shift+Enter:改行)"
             rows={2}
+            name="note_append_text"
+            autoComplete="off"
+            {...{ "data-1p-ignore": true }}
+            {...{ "data-lpignore": true }}
             className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs"
           />
           <button
