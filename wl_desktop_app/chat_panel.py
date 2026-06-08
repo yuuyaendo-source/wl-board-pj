@@ -83,6 +83,11 @@ def _tts_url() -> Optional[str]:
 class ChatPanel(ctk.CTkToplevel):
     WIDTH = 420
     HEIGHT = 560
+    _GAP = 8
+
+    @staticmethod
+    def _rects_overlap(x1, y1, w1, h1, x2, y2, w2, h2) -> bool:
+        return not (x1 + w1 <= x2 or x1 >= x2 + w2 or y1 + h1 <= y2 or y1 >= y2 + h2)
 
     def __init__(self, master=None):
         super().__init__(master)
@@ -108,8 +113,9 @@ class ChatPanel(ctk.CTkToplevel):
         self._append_line("リン子", "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。")
 
     def _position_near(self, master) -> None:
-        """ミニポートの近くにパネルを配置する (カーソル移動を減らす)。
-        既定はミニポートの左隣。画面外にはみ出る場合は右・上へ寄せる。
+        """ミニポートと重ならない位置にパネルを置く。
+
+        優先: ミニポートの真上（右端揃え）。上に入らなければ下、それでも無理なら左。
         """
         if master is None:
             return
@@ -119,24 +125,44 @@ class ChatPanel(ctk.CTkToplevel):
             mx = master.winfo_rootx()
             my = master.winfo_rooty()
             mw = master.winfo_width() or 264
+            mh = master.winfo_height() or 224
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
             pw, ph = self.WIDTH, self.HEIGHT
-            # まずミニポートの左隣
-            x = mx - pw - 8
-            if x < 0:
-                # 左に入らなければ右隣
-                x = mx + mw + 8
-                if x + pw > sw:
-                    # それも無理なら画面右端に寄せる
-                    x = max(0, sw - pw - 8)
-            # 縦はミニポートの下端に合わせる (パネル下端をミニポート下端付近に)
-            y = my - ph + (master.winfo_height() or 224)
-            if y < 0:
-                y = 8
-            if y + ph > sh:
-                y = max(0, sh - ph - 8)
-            self.geometry(f"{pw}x{ph}+{int(x)}+{int(y)}")
+            gap = self._GAP
+
+            def clamp_x(x: int) -> int:
+                return max(0, min(int(x), max(0, sw - pw - gap)))
+
+            def clamp_y(y: int) -> int:
+                return max(0, min(int(y), max(0, sh - ph - gap)))
+
+            def fits(x: int, y: int) -> bool:
+                return (
+                    x >= 0 and y >= 0 and x + pw <= sw and y + ph <= sh
+                    and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
+                )
+
+            candidates = [
+                (mx + mw - pw, my - ph - gap),          # 上・右端揃え
+                (mx, my - ph - gap),                     # 上・左端揃え
+                (mx + mw - pw, my + mh + gap),           # 下・右端揃え
+                (mx, my + mh + gap),                     # 下・左端揃え
+                (mx - pw - gap, my),                     # 左・上揃え
+                (mx - pw - gap, my + mh - ph),           # 左・下揃え
+                (mx + mw + gap, my),                     # 右・上揃え
+            ]
+
+            x, y = candidates[0]
+            for cx, cy in candidates:
+                cx, cy = clamp_x(cx), clamp_y(cy)
+                if fits(cx, cy):
+                    x, y = cx, cy
+                    break
+            else:
+                x, y = clamp_x(mx + mw - pw), clamp_y(my - ph - gap)
+
+            self.geometry(f"{pw}x{ph}+{x}+{y}")
         except Exception:
             pass
 
@@ -557,6 +583,7 @@ def open_chat_panel(master=None) -> ChatPanel:
     global _panel_instance
     if _panel_instance is not None:
         try:
+            _panel_instance._position_near(master)
             _panel_instance.lift()
             _panel_instance.focus_force()
             return _panel_instance

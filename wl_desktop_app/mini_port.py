@@ -307,6 +307,8 @@ class MiniPortWindow(ctk.CTk):
             )
             self.btn_post.pack(side="left")
 
+        self._build_notify_toggle()
+
         # Phase 2: アバター有効時の lipsync / 吹き出しを初期化
         self._init_avatar()
 
@@ -404,6 +406,48 @@ class MiniPortWindow(ctk.CTk):
             self._card_bg_label.lower()
         except Exception as e:
             print(f"[mini_port] card background skipped: {e}", flush=True)
+
+    def _build_notify_toggle(self) -> None:
+        """通知 ON/OFF をワンタッチで切り替えるボタン (設定を開かずに操作可能)。"""
+        enabled = self._get_notifications_enabled()
+        label = "🔔" if enabled else "🔕"
+        self.btn_notify = ctk.CTkButton(
+            self.frame if getattr(self, "_avatar_on", False) else self.compact_frame,
+            text=label,
+            width=22 if getattr(self, "_avatar_on", False) else 36,
+            height=22 if getattr(self, "_avatar_on", False) else 40,
+            corner_radius=11 if getattr(self, "_avatar_on", False) else 20,
+            font=ctk.CTkFont(size=13),
+            fg_color=Theme.SECONDARY if enabled else Theme.CLOSE_FG,
+            hover_color=Theme.SECONDARY_HOVER if enabled else Theme.CLOSE_HOVER,
+            text_color=Theme.SECONDARY_TEXT if enabled else Theme.CLOSE_TEXT,
+            command=self._on_notify_clicked,
+        )
+        if getattr(self, "_avatar_on", False):
+            # 左上 (✕・⚙ は右上)。アバターと被らないよう小さく配置。
+            self.btn_notify.place(relx=0.0, rely=0.0, x=8, y=8, anchor="nw")
+        else:
+            self.btn_notify.pack(side="left", padx=(0, 0))
+
+    def refresh_notifications_button(self) -> None:
+        """通知状態に合わせてトグルボタンの見た目を更新 (トレイ等から切替後も呼ぶ)。"""
+        if not hasattr(self, "btn_notify"):
+            return
+        try:
+            enabled = self._get_notifications_enabled()
+            self.btn_notify.configure(
+                text="🔔" if enabled else "🔕",
+                fg_color=Theme.SECONDARY if enabled else Theme.CLOSE_FG,
+                hover_color=Theme.SECONDARY_HOVER if enabled else Theme.CLOSE_HOVER,
+                text_color=Theme.SECONDARY_TEXT if enabled else Theme.CLOSE_TEXT,
+            )
+        except Exception:
+            pass
+
+    def _on_notify_clicked(self) -> None:
+        if self._on_notifications_toggle:
+            self._on_notifications_toggle()
+        self.refresh_notifications_button()
 
     # --- Phase 2: 2D アバター + 吹き出し ------------------------------------
     def _init_avatar(self) -> None:
@@ -620,6 +664,7 @@ class MiniPortWindow(ctk.CTk):
     def _ctx_toggle_notifications(self):
         if self._on_notifications_toggle:
             self._on_notifications_toggle()
+        self.refresh_notifications_button()
 
     def _ctx_open_settings(self):
         """右クリック「設定...」で設定ダイアログを開く。
@@ -651,7 +696,16 @@ class MiniPortWindow(ctk.CTk):
     def _on_drag_start(self, event):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
-        if w in (self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox):
+        block = (
+            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+        )
+        if hasattr(self, "btn_board"):
+            block = block + (self.btn_board,)
+        if hasattr(self, "btn_notify"):
+            block = block + (self.btn_notify,)
+        if hasattr(self, "btn_close_mini"):
+            block = block + (self.btn_close_mini, self.btn_settings_mini)
+        if w in block:
             return
         self._drag_start_x = event.x_root
         self._drag_start_y = event.y_root
@@ -661,7 +715,16 @@ class MiniPortWindow(ctk.CTk):
     def _on_drag_motion(self, event):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
-        if w in (self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox):
+        block = (
+            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+        )
+        if hasattr(self, "btn_board"):
+            block = block + (self.btn_board,)
+        if hasattr(self, "btn_notify"):
+            block = block + (self.btn_notify,)
+        if hasattr(self, "btn_close_mini"):
+            block = block + (self.btn_close_mini, self.btn_settings_mini)
+        if w in block:
             return
         dx = event.x_root - self._drag_start_x
         dy = event.y_root - self._drag_start_y
