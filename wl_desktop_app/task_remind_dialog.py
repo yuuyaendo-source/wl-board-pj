@@ -259,36 +259,19 @@ def show_task_remind_dialog(
     if count > 1 and "件" not in summary_text:
         summary_text = f"{summary_text}\n（{count}件）"
 
-    def _show_bubble():
-        try:
-            from notifications import are_enabled
-            if not are_enabled():
-                return
-            if not is_feature_enabled("linko_avatar"):
-                return
-            import linko_avatar
-            linko_avatar.say(summary_text.split("\n")[0], duration_sec=10, lipsync=False)
-        except Exception:
-            pass
+    from remind_notify import TASK_VOICE_TEXT, deliver_remind
 
-    def _show_toast():
-        try:
-            from notifications import are_enabled, show_toast
-            if not are_enabled():
-                return
-            titles = "、".join((it.get("title") or "")[:20] for it in items[:5])
-            if len(items) > 5:
-                titles += f" ほか{len(items) - 5}件"
-            show_toast(
-                "Wonder Linko",
-                f"{LIST_SUMMARY_MESSAGE}\n{titles}\n（横のパネルで選択してください）",
-                duration_sec=12,
-            )
-        except Exception:
-            pass
-
-    _show_toast()
-    _show_bubble()
+    titles = "、".join((it.get("title") or "")[:20] for it in items[:5])
+    if len(items) > 5:
+        titles += f" ほか{len(items) - 5}件"
+    bubble = summary_text.split("\n")[0]
+    deliver_remind(
+        "Wonder Linko",
+        f"{LIST_SUMMARY_MESSAGE}\n{titles}\n（横のパネルで選択してください）",
+        bubble,
+        voice_text=TASK_VOICE_TEXT,
+        duration_sec=12,
+    )
     _dialog_instance = TaskRemindListDialog(
         master=master,
         items=items,

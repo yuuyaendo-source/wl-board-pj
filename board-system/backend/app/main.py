@@ -25,6 +25,7 @@ from app.routers import (
     personal,
     sticky_notes,
     task_reminders,
+    calendar_reminders,
     users,
 )
 
@@ -90,6 +91,7 @@ app.include_router(daily_reset.router)
 app.include_router(news.router)
 app.include_router(personal.router)
 app.include_router(task_reminders.router)
+app.include_router(calendar_reminders.router)
 app.include_router(auth_google.router)
 app.include_router(admin_llm.router)
 app.include_router(brainstorm.router)

@@ -90,6 +90,7 @@ build_exe_options = {
         # 静的解析が拾い損ねる可能性があるため。
         "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
         "theme", "chat_panel", "audio_player", "task_remind_client", "task_remind_dialog",
+        "calendar_notify_client", "remind_notify",
     ],
     "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx"],
     "zip_exclude_packages": ["*"],

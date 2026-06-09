@@ -67,12 +67,15 @@ def _get_defaults():
             "brainstorm": False,
             "brainstorm_voice": True,
             "task_remind": False,
+            "calendar_notify": False,
+            "remind_voice": False,
         },
         # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
         "task_remind_times": ["13:00", "17:00"],
         "task_remind_weekdays_only": True,
         "task_remind_slots_shown": {"date": "", "slots": []},  # 当日表示済みスロット（自動更新）
         "task_remind_paused_until": "",  # YYYY-MM-DD。当日までリマインド停止（空=停止なし）
+        "calendar_remind_minutes_before": 15,  # カレンダー予定の何分前に通知するか
         # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
         "security": {
             "allowed_host_suffixes": [".internal.wonder-link.com"],
@@ -147,6 +150,9 @@ def save_config(cfg):
     if isinstance(cfg.get("task_remind_slots_shown"), dict):
         out["task_remind_slots_shown"] = cfg["task_remind_slots_shown"]
     out["task_remind_paused_until"] = cfg.get("task_remind_paused_until", defaults.get("task_remind_paused_until", ""))
+    out["calendar_remind_minutes_before"] = cfg.get(
+        "calendar_remind_minutes_before", defaults.get("calendar_remind_minutes_before", 15)
+    )
     if isinstance(cfg.get("security"), dict):
         out["security"] = cfg["security"]
     try:

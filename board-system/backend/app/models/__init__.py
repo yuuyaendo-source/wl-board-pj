@@ -13,6 +13,7 @@ from app.models.user_face import UserFace
 from app.models.user_google_token import UserGoogleToken
 from app.models.system_setting import SystemSetting
 from app.models.task_reminder_log import TaskReminderLog
+from app.models.calendar_reminder_log import CalendarReminderLog
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "UserGoogleToken",
     "SystemSetting",
     "TaskReminderLog",
+    "CalendarReminderLog",
 ]

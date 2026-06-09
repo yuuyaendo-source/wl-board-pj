@@ -274,6 +274,7 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             start_str = start_info.get("dateTime") or start_info.get("date") or ""
             end_str = end_info.get("dateTime") or end_info.get("date") or ""
             out.append({
+                "id": e.get("id", ""),
                 "summary": e.get("summary", ""),
                 "start": start_str,
                 "end": end_str,

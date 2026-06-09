@@ -177,6 +177,54 @@ def play_wav(
             pass
 
 
+def _tts_api_url() -> Optional[str]:
+    try:
+        from config_loader import load_config
+        base = (load_config().get("linko_server_url") or "").strip().rstrip("/")
+    except Exception:
+        base = ""
+    return f"{base}/api/v2/tts" if base else None
+
+
+def speak_text(text: str, log_prefix: str = "[remind_voice]") -> None:
+    """linko-system TTS で短文を読み上げる (タスク/カレンダーリマインド用)。remind_voice は呼び出し側で確認。"""
+    if requests is None or not (text or "").strip():
+        return
+    url = _tts_api_url()
+    if not url:
+        log_info(f"{log_prefix} linko_server_url 未設定のため音声スキップ")
+        return
+    try:
+        from config_loader import load_config
+        from security import assert_http_url
+        assert_http_url(url, load_config(), purpose="remind_tts")
+    except ValueError as e:
+        log_warn(f"{log_prefix} TTS URL 拒否: {e}")
+        return
+    except Exception as e:
+        log_warn(f"{log_prefix} TTS URL 検証エラー: {e}")
+        return
+    try:
+        r = requests.post(url, json={"text": text.strip()}, timeout=(5, 60))
+        if r.status_code == 503:
+            log_info(f"{log_prefix} TTS 混雑のため音声スキップ (503)")
+            return
+        if r.status_code != 200:
+            log_warn(f"{log_prefix} TTS HTTP {r.status_code}")
+            return
+        audio_url = (r.json() or {}).get("audio_url")
+    except Exception as e:
+        log_warn(f"{log_prefix} TTS 取得失敗: {e}")
+        return
+    if not audio_url:
+        return
+    res = download_linko_wav(audio_url, log_prefix=log_prefix)
+    if not res:
+        return
+    path, duration_sec = res
+    play_wav(path, text=text.strip(), duration_sec=duration_sec, blocking=False, log_prefix=log_prefix)
+
+
 def play_linko_audio(audio_url: str, text: str = "", log_prefix: str = "[audio]") -> None:
     """audio_url の WAV をダウンロードして winsound で非同期再生する (来客通知・全文一括用)。
 

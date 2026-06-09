@@ -384,6 +384,50 @@ def _pause_task_remind_today(icon=None, item=None):
         log_info(f"[task_remind] pause failed: {e}")
 
 
+def _on_calendar_remind_ui(items):
+    """メインスレッド: カレンダー予定リマインド（15分前）。"""
+    if not items:
+        try:
+            from calendar_notify_client import notify_delivery_done
+            notify_delivery_done()
+        except Exception:
+            pass
+        return
+
+    def _show_one(index: int = 0) -> None:
+        if index >= len(items):
+            try:
+                from calendar_notify_client import notify_delivery_done
+                notify_delivery_done()
+            except Exception:
+                pass
+            return
+        item = items[index]
+        try:
+            from calendar_notify_client import post_shown
+            from remind_notify import deliver_remind
+            cfg = load_config()
+            if not post_shown(cfg, item):
+                log_info("[calendar_notify] shown API 失敗")
+            deliver_remind(
+                "Wonder Linko",
+                item.get("message") or item.get("title") or "予定",
+                item.get("message") or item.get("title") or "",
+                voice_text=item.get("voice_text"),
+                duration_sec=12,
+            )
+        except Exception as e:
+            log_info(f"[calendar_notify] 表示失敗: {e}")
+
+        delay_ms = 12000 if index + 1 < len(items) else 500
+        if _miniport_window is not None and index + 1 < len(items):
+            _miniport_window.after(delay_ms, lambda: _show_one(index + 1))
+        else:
+            _show_one(index + 1)
+
+    _show_one(0)
+
+
 def _on_task_remind_ui(items, slot, summary=""):
     """メインスレッド: Today タスク一覧のリマインドダイアログを表示。"""
     def _ack(item, action: str):
@@ -945,6 +989,14 @@ def main():
         log_info("[task_remind] ポーリング開始")
     except Exception as e:
         log_info(f"[task_remind] 起動スキップ: {e}")
+
+    # カレンダーリマインド (features.calendar_notify=ON)
+    try:
+        from calendar_notify_client import start_calendar_notify_poll
+        start_calendar_notify_poll(_on_calendar_remind_ui, tk_master=_miniport_window)
+        log_info("[calendar_notify] ポーリング開始")
+    except Exception as e:
+        log_info(f"[calendar_notify] 起動スキップ: {e}")
 
     # Phase 3: 来客通知 (features.visitor_notify が ON のときだけ接続を開始)
     log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")
