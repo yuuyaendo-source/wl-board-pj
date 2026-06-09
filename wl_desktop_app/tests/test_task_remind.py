@@ -27,7 +27,7 @@ def test_active_slot_13_00_window():
     assert active_slot_now(cfg, _dt(13, 0)) == "13:00"
     assert active_slot_now(cfg, _dt(13, 10)) == "13:00"
     assert active_slot_now(cfg, _dt(12, 59)) is None
-    assert active_slot_now(cfg, _dt(13, 12)) is None
+    assert active_slot_now(cfg, _dt(13, 15)) is None
 
 
 def test_active_slot_17_00():

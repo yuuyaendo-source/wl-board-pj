@@ -26,12 +26,33 @@ except Exception:
     def log_warn(msg: str) -> None:
         print(msg, flush=True)
 
-JST = ZoneInfo("Asia/Tokyo")
-POLL_INTERVAL_SEC = 60
-SLOT_WINDOW_MINUTES = 12
+try:
+    JST = ZoneInfo("Asia/Tokyo")
+except Exception:
+    # Windows 等で tzdata 未インストール時のフォールバック (UTC+9 固定)
+    from datetime import timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+
+POLL_INTERVAL_SEC = 30
+SLOT_WINDOW_MINUTES = 15
 _thread: Optional[threading.Thread] = None
 _showing_lock = threading.Lock()
 _showing = False
+
+
+def _normalize_time(raw: str) -> Optional[str]:
+    """'9:5' → '09:05'。不正なら None。"""
+    s = (raw or "").strip()
+    if not s or ":" not in s:
+        return None
+    parts = s.split(":", 1)
+    try:
+        h, m = int(parts[0]), int(parts[1])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+    except ValueError:
+        pass
+    return None
 
 
 def _parse_times(cfg: dict) -> list[str]:
@@ -39,9 +60,9 @@ def _parse_times(cfg: dict) -> list[str]:
     if isinstance(raw, list) and raw:
         out = []
         for t in raw:
-            s = str(t).strip()
-            if len(s) == 5 and s[2] == ":":
-                out.append(s)
+            norm = _normalize_time(str(t))
+            if norm:
+                out.append(norm)
         if out:
             return out
     return ["13:00", "17:00"]
@@ -92,6 +113,12 @@ def _owner_id(cfg: dict) -> Optional[int]:
         return None
 
 
+def _personal_api_url(cfg: dict, owner: int, suffix: str) -> str:
+    """board_system_url ベースで personal API の URL を組み立てる。"""
+    base = _api_base(cfg)
+    return f"{base}/api/personal/{owner}/{suffix}"
+
+
 def fetch_pending(cfg: dict, slot: str) -> list[dict]:
     """pending API を呼び、items リストを返す。失敗時は []。"""
     if requests is None:
@@ -102,7 +129,7 @@ def fetch_pending(cfg: dict, slot: str) -> list[dict]:
         return []
     max_items = int(cfg.get("task_remind_max_per_slot") or 2)
     max_items = max(1, min(10, max_items))
-    url = f"{base}/api/personal/{owner}/task_reminders/pending"
+    url = _personal_api_url(cfg, owner, "task_reminders/pending")
     try:
         from security import validate_http_url
         ok, err = validate_http_url(url, cfg, purpose="task_remind")
@@ -119,7 +146,7 @@ def fetch_pending(cfg: dict, slot: str) -> list[dict]:
             timeout=10,
         )
         if r.status_code != 200:
-            log_warn(f"[task_remind] pending HTTP {r.status_code}")
+            log_warn(f"[task_remind] pending HTTP {r.status_code}: {r.text[:200]}")
             return []
         data = r.json()
         return list(data.get("items") or [])
@@ -133,7 +160,7 @@ def post_shown(cfg: dict, item: dict, slot: str) -> bool:
     owner = _owner_id(cfg)
     if not base or owner is None or requests is None:
         return False
-    url = f"{base}/api/personal/{owner}/task_reminders/shown"
+    url = _personal_api_url(cfg, owner, "task_reminders/shown")
     try:
         r = requests.post(
             url,
@@ -155,7 +182,7 @@ def post_ack(cfg: dict, item: dict, slot: str, action: str) -> bool:
     owner = _owner_id(cfg)
     if not base or owner is None or requests is None:
         return False
-    url = f"{base}/api/personal/{owner}/task_reminders/ack"
+    url = _personal_api_url(cfg, owner, "task_reminders/ack")
     try:
         r = requests.post(
             url,
@@ -196,7 +223,7 @@ def start_task_remind_poll(
     def _dispatch(item: dict, slot: str) -> None:
         if tk_master is not None:
             try:
-                tk_master.after(0, lambda: on_remind(item, slot))
+                tk_master.after(0, lambda i=item, s=slot: on_remind(i, s))
                 return
             except Exception:
                 pass
@@ -204,21 +231,34 @@ def start_task_remind_poll(
 
     def loop():
         global _showing
+        last_diag = ""
         while True:
             try:
-                from config_loader import is_feature_enabled
-                cfg = config_getter()
+                from config_loader import is_feature_enabled, load_config
+                cfg = load_config()
                 if not is_feature_enabled("task_remind", cfg):
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if _owner_id(cfg) is None:
+                    diag = "board_system_personal_id 未設定 (パーソナルログインが必要)"
+                    if diag != last_diag:
+                        log_warn(f"[task_remind] {diag}")
+                        last_diag = diag
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 if _is_paused_today(cfg):
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 if not are_notifications_ok(cfg):
+                    diag = "notifications_enabled=OFF (🔕)"
+                    if diag != last_diag:
+                        log_info(f"[task_remind] スキップ: {diag}")
+                        last_diag = diag
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 slot = active_slot_now(cfg)
                 if not slot:
+                    last_diag = ""
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 with _showing_lock:
@@ -227,14 +267,16 @@ def start_task_remind_poll(
                         continue
                 items = fetch_pending(cfg, slot)
                 if not items:
+                    diag = f"slot={slot} pending=0 (Today レーンに未通知タスクがあるか確認)"
+                    if diag != last_diag:
+                        log_info(f"[task_remind] {diag}")
+                        last_diag = diag
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 item = items[0]
-                if not post_shown(cfg, item, slot):
-                    time.sleep(POLL_INTERVAL_SEC)
-                    continue
                 with _showing_lock:
                     _showing = True
+                last_diag = ""
                 log_info(f"[task_remind] リマインド表示: {item.get('title')} slot={slot}")
                 _dispatch(item, slot)
             except Exception as e:

@@ -185,13 +185,26 @@ class SettingsDialog(ctk.CTkToplevel):
         parsed_times = []
         for part in self._task_remind_times_var.get().replace("、", ",").split(","):
             s = part.strip()
-            if len(s) == 5 and s[2] == ":":
-                parsed_times.append(s)
+            try:
+                from task_remind_client import _normalize_time
+                norm = _normalize_time(s)
+            except Exception:
+                norm = None
+            if norm:
+                parsed_times.append(norm)
         if parsed_times:
             self._cfg["task_remind_times"] = parsed_times
         self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
         try:
             save_config(self._cfg)
+            self._cfg = load_config()
+            try:
+                import sys
+                main = sys.modules.get("__main__")
+                if main is not None and hasattr(main, "_config"):
+                    main._config = self._cfg
+            except Exception:
+                pass
         except Exception as e:
             try:
                 from tkinter import messagebox

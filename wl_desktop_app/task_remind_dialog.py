@@ -167,7 +167,7 @@ def show_task_remind_dialog(
     item: dict,
     slot: str,
     on_ack: Callable[[str], None],
-) -> TaskRemindDialog:
+) -> Optional[TaskRemindDialog]:
     """リマインドダイアログを表示（シングルトン）。"""
     global _dialog_instance
     if _dialog_instance is not None:
@@ -176,6 +176,13 @@ def show_task_remind_dialog(
             return _dialog_instance
         except Exception:
             _dialog_instance = None
+
+    cfg = load_config()
+    from task_remind_client import post_shown, notify_dialog_closed
+    if not post_shown(cfg, item, slot):
+        notify_dialog_closed()
+        print("[task_remind] shown API 失敗 — リマインドをスキップ", flush=True)
+        return None
 
     def _show_bubble():
         try:
