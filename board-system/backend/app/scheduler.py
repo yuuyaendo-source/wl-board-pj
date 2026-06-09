@@ -74,6 +74,20 @@ def start_scheduler() -> None:
         minute=15,
         id="fetch_news",
     )
+    cal_interval = getattr(settings, "scheduler_calendar_interval_minutes", 0)
+    if cal_interval not in (None, 0):
+        try:
+            cal_min = int(cal_interval)
+            if cal_min >= 5:
+                _scheduler.add_job(
+                    lambda: _post("/api/personal/calendar_sync_all"),
+                    "interval",
+                    minutes=cal_min,
+                    id="calendar_sync_all",
+                )
+                logger.info("カレンダー予定の定期同期を %s 分間隔で追加", cal_min)
+        except (TypeError, ValueError):
+            pass
     if getattr(settings, "scheduler_news_interval_minutes", 0) not in (None, 0):
         try:
             interval_min = int(settings.scheduler_news_interval_minutes)

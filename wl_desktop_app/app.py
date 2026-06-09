@@ -385,7 +385,7 @@ def _pause_task_remind_today(icon=None, item=None):
 
 
 def _on_calendar_remind_ui(items):
-    """メインスレッド: カレンダー予定リマインド（15分前）。"""
+    """メインスレッド: カレンダー予定リマインド。"""
     if not items:
         try:
             from calendar_notify_client import notify_delivery_done
@@ -404,10 +404,11 @@ def _on_calendar_remind_ui(items):
             return
         item = items[index]
         try:
-            from calendar_notify_client import post_shown
+            from calendar_notify_client import calendar_remind_minutes, post_shown
             from remind_notify import deliver_remind
             cfg = load_config()
-            if not post_shown(cfg, item):
+            minutes = calendar_remind_minutes(cfg)
+            if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
             deliver_remind(
                 "Wonder Linko",

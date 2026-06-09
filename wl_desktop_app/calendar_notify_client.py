@@ -26,6 +26,14 @@ except Exception:
 
 POLL_INTERVAL_SEC = 60
 DEFAULT_MINUTES_BEFORE = 15
+
+
+def calendar_remind_minutes(cfg: dict) -> int:
+    from config_loader import normalize_calendar_remind_minutes
+
+    return normalize_calendar_remind_minutes(
+        cfg.get("calendar_remind_minutes_before") or DEFAULT_MINUTES_BEFORE
+    )
 _thread: Optional[threading.Thread] = None
 _busy_lock = threading.Lock()
 _busy = False
@@ -84,7 +92,10 @@ def post_shown(cfg: dict, item: dict, minutes_before: int = DEFAULT_MINUTES_BEFO
         r = requests.post(
             url,
             params={"minutes_before": minutes_before},
-            json={"event_id": item["event_id"]},
+            json={
+                "event_id": item["event_id"],
+                "event_start": item.get("start") or "",
+            },
             timeout=10,
         )
         return r.status_code == 200
@@ -130,7 +141,7 @@ def start_calendar_notify_poll(
                     if _busy:
                         time.sleep(POLL_INTERVAL_SEC)
                         continue
-                minutes = int(cfg.get("calendar_remind_minutes_before") or DEFAULT_MINUTES_BEFORE)
+                minutes = calendar_remind_minutes(cfg)
                 items = fetch_pending(cfg, minutes_before=minutes)
                 if not items:
                     time.sleep(POLL_INTERVAL_SEC)

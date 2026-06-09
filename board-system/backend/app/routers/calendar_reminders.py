@@ -64,12 +64,12 @@ def _parse_event_start(start_str: str, tz: ZoneInfo) -> datetime | None:
         return None
 
 
-def _voice_text(title: str) -> str:
-    return f"お疲れ様です。15分後に、{title}が始まります。"
+def _voice_text(title: str, minutes_before: int) -> str:
+    return f"お疲れ様です。{minutes_before}分後に、{title}が始まります。"
 
 
-def _toast_message(title: str) -> str:
-    return f"15分後に「{title}」が始まります"
+def _toast_message(title: str, minutes_before: int) -> str:
+    return f"{minutes_before}分後に「{title}」が始まります"
 
 
 class CalendarPendingItem(BaseModel):
@@ -89,6 +89,7 @@ class CalendarPendingResponse(BaseModel):
 
 class CalendarShownBody(BaseModel):
     event_id: str
+    event_start: str = ""  # 開始時刻 ISO。予定変更時は別扱いで再リマインド可能にする
     remind_kind: str = Field(default=REMIND_KIND_BEFORE_15, max_length=16)
 
 
@@ -98,23 +99,24 @@ async def _ensure_user(user_id: int, db: AsyncSession) -> None:
         raise HTTPException(status_code=404, detail="User not found")
 
 
-async def _logged_event_ids(
+async def _logged_starts_by_event(
     user_id: int, remind_date: str, remind_kind: str, db: AsyncSession
-) -> set[str]:
+) -> dict[str, str]:
+    """event_id → リマインド済みの開始時刻 (event_summary 列に保存)。"""
     r = await db.execute(
-        select(CalendarReminderLog.event_id).where(
+        select(CalendarReminderLog.event_id, CalendarReminderLog.event_summary).where(
             CalendarReminderLog.user_id == user_id,
             CalendarReminderLog.remind_date == remind_date,
             CalendarReminderLog.remind_kind == remind_kind,
         )
     )
-    return {row[0] for row in r.all()}
+    return {row[0]: (row[1] or "") for row in r.all()}
 
 
 @router.get("/{user_id}/calendar_reminders/pending", response_model=CalendarPendingResponse)
 async def get_pending_calendar_reminders(
     user_id: int,
-    minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=120),
+    minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=15),
     db: AsyncSession = Depends(get_db),
 ):
     """Google 連携済みユーザーの、まもなく開始する予定を返す。未連携は items=[]。"""
@@ -131,10 +133,14 @@ async def get_pending_calendar_reminders(
             items=[],
         )
 
-    from app.routers.auth_google import _fetch_today_events_for_user
+    from app.routers.auth_google import _fetch_today_events_for_user, _sync_user_calendar_events_cache
 
     events = await _fetch_today_events_for_user(user_id, db)
-    logged = await _logged_event_ids(user_id, remind_date, remind_kind, db)
+    try:
+        await _sync_user_calendar_events_cache(user_id, db, events)
+    except Exception as e:
+        logger.warning("calendar pending cache sync failed user_id=%s: %s", user_id, e)
+    logged = await _logged_starts_by_event(user_id, remind_date, remind_kind, db)
 
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
     try:
@@ -146,9 +152,11 @@ async def get_pending_calendar_reminders(
     items: list[CalendarPendingItem] = []
     for e in events:
         event_id = (e.get("id") or "").strip()
-        if not event_id or event_id in logged:
+        if not event_id:
             continue
         start_str = e.get("start") or ""
+        if logged.get(event_id) == start_str:
+            continue
         start_dt = _parse_event_start(start_str, tz)
         if start_dt is None:
             continue
@@ -163,8 +171,8 @@ async def get_pending_calendar_reminders(
                 event_id=event_id,
                 title=title,
                 start=start_str,
-                message=_toast_message(title),
-                voice_text=_voice_text(title),
+                message=_toast_message(title, minutes_before),
+                voice_text=_voice_text(title, minutes_before),
             )
         )
 
@@ -180,7 +188,7 @@ async def get_pending_calendar_reminders(
 async def mark_calendar_reminder_shown(
     user_id: int,
     body: CalendarShownBody,
-    minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=120),
+    minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=15),
     db: AsyncSession = Depends(get_db),
 ):
     """デスクトップがリマインドを表示したとき呼ぶ。"""
@@ -191,6 +199,7 @@ async def mark_calendar_reminder_shown(
     if not event_id:
         raise HTTPException(status_code=400, detail="event_id is required")
 
+    event_start = (body.event_start or "").strip()
     r = await db.execute(
         select(CalendarReminderLog).where(
             CalendarReminderLog.user_id == user_id,
@@ -199,15 +208,20 @@ async def mark_calendar_reminder_shown(
             CalendarReminderLog.remind_kind == remind_kind,
         )
     )
-    if r.scalar_one_or_none() is not None:
-        return {"ok": True, "already": True}
+    row = r.scalar_one_or_none()
+    if row is not None:
+        if (row.event_summary or "") == event_start:
+            return {"ok": True, "already": True}
+        row.event_summary = event_start
+        await db.flush()
+        return {"ok": True, "already": False, "updated": True}
 
     row = CalendarReminderLog(
         user_id=user_id,
         event_id=event_id,
         remind_date=remind_date,
         remind_kind=remind_kind,
-        event_summary=None,
+        event_summary=event_start or None,
     )
     db.add(row)
     await db.flush()

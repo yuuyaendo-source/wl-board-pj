@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     # テスト用: ニュース取得を N 分ごとに実行（0 または未設定で無効）。例: 3 で 3 分ごと
     scheduler_news_interval_minutes: int = 0
+    # Google カレンダー予定をキャッシュへ定期同期する間隔（分）。0 で無効。既定 30 分
+    scheduler_calendar_interval_minutes: int = 30
     # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
     scheduler_base_url: str = "http://127.0.0.1:8000"
 

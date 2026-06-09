@@ -301,6 +301,26 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         return []
 
 
+async def _sync_user_calendar_events_cache(
+    user_id: int, db: AsyncSession, events: list[dict] | None = None
+) -> int:
+    """Google から今日の予定を取得し PersonalSummaryCache の events のみ更新（LLM・付箋なし）。"""
+    if events is None:
+        events = await _fetch_today_events_for_user(user_id, db)
+    person_id = str(user_id)
+    events_json = json.dumps(events)
+    result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = PersonalSummaryCache(person_id=person_id, events=events_json, today="[]")
+        db.add(row)
+    else:
+        row.events = events_json
+        row.updated_at = datetime.utcnow()
+    await db.flush()
+    return len(events)
+
+
 async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> int:
     """
     指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、
@@ -416,6 +436,39 @@ async def daily_calendar_refresh(db: AsyncSession = Depends(get_db)):
             logger.warning("daily_calendar_refresh user_id=%s: %s", uid, e)
             failed.append(uid)
     return {"ok": True, "refreshed": refreshed, "failed": failed}
+
+
+@router.get("/api/personal/{user_id}/calendar/events/live")
+async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Google から今日の予定をリアルタイム取得し、キャッシュの events も更新して返す。"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    r_tok = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    if r_tok.scalar_one_or_none() is None:
+        return {"events": [], "synced": False}
+    events = await _fetch_today_events_for_user(user_id, db)
+    await _sync_user_calendar_events_cache(user_id, db, events)
+    return {"events": events, "synced": True}
+
+
+@router.post("/api/personal/calendar_sync_all")
+async def calendar_sync_all_events(db: AsyncSession = Depends(get_db)):
+    """全 Google 連携ユーザーの今日の予定を Google から取得し、キャッシュ events のみ更新（定期同期用）。"""
+    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+        return {"ok": True, "synced": [], "failed": [], "skipped": True}
+    result = await db.execute(select(UserGoogleToken.user_id).distinct())
+    user_ids = [r[0] for r in result.all()]
+    synced = []
+    failed = []
+    for uid in user_ids:
+        try:
+            await _sync_user_calendar_events_cache(uid, db)
+            synced.append(uid)
+        except Exception as e:
+            logger.warning("calendar_sync_all user_id=%s: %s", uid, e)
+            failed.append(uid)
+    return {"ok": True, "synced": synced, "failed": failed}
 
 
 @router.post("/api/personal/{user_id}/calendar/refresh")

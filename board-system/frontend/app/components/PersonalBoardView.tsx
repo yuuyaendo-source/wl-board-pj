@@ -353,6 +353,8 @@ function formatSummaryTime(start?: string, end?: string): string {
   }
 }
 
+const CALENDAR_LIVE_POLL_MS = 15 * 60 * 1000;
+
 function PersonalCalendarPanel({
   ownerId,
   events,
@@ -369,12 +371,51 @@ function PersonalCalendarPanel({
   onAfterCalendarRefresh?: () => void;
 }) {
   const [refreshing, setRefreshing] = useState(false);
-  const hasEvents = events.length > 0;
+  const [liveEvents, setLiveEvents] = useState<SummaryEvent[]>(events);
+  const hasEvents = liveEvents.length > 0;
+
+  useEffect(() => {
+    setLiveEvents(events);
+  }, [events]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const pollLive = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      try {
+        const data = await api.personalCalendarLive(ownerId);
+        if (!cancelled && data.synced && Array.isArray(data.events)) {
+          setLiveEvents(data.events);
+        }
+      } catch {
+        // 未連携・オフライン時はキャッシュ表示のまま
+      }
+    };
+    const id = window.setInterval(pollLive, CALENDAR_LIVE_POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") pollLive();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    pollLive();
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [ownerId]);
 
   const handleRefreshFromGoogle = useCallback(async () => {
     setRefreshing(true);
     try {
       await api.personalCalendarRefresh(ownerId);
+      try {
+        const data = await api.personalCalendarLive(ownerId);
+        if (data.synced && Array.isArray(data.events)) {
+          setLiveEvents(data.events);
+        }
+      } catch {
+        // ignore
+      }
       await onRefresh();
       if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
     } catch {
@@ -395,7 +436,7 @@ function PersonalCalendarPanel({
         </p>
       ) : (
         <ul className="flex flex-col gap-1 text-sm">
-          {events.map((ev, i) => (
+          {liveEvents.map((ev, i) => (
             <li key={i} className="flex flex-col gap-0.5">
               <span className="text-zinc-500">{formatSummaryTime(ev.start, ev.end)}</span>
               <span>{ev.summary || "(無題)"}</span>

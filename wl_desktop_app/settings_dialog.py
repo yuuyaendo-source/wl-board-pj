@@ -58,8 +58,8 @@ _FEATURE_ROWS = [
     ),
     (
         "calendar_notify",
-        "カレンダー予定をリマインド (15分前)",
-        "Personal ボードで Google 連携済みのとき、開始15分前に通知。未連携時は何もしません。",
+        "カレンダー予定をリマインド",
+        "Personal ボードで Google 連携済みのとき、開始の N 分前に通知（下で 1〜15 分を指定）。未連携時は何もしません。",
     ),
     (
         "remind_voice",
@@ -103,6 +103,11 @@ class SettingsDialog(ctk.CTkToplevel):
         self._task_remind_times_var = tk.StringVar(value=times_str)
         self._task_remind_weekdays_var = tk.BooleanVar(
             value=bool(self._cfg.get("task_remind_weekdays_only", True))
+        )
+        from config_loader import normalize_calendar_remind_minutes
+
+        self._calendar_remind_minutes_var = tk.StringVar(
+            value=str(normalize_calendar_remind_minutes(self._cfg.get("calendar_remind_minutes_before")))
         )
 
         self._build_ui()
@@ -182,6 +187,23 @@ class SettingsDialog(ctk.CTkToplevel):
             variable=self._task_remind_weekdays_var,
         ).pack(anchor="w")
 
+        cal_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        cal_frame.pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(cal_frame, text="カレンダーリマインド (開始の何分前)", anchor="w").pack(fill="x")
+        cal_row = ctk.CTkFrame(cal_frame, fg_color="transparent")
+        cal_row.pack(fill="x", pady=(2, 0))
+        ctk.CTkOptionMenu(
+            cal_row,
+            values=[str(i) for i in range(1, 16)],
+            variable=self._calendar_remind_minutes_var,
+            width=80,
+        ).pack(side="left")
+        ctk.CTkLabel(
+            cal_row,
+            text="分前（1〜15。calendar_notify が ON のとき有効）",
+            text_color=("gray40", "gray60"),
+        ).pack(side="left", padx=(8, 0))
+
     # --- ハンドラ ----------------------------------------------------------
     def _on_save(self) -> None:
         # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
@@ -205,6 +227,11 @@ class SettingsDialog(ctk.CTkToplevel):
         if parsed_times:
             self._cfg["task_remind_times"] = parsed_times
         self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
+        from config_loader import normalize_calendar_remind_minutes
+
+        self._cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
+            self._calendar_remind_minutes_var.get()
+        )
         try:
             save_config(self._cfg)
             self._cfg = load_config()

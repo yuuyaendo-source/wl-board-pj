@@ -11,6 +11,19 @@ else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(_BASE_DIR, "config.json")
 
+CALENDAR_REMIND_MINUTES_MIN = 1
+CALENDAR_REMIND_MINUTES_MAX = 15
+CALENDAR_REMIND_MINUTES_DEFAULT = 15
+
+
+def normalize_calendar_remind_minutes(value) -> int:
+    """カレンダーリマインドの「何分前」を 1〜15 に正規化する。"""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = CALENDAR_REMIND_MINUTES_DEFAULT
+    return max(CALENDAR_REMIND_MINUTES_MIN, min(CALENDAR_REMIND_MINUTES_MAX, n))
+
 
 def get_app_base_dir():
     """アプリのベースディレクトリ（exe 時は exe と同じフォルダ）。config.json・toast_icon の基準に使う。"""
@@ -114,6 +127,9 @@ def load_config():
         sanitize_config_urls(cfg, _get_defaults())
     except Exception as e:
         print(f"[security] config URL sanitize skipped: {e}", flush=True)
+    cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
+        cfg.get("calendar_remind_minutes_before")
+    )
     return cfg
 
 
@@ -150,8 +166,8 @@ def save_config(cfg):
     if isinstance(cfg.get("task_remind_slots_shown"), dict):
         out["task_remind_slots_shown"] = cfg["task_remind_slots_shown"]
     out["task_remind_paused_until"] = cfg.get("task_remind_paused_until", defaults.get("task_remind_paused_until", ""))
-    out["calendar_remind_minutes_before"] = cfg.get(
-        "calendar_remind_minutes_before", defaults.get("calendar_remind_minutes_before", 15)
+    out["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
+        cfg.get("calendar_remind_minutes_before", defaults.get("calendar_remind_minutes_before", 15))
     )
     if isinstance(cfg.get("security"), dict):
         out["security"] = cfg["security"]
