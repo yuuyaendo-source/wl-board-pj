@@ -189,6 +189,13 @@ def _register_handlers(c: "_sio.Client") -> None:
 
 def _handle_visitor_arrived(data: dict) -> None:
     """visitor_arrived payload を処理してトースト + (opt-in なら) 音声再生。"""
+    try:
+        from notifications import are_enabled
+        if not are_enabled():
+            log_info("[visitor_notify] notifications_enabled=False のため来客通知をスキップ")
+            return
+    except Exception:
+        pass
     name = (data.get("name") or "来客").strip() or "来客"
     location = (data.get("location") or "entrance").strip()
     message = (data.get("message") or f"{name} さんが来訪されました").strip()

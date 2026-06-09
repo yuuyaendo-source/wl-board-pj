@@ -206,6 +206,12 @@ def set_pose(pose: str) -> None:
 
 
 def start_lipsync(duration_sec: Optional[float] = None, base_pose: str = "normal") -> None:
+    try:
+        from notifications import are_enabled
+        if not are_enabled():
+            return
+    except Exception:
+        pass
     if _singleton is not None:
         _singleton.start_lipsync(duration_sec=duration_sec, base_pose=base_pose)
 
@@ -231,6 +237,16 @@ def register_speech_bubble(bubble) -> None:
     _speech_bubble = bubble
 
 
+def dismiss_ui() -> None:
+    """通知オフ時など: 吹き出しを消し、口パクを止めて normal に戻す。"""
+    stop_lipsync(base_pose="normal")
+    if _speech_bubble is not None:
+        try:
+            _speech_bubble.hide()
+        except Exception:
+            pass
+
+
 def say(
     text: str,
     duration_sec: Optional[float] = None,
@@ -245,7 +261,14 @@ def say(
     duration_sec: 音声長 (秒)。lipsync=True かつ duration_sec が None/0 のときは
       text の長さから概算 (wav 長が取れなくても口パくさせる)。
     lipsync: False なら吹き出しのみ (アバタークリックの挨拶など、音声なしの場面)。
+    notifications_enabled=False のときは吹き出し・口パクとも出さない (画面共有対策)。
     """
+    try:
+        from notifications import are_enabled
+        if not are_enabled():
+            return
+    except Exception:
+        pass
     if _speech_bubble is not None and text:
         try:
             _speech_bubble.show_message(text, duration_sec=duration_sec or 3.0)

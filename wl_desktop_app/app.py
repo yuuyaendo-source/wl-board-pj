@@ -373,6 +373,12 @@ def _toggle_notifications(icon=None, item=None):
     _config["notifications_enabled"] = not _config.get("notifications_enabled", True)
     save_config(_config)
     on_off = "オン" if _config["notifications_enabled"] else "オフ"
+    if not _config["notifications_enabled"]:
+        try:
+            import linko_avatar
+            linko_avatar.dismiss_ui()
+        except Exception:
+            pass
     notifications.show_toast("Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True)
     if _miniport_window is not None:
         try:

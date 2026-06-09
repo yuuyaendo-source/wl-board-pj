@@ -110,6 +110,12 @@ def download_linko_wav(
 def _start_avatar(text: str, duration_sec: Optional[float], log_prefix: str) -> None:
     """features.linko_avatar=True なら 吹き出し + 口パク を音声長に同期して開始。"""
     try:
+        from notifications import are_enabled
+        if not are_enabled():
+            return
+    except Exception:
+        pass
+    try:
         from config_loader import is_feature_enabled
         if is_feature_enabled("linko_avatar"):
             import linko_avatar

@@ -44,12 +44,24 @@ class SpeechBubble:
     def show_message(self, text: str, duration_sec: float = 3.0) -> None:
         if not text or self._parent is None:
             return
+        try:
+            from notifications import are_enabled
+            if not are_enabled():
+                return
+        except Exception:
+            pass
         self._safe(lambda: self._do_show(text, duration_sec))
 
     def append_text(self, chunk: str) -> None:
         """Phase 5a streaming 用。"""
         if not chunk or self._parent is None:
             return
+        try:
+            from notifications import are_enabled
+            if not are_enabled():
+                return
+        except Exception:
+            pass
         self._safe(lambda: self._do_append(chunk))
 
     def clear(self) -> None:

@@ -12,6 +12,17 @@ import sys
 _last_notification_url = None
 
 
+def are_enabled(cfg=None) -> bool:
+    """アプリ内の通知表示が ON か (トースト・吹き出し・来客通知などの総合スイッチ)。"""
+    try:
+        if cfg is None:
+            from config_loader import load_config
+            cfg = load_config()
+        return bool(cfg.get("notifications_enabled", True))
+    except Exception:
+        return True
+
+
 def get_last_notification_url():
     return _last_notification_url
 
@@ -93,13 +104,8 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
         if url:
             _last_notification_url = url
 
-    if not force_show:
-        try:
-            from config_loader import load_config
-            if not load_config().get("notifications_enabled", True):
-                return
-        except Exception:
-            pass
+    if not force_show and not are_enabled():
+        return
 
     if sys.platform == "win32":
         # 1) winotify（「開く」ボタンでURLを開く・ワンクリックで確実・アイコン指定可）
