@@ -591,3 +591,27 @@ def open_chat_panel(master=None) -> ChatPanel:
             _panel_instance = None
     _panel_instance = ChatPanel(master=master)
     return _panel_instance
+
+
+def open_chat_panel_with_task(
+    master=None,
+    task_title: str = "",
+    note_id: Optional[int] = None,
+) -> ChatPanel:
+    """タスクリマインドの「相談」から開く。タスク文脈を入れて自動送信する。"""
+    panel = open_chat_panel(master=master)
+    title = (task_title or "（無題）").strip()
+    ctx = (
+        f"Today のタスクについて相談したいです。\n"
+        f"タスク: 『{title}』\n"
+        f"進め方・優先度・次の一歩を一緒に整理してください。"
+    )
+    if note_id is not None:
+        ctx += f"\n（Board note_id={note_id}）"
+    try:
+        panel._entry.delete("1.0", "end")
+        panel._entry.insert("1.0", ctx)
+        panel.after(300, panel._on_send)
+    except Exception as e:
+        _log(f"[chat_panel] task consult setup failed: {e}")
+    return panel

@@ -366,6 +366,52 @@ def hide_miniport(icon=None, item=None):
         _miniport_window.after(0, _miniport_hide)
 
 
+def _pause_task_remind_today(icon=None, item=None):
+    """今日いっぱいタスクリマインドを止める。"""
+    global _config
+    try:
+        from task_remind_client import pause_reminders_today
+        _config = load_config()
+        pause_reminders_today(_config)
+        notifications.show_toast(
+            "Wonder Linko",
+            "今日はタスクリマインドを停止しました。明日から再開します。",
+            duration_sec=4,
+            force_show=True,
+        )
+    except Exception as e:
+        notifications.show_toast("Wonder Linko", "設定の保存に失敗しました。", duration_sec=3, force_show=True)
+        log_info(f"[task_remind] pause failed: {e}")
+
+
+def _on_task_remind_ui(item, slot):
+    """メインスレッド: リマインドダイアログを表示。"""
+    def _ack(action: str):
+        try:
+            from task_remind_client import post_ack
+            cfg = load_config()
+            if post_ack(cfg, item, slot, action):
+                if action == "done":
+                    notifications.show_toast(
+                        "Wonder Linko",
+                        f"「{item.get('title', '')}」を完了にしました。",
+                        duration_sec=3,
+                    )
+        except Exception as e:
+            log_info(f"[task_remind] ack failed: {e}")
+
+    try:
+        from task_remind_dialog import show_task_remind_dialog
+        show_task_remind_dialog(_miniport_window, item, slot, _ack)
+    except Exception as e:
+        log_info(f"[task_remind] dialog failed: {e}")
+        try:
+            from task_remind_client import notify_dialog_closed
+            notify_dialog_closed()
+        except Exception:
+            pass
+
+
 def _toggle_notifications(icon=None, item=None):
     """通知の表示オン/オフをトグルして保存。"""
     global _config
@@ -656,6 +702,7 @@ def build_menu(icon):
         pystray.MenuItem("ミニポートを非表示", hide_miniport),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("通知を表示", _toggle_notifications, checked=lambda *_: _config.get("notifications_enabled", True)),
+        pystray.MenuItem("今日はタスクリマインドしない", _pause_task_remind_today),
         pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
         pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
         pystray.MenuItem("設定...", open_settings),
@@ -886,6 +933,18 @@ def main():
 
     # 重複起動された別プロセスからの「前面化」依頼を監視 (show_request ファイル)
     _start_show_request_watcher()
+
+    # タスクリマインド (features.task_remind=ON かつ Board ログイン時)
+    try:
+        from task_remind_client import start_task_remind_poll
+        start_task_remind_poll(
+            lambda: _config,
+            _on_task_remind_ui,
+            tk_master=_miniport_window,
+        )
+        log_info("[task_remind] ポーリング開始")
+    except Exception as e:
+        log_info(f"[task_remind] 起動スキップ: {e}")
 
     # Phase 3: 来客通知 (features.visitor_notify が ON のときだけ接続を開始)
     log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")

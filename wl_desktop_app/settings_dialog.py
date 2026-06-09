@@ -51,6 +51,11 @@ _FEATURE_ROWS = [
         "ブレスト機能 (チャット・音声)",
         "業務サポート的なブレスト相手 (社内情報を踏まえた回答)。CATO 経由で社内 LAN 到達できることが前提。",
     ),
+    (
+        "task_remind",
+        "個人タスクをリマインド (Today)",
+        "Board System の Today タスクを 13:00 / 17:00 頃に確認します。[継続][完了][相談] で応答。要: パーソナルログイン。",
+    ),
 ]
 
 
@@ -61,7 +66,7 @@ class SettingsDialog(ctk.CTkToplevel):
     """設定ダイアログ Window。シングルトンで運用する想定。"""
 
     WIDTH = 520
-    HEIGHT = 600
+    HEIGHT = 660
 
     def __init__(self, master=None):
         super().__init__(master)
@@ -80,6 +85,15 @@ class SettingsDialog(ctk.CTkToplevel):
         self._cfg = load_config()
         self._feature_vars: dict[str, tk.BooleanVar] = {}
         self._display_name_var = tk.StringVar(value=self._cfg.get("display_name", "") or "")
+        times = self._cfg.get("task_remind_times") or ["13:00", "17:00"]
+        if isinstance(times, list):
+            times_str = ", ".join(str(t) for t in times)
+        else:
+            times_str = "13:00, 17:00"
+        self._task_remind_times_var = tk.StringVar(value=times_str)
+        self._task_remind_weekdays_var = tk.BooleanVar(
+            value=bool(self._cfg.get("task_remind_weekdays_only", True))
+        )
 
         self._build_ui()
 
@@ -148,6 +162,16 @@ class SettingsDialog(ctk.CTkToplevel):
                 anchor="w",
             ).pack(fill="x", padx=(28, 0))
 
+        tr_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        tr_frame.pack(fill="x", pady=(4, 0))
+        ctk.CTkLabel(tr_frame, text="タスクリマインド時刻 (HH:MM, カンマ区切り)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(tr_frame, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkCheckBox(
+            tr_frame,
+            text="平日のみ (土日は鳴らさない)",
+            variable=self._task_remind_weekdays_var,
+        ).pack(anchor="w")
+
     # --- ハンドラ ----------------------------------------------------------
     def _on_save(self) -> None:
         # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
@@ -158,6 +182,14 @@ class SettingsDialog(ctk.CTkToplevel):
             features[key] = bool(var.get())
         prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
         self._cfg["features"] = features
+        parsed_times = []
+        for part in self._task_remind_times_var.get().replace("、", ",").split(","):
+            s = part.strip()
+            if len(s) == 5 and s[2] == ":":
+                parsed_times.append(s)
+        if parsed_times:
+            self._cfg["task_remind_times"] = parsed_times
+        self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
         try:
             save_config(self._cfg)
         except Exception as e:

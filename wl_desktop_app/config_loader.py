@@ -66,7 +66,13 @@ def _get_defaults():
             "visitor_notify_sound": False,
             "brainstorm": False,
             "brainstorm_voice": True,
+            "task_remind": False,
         },
+        # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
+        "task_remind_times": ["13:00", "17:00"],
+        "task_remind_max_per_slot": 2,
+        "task_remind_weekdays_only": True,
+        "task_remind_paused_until": "",  # YYYY-MM-DD。当日までリマインド停止（空=停止なし）
         # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
         "security": {
             "allowed_host_suffixes": [".internal.wonder-link.com"],
@@ -136,6 +142,10 @@ def save_config(cfg):
     # features は辞書を丸ごと保存（未知キーも保つ）
     src_features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
     out["features"] = {**(defaults.get("features") or {}), **src_features}
+    out["task_remind_times"] = cfg.get("task_remind_times", defaults.get("task_remind_times", ["13:00", "17:00"]))
+    out["task_remind_max_per_slot"] = cfg.get("task_remind_max_per_slot", defaults.get("task_remind_max_per_slot", 2))
+    out["task_remind_weekdays_only"] = cfg.get("task_remind_weekdays_only", defaults.get("task_remind_weekdays_only", True))
+    out["task_remind_paused_until"] = cfg.get("task_remind_paused_until", defaults.get("task_remind_paused_until", ""))
     if isinstance(cfg.get("security"), dict):
         out["security"] = cfg["security"]
     try:

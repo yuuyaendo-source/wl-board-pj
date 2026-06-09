@@ -89,7 +89,7 @@ build_exe_options = {
         # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
         # 静的解析が拾い損ねる可能性があるため。
         "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
-        "theme", "chat_panel", "audio_player",
+        "theme", "chat_panel", "audio_player", "task_remind_client", "task_remind_dialog",
     ],
     "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx"],
     "zip_exclude_packages": ["*"],
