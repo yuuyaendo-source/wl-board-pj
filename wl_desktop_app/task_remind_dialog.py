@@ -247,11 +247,12 @@ def show_task_remind_dialog(
             _dialog_instance = None
 
     cfg = load_config()
-    from task_remind_client import post_shown_all, notify_dialog_closed
-    if not post_shown_all(cfg, items, slot):
+    from task_remind_client import mark_slot_shown_today, notify_dialog_closed, post_shown_slot
+    if not post_shown_slot(cfg, slot):
         notify_dialog_closed()
-        print("[task_remind] shown API 失敗 — リマインドをスキップ", flush=True)
+        print("[task_remind] shown_slot API 失敗 — リマインドをスキップ", flush=True)
         return None
+    mark_slot_shown_today(cfg, slot)
 
     summary_text = (summary or LIST_SUMMARY_MESSAGE).strip()
     count = len(items)

@@ -66,6 +66,11 @@ class PendingResponse(BaseModel):
     items: list[PendingItem]
 
 
+class ShownSlotBody(BaseModel):
+    """スロット単位で Today 全タスクを表示済みにする（一括リマインド用）。"""
+    slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+
+
 class ShownBody(BaseModel):
     placement_id: int
     note_id: int
@@ -123,10 +128,9 @@ async def _logged_note_ids(
 async def get_pending_task_reminders(
     user_id: int,
     slot: str = Query(..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"),
-    max_items: int = Query(20, ge=1, le=30),
     db: AsyncSession = Depends(get_db),
 ):
-    """指定スロットでまだ表示していない Today タスクを返す。"""
+    """指定スロットでまだ表示していない Today タスクをすべて返す（一括リマインド）。"""
     await _ensure_user(user_id, db)
     remind_date = _jst_today()
     logged = await _logged_note_ids(user_id, remind_date, slot, db)
@@ -144,8 +148,6 @@ async def get_pending_task_reminders(
                 message=_remind_message(title),
             )
         )
-        if len(items) >= max_items:
-            break
     summary = LIST_SUMMARY_MESSAGE
     if len(items) > 1:
         summary = f"{LIST_SUMMARY_MESSAGE}（{len(items)}件）"
@@ -156,6 +158,37 @@ async def get_pending_task_reminders(
         summary=summary,
         items=items,
     )
+
+
+@router.post("/{user_id}/task_reminders/shown_slot")
+async def mark_task_reminder_slot_shown(
+    user_id: int,
+    body: ShownSlotBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """このスロットで Today の全タスクを表示済みにする（同日同スロットの再送を防ぐ）。"""
+    await _ensure_user(user_id, db)
+    remind_date = _jst_today()
+    logged = await _logged_note_ids(user_id, remind_date, body.slot, db)
+    placements = await _today_placements(user_id, db)
+    marked = 0
+    for p, _n in placements:
+        if p.note_id in logged:
+            continue
+        db.add(
+            TaskReminderLog(
+                user_id=user_id,
+                note_id=p.note_id,
+                placement_id=p.id,
+                remind_date=remind_date,
+                slot=body.slot,
+                action=None,
+            )
+        )
+        logged.add(p.note_id)
+        marked += 1
+    await db.flush()
+    return {"ok": True, "marked": marked}
 
 
 @router.post("/{user_id}/task_reminders/shown")

@@ -130,8 +130,6 @@ def fetch_pending(cfg: dict, slot: str) -> tuple[list[dict], str]:
     owner = _owner_id(cfg)
     if not base or owner is None:
         return [], ""
-    max_items = int(cfg.get("task_remind_max_per_slot") or 20)
-    max_items = max(1, min(30, max_items))
     url = _personal_api_url(cfg, owner, "task_reminders/pending")
     try:
         from security import validate_http_url
@@ -143,11 +141,7 @@ def fetch_pending(cfg: dict, slot: str) -> tuple[list[dict], str]:
         log_warn(f"[task_remind] URL 検証エラー: {e}")
         return [], ""
     try:
-        r = requests.get(
-            url,
-            params={"slot": slot, "max_items": max_items},
-            timeout=10,
-        )
+        r = requests.get(url, params={"slot": slot}, timeout=10)
         if r.status_code != 200:
             log_warn(f"[task_remind] pending HTTP {r.status_code}: {r.text[:200]}")
             return [], ""
@@ -159,14 +153,45 @@ def fetch_pending(cfg: dict, slot: str) -> tuple[list[dict], str]:
         return [], ""
 
 
-def post_shown_all(cfg: dict, items: list[dict], slot: str) -> bool:
-    """一覧表示前に全タスクを shown 登録。1件でも失敗したら False。"""
-    if not items:
+def _slots_shown_record(cfg: dict) -> dict:
+    rec = cfg.get("task_remind_slots_shown")
+    if not isinstance(rec, dict):
+        return {"date": "", "slots": []}
+    return {"date": str(rec.get("date") or ""), "slots": list(rec.get("slots") or [])}
+
+
+def slot_already_shown_today(cfg: dict, slot: str) -> bool:
+    """このスロットは今日すでにリマインド表示済みか（クライアント側ガード）。"""
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    rec = _slots_shown_record(cfg)
+    return rec.get("date") == today and slot in rec.get("slots", [])
+
+
+def mark_slot_shown_today(cfg: dict, slot: str) -> None:
+    """スロット表示済みを config に記録（翌日・別スロットはリセット）。"""
+    from config_loader import save_config
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    rec = _slots_shown_record(cfg)
+    slots = list(rec.get("slots") or []) if rec.get("date") == today else []
+    if slot not in slots:
+        slots.append(slot)
+    cfg["task_remind_slots_shown"] = {"date": today, "slots": slots}
+    save_config(cfg)
+
+
+def post_shown_slot(cfg: dict, slot: str) -> bool:
+    """Today 全タスクをこのスロットで表示済みにする（サーバ側一括登録）。"""
+    base = _api_base(cfg)
+    owner = _owner_id(cfg)
+    if not base or owner is None or requests is None:
         return False
-    for item in items:
-        if not post_shown(cfg, item, slot):
-            return False
-    return True
+    url = _personal_api_url(cfg, owner, "task_reminders/shown_slot")
+    try:
+        r = requests.post(url, json={"slot": slot}, timeout=15)
+        return r.status_code == 200
+    except Exception as e:
+        log_warn(f"[task_remind] shown_slot POST 失敗: {e}")
+        return False
 
 
 def post_shown(cfg: dict, item: dict, slot: str) -> bool:
@@ -273,6 +298,9 @@ def start_task_remind_poll(
                 slot = active_slot_now(cfg)
                 if not slot:
                     last_diag = ""
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if slot_already_shown_today(cfg, slot):
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 with _showing_lock:
