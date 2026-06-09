@@ -119,26 +119,29 @@ def _personal_api_url(cfg: dict, owner: int, suffix: str) -> str:
     return f"{base}/api/personal/{owner}/{suffix}"
 
 
-def fetch_pending(cfg: dict, slot: str) -> list[dict]:
-    """pending API を呼び、items リストを返す。失敗時は []。"""
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+
+def fetch_pending(cfg: dict, slot: str) -> tuple[list[dict], str]:
+    """pending API を呼び、(items, summary) を返す。失敗時は ([], '')。"""
     if requests is None:
-        return []
+        return [], ""
     base = _api_base(cfg)
     owner = _owner_id(cfg)
     if not base or owner is None:
-        return []
-    max_items = int(cfg.get("task_remind_max_per_slot") or 2)
-    max_items = max(1, min(10, max_items))
+        return [], ""
+    max_items = int(cfg.get("task_remind_max_per_slot") or 20)
+    max_items = max(1, min(30, max_items))
     url = _personal_api_url(cfg, owner, "task_reminders/pending")
     try:
         from security import validate_http_url
         ok, err = validate_http_url(url, cfg, purpose="task_remind")
         if not ok:
             log_warn(f"[task_remind] URL 拒否: {err}")
-            return []
+            return [], ""
     except Exception as e:
         log_warn(f"[task_remind] URL 検証エラー: {e}")
-        return []
+        return [], ""
     try:
         r = requests.get(
             url,
@@ -147,12 +150,23 @@ def fetch_pending(cfg: dict, slot: str) -> list[dict]:
         )
         if r.status_code != 200:
             log_warn(f"[task_remind] pending HTTP {r.status_code}: {r.text[:200]}")
-            return []
+            return [], ""
         data = r.json()
-        return list(data.get("items") or [])
+        summary = (data.get("summary") or LIST_SUMMARY_MESSAGE).strip()
+        return list(data.get("items") or []), summary
     except Exception as e:
         log_warn(f"[task_remind] pending 取得失敗: {e}")
-        return []
+        return [], ""
+
+
+def post_shown_all(cfg: dict, items: list[dict], slot: str) -> bool:
+    """一覧表示前に全タスクを shown 登録。1件でも失敗したら False。"""
+    if not items:
+        return False
+    for item in items:
+        if not post_shown(cfg, item, slot):
+            return False
+    return True
 
 
 def post_shown(cfg: dict, item: dict, slot: str) -> bool:
@@ -212,22 +226,22 @@ def pause_reminders_today(cfg: Optional[dict] = None) -> None:
 
 def start_task_remind_poll(
     config_getter: Callable[[], dict],
-    on_remind: Callable[[dict, str], None],
+    on_remind: Callable[[list, str, str], None],
     tk_master=None,
 ) -> bool:
-    """ポーリングスレッドを開始。on_remind(item, slot) はバックグラウンドから呼ばれる。"""
+    """ポーリングスレッドを開始。on_remind(items, slot) はバックグラウンドから呼ばれる。"""
     global _thread
     if _thread is not None and _thread.is_alive():
         return False
 
-    def _dispatch(item: dict, slot: str) -> None:
+    def _dispatch(items: list, slot: str, summary: str) -> None:
         if tk_master is not None:
             try:
-                tk_master.after(0, lambda i=item, s=slot: on_remind(i, s))
+                tk_master.after(0, lambda its=items, s=slot, sm=summary: on_remind(its, s, sm))
                 return
             except Exception:
                 pass
-        on_remind(item, slot)
+        on_remind(items, slot, summary)
 
     def loop():
         global _showing
@@ -265,7 +279,7 @@ def start_task_remind_poll(
                     if _showing:
                         time.sleep(POLL_INTERVAL_SEC)
                         continue
-                items = fetch_pending(cfg, slot)
+                items, summary = fetch_pending(cfg, slot)
                 if not items:
                     diag = f"slot={slot} pending=0 (Today レーンに未通知タスクがあるか確認)"
                     if diag != last_diag:
@@ -273,12 +287,14 @@ def start_task_remind_poll(
                         last_diag = diag
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
-                item = items[0]
                 with _showing_lock:
                     _showing = True
                 last_diag = ""
-                log_info(f"[task_remind] リマインド表示: {item.get('title')} slot={slot}")
-                _dispatch(item, slot)
+                titles = ", ".join((it.get("title") or "?")[:24] for it in items[:3])
+                if len(items) > 3:
+                    titles += f" ほか{len(items) - 3}件"
+                log_info(f"[task_remind] リマインド一覧表示 ({len(items)}件) slot={slot}: {titles}")
+                _dispatch(items, slot, summary)
             except Exception as e:
                 log_warn(f"[task_remind] poll エラー: {e}")
             time.sleep(POLL_INTERVAL_SEC)

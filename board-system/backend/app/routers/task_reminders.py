@@ -44,6 +44,9 @@ def _short_title(content: str) -> str:
     return text[: MAX_TITLE_LEN - 1] + "…"
 
 
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+
 def _remind_message(title: str) -> str:
     return f"「{title}」、進みましたか？"
 
@@ -59,6 +62,7 @@ class PendingResponse(BaseModel):
     owner_id: int
     slot: str
     remind_date: str
+    summary: str = LIST_SUMMARY_MESSAGE
     items: list[PendingItem]
 
 
@@ -119,7 +123,7 @@ async def _logged_note_ids(
 async def get_pending_task_reminders(
     user_id: int,
     slot: str = Query(..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"),
-    max_items: int = Query(2, ge=1, le=10),
+    max_items: int = Query(20, ge=1, le=30),
     db: AsyncSession = Depends(get_db),
 ):
     """指定スロットでまだ表示していない Today タスクを返す。"""
@@ -142,10 +146,14 @@ async def get_pending_task_reminders(
         )
         if len(items) >= max_items:
             break
+    summary = LIST_SUMMARY_MESSAGE
+    if len(items) > 1:
+        summary = f"{LIST_SUMMARY_MESSAGE}（{len(items)}件）"
     return PendingResponse(
         owner_id=user_id,
         slot=slot,
         remind_date=remind_date,
+        summary=summary,
         items=items,
     )
 

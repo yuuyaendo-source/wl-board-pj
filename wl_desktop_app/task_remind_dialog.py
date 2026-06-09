@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""タスクリマインド用の小さな応答ダイアログ（継続 / 完了 / 相談）。"""
+"""タスクリマインド用ダイアログ（Today 一覧・タスクごとに継続/完了/相談）。"""
 from __future__ import annotations
 
 import os
@@ -14,29 +14,38 @@ except ImportError as e:
 
 from config_loader import is_feature_enabled, load_config
 
-_dialog_instance: Optional["TaskRemindDialog"] = None
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+_dialog_instance: Optional["TaskRemindListDialog"] = None
 
 
-class TaskRemindDialog(ctk.CTkToplevel):
-    WIDTH = 360
-    HEIGHT = 200
+class TaskRemindListDialog(ctk.CTkToplevel):
+    WIDTH = 400
+    MAX_HEIGHT = 520
+    ROW_HEIGHT = 72
 
     def __init__(
         self,
         master=None,
         *,
-        item: dict,
+        items: list[dict],
         slot: str,
-        on_ack: Callable[[str], None],
+        summary: str,
+        on_ack: Callable[[dict, str], None],
     ):
         super().__init__(master)
-        self._item = item
+        self._items = list(items)
         self._slot = slot
+        self._summary = summary
         self._on_ack = on_ack
-        self._closed = False
+        self._row_frames: dict[int, ctk.CTkFrame] = {}
+        self._acked: set[int] = set()
         self.title("タスクリマインド")
-        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
-        self.resizable(False, False)
+        est_h = min(self.MAX_HEIGHT, 140 + len(self._items) * self.ROW_HEIGHT)
+        self.geometry(f"{self.WIDTH}x{est_h}")
+        self.minsize(self.WIDTH, 200)
+        self.maxsize(self.WIDTH, self.MAX_HEIGHT)
+        self.resizable(True, True)
         self.attributes("-topmost", True)
         try:
             base = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +56,7 @@ class TaskRemindDialog(ctk.CTkToplevel):
             pass
         self._build_ui()
         self._position_near(master)
-        self.protocol("WM_DELETE_WINDOW", self._on_dismiss)
+        self.protocol("WM_DELETE_WINDOW", self._on_dismiss_all_continue)
         self.lift()
         self.focus_force()
 
@@ -56,8 +65,9 @@ class TaskRemindDialog(ctk.CTkToplevel):
             self.update_idletasks()
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
+            h = self.winfo_height()
             x = sw - self.WIDTH - 24
-            y = sh - self.HEIGHT - 80
+            y = sh - h - 80
             self.geometry(f"+{x}+{y}")
             return
         try:
@@ -73,62 +83,103 @@ class TaskRemindDialog(ctk.CTkToplevel):
 
     def _build_ui(self) -> None:
         pad = 12
-        msg = self._item.get("message") or self._item.get("title") or "タスクの確認"
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=pad, pady=(pad, 4))
+        count = len(self._items)
         ctk.CTkLabel(
-            self,
-            text="Today のタスク",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            header,
+            text=f"Today のタスク（{count}件）",
+            font=ctk.CTkFont(size=13, weight="bold"),
             anchor="w",
-        ).pack(fill="x", padx=pad, pady=(pad, 4))
+        ).pack(fill="x")
         ctk.CTkLabel(
-            self,
-            text=msg,
+            header,
+            text=self._summary,
             wraplength=self.WIDTH - pad * 2,
             justify="left",
             anchor="w",
-        ).pack(fill="x", padx=pad, pady=(0, 8))
+            text_color=("gray25", "gray75"),
+        ).pack(fill="x", pady=(4, 0))
 
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(fill="x", padx=pad, pady=(0, pad))
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(4, pad))
+
+        show_consult = is_feature_enabled("brainstorm")
+        for item in self._items:
+            self._add_task_row(scroll, item, show_consult)
+
+        ctk.CTkButton(
+            self,
+            text="閉じる（未操作は継続）",
+            command=self._on_dismiss_all_continue,
+            fg_color=("gray70", "gray35"),
+            hover_color=("gray60", "gray45"),
+        ).pack(fill="x", padx=pad, pady=(0, pad))
+
+    def _add_task_row(self, parent, item: dict, show_consult: bool) -> None:
+        note_id = item["note_id"]
+        row = ctk.CTkFrame(parent, corner_radius=8)
+        row.pack(fill="x", pady=(0, 8))
+        self._row_frames[note_id] = row
+
+        title = item.get("title") or "（無題）"
+        ctk.CTkLabel(
+            row,
+            text=title,
+            wraplength=self.WIDTH - 80,
+            justify="left",
+            anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(fill="x", padx=10, pady=(8, 4))
+
+        btn_row = ctk.CTkFrame(row, fg_color="transparent")
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
         ctk.CTkButton(
             btn_row,
             text="継続",
-            width=90,
-            command=lambda: self._finish("continue"),
+            width=72,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            command=lambda i=item: self._on_action(i, "continue"),
             fg_color=("#5a9a5c", "#2e7d32"),
-        ).pack(side="left", padx=(0, 6))
+        ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
             btn_row,
             text="完了",
-            width=90,
-            command=lambda: self._finish("done"),
+            width=72,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            command=lambda i=item: self._on_action(i, "done"),
             fg_color=("#3d7ea6", "#1565c0"),
-        ).pack(side="left", padx=(0, 6))
-        if is_feature_enabled("brainstorm"):
+        ).pack(side="left", padx=(0, 4))
+        if show_consult:
             ctk.CTkButton(
                 btn_row,
                 text="相談",
-                width=90,
-                command=self._on_consult,
+                width=72,
+                height=28,
+                font=ctk.CTkFont(size=12),
+                command=lambda i=item: self._on_consult(i),
                 fg_color=("#7b5ea7", "#5e35b1"),
             ).pack(side="left")
 
-    def _finish(self, action: str) -> None:
-        if self._closed:
+    def _on_action(self, item: dict, action: str) -> None:
+        note_id = item["note_id"]
+        if note_id in self._acked:
             return
-        self._closed = True
+        self._acked.add(note_id)
         try:
-            self._on_ack(action)
+            self._on_ack(item, action)
         except Exception as e:
             print(f"[task_remind] ack callback error: {e}", flush=True)
-        self._close()
+        self._remove_row(note_id)
+        if not self._row_frames:
+            self._close()
 
-    def _on_consult(self) -> None:
-        if self._closed:
-            return
-        title = self._item.get("title") or ""
-        note_id = self._item.get("note_id")
-        self._finish("continue")
+    def _on_consult(self, item: dict) -> None:
+        title = item.get("title") or ""
+        note_id = item.get("note_id")
+        self._on_action(item, "continue")
         try:
             from chat_panel import open_chat_panel_with_task
             open_chat_panel_with_task(
@@ -139,9 +190,24 @@ class TaskRemindDialog(ctk.CTkToplevel):
         except Exception as e:
             print(f"[task_remind] consult open failed: {e}", flush=True)
 
-    def _on_dismiss(self) -> None:
-        if not self._closed:
-            self._finish("continue")
+    def _remove_row(self, note_id: int) -> None:
+        frame = self._row_frames.pop(note_id, None)
+        if frame is not None:
+            try:
+                frame.destroy()
+            except Exception:
+                pass
+
+    def _on_dismiss_all_continue(self) -> None:
+        for item in list(self._items):
+            nid = item["note_id"]
+            if nid not in self._acked:
+                self._acked.add(nid)
+                try:
+                    self._on_ack(item, "continue")
+                except Exception:
+                    pass
+        self._close()
 
     def _close(self) -> None:
         global _dialog_instance
@@ -164,12 +230,15 @@ class TaskRemindDialog(ctk.CTkToplevel):
 
 def show_task_remind_dialog(
     master,
-    item: dict,
+    items: list[dict],
     slot: str,
-    on_ack: Callable[[str], None],
-) -> Optional[TaskRemindDialog]:
-    """リマインドダイアログを表示（シングルトン）。"""
+    on_ack: Callable[[dict, str], None],
+    summary: Optional[str] = None,
+) -> Optional[TaskRemindListDialog]:
+    """Today タスク一覧のリマインドダイアログを表示（シングルトン）。"""
     global _dialog_instance
+    if not items:
+        return None
     if _dialog_instance is not None:
         try:
             _dialog_instance.lift()
@@ -178,11 +247,16 @@ def show_task_remind_dialog(
             _dialog_instance = None
 
     cfg = load_config()
-    from task_remind_client import post_shown, notify_dialog_closed
-    if not post_shown(cfg, item, slot):
+    from task_remind_client import post_shown_all, notify_dialog_closed
+    if not post_shown_all(cfg, items, slot):
         notify_dialog_closed()
         print("[task_remind] shown API 失敗 — リマインドをスキップ", flush=True)
         return None
+
+    summary_text = (summary or LIST_SUMMARY_MESSAGE).strip()
+    count = len(items)
+    if count > 1 and "件" not in summary_text:
+        summary_text = f"{summary_text}\n（{count}件）"
 
     def _show_bubble():
         try:
@@ -192,9 +266,7 @@ def show_task_remind_dialog(
             if not is_feature_enabled("linko_avatar"):
                 return
             import linko_avatar
-            msg = item.get("message") or ""
-            if msg:
-                linko_avatar.say(msg, duration_sec=8, lipsync=False)
+            linko_avatar.say(summary_text.split("\n")[0], duration_sec=10, lipsync=False)
         except Exception:
             pass
 
@@ -203,21 +275,24 @@ def show_task_remind_dialog(
             from notifications import are_enabled, show_toast
             if not are_enabled():
                 return
-            title = item.get("title") or "タスク"
+            titles = "、".join((it.get("title") or "")[:20] for it in items[:5])
+            if len(items) > 5:
+                titles += f" ほか{len(items) - 5}件"
             show_toast(
                 "Wonder Linko",
-                (item.get("message") or title) + "\n（ミニポート横で選択してください）",
-                duration_sec=10,
+                f"{LIST_SUMMARY_MESSAGE}\n{titles}\n（横のパネルで選択してください）",
+                duration_sec=12,
             )
         except Exception:
             pass
 
     _show_toast()
     _show_bubble()
-    _dialog_instance = TaskRemindDialog(
+    _dialog_instance = TaskRemindListDialog(
         master=master,
-        item=item,
+        items=items,
         slot=slot,
+        summary=summary_text,
         on_ack=on_ack,
     )
     return _dialog_instance

@@ -384,9 +384,9 @@ def _pause_task_remind_today(icon=None, item=None):
         log_info(f"[task_remind] pause failed: {e}")
 
 
-def _on_task_remind_ui(item, slot):
-    """メインスレッド: リマインドダイアログを表示。"""
-    def _ack(action: str):
+def _on_task_remind_ui(items, slot, summary=""):
+    """メインスレッド: Today タスク一覧のリマインドダイアログを表示。"""
+    def _ack(item, action: str):
         try:
             from task_remind_client import post_ack
             cfg = load_config()
@@ -402,7 +402,7 @@ def _on_task_remind_ui(item, slot):
 
     try:
         from task_remind_dialog import show_task_remind_dialog
-        show_task_remind_dialog(_miniport_window, item, slot, _ack)
+        show_task_remind_dialog(_miniport_window, items, slot, _ack, summary=summary or None)
     except Exception as e:
         log_info(f"[task_remind] dialog failed: {e}")
         try:
