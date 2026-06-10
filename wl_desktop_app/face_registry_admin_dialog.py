@@ -26,8 +26,8 @@ _voice_capture_instance: Optional["VoiceCaptureDialog"] = None
 class FaceCaptureDialog(ctk.CTkToplevel):
     """Webカメラプレビューから顔画像を撮影する。"""
 
-    PREVIEW_W = 640
-    PREVIEW_H = 360
+    PREVIEW_W = 520
+    PREVIEW_H = 293
 
     def __init__(self, master=None, *, person_name: str = "", on_captured: Optional[Callable[[str], None]] = None):
         super().__init__(master)
@@ -38,19 +38,17 @@ class FaceCaptureDialog(ctk.CTkToplevel):
         self._ctk_img = None
 
         self.title(f"顔を撮影 — {person_name or '社員'}")
-        self.geometry(f"{self.PREVIEW_W + 40}x{self.PREVIEW_H + 140}")
-        self.resizable(False, False)
+        win_w = self.PREVIEW_W + 48
+        win_h = 520
+        self.geometry(f"{win_w}x{win_h}")
+        self.minsize(400, 420)
+        self.resizable(True, True)
         self.attributes("-topmost", True)
 
         pad = 12
-        self._status = ctk.CTkLabel(self, text="カメラを起動しています…", anchor="w")
-        self._status.pack(fill="x", padx=pad, pady=(pad, 4))
-
-        self._preview = ctk.CTkLabel(self, text="", width=self.PREVIEW_W, height=self.PREVIEW_H, fg_color=("#222", "#111"))
-        self._preview.pack(padx=pad, pady=(0, 8))
-
+        # 高 DPI でもボタンが隠れないよう、先に下部を確保する
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(fill="x", padx=pad, pady=(0, pad))
+        btn_row.pack(side="bottom", fill="x", padx=pad, pady=(0, pad))
         self._btn_capture = ctk.CTkButton(btn_row, text="撮影して登録", command=self._on_capture, state="disabled")
         self._btn_capture.pack(side="left")
         self._btn_file = ctk.CTkButton(
@@ -64,6 +62,18 @@ class FaceCaptureDialog(ctk.CTkToplevel):
         ctk.CTkButton(btn_row, text="キャンセル", command=self._on_close, fg_color="transparent", border_width=1).pack(
             side="right"
         )
+
+        self._preview = ctk.CTkLabel(
+            self,
+            text="",
+            width=self.PREVIEW_W,
+            height=self.PREVIEW_H,
+            fg_color=("#222", "#111"),
+        )
+        self._preview.pack(fill="both", expand=True, padx=pad, pady=(4, 4))
+
+        self._status = ctk.CTkLabel(self, text="カメラを起動しています…", anchor="w", wraplength=self.PREVIEW_W)
+        self._status.pack(side="top", fill="x", padx=pad, pady=(pad, 4))
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._start_camera)
