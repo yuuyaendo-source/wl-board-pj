@@ -152,6 +152,64 @@ def update_face(cfg: dict, person_id: str, face_data_url: str) -> None:
     )
 
 
+def delete_face(cfg: dict, person_id: str) -> None:
+    _request(cfg, "DELETE", f"/{quote(str(person_id), safe='')}/face")
+
+
+def delete_voice(cfg: dict, person_id: str) -> None:
+    _request(cfg, "DELETE", f"/{quote(str(person_id), safe='')}/voice")
+
+
+def fetch_face_image_bytes(cfg: dict, person_id: str) -> bytes:
+    if requests is None:
+        raise FaceRegistryError("requests が利用できません")
+    url = face_image_url(cfg, person_id)
+    try:
+        from security import validate_http_url
+
+        ok, err = validate_http_url(url, cfg, purpose="face_registry")
+        if not ok:
+            raise FaceRegistryError(err or "URL が許可されていません")
+    except FaceRegistryError:
+        raise
+    except Exception as e:
+        raise FaceRegistryError(f"URL 検証エラー: {e}") from e
+    try:
+        r = requests.get(url, headers=_admin_headers(cfg), timeout=30)
+    except requests.RequestException as e:
+        raise FaceRegistryError(f"通信エラー: {e}") from e
+    if r.status_code == 404:
+        raise FaceRegistryError("顔画像が登録されていません", 404)
+    if r.status_code >= 400:
+        raise FaceRegistryError(f"取得に失敗しました (HTTP {r.status_code})", r.status_code)
+    return bytes(r.content)
+
+
+def fetch_voice_audio_bytes(cfg: dict, person_id: str) -> bytes:
+    if requests is None:
+        raise FaceRegistryError("requests が利用できません")
+    url = f"{_api_root(cfg)}/{quote(str(person_id), safe='')}/voice"
+    try:
+        from security import validate_http_url
+
+        ok, err = validate_http_url(url, cfg, purpose="face_registry")
+        if not ok:
+            raise FaceRegistryError(err or "URL が許可されていません")
+    except FaceRegistryError:
+        raise
+    except Exception as e:
+        raise FaceRegistryError(f"URL 検証エラー: {e}") from e
+    try:
+        r = requests.get(url, headers=_admin_headers(cfg), timeout=30)
+    except requests.RequestException as e:
+        raise FaceRegistryError(f"通信エラー: {e}") from e
+    if r.status_code == 404:
+        raise FaceRegistryError("音声が登録されていません", 404)
+    if r.status_code >= 400:
+        raise FaceRegistryError(f"取得に失敗しました (HTTP {r.status_code})", r.status_code)
+    return bytes(r.content)
+
+
 def update_voice(cfg: dict, person_id: str, voice_data_url: str) -> None:
     """音声サンプル（WAV data URL）を登録。将来の話者照合用。"""
     _request(

@@ -2,8 +2,10 @@
 """社員・顔の管理ダイアログ（linko-system /manager 相当・管理者 PC 用）。"""
 from __future__ import annotations
 
+import io
 import os
 import sys
+import tempfile
 import threading
 from typing import Callable, Optional
 
@@ -51,6 +53,14 @@ class FaceCaptureDialog(ctk.CTkToplevel):
         btn_row.pack(fill="x", padx=pad, pady=(0, pad))
         self._btn_capture = ctk.CTkButton(btn_row, text="撮影して登録", command=self._on_capture, state="disabled")
         self._btn_capture.pack(side="left")
+        self._btn_file = ctk.CTkButton(
+            btn_row,
+            text="画像ファイルを選択",
+            command=self._on_pick_file,
+            fg_color="transparent",
+            border_width=1,
+        )
+        self._btn_file.pack(side="left", padx=(8, 0))
         ctk.CTkButton(btn_row, text="キャンセル", command=self._on_close, fg_color="transparent", border_width=1).pack(
             side="right"
         )
@@ -63,16 +73,51 @@ class FaceCaptureDialog(ctk.CTkToplevel):
 
         if not is_available():
             self._status.configure(
-                text="Webカメラが使えません。Windows で opencv-python をインストールし、カメラを許可してください。"
+                text="Webカメラが使えません。「画像ファイルを選択」から登録するか、opencv-python / Pillow を確認してください。"
             )
             return
         self._cap = open_camera()
         if self._cap is None:
-            self._status.configure(text="カメラを開けませんでした。他のアプリで使用中か、デバイスを確認してください。")
+            self._status.configure(
+                text="カメラを開けませんでした。他アプリの使用を終了するか、「画像ファイルを選択」で登録してください。"
+            )
             return
         self._status.configure(text="顔を正面に向けて「撮影して登録」を押してください。")
         self._btn_capture.configure(state="normal")
         self._tick_preview()
+
+    def _on_pick_file(self) -> None:
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="顔画像を選択",
+            filetypes=[("画像", "*.jpg *.jpeg *.png *.webp"), ("すべて", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+            if not raw:
+                self._status.configure(text="画像ファイルが空です。")
+                return
+            ext = os.path.splitext(path)[1].lower()
+            mime = "image/jpeg"
+            if ext == ".png":
+                mime = "image/png"
+            elif ext == ".webp":
+                mime = "image/webp"
+            import base64
+
+            b64 = base64.b64encode(raw).decode("ascii")
+            data_url = f"data:{mime};base64,{b64}"
+        except Exception as e:
+            self._status.configure(text=f"画像の読み込みに失敗: {e}")
+            return
+        if self._on_captured:
+            self._on_captured(data_url)
+        self._on_close()
 
     def _tick_preview(self) -> None:
         if not self.winfo_exists():
@@ -360,27 +405,60 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             anchor="w",
         ).pack(fill="x", padx=10, pady=(0, 6))
 
-        btns = ctk.CTkFrame(frame, fg_color="transparent")
-        btns.pack(fill="x", padx=10, pady=(0, 8))
+        btns1 = ctk.CTkFrame(frame, fg_color="transparent")
+        btns1.pack(fill="x", padx=10, pady=(0, 4))
         ctk.CTkButton(
-            btns,
+            btns1,
             text="顔を撮影" if not has_face else "顔を変更",
-            width=100,
+            width=88,
             command=lambda i=pid, n=name: self._open_capture(i, n),
         ).pack(side="left")
         ctk.CTkButton(
-            btns,
-            text="音声を録音" if not has_voice else "音声を変更",
-            width=100,
-            command=lambda i=pid, n=name: self._open_voice_capture(i, n),
+            btns1,
+            text="顔を確認",
+            width=80,
+            state="normal" if has_face else "disabled",
+            command=lambda i=pid, n=name: self._view_face(i, n),
         ).pack(side="left", padx=(6, 0))
-        ctk.CTkButton(btns, text="情報を編集", width=90, command=lambda i=pid: self._open_edit(i)).pack(
-            side="left", padx=(6, 0)
-        )
         ctk.CTkButton(
-            btns,
-            text="削除",
-            width=72,
+            btns1,
+            text="顔を削除",
+            width=80,
+            state="normal" if has_face else "disabled",
+            fg_color=("#4a3030", "#3a2525"),
+            hover_color=("#5a3838", "#4a3030"),
+            command=lambda i=pid, n=name: self._delete_face(i, n),
+        ).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(
+            btns1,
+            text="音声を録音" if not has_voice else "音声を変更",
+            width=88,
+            command=lambda i=pid, n=name: self._open_voice_capture(i, n),
+        ).pack(side="left", padx=(12, 0))
+        ctk.CTkButton(
+            btns1,
+            text="音声を確認",
+            width=80,
+            state="normal" if has_voice else "disabled",
+            command=lambda i=pid, n=name: self._play_voice(i, n),
+        ).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(
+            btns1,
+            text="音声を削除",
+            width=80,
+            state="normal" if has_voice else "disabled",
+            fg_color=("#4a3030", "#3a2525"),
+            hover_color=("#5a3838", "#4a3030"),
+            command=lambda i=pid, n=name: self._delete_voice(i, n),
+        ).pack(side="left", padx=(6, 0))
+
+        btns2 = ctk.CTkFrame(frame, fg_color="transparent")
+        btns2.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkButton(btns2, text="情報を編集", width=90, command=lambda i=pid: self._open_edit(i)).pack(side="left")
+        ctk.CTkButton(
+            btns2,
+            text="社員を削除",
+            width=88,
             fg_color=("#5a2a2a", "#3d1f1f"),
             hover_color=("#7a3535", "#552828"),
             command=lambda i=pid, n=name: self._on_delete(i, n),
@@ -404,7 +482,13 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             except FaceRegistryError as e:
                 self.after(0, lambda: self._show_error("顔登録", str(e)))
                 return
-            self.after(0, lambda: self._show_info("顔登録", f"{person_name} の顔を登録しました。"))
+            self.after(
+                0,
+                lambda: self._show_info(
+                    "顔登録",
+                    f"{person_name} の顔を登録しました。\n「顔を確認」で画像を表示できます。",
+                ),
+            )
             self.after(0, self._reload_list)
 
         _capture_instance = FaceCaptureDialog(self, person_name=person_name, on_captured=_upload)
@@ -427,10 +511,111 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             except FaceRegistryError as e:
                 self.after(0, lambda: self._show_error("音声登録", str(e)))
                 return
-            self.after(0, lambda: self._show_info("音声登録", f"{person_name} の音声を登録しました。"))
+            self.after(
+                0,
+                lambda: self._show_info(
+                    "音声登録",
+                    f"{person_name} の音声を登録しました。\n「音声を確認」で再生できます。",
+                ),
+            )
             self.after(0, self._reload_list)
 
         _voice_capture_instance = VoiceCaptureDialog(self, person_name=person_name, on_captured=_upload)
+
+    def _view_face(self, person_id: str, person_name: str) -> None:
+        from face_registry_client import FaceRegistryError, fetch_face_image_bytes
+
+        try:
+            from PIL import Image
+        except ImportError:
+            self._show_error("顔を確認", "Pillow が利用できません。")
+            return
+        self._cfg = load_config()
+        try:
+            raw = fetch_face_image_bytes(self._cfg, person_id)
+            pil = Image.open(io.BytesIO(raw))
+        except FaceRegistryError as e:
+            self._show_error("顔を確認", str(e))
+            return
+        except Exception as e:
+            self._show_error("顔を確認", f"画像の表示に失敗: {e}")
+            return
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(f"顔画像 — {person_name}")
+        dlg.attributes("-topmost", True)
+        max_w = 480
+        w, h = pil.size
+        if w > max_w:
+            h = int(h * max_w / w)
+            w = max_w
+            pil = pil.resize((w, h), Image.Resampling.LANCZOS)
+        img = ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
+        lbl = ctk.CTkLabel(dlg, text="", image=img)
+        lbl.image = img  # type: ignore[attr-defined]
+        lbl.pack(padx=12, pady=12)
+        ctk.CTkButton(dlg, text="閉じる", command=dlg.destroy).pack(pady=(0, 12))
+
+    def _play_voice(self, person_id: str, person_name: str) -> None:
+        from face_registry_client import FaceRegistryError, fetch_voice_audio_bytes
+
+        if sys.platform != "win32":
+            self._show_error("音声を確認", "Windows でのみ再生できます。")
+            return
+        self._cfg = load_config()
+        try:
+            raw = fetch_voice_audio_bytes(self._cfg, person_id)
+        except FaceRegistryError as e:
+            self._show_error("音声を確認", str(e))
+            return
+        path = None
+        try:
+            import winsound
+
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(raw)
+                path = f.name
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            self._show_info("音声を確認", f"{person_name} の登録音声を再生しています。")
+        except Exception as e:
+            self._show_error("音声を確認", f"再生に失敗: {e}")
+        finally:
+            if path:
+                try:
+                    self.after(8000, lambda p=path: os.path.exists(p) and os.remove(p))
+                except Exception:
+                    pass
+
+    def _delete_face(self, person_id: str, person_name: str) -> None:
+        from tkinter import messagebox
+
+        if not messagebox.askyesno("顔を削除", f"「{person_name}」の顔画像を削除しますか？", parent=self):
+            return
+        from face_registry_client import FaceRegistryError, delete_face
+
+        self._cfg = load_config()
+        try:
+            delete_face(self._cfg, person_id)
+        except FaceRegistryError as e:
+            self._show_error("顔を削除", str(e))
+            return
+        self._show_info("顔を削除", f"{person_name} の顔画像を削除しました。")
+        self._reload_list()
+
+    def _delete_voice(self, person_id: str, person_name: str) -> None:
+        from tkinter import messagebox
+
+        if not messagebox.askyesno("音声を削除", f"「{person_name}」の音声サンプルを削除しますか？", parent=self):
+            return
+        from face_registry_client import FaceRegistryError, delete_voice
+
+        self._cfg = load_config()
+        try:
+            delete_voice(self._cfg, person_id)
+        except FaceRegistryError as e:
+            self._show_error("音声を削除", str(e))
+            return
+        self._show_info("音声を削除", f"{person_name} の音声を削除しました。")
+        self._reload_list()
 
     def _open_edit(self, person_id: str) -> None:
         person = next((x for x in self._persons if str(x.get("id")) == person_id), None)
@@ -438,24 +623,30 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             return
         dlg = ctk.CTkToplevel(self)
         dlg.title("社員情報を編集")
-        dlg.geometry("420x380")
+        dlg.geometry("440x460")
+        dlg.minsize(440, 400)
         dlg.attributes("-topmost", True)
         pad = 12
 
-        def field(label: str, initial: str = "") -> ctk.CTkEntry:
-            ctk.CTkLabel(dlg, text=label, anchor="w").pack(fill="x", padx=pad, pady=(6, 0))
-            e = ctk.CTkEntry(dlg)
-            e.pack(fill="x", padx=pad, pady=(2, 0))
+        body = ctk.CTkFrame(dlg, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        scroll = ctk.CTkScrollableFrame(body, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
+
+        def field(parent, label: str, initial: str = "") -> ctk.CTkEntry:
+            ctk.CTkLabel(parent, text=label, anchor="w").pack(fill="x", pady=(6, 0))
+            e = ctk.CTkEntry(parent)
+            e.pack(fill="x", pady=(2, 0))
             e.insert(0, initial)
             return e
 
-        e_name = field("表示名", person.get("name") or "")
-        e_email = field("メール", person.get("email") or "")
-        e_call = field("呼び名", person.get("call_name") or "")
-        e_kana = field("呼び名の読み", person.get("call_name_kana") or "")
-        e_dept = field("部署", person.get("department") or "")
+        e_name = field(scroll, "表示名", person.get("name") or "")
+        e_email = field(scroll, "メール", person.get("email") or "")
+        e_call = field(scroll, "呼び名", person.get("call_name") or "")
+        e_kana = field(scroll, "呼び名の読み", person.get("call_name_kana") or "")
+        e_dept = field(scroll, "部署", person.get("department") or "")
         staff_var = tk.BooleanVar(value=bool(person.get("is_staff", True)))
-        ctk.CTkCheckBox(dlg, text="社員", variable=staff_var).pack(anchor="w", padx=pad, pady=(8, 0))
+        ctk.CTkCheckBox(scroll, text="社員", variable=staff_var).pack(anchor="w", pady=(10, 0))
 
         def save() -> None:
             from face_registry_client import FaceRegistryError, update_person
@@ -476,12 +667,13 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
                 self._show_error("更新", str(e), parent=dlg)
                 return
             dlg.destroy()
+            self._show_info("更新", "社員情報を保存しました。")
             self._reload_list()
 
-        btns = ctk.CTkFrame(dlg, fg_color="transparent")
-        btns.pack(fill="x", padx=pad, pady=(16, pad))
-        ctk.CTkButton(btns, text="保存", command=save).pack(side="right")
-        ctk.CTkButton(btns, text="キャンセル", command=dlg.destroy, fg_color="transparent", border_width=1).pack(
+        footer = ctk.CTkFrame(dlg, fg_color="transparent")
+        footer.pack(fill="x", padx=pad, pady=pad)
+        ctk.CTkButton(footer, text="保存", width=100, command=save).pack(side="right")
+        ctk.CTkButton(footer, text="キャンセル", width=100, command=dlg.destroy, fg_color="transparent", border_width=1).pack(
             side="right", padx=(0, 8)
         )
 

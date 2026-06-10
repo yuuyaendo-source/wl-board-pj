@@ -26,19 +26,40 @@ def is_available() -> bool:
     return True
 
 
-def open_camera(device_index: int = 0) -> Any:
-    """VideoCapture を開く。失敗時は None。"""
-    if not is_available():
+def _try_open(device_index: int, backend: int) -> Any:
+    if cv2 is None:
         return None
-    cap = cv2.VideoCapture(device_index, cv2.CAP_DMSHOW)
+    cap = cv2.VideoCapture(device_index, backend)
     if not cap.isOpened():
         cap.release()
-        cap = cv2.VideoCapture(device_index)
-    if not cap.isOpened():
         return None
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    for _ in range(8):
+        cap.read()
+    ok, frame = cap.read()
+    if not ok or frame is None or getattr(frame, "size", 0) == 0:
+        cap.release()
+        return None
     return cap
+
+
+def open_camera(device_index: int = 0) -> Any:
+    """VideoCapture を開く。失敗時は None。複数デバイス・バックエンドを試す。"""
+    if not is_available():
+        return None
+    backends: list[int] = []
+    if sys.platform == "win32":
+        backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
+    else:
+        backends = [cv2.CAP_ANY]
+    indices = [device_index] + [i for i in range(4) if i != device_index]
+    for idx in indices:
+        for backend in backends:
+            cap = _try_open(idx, backend)
+            if cap is not None:
+                return cap
+    return None
 
 
 def release_camera(cap: Any) -> None:

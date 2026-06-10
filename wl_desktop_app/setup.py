@@ -93,7 +93,7 @@ build_exe_options = {
         "calendar_notify_client", "remind_notify",
         "face_registry_client", "face_registry_admin_dialog", "webcam_capture", "voice_capture",
     ],
-    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx", "cv2", "numpy", "sounddevice"],
+    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx", "PIL", "cv2", "numpy", "sounddevice"],
     "zip_exclude_packages": ["*"],
 }
 
