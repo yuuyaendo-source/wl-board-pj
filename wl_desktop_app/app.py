@@ -101,32 +101,12 @@ import notifications
 from postit_poll import start_postit_poll, fetch_summary_with_error
 import startup
 from version import __version__
-from update_checker import check_for_update, check_and_notify, download_and_install, wait_for_network
+from update_checker import check_and_notify, wait_for_network
 
-from app_log import setup_app_log, get_recent_log_lines, log_info
+from app_log import setup_app_log, log_info
 
 # ログ初期化（直近50行表示・更新チェックの GET 記録用）
 setup_app_log()
-
-
-def _show_recent_log(*args):
-    """トレイメニュー「最新ログを表示」: 直近50行のログをウィンドウで表示する。"""
-    def show():
-        import tkinter as tk
-        parent = _miniport_window
-        win = tk.Toplevel(parent) if parent else tk.Tk()
-        win.title("Wonder Linko - 最新ログ（直近50行）")
-        win.geometry("720x420")
-        text = tk.Text(win, wrap=tk.WORD, font=("Consolas", 9), state=tk.NORMAL)
-        text.pack(expand=True, fill=tk.BOTH, padx=4, pady=4)
-        lines = get_recent_log_lines()
-        content = "\n".join(lines) if lines else "(ログがまだありません。更新チェックや操作を行うとここに表示されます。)"
-        text.insert("1.0", content)
-        text.see(tk.END)
-        text.config(state=tk.DISABLED)
-        win.focus_force()
-
-    _schedule_on_main(show)
 
 
 _config = {}
@@ -312,24 +292,6 @@ def open_last_notification(*args):
     open_personal_mode()
 
 
-def toggle_startup(icon, item):
-    """PC起動時に自動で起動するかどうかをトグル。"""
-    if sys.platform != "win32":
-        notifications.show_toast("Wonder Rinko", "Windows のみ対応しています。", duration_sec=3)
-        return
-    currently = startup.is_startup_enabled()
-    ok = startup.set_startup_enabled(not currently)
-    if ok:
-        enabled = startup.is_startup_enabled()
-        notifications.show_toast(
-            "Wonder Rinko",
-            "PC起動時に自動で起動: " + ("ON" if enabled else "OFF"),
-            duration_sec=3,
-        )
-    else:
-        notifications.show_toast("Wonder Rinko", "設定の変更に失敗しました。", duration_sec=3)
-
-
 def _miniport_show():
     """ミニポートを表示（メインスレッドで実行する想定）。"""
     global _miniport_visible
@@ -364,24 +326,6 @@ def hide_miniport(icon=None, item=None):
     """トレイメニュー「ミニポートを非表示」."""
     if _miniport_window is not None:
         _miniport_window.after(0, _miniport_hide)
-
-
-def _pause_task_remind_today(icon=None, item=None):
-    """今日いっぱいタスクリマインドを止める。"""
-    global _config
-    try:
-        from task_remind_client import pause_reminders_today
-        _config = load_config()
-        pause_reminders_today(_config)
-        notifications.show_toast(
-            "Wonder Linko",
-            "今日はタスクリマインドを停止しました。明日から再開します。",
-            duration_sec=4,
-            force_show=True,
-        )
-    except Exception as e:
-        notifications.show_toast("Wonder Linko", "設定の保存に失敗しました。", duration_sec=3, force_show=True)
-        log_info(f"[task_remind] pause failed: {e}")
 
 
 def _on_calendar_remind_ui(items):
@@ -500,16 +444,6 @@ def open_settings(icon=None, item=None):
     _open()
 
 
-def toggle_miniport(icon=None, item=None):
-    """トレイメニュー「ミニポート」の表示/非表示トグル。"""
-    if _miniport_window is None:
-        return
-    if _miniport_visible:
-        _miniport_window.after(0, _miniport_hide)
-    else:
-        _miniport_window.after(0, _miniport_show)
-
-
 def quit_app(icon, item):
     """終了。"""
     if _miniport_window is not None:
@@ -548,94 +482,6 @@ def _test_postit_connection(*args):
                 duration_sec=5,
             )
     threading.Thread(target=do_test, daemon=True).start()
-
-
-def _set_tray_click_action(action):
-    """トレイアイコンクリックで開く先を設定して保存。"""
-    global _config
-    _config["tray_click_action"] = action
-    save_config(_config)
-    labels = {"postit": "付箋ボード", "personal": "パーソナル", "last_notification": "最後のお知らせ"}
-    notifications.show_toast(
-        "Wonder Rinko",
-        "アイコンクリックで開く: " + labels.get(action, action),
-        duration_sec=3,
-    )
-
-
-def _schedule_on_main(fn):
-    """メインスレッドで fn を実行する（ミニポートの after でスケジュール）。"""
-    if _miniport_window is not None:
-        try:
-            _miniport_window.after(0, fn)
-        except Exception:
-            fn()
-    else:
-        fn()
-
-
-def _on_update_check_result(has_update: bool, latest_version: str, download_url: str):
-    """更新チェック結果を処理。メインスレッドから呼ばれる想定。"""
-    if not has_update:
-        notifications.show_toast("Wonder Linko", "現在最新バージョンです。", duration_sec=2, force_show=True)
-        return
-    msg = (
-        f"新しいバージョン {latest_version} が利用可能です。\n"
-        "更新を開始すると、アプリは自動的に終了し、インストール画面が表示されます。\n\n"
-        "今すぐ更新しますか？"
-    )
-    try:
-        import ctypes
-        ret = ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 更新", 0x04)  # MB_YESNO
-        if ret != 6:  # IDYES
-            return
-    except Exception:
-        return
-
-    notifications.show_toast(
-        "Wonder Linko",
-        "更新を開始します。完了後、アプリは自動的に起動します。",
-        duration_sec=5,
-        force_show=True,
-    )
-
-    def _do_install():
-        ok, err = download_and_install(download_url)
-        if not ok:
-            try:
-                import ctypes
-                ctypes.windll.user32.MessageBoxW(None, "更新のインストールに失敗しました。\n\n" + err, "Wonder Linko", 0x10)
-            except Exception:
-                pass
-
-    if _miniport_window is not None:
-        _miniport_window.after(1000, _do_install)
-    else:
-        _do_install()
-
-
-def _check_update_clicked(*args):
-    """トレイメニュー「アプリをアップデート」."""
-    log_info("更新メニュー クリック")
-    _config = load_config()
-    url = (_config.get("update_check_url") or "").strip()
-    if not url:
-        log_info("更新チェック: update_check_url が未設定のためスキップ")
-        notifications.show_toast(
-            "Wonder Linko",
-            "更新チェックの URL が設定されていません（config.json の update_check_url）",
-            duration_sec=4,
-            force_show=True,
-        )
-        return
-
-    log_info(f"更新チェック開始: 手動 url={url}")
-    logging.getLogger("WonderLinko").info("更新チェック開始: 手動（トレイメニュー）")
-
-    def on_result(has_update, latest_version, download_url):
-        _schedule_on_main(lambda: _on_update_check_result(has_update, latest_version, download_url))
-
-    check_and_notify(__version__, url, on_result)
 
 
 def _show_notification_help(*args):
@@ -727,33 +573,12 @@ def _board_system_login_clicked(*args):
 
 
 def build_menu(icon):
-    """トレイメニューを組み立てる。"""
-    global _config
-    _config = load_config()
-    tray_action = _config.get("tray_click_action", "postit")
-
-    tray_click_submenu = pystray.Menu(
-        pystray.MenuItem("付箋ボード", lambda *_: _set_tray_click_action("postit"), checked=lambda *_: tray_action == "postit"),
-        pystray.MenuItem("パーソナル", lambda *_: _set_tray_click_action("personal"), checked=lambda *_: tray_action == "personal"),
-        pystray.MenuItem("最後のお知らせ", lambda *_: _set_tray_click_action("last_notification"), checked=lambda *_: tray_action == "last_notification"),
-    )
-
+    """トレイメニューを組み立てる（ミニポート非表示時の最低限の操作のみ）。"""
     return pystray.Menu(
-        pystray.MenuItem("開く（設定で変更可）", open_tray_click_target, default=True),
-        pystray.MenuItem("アイコンクリックで開く", tray_click_submenu),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("ミニポート", toggle_miniport, checked=lambda *_: _miniport_visible),
-        pystray.MenuItem("ミニポートを表示", show_miniport),
-        pystray.MenuItem("ミニポートを非表示", hide_miniport),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("通知を表示", _toggle_notifications, checked=lambda *_: _config.get("notifications_enabled", True)),
-        pystray.MenuItem("今日はタスクリマインドしない", _pause_task_remind_today),
-        pystray.MenuItem("PC起動時に自動で起動", toggle_startup, checked=lambda *_: startup.is_startup_enabled()),
-        pystray.MenuItem("表示名を変更（付箋の投稿者名）", _change_display_name),
+        pystray.MenuItem("開く", open_tray_click_target, default=True),
         pystray.MenuItem("設定...", open_settings),
-        pystray.MenuItem("アプリをアップデート", _check_update_clicked),
+        pystray.MenuItem("ミニポートを表示", show_miniport),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("最新ログを表示", _show_recent_log),
         pystray.MenuItem("終了", quit_app),
     )
 
@@ -822,20 +647,6 @@ def _prompt_board_system_login_if_needed():
                 notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
     except Exception:
         pass
-
-
-def _change_display_name(*args):
-    """トレイメニュー「表示名を変更」で表示名を再入力して保存する。"""
-    global _config
-    _config = load_config()
-    current = (_config.get("display_name") or "").strip()
-    name = _show_display_name_dialog(current)
-    if name:
-        name = name.strip()
-    if name:
-        _config["display_name"] = name
-        save_config(_config)
-        notifications.show_toast("Wonder Linko", "表示名を「" + name + "」に変更しました。", duration_sec=2)
 
 
 def _wait_for_process_exit(pid: int):
@@ -1030,7 +841,7 @@ def main():
 
             def _on_startup_update_result(has_update, latest_version, download_url):
                 # ユーザー方針: アップデートは任意。起動時に自動でダイアログを出さない。
-                # 更新があってもログに残すだけ。実行はトレイ「アプリをアップデート」から手動。
+                # 更新があってもログに残すだけ。実行は設定画面「アップデート確認」から手動。
                 if has_update:
                     log_info(f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)")
 

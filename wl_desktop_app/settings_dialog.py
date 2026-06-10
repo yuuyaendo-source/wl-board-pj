@@ -3,7 +3,7 @@
 
 v2 機能フラグ (features.*) の ON/OFF と、表示名・主要 URL の確認/編集を 1 画面で行う。
 
-トレイメニュー or ミニポートから ``open_settings_dialog()`` を呼ぶ。
+トレイメニューまたはミニポートから ``open_settings_dialog()`` を呼ぶ。
 別スレッドから呼んでも安全なように、Tk のメインスレッドで実行されるよう
 ``after`` でディスパッチするのは呼び出し側の責任とする (Tk の制約)。
 """
@@ -21,10 +21,17 @@ except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
     raise
 
 from config_loader import load_config, save_config
+from version import __version__
 
 
 # --- features の表示メタデータ -------------------------------------------------
 # (キー, 表示ラベル, 説明文)。features 追加時はここに 1 行足すだけで UI に反映される。
+_TRAY_CLICK_OPTIONS = [
+    ("postit", "付箋ボード"),
+    ("personal", "パーソナル"),
+    ("last_notification", "最後のお知らせ"),
+]
+
 _FEATURE_ROWS = [
     (
         "taskbar_mode",
@@ -109,6 +116,16 @@ class SettingsDialog(ctk.CTkToplevel):
         self._calendar_remind_minutes_var = tk.StringVar(
             value=str(normalize_calendar_remind_minutes(self._cfg.get("calendar_remind_minutes_before")))
         )
+        tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
+        tray_action = self._cfg.get("tray_click_action", "postit")
+        self._tray_click_var = tk.StringVar(value=tray_labels.get(tray_action, "付箋ボード"))
+        try:
+            import startup
+
+            startup_on = startup.is_startup_enabled()
+        except Exception:
+            startup_on = False
+        self._startup_var = tk.BooleanVar(value=startup_on)
 
         self._build_ui()
 
@@ -137,13 +154,34 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # タイトル
         title = ctk.CTkLabel(self, text="Wonder Linko 設定", font=("", 16, "bold"))
-        title.pack(pady=(pad, 4), padx=pad, anchor="w")
+        title.pack(pady=(pad, 2), padx=pad, anchor="w")
+        ctk.CTkLabel(
+            self,
+            text=f"バージョン v{__version__}",
+            text_color=("gray40", "gray60"),
+            anchor="w",
+        ).pack(padx=pad, anchor="w", pady=(0, 4))
 
         # 表示名
         name_frame = ctk.CTkFrame(self, fg_color="transparent")
         name_frame.pack(fill="x", padx=pad, pady=(0, pad))
         ctk.CTkLabel(name_frame, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
         ctk.CTkEntry(name_frame, textvariable=self._display_name_var).pack(fill="x", pady=(2, 0))
+
+        general_frame = ctk.CTkFrame(self, fg_color="transparent")
+        general_frame.pack(fill="x", padx=pad, pady=(0, pad))
+        ctk.CTkLabel(general_frame, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
+        ctk.CTkOptionMenu(
+            general_frame,
+            values=[label for _, label in _TRAY_CLICK_OPTIONS],
+            variable=self._tray_click_var,
+            width=160,
+        ).pack(anchor="w", pady=(2, 4))
+        ctk.CTkCheckBox(
+            general_frame,
+            text="PC起動時に自動で起動 (Windows)",
+            variable=self._startup_var,
+        ).pack(anchor="w")
 
         # 機能見出し
         ctk.CTkLabel(self, text="機能 (任意でON)", font=("", 14, "bold")).pack(
@@ -186,6 +224,14 @@ class SettingsDialog(ctk.CTkToplevel):
             text="平日のみ (土日は鳴らさない)",
             variable=self._task_remind_weekdays_var,
         ).pack(anchor="w")
+        ctk.CTkButton(
+            tr_frame,
+            text="今日はタスクリマインドを止める",
+            command=self._on_pause_task_remind_today,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray20", "gray80"),
+        ).pack(anchor="w", pady=(4, 0))
 
         cal_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         cal_frame.pack(fill="x", pady=(8, 0))
@@ -205,9 +251,29 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left", padx=(8, 0))
 
     # --- ハンドラ ----------------------------------------------------------
+    def _on_pause_task_remind_today(self) -> None:
+        try:
+            from tkinter import messagebox
+            from task_remind_client import pause_reminders_today
+
+            cfg = load_config()
+            pause_reminders_today(cfg)
+            messagebox.showinfo(
+                "タスクリマインド",
+                "今日はタスクリマインドを停止しました。明日から再開します。",
+            )
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("タスクリマインド", f"設定の保存に失敗しました: {e}")
+            except Exception:
+                print(f"task remind pause failed: {e}", flush=True)
+
     def _on_save(self) -> None:
         # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
         self._cfg["display_name"] = self._display_name_var.get().strip()
+        tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
+        self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
         # features を辞書ごと書き出し (未知キーは保つ)
         features = dict(self._cfg.get("features") or {})
         for key, var in self._feature_vars.items():
@@ -232,6 +298,17 @@ class SettingsDialog(ctk.CTkToplevel):
         self._cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
             self._calendar_remind_minutes_var.get()
         )
+        import sys
+
+        if sys.platform == "win32":
+            try:
+                import startup
+
+                desired_startup = bool(self._startup_var.get())
+                if desired_startup != startup.is_startup_enabled():
+                    startup.set_startup_enabled(desired_startup)
+            except Exception as e:
+                print(f"startup toggle failed: {e}", flush=True)
         try:
             save_config(self._cfg)
             self._cfg = load_config()
