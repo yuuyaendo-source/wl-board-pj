@@ -65,6 +65,8 @@ def _get_defaults():
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
         # linko-system (AI-Board) の Socket.IO サーバ URL。features.visitor_notify=True のときに接続して来客通知を受ける
         "linko_server_url": "https://linko-board.internal.wonder-link.com",
+        # linko-system 管理 API 用（管理者 PC の config.json のみ。MSI 同梱しない）
+        "linko_admin_token": "",
         # 機能フラグ。v2 で追加。基本 OFF でユーザーが任意で ON にする (詳細は docs/v2_拡張計画.md)。
         # taskbar_mode: ミニポートではなく通常 window としてタスクバーにも出す
         # linko_avatar: ミニポートにリン子の 2D アバター (表情切替) を表示
@@ -82,6 +84,7 @@ def _get_defaults():
             "task_remind": False,
             "calendar_notify": False,
             "remind_voice": False,
+            "face_registry_manage": False,
         },
         # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
         "task_remind_times": ["13:00", "17:00"],
@@ -122,6 +125,7 @@ def load_config():
     cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))).strip()
     cfg["board_system_url"] = (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "").strip().rstrip("/")
     cfg["linko_server_url"] = (os.environ.get("LINKO_SERVER_URL", cfg.get("linko_server_url", "")) or "").strip().rstrip("/")
+    cfg["linko_admin_token"] = (os.environ.get("LINKO_ADMIN_TOKEN", cfg.get("linko_admin_token", "")) or "").strip()
     try:
         from security import sanitize_config_urls
         sanitize_config_urls(cfg, _get_defaults())
@@ -158,6 +162,7 @@ def save_config(cfg):
     out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
     out["linko_server_url"] = cfg.get("linko_server_url", defaults.get("linko_server_url", ""))
+    out["linko_admin_token"] = cfg.get("linko_admin_token", defaults.get("linko_admin_token", ""))
     # features は辞書を丸ごと保存（未知キーも保つ）
     src_features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
     out["features"] = {**(defaults.get("features") or {}), **src_features}

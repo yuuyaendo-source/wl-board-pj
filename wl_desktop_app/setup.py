@@ -91,8 +91,9 @@ build_exe_options = {
         "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
         "theme", "chat_panel", "audio_player", "task_remind_client", "task_remind_dialog",
         "calendar_notify_client", "remind_notify",
+        "face_registry_client", "face_registry_admin_dialog", "webcam_capture", "voice_capture",
     ],
-    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx"],
+    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx", "cv2", "numpy", "sounddevice"],
     "zip_exclude_packages": ["*"],
 }
 

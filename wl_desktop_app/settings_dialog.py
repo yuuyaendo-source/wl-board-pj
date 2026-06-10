@@ -73,6 +73,11 @@ _FEATURE_ROWS = [
         "リマインドをリン子の声で読み上げる",
         "タスク/カレンダーリマインド時に TTS 音声を再生 (要: linko_server_url)。会議中は OFF 推奨。",
     ),
+    (
+        "face_registry_manage",
+        "社員・顔・音声の管理 (管理者)",
+        "linko-system の社員名簿・顔・音声サンプルを管理（要: linko_admin_token）。管理者 PC のみ ON にしてください。",
+    ),
 ]
 
 
@@ -126,6 +131,7 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception:
             startup_on = False
         self._startup_var = tk.BooleanVar(value=startup_on)
+        self._linko_admin_token_var = tk.StringVar(value=self._cfg.get("linko_admin_token", "") or "")
 
         self._build_ui()
 
@@ -181,6 +187,18 @@ class SettingsDialog(ctk.CTkToplevel):
             general_frame,
             text="PC起動時に自動で起動 (Windows)",
             variable=self._startup_var,
+        ).pack(anchor="w")
+
+        admin_frame = ctk.CTkFrame(self, fg_color="transparent")
+        admin_frame.pack(fill="x", padx=pad, pady=(0, pad))
+        ctk.CTkLabel(admin_frame, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(admin_frame, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 4))
+        ctk.CTkButton(
+            admin_frame,
+            text="社員・顔・音声の管理を開く…",
+            command=self._on_open_face_registry_admin,
+            fg_color="transparent",
+            border_width=1,
         ).pack(anchor="w")
 
         # 機能見出し
@@ -251,6 +269,25 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(side="left", padx=(8, 0))
 
     # --- ハンドラ ----------------------------------------------------------
+    def _on_open_face_registry_admin(self) -> None:
+        try:
+            from face_registry_admin_dialog import open_face_registry_admin_dialog
+
+            draft = dict(self._cfg)
+            draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
+            features = dict(draft.get("features") or {})
+            if "face_registry_manage" in self._feature_vars:
+                features["face_registry_manage"] = bool(self._feature_vars["face_registry_manage"].get())
+            draft["features"] = features
+            open_face_registry_admin_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("社員・顔の管理", str(e), parent=self)
+            except Exception:
+                print(f"face registry admin open failed: {e}", flush=True)
+
     def _on_pause_task_remind_today(self) -> None:
         try:
             from tkinter import messagebox
@@ -272,6 +309,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_save(self) -> None:
         # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
         self._cfg["display_name"] = self._display_name_var.get().strip()
+        self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
         tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
         self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
         # features を辞書ごと書き出し (未知キーは保つ)

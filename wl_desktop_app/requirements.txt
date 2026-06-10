@@ -16,3 +16,8 @@ winotify>=1.1.0; sys_platform == "win32"
 win10toast-click>=0.1.2; sys_platform == "win32"
 # Windows の zoneinfo (Asia/Tokyo) 用
 tzdata>=2024.1; sys_platform == "win32"
+# 社員顔登録（管理者）: Webカメラ撮影
+opencv-python>=4.8.0; sys_platform == "win32"
+# 社員音声登録（管理者）: マイク録音
+sounddevice>=0.4.6; sys_platform == "win32"
+numpy>=1.24.0; sys_platform == "win32"
