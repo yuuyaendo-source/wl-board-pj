@@ -7,7 +7,8 @@ import os
 import sys
 import tempfile
 import threading
-from typing import Callable, Optional
+import base64
+from typing import Callable, List, Optional
 
 try:
     import customtkinter as ctk
@@ -24,20 +25,39 @@ _voice_capture_instance: Optional["VoiceCaptureDialog"] = None
 
 
 class FaceCaptureDialog(ctk.CTkToplevel):
-    """Webカメラプレビューから顔画像を撮影する。"""
+    """Webカメラプレビューから顔画像を撮影する（連写対応）。"""
 
     PREVIEW_W = 520
     PREVIEW_H = 293
+    _BURST_GUIDES = (
+        "正面を向いてください。顔を枠の中央に",
+        "少しだけ左を向いてください",
+        "少しだけ右を向いてください",
+    )
+    _COUNTDOWN_STEP_MS = 400
+    _SHOT_INTERVAL_MS = 900
 
-    def __init__(self, master=None, *, person_name: str = "", on_captured: Optional[Callable[[str], None]] = None):
+    def __init__(
+        self,
+        master=None,
+        *,
+        person_name: str = "",
+        burst_count: int = 3,
+        on_captured: Optional[Callable[[List[str]], None]] = None,
+    ):
         super().__init__(master)
         self._on_captured = on_captured
+        self._burst_count = max(1, int(burst_count))
+        self._burst_shots: List[str] = []
+        self._burst_index = 0
+        self._burst_active = False
         self._cap = None
         self._preview_job: Optional[str] = None
         self._pil_ref = None
         self._ctk_img = None
 
-        self.title(f"顔を撮影 — {person_name or '社員'}")
+        title_suffix = "（追加1枚）" if self._burst_count == 1 else f"（連写{self._burst_count}枚）"
+        self.title(f"顔を撮影 — {person_name or '社員'}{title_suffix}")
         win_w = self.PREVIEW_W + 48
         win_h = 520
         self.geometry(f"{win_w}x{win_h}")
@@ -92,7 +112,14 @@ class FaceCaptureDialog(ctk.CTkToplevel):
                 text="カメラを開けませんでした。他アプリの使用を終了するか、「画像ファイルを選択」で登録してください。"
             )
             return
-        self._status.configure(text="顔を正面に向けて「撮影して登録」を押してください。")
+        if self._burst_count > 1:
+            hint = (
+                f"「撮影して登録」で自動連写{self._burst_count}枚します。"
+                "各枚の前にカウントダウンがあります。顔を枠の中央に合わせてください。"
+            )
+        else:
+            hint = "顔を正面に向けて「撮影して登録」を押してください。"
+        self._status.configure(text=hint)
         self._btn_capture.configure(state="normal")
         self._tick_preview()
 
@@ -118,15 +145,13 @@ class FaceCaptureDialog(ctk.CTkToplevel):
                 mime = "image/png"
             elif ext == ".webp":
                 mime = "image/webp"
-            import base64
-
             b64 = base64.b64encode(raw).decode("ascii")
             data_url = f"data:{mime};base64,{b64}"
         except Exception as e:
             self._status.configure(text=f"画像の読み込みに失敗: {e}")
             return
         if self._on_captured:
-            self._on_captured(data_url)
+            self._on_captured([data_url])
         self._on_close()
 
     def _tick_preview(self) -> None:
@@ -143,18 +168,60 @@ class FaceCaptureDialog(ctk.CTkToplevel):
                 self._preview.configure(image=self._ctk_img, text="")
         self._preview_job = self.after(66, self._tick_preview)
 
+    def _set_capture_buttons(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        self._btn_capture.configure(state=state)
+        self._btn_file.configure(state=state)
+
     def _on_capture(self) -> None:
+        if self._burst_active:
+            return
+        self._set_capture_buttons(False)
+        self._burst_shots = []
+        self._burst_index = 0
+        self._burst_active = True
+        self._run_burst_countdown(3)
+
+    def _guide_text(self) -> str:
+        idx = min(self._burst_index, len(self._BURST_GUIDES) - 1)
+        return self._BURST_GUIDES[idx]
+
+    def _run_burst_countdown(self, countdown: int) -> None:
+        if not self.winfo_exists():
+            return
+        if countdown > 0:
+            self._status.configure(text=f"{self._guide_text()} … {countdown}")
+            self.after(self._COUNTDOWN_STEP_MS, lambda: self._run_burst_countdown(countdown - 1))
+            return
+        self._status.configure(text=self._guide_text())
+        self.after(150, self._capture_one_burst_shot)
+
+    def _capture_one_burst_shot(self) -> None:
         from webcam_capture import capture_jpeg_data_url
 
-        self._btn_capture.configure(state="disabled")
-        self._status.configure(text="処理中…")
+        if not self.winfo_exists():
+            return
         data_url = capture_jpeg_data_url(self._cap)
         if not data_url:
             self._status.configure(text="撮影に失敗しました。もう一度お試しください。")
-            self._btn_capture.configure(state="normal")
+            self._burst_active = False
+            self._set_capture_buttons(True)
             return
-        if self._on_captured:
-            self._on_captured(data_url)
+        self._burst_shots.append(data_url)
+        self._burst_index += 1
+        if self._burst_index >= self._burst_count:
+            self._finish_burst()
+            return
+        self._status.configure(
+            text=f"{self._burst_index}/{self._burst_count} 枚撮影しました。次のポーズへ…"
+        )
+        self.after(self._SHOT_INTERVAL_MS, lambda: self._run_burst_countdown(3))
+
+    def _finish_burst(self) -> None:
+        self._burst_active = False
+        urls = list(self._burst_shots)
+        if self._on_captured and urls:
+            self._on_captured(urls)
         self._on_close()
 
     def _on_close(self) -> None:
@@ -282,6 +349,7 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
 
         self._cfg = dict(cfg) if cfg is not None else load_config()
         self._persons: list[dict] = []
+        self._embeddings_key = "face_embeddings"
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.lift()
@@ -295,7 +363,11 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         ctk.CTkLabel(top, text="社員・顔・音声の管理", font=("", 16, "bold")).pack(anchor="w")
         ctk.CTkLabel(
             top,
-            text="linko-system の名簿（/manager と同じデータ）。顔・音声サンプルを登録（音声は将来の話者照合用）。要: linko_admin_token。",
+            text=(
+                "linko-system の名簿（/manager と同じデータ）。顔は撮影1回で連写3枚登録。"
+                "照合データは最大5件（古いものから入れ替え）。表示写真は最新。音声は将来の話者照合用。"
+                "要: linko_admin_token。"
+            ),
             text_color=("gray40", "gray60"),
             wraplength=self.WIDTH - 40,
             justify="left",
@@ -345,13 +417,15 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         messagebox.showinfo(title, msg, parent=self)
 
     def _reload_list(self) -> None:
-        from face_registry_client import FaceRegistryError, list_persons
+        from face_registry_client import FaceRegistryError, list_registry
 
         self._cfg = load_config()
         for w in self._list_scroll.winfo_children():
             w.destroy()
         try:
-            self._persons = list_persons(self._cfg)
+            reg = list_registry(self._cfg)
+            self._persons = reg.get("persons") or []
+            self._embeddings_key = str(reg.get("embeddings_key") or "face_embeddings")
         except FaceRegistryError as e:
             ctk.CTkLabel(self._list_scroll, text=f"読み込み失敗: {e}", text_color="#c66").pack(anchor="w", pady=8)
             return
@@ -380,15 +454,19 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         is_staff = p.get("is_staff", True)
         has_face = bool(p.get("hasFace"))
         has_voice = bool(p.get("hasVoice"))
+        from face_registry_client import embedding_count_for_person
+
+        emb_n = embedding_count_for_person(p, self._embeddings_key) if has_face else 0
 
         head = ctk.CTkFrame(frame, fg_color="transparent")
         head.pack(fill="x", padx=10, pady=(8, 4))
         ctk.CTkLabel(head, text=name, font=("", 14, "bold")).pack(side="left")
         badges = ctk.CTkFrame(head, fg_color="transparent")
         badges.pack(side="right")
+        face_badge = f"顔登録済み（照合データ {emb_n}/5）" if has_face else "顔なし"
         ctk.CTkLabel(
             badges,
-            text="顔あり" if has_face else "顔なし",
+            text=face_badge,
             text_color=("#1b6b3a", "#8fdfb0") if has_face else ("gray50", "gray60"),
         ).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(
@@ -419,7 +497,7 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         btns1.pack(fill="x", padx=10, pady=(0, 4))
         ctk.CTkButton(
             btns1,
-            text="顔を撮影" if not has_face else "顔を変更",
+            text="顔を撮影" if not has_face else "顔を追加",
             width=88,
             command=lambda i=pid, n=name: self._open_capture(i, n),
         ).pack(side="left")
@@ -474,7 +552,7 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             command=lambda i=pid, n=name: self._on_delete(i, n),
         ).pack(side="right")
 
-    def _open_capture(self, person_id: str, person_name: str) -> None:
+    def _open_capture(self, person_id: str, person_name: str, *, burst_count: int = 3) -> None:
         global _capture_instance
         if _capture_instance is not None:
             try:
@@ -483,25 +561,67 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             except Exception:
                 _capture_instance = None
 
-        def _upload(data_url: str) -> None:
-            from face_registry_client import FaceRegistryError, update_face
+        def _upload(data_urls: List[str]) -> None:
+            def work() -> None:
+                from face_registry_client import FaceRegistryError, upload_faces_serial
 
-            self._cfg = load_config()
-            try:
-                update_face(self._cfg, person_id, data_url)
-            except FaceRegistryError as e:
-                self.after(0, lambda: self._show_error("顔登録", str(e)))
-                return
-            self.after(
-                0,
-                lambda: self._show_info(
-                    "顔登録",
-                    f"{person_name} の顔を登録しました。\n「顔を確認」で画像を表示できます。",
-                ),
+                self._cfg = load_config()
+                try:
+                    ok, total, err = upload_faces_serial(self._cfg, person_id, data_urls)
+                except FaceRegistryError as e:
+                    self.after(0, lambda: self._show_error("顔登録", str(e)))
+                    return
+                prompt_glasses = burst_count >= 3 and ok == total and total >= 3
+                self.after(
+                    0,
+                    lambda: self._on_faces_uploaded(
+                        person_id, person_name, ok, total, err, prompt_glasses=prompt_glasses
+                    ),
+                )
+
+            threading.Thread(target=work, daemon=True).start()
+
+        _capture_instance = FaceCaptureDialog(
+            self, person_name=person_name, burst_count=burst_count, on_captured=_upload
+        )
+
+    def _on_faces_uploaded(
+        self,
+        person_id: str,
+        person_name: str,
+        ok: int,
+        total: int,
+        err: Optional[str],
+        *,
+        prompt_glasses: bool,
+    ) -> None:
+        if ok == 0:
+            self._show_error("顔登録", err or "登録に失敗しました。")
+        elif ok == total:
+            if total == 1:
+                msg = f"{person_name} の顔を1枚登録しました。\n「顔を確認」で画像を表示できます。"
+            else:
+                msg = f"{person_name} の顔を{ok}枚登録しました。\n「顔を確認」で画像を表示できます。"
+            self._show_info("顔登録", msg)
+        else:
+            reason = err or "通信エラー"
+            self._show_info(
+                "顔登録",
+                f"{person_name} の顔を {ok}/{total} 枚登録しました（{total - ok}枚は{reason}）。",
             )
-            self.after(0, self._reload_list)
+        self._reload_list()
+        if prompt_glasses and ok == total:
+            self._prompt_glasses_extra(person_id, person_name)
 
-        _capture_instance = FaceCaptureDialog(self, person_name=person_name, on_captured=_upload)
+    def _prompt_glasses_extra(self, person_id: str, person_name: str) -> None:
+        from tkinter import messagebox
+
+        if messagebox.askyesno(
+            "追加撮影",
+            "眼鏡をかけて撮影した場合、外した状態でもう1枚追加すると認識率が上がります。追加撮影しますか？",
+            parent=self,
+        ):
+            self._open_capture(person_id, person_name, burst_count=1)
 
     def _open_voice_capture(self, person_id: str, person_name: str) -> None:
         global _voice_capture_instance
@@ -532,8 +652,19 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
 
         _voice_capture_instance = VoiceCaptureDialog(self, person_name=person_name, on_captured=_upload)
 
+    def _data_url_to_pil(self, data_url: str):
+        from PIL import Image
+
+        if not data_url or "," not in data_url:
+            return None
+        try:
+            raw = base64.b64decode(data_url.split(",", 1)[1])
+            return Image.open(io.BytesIO(raw))
+        except Exception:
+            return None
+
     def _view_face(self, person_id: str, person_name: str) -> None:
-        from face_registry_client import FaceRegistryError, fetch_face_image_bytes
+        from face_registry_client import FaceRegistryError, embedding_count_for_person, get_person
 
         try:
             from PIL import Image
@@ -542,28 +673,57 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
             return
         self._cfg = load_config()
         try:
-            raw = fetch_face_image_bytes(self._cfg, person_id)
-            pil = Image.open(io.BytesIO(raw))
+            detail = get_person(self._cfg, person_id)
         except FaceRegistryError as e:
             self._show_error("顔を確認", str(e))
             return
-        except Exception as e:
-            self._show_error("顔を確認", f"画像の表示に失敗: {e}")
+
+        emb_n = embedding_count_for_person(detail, self._embeddings_key)
+        items: list[tuple[str, str]] = []
+        face_data = detail.get("faceData")
+        if isinstance(face_data, str) and face_data.strip():
+            items.append(("現在", face_data.strip()))
+        gallery = detail.get("face_gallery")
+        if isinstance(gallery, list):
+            for i, entry in enumerate(gallery):
+                if not isinstance(entry, dict):
+                    continue
+                url = entry.get("dataUrl") or entry.get("data_url")
+                if isinstance(url, str) and url.strip():
+                    items.append((f"履歴 {i + 1}", url.strip()))
+
+        if not items:
+            self._show_error("顔を確認", "登録画像がありません。")
             return
+
         dlg = ctk.CTkToplevel(self)
-        dlg.title(f"顔画像 — {person_name}")
+        dlg.title(f"登録画像（{len(items)}枚）・照合データ {emb_n}/5 — {person_name}")
+        dlg.geometry("560x520")
+        dlg.minsize(400, 320)
         dlg.attributes("-topmost", True)
-        max_w = 480
-        w, h = pil.size
-        if w > max_w:
-            h = int(h * max_w / w)
-            w = max_w
-            pil = pil.resize((w, h), Image.Resampling.LANCZOS)
-        img = ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
-        lbl = ctk.CTkLabel(dlg, text="", image=img)
-        lbl.image = img  # type: ignore[attr-defined]
-        lbl.pack(padx=12, pady=12)
-        ctk.CTkButton(dlg, text="閉じる", command=dlg.destroy).pack(pady=(0, 12))
+
+        pad = 12
+        scroll = ctk.CTkScrollableFrame(dlg, label_text="サムネイル")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 4))
+
+        thumb_max = 200
+        refs: list = []
+        for label, data_url in items:
+            pil = self._data_url_to_pil(data_url)
+            if pil is None:
+                continue
+            w, h = pil.size
+            if w > thumb_max:
+                h = int(h * thumb_max / w)
+                w = thumb_max
+                pil = pil.resize((w, h), Image.Resampling.LANCZOS)
+            ctk.CTkLabel(scroll, text=label, anchor="w").pack(anchor="w", pady=(8, 2))
+            img = ctk.CTkImage(light_image=pil, dark_image=pil, size=(w, h))
+            refs.append(img)
+            lbl = ctk.CTkLabel(scroll, text="", image=img)
+            lbl.pack(anchor="w", pady=(0, 4))
+
+        ctk.CTkButton(dlg, text="閉じる", command=dlg.destroy).pack(pady=(0, pad))
 
     def _play_voice(self, person_id: str, person_name: str) -> None:
         from face_registry_client import FaceRegistryError, fetch_voice_audio_bytes

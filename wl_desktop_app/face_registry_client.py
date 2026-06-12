@@ -88,10 +88,53 @@ def _request(
         return {}
 
 
-def list_persons(cfg: dict) -> list[dict]:
+def list_registry(cfg: dict) -> dict:
+    """一覧 + embeddings_key（照合データ表示用）。"""
     data = _request(cfg, "GET")
-    persons = data.get("persons") if isinstance(data, dict) else None
-    return list(persons) if isinstance(persons, list) else []
+    if not isinstance(data, dict):
+        return {"persons": [], "embeddings_key": "face_embeddings"}
+    persons = data.get("persons")
+    return {
+        "persons": list(persons) if isinstance(persons, list) else [],
+        "embeddings_key": str(data.get("embeddings_key") or "face_embeddings"),
+    }
+
+
+def list_persons(cfg: dict) -> list[dict]:
+    return list_registry(cfg).get("persons") or []
+
+
+def get_person(cfg: dict, person_id: str) -> dict:
+    data = _request(cfg, "GET", f"/{quote(str(person_id), safe='')}")
+    return data if isinstance(data, dict) else {}
+
+
+def embedding_count_for_person(person: dict, embeddings_key: str) -> int:
+    if embeddings_key == "face_embeddings_v2":
+        return int(person.get("face_embeddings_v2_count") or 0)
+    return int(person.get("face_embeddings_count") or 0)
+
+
+def upload_faces_serial(cfg: dict, person_id: str, face_data_urls: list[str]) -> tuple[int, int, Optional[str]]:
+    """data URL を直列で PUT。戻り値: (成功枚数, 合計, 失敗時メッセージ)。"""
+    total = len(face_data_urls)
+    ok = 0
+    last_err: Optional[str] = None
+    for url in face_data_urls:
+        if not url:
+            continue
+        for attempt in range(2):
+            try:
+                update_face(cfg, person_id, url)
+                ok += 1
+                last_err = None
+                break
+            except FaceRegistryError as e:
+                last_err = str(e)
+                if attempt == 0:
+                    continue
+                return ok, total, last_err
+    return ok, total, last_err
 
 
 def create_person(
