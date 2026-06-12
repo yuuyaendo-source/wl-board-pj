@@ -83,6 +83,7 @@ def _get_defaults():
             "brainstorm_voice": True,
             "task_remind": False,
             "calendar_notify": False,
+            "calendar_create": False,
             "remind_voice": False,
             "face_registry_manage": False,
         },

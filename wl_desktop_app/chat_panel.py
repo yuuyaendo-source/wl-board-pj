@@ -56,16 +56,25 @@ except Exception:
 _panel_instance: Optional["ChatPanel"] = None
 
 
-def _brainstorm_url() -> str:
-    """board-system の /brainstorm エンドポイント URL。
-    board_system_url (例 https://.../api/bs) に /brainstorm を付ける。
-    """
+def _board_api_base() -> str:
     cfg = load_config()
     base = (cfg.get("board_system_url") or "").strip().rstrip("/")
     if not base:
-        # フォールバック: linko_server_url からは引けないので board の既定
         base = "https://wl-ai-board.internal.wonder-link.com/api/bs"
-    return base + "/brainstorm"
+    return base
+
+
+def _brainstorm_url() -> str:
+    return _board_api_base() + "/brainstorm"
+
+
+def _board_user_id(cfg: Optional[dict] = None) -> Optional[int]:
+    if cfg is None:
+        cfg = load_config()
+    pid = (cfg.get("board_system_personal_id") or "").strip()
+    if pid.isdigit():
+        return int(pid)
+    return None
 
 
 def _tts_url() -> Optional[str]:
@@ -99,6 +108,8 @@ class ChatPanel(ctk.CTkToplevel):
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
         self._pending_attachment = None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        self._pending_proposal_id: Optional[str] = None
+        self._pending_draft: Optional[dict] = None
         # 文単位ストリーミング TTS のパイプライン (voice 有効時のみ遅延起動)
         self._sentence_q: "queue.Queue[Optional[str]]" = queue.Queue()
         self._audio_q: "queue.Queue" = queue.Queue(maxsize=6)
@@ -173,6 +184,50 @@ class ChatPanel(ctk.CTkToplevel):
         self._chat.pack(fill="both", expand=True, padx=10, pady=(10, 6))
         self._chat.configure(state="disabled")
 
+        self._proposal_frame = ctk.CTkFrame(self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8)
+        self._proposal_title = ctk.CTkLabel(
+            self._proposal_frame,
+            text="📅 予定の確認",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        self._proposal_title.pack(fill="x", padx=10, pady=(8, 2))
+        self._proposal_detail = ctk.CTkLabel(
+            self._proposal_frame,
+            text="",
+            anchor="w",
+            justify="left",
+            wraplength=self.WIDTH - 48,
+        )
+        self._proposal_detail.pack(fill="x", padx=10, pady=(0, 4))
+        self._proposal_hint = ctk.CTkLabel(
+            self._proposal_frame,
+            text="チャットで「15時にして」「はい」でも操作できます",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+        )
+        self._proposal_hint.pack(fill="x", padx=10, pady=(0, 6))
+        prop_btns = ctk.CTkFrame(self._proposal_frame, fg_color="transparent")
+        prop_btns.pack(fill="x", padx=10, pady=(0, 8))
+        self._proposal_confirm_btn = ctk.CTkButton(
+            prop_btns,
+            text="登録する",
+            width=88,
+            command=self._on_proposal_confirm,
+            fg_color=("#3d8b40", "#1b5e20"),
+        )
+        self._proposal_confirm_btn.pack(side="left")
+        self._proposal_cancel_btn = ctk.CTkButton(
+            prop_btns,
+            text="やめる",
+            width=72,
+            command=self._on_proposal_cancel,
+            fg_color="transparent",
+            border_width=1,
+        )
+        self._proposal_cancel_btn.pack(side="left", padx=(8, 0))
+
         # 直前のリン子回答を付箋ボードへ投稿するボタン
         self._note_btn = ctk.CTkButton(
             self, text="📝 リン子の回答を付箋にする", height=32,
@@ -208,6 +263,119 @@ class ChatPanel(ctk.CTkToplevel):
             fg_color=("#3d8b40", "#1b5e20"), hover_color=("#2f7a33", "#145214"),
         )
         self._send_btn.pack(side="right")
+        self._mic_btn = ctk.CTkButton(
+            bottom,
+            text="🎤",
+            width=36,
+            state="disabled",
+            fg_color="transparent",
+            border_width=1,
+        )
+        self._mic_btn.pack(side="right", padx=(0, 6))
+
+    def _format_proposal_detail(self, draft: dict) -> str:
+        summary = (draft.get("summary") or "（無題）").strip()
+        start = (draft.get("start") or "").strip()
+        end = (draft.get("end") or "").strip()
+        try:
+            from datetime import datetime
+
+            st = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            en = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            if st.tzinfo:
+                st = st.astimezone()
+                en = en.astimezone()
+            line = f"{st.strftime('%m/%d %H:%M')}〜{en.strftime('%H:%M')}"
+        except Exception:
+            line = f"{start} 〜 {end}".strip(" 〜")
+        return f"{summary}\n{line}"
+
+    def _show_proposal_card(self) -> None:
+        if not self._pending_draft:
+            return
+        self._proposal_detail.configure(text=self._format_proposal_detail(self._pending_draft))
+        if not self._proposal_frame.winfo_ismapped():
+            self._proposal_frame.pack(fill="x", padx=10, pady=(0, 6), before=self._note_btn)
+
+    def _clear_proposal_card(self) -> None:
+        self._pending_proposal_id = None
+        self._pending_draft = None
+        try:
+            self._proposal_frame.pack_forget()
+        except Exception:
+            pass
+
+    def _brainstorm_payload(self) -> dict:
+        payload: dict = {"messages": self._messages}
+        try:
+            from config_loader import is_feature_enabled
+
+            if is_feature_enabled("calendar_create"):
+                payload["calendar_create_enabled"] = True
+                uid = _board_user_id()
+                if uid is not None:
+                    payload["user_id"] = uid
+        except Exception:
+            pass
+        if self._pending_proposal_id:
+            payload["pending_proposal_id"] = self._pending_proposal_id
+        return payload
+
+    def _on_proposal_confirm(self) -> None:
+        if not self._pending_proposal_id:
+            return
+        self._proposal_confirm_btn.configure(state="disabled")
+        threading.Thread(target=self._proposal_action_work, args=("confirm",), daemon=True).start()
+
+    def _on_proposal_cancel(self) -> None:
+        if not self._pending_proposal_id:
+            self._clear_proposal_card()
+            return
+        threading.Thread(target=self._proposal_action_work, args=("cancel",), daemon=True).start()
+
+    def _proposal_action_work(self, action: str) -> None:
+        if requests is None:
+            self.after(0, lambda: self._append_line("システム", "通信できません。"))
+            return
+        uid = _board_user_id()
+        pid = self._pending_proposal_id
+        if uid is None or not pid:
+            self.after(0, lambda: self._append_line("システム", "パーソナルログインが必要です。"))
+            return
+        url = _board_api_base() + f"/brainstorm/calendar/{action}"
+        try:
+            from security import assert_http_url
+
+            assert_http_url(url, load_config(), purpose="brainstorm_calendar")
+        except ValueError as e:
+            self.after(0, lambda: self._append_line("システム", str(e)[:80]))
+            return
+        try:
+            r = requests.post(url, json={"proposal_id": pid, "user_id": uid}, timeout=30)
+            if r.status_code >= 400:
+                detail = ""
+                try:
+                    detail = (r.json() or {}).get("detail") or r.text[:120]
+                except Exception:
+                    detail = r.text[:120]
+                self.after(0, lambda: self._append_line("システム", f"失敗: {detail}"))
+                self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
+                return
+            msg = (r.json() or {}).get("message") or ("登録しました。" if action == "confirm" else "キャンセルしました。")
+            self.after(0, self._clear_proposal_card)
+            self.after(0, lambda: self._append_line("リン子", msg))
+        except Exception as e:
+            self.after(0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}"))
+            self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
+
+    def _on_action_proposal(self, obj: dict) -> None:
+        self._pending_proposal_id = str(obj.get("proposal_id") or "") or None
+        draft = obj.get("draft")
+        self._pending_draft = dict(draft) if isinstance(draft, dict) else None
+        if self._pending_proposal_id and self._pending_draft:
+            self._show_proposal_card()
+        else:
+            self._clear_proposal_card()
 
     # --- 送信 / streaming --------------------------------------------------
     def _on_send_shortcut(self, event=None):
@@ -316,7 +484,7 @@ class ChatPanel(ctk.CTkToplevel):
             return
         try:
             with requests.post(
-                url, json={"messages": self._messages}, stream=True, timeout=(10, 120)
+                url, json=self._brainstorm_payload(), stream=True, timeout=(10, 120)
             ) as r:
                 if r.status_code != 200:
                     self.after(0, lambda: self._append_assistant_token(f"[エラー: HTTP {r.status_code}]"))
@@ -333,6 +501,9 @@ class ChatPanel(ctk.CTkToplevel):
                             continue
                         if obj.get("error"):
                             self.after(0, lambda m=obj["error"]: self._append_assistant_token(f"[エラー: {m}]"))
+                            continue
+                        if obj.get("type") == "action_proposal":
+                            self.after(0, lambda o=obj: self._on_action_proposal(o))
                             continue
                         tok = obj.get("token")
                         if tok:
@@ -353,6 +524,8 @@ class ChatPanel(ctk.CTkToplevel):
             self._last_assistant_text = acc
             self._streaming = False
             self.after(0, self._end_assistant)
+            if self._pending_proposal_id and acc and ("入れました" in acc or "登録" in acc and "しません" not in acc):
+                self.after(0, self._clear_proposal_card)
             if not voice_planned:
                 # テキスト中に動かした口パクを停止 (音声予定時は say() 側が制御)
                 try:

@@ -35,7 +35,11 @@ from app.models.sticky_note import NoteStatus
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
 
-GOOGLE_SCOPE = ["https://www.googleapis.com/auth/calendar.readonly"]
+# 読み取り + 予定の作成・変更（ブレスト経由のカレンダー登録用）。既存連携ユーザは再認可が必要。
+GOOGLE_SCOPE = [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+]
 PKCE_TTL_SECONDS = 600
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
