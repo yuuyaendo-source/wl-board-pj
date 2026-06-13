@@ -30,12 +30,11 @@ class FaceCaptureDialog(ctk.CTkToplevel):
     PREVIEW_W = 520
     PREVIEW_H = 293
     _BURST_GUIDES = (
-        "正面を向いてください。顔を枠の中央に",
+        "正面を向いてください",
         "少しだけ左を向いてください",
         "少しだけ右を向いてください",
     )
-    _COUNTDOWN_STEP_MS = 400
-    _SHOT_INTERVAL_MS = 900
+    _COUNTDOWN_STEP_MS = 800
 
     def __init__(
         self,
@@ -50,7 +49,7 @@ class FaceCaptureDialog(ctk.CTkToplevel):
         self._burst_count = max(1, int(burst_count))
         self._burst_shots: List[str] = []
         self._burst_index = 0
-        self._burst_active = False
+        self._countdown_running = False
         self._cap = None
         self._preview_job: Optional[str] = None
         self._pil_ref = None
@@ -83,20 +82,35 @@ class FaceCaptureDialog(ctk.CTkToplevel):
             side="right"
         )
 
+        preview_wrap = ctk.CTkFrame(self, fg_color="transparent")
+        preview_wrap.pack(fill="both", expand=True, padx=pad, pady=(4, 4))
         self._preview = ctk.CTkLabel(
-            self,
+            preview_wrap,
             text="",
             width=self.PREVIEW_W,
             height=self.PREVIEW_H,
             fg_color=("#222", "#111"),
         )
-        self._preview.pack(fill="both", expand=True, padx=pad, pady=(4, 4))
+        self._preview.place(relx=0.5, rely=0.5, anchor="center")
+        self._overlay = ctk.CTkLabel(
+            preview_wrap,
+            text="",
+            width=self.PREVIEW_W,
+            height=self.PREVIEW_H,
+            fg_color="transparent",
+            text_color=("white", "white"),
+            font=("", 96, "bold"),
+        )
+        self._overlay.place(relx=0.5, rely=0.5, anchor="center")
+        self._overlay.place_forget()
 
         self._status = ctk.CTkLabel(self, text="カメラを起動しています…", anchor="w", wraplength=self.PREVIEW_W)
         self._status.pack(side="top", fill="x", padx=pad, pady=(pad, 4))
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._start_camera)
+        self.lift()
+        self.focus_force()
 
     def _start_camera(self) -> None:
         from webcam_capture import is_available, open_camera
@@ -114,14 +128,24 @@ class FaceCaptureDialog(ctk.CTkToplevel):
             return
         if self._burst_count > 1:
             hint = (
-                f"「撮影して登録」で自動連写{self._burst_count}枚します。"
-                "各枚の前にカウントダウンがあります。顔を枠の中央に合わせてください。"
+                f"全{self._burst_count}枚を順に撮影します。"
+                "各枚ごとに「○枚目を撮影」を押し、カウントダウン（3・2・1）のあと自動で撮影されます。"
             )
         else:
-            hint = "顔を正面に向けて「撮影して登録」を押してください。"
+            hint = "顔を正面に向けて「撮影して登録」を押してください。カウントダウン後に撮影されます。"
         self._status.configure(text=hint)
+        self._update_capture_button_label()
         self._btn_capture.configure(state="normal")
         self._tick_preview()
+
+    def _capture_button_label(self) -> str:
+        if self._burst_count <= 1:
+            return "撮影して登録"
+        n = self._burst_index + 1
+        return f"{n}枚目を撮影（{n}/{self._burst_count}）"
+
+    def _update_capture_button_label(self) -> None:
+        self._btn_capture.configure(text=self._capture_button_label())
 
     def _on_pick_file(self) -> None:
         from tkinter import filedialog
@@ -168,33 +192,47 @@ class FaceCaptureDialog(ctk.CTkToplevel):
                 self._preview.configure(image=self._ctk_img, text="")
         self._preview_job = self.after(66, self._tick_preview)
 
+    def _show_countdown_overlay(self, countdown: int, guide: str) -> None:
+        if countdown > 0:
+            self._overlay.configure(text=str(countdown))
+        else:
+            self._overlay.configure(text="")
+        self._overlay.place(relx=0.5, rely=0.5, anchor="center")
+        self._status.configure(text=guide)
+
+    def _hide_countdown_overlay(self) -> None:
+        self._overlay.place_forget()
+        self._overlay.configure(text="")
+
     def _set_capture_buttons(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         self._btn_capture.configure(state=state)
         self._btn_file.configure(state=state)
 
     def _on_capture(self) -> None:
-        if self._burst_active:
+        if self._countdown_running:
             return
+        if self._burst_index == 0:
+            self._burst_shots.clear()
         self._set_capture_buttons(False)
-        self._burst_shots = []
-        self._burst_index = 0
-        self._burst_active = True
-        self._run_burst_countdown(3)
+        self._countdown_running = True
+        self._run_countdown(3)
 
     def _guide_text(self) -> str:
         idx = min(self._burst_index, len(self._BURST_GUIDES) - 1)
         return self._BURST_GUIDES[idx]
 
-    def _run_burst_countdown(self, countdown: int) -> None:
+    def _run_countdown(self, countdown: int) -> None:
         if not self.winfo_exists():
             return
+        guide = self._guide_text()
         if countdown > 0:
-            self._status.configure(text=f"{self._guide_text()} … {countdown}")
-            self.after(self._COUNTDOWN_STEP_MS, lambda: self._run_burst_countdown(countdown - 1))
+            self._show_countdown_overlay(countdown, f"{guide} … {countdown}")
+            self.after(self._COUNTDOWN_STEP_MS, lambda: self._run_countdown(countdown - 1))
             return
-        self._status.configure(text=self._guide_text())
-        self.after(150, self._capture_one_burst_shot)
+        self._hide_countdown_overlay()
+        self._status.configure(text=guide)
+        self.after(200, self._capture_one_burst_shot)
 
     def _capture_one_burst_shot(self) -> None:
         from webcam_capture import capture_jpeg_data_url
@@ -202,9 +240,10 @@ class FaceCaptureDialog(ctk.CTkToplevel):
         if not self.winfo_exists():
             return
         data_url = capture_jpeg_data_url(self._cap)
+        self._countdown_running = False
         if not data_url:
+            self._hide_countdown_overlay()
             self._status.configure(text="撮影に失敗しました。もう一度お試しください。")
-            self._burst_active = False
             self._set_capture_buttons(True)
             return
         self._burst_shots.append(data_url)
@@ -213,12 +252,14 @@ class FaceCaptureDialog(ctk.CTkToplevel):
             self._finish_burst()
             return
         self._status.configure(
-            text=f"{self._burst_index}/{self._burst_count} 枚撮影しました。次のポーズへ…"
+            text=f"{self._burst_index}/{self._burst_count} 枚撮影しました。ポーズを変えて次の撮影ボタンを押してください。"
         )
-        self.after(self._SHOT_INTERVAL_MS, lambda: self._run_burst_countdown(3))
+        self._update_capture_button_label()
+        self._set_capture_buttons(True)
 
     def _finish_burst(self) -> None:
-        self._burst_active = False
+        self._countdown_running = False
+        self._hide_countdown_overlay()
         urls = list(self._burst_shots)
         if self._on_captured and urls:
             self._on_captured(urls)
@@ -585,6 +626,9 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         _capture_instance = FaceCaptureDialog(
             self, person_name=person_name, burst_count=burst_count, on_captured=_upload
         )
+        _capture_instance.lift()
+        _capture_instance.focus_force()
+        _capture_instance.attributes("-topmost", True)
 
     def _on_faces_uploaded(
         self,

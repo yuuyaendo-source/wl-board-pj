@@ -268,6 +268,9 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         _capture_instance = FaceCaptureDialog(
             self, person_name=person_name, burst_count=burst_count, on_captured=_upload
         )
+        _capture_instance.lift()
+        _capture_instance.focus_force()
+        _capture_instance.attributes("-topmost", True)
 
     def _on_faces_uploaded(
         self,
