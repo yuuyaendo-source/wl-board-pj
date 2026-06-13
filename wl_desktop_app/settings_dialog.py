@@ -154,84 +154,67 @@ class SettingsDialog(ctk.CTkToplevel):
     def _build_ui(self) -> None:
         pad = 12
 
-        # 下部ボタンを先に bottom に確保 (features が増えても必ず見える)
+        # 下部ボタンを先に bottom に確保
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=pad, pady=(6, pad), side="bottom")
         ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
         ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
             side="right", padx=(0, 8)
         )
-        # アップデート確認ボタン (左寄せ)
         ctk.CTkButton(
             btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
             fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         ).pack(side="left")
 
-        # タイトル
-        title = ctk.CTkLabel(self, text="Wonder Linko 設定", font=("", 16, "bold"))
-        title.pack(pady=(pad, 2), padx=pad, anchor="w")
+        # 設定全体をスクロール（機能 ON/OFF だけでなく表示名・管理者操作も含む）
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
+
+        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(anchor="w", pady=(0, 2))
         ctk.CTkLabel(
-            self,
+            scroll,
             text=f"バージョン v{__version__}",
             text_color=("gray40", "gray60"),
             anchor="w",
-        ).pack(padx=pad, anchor="w", pady=(0, 4))
+        ).pack(anchor="w", pady=(0, 8))
 
-        # 表示名
-        name_frame = ctk.CTkFrame(self, fg_color="transparent")
-        name_frame.pack(fill="x", padx=pad, pady=(0, pad))
-        ctk.CTkLabel(name_frame, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(name_frame, textvariable=self._display_name_var).pack(fill="x", pady=(2, 0))
+        ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(fill="x", pady=(2, 12))
 
-        general_frame = ctk.CTkFrame(self, fg_color="transparent")
-        general_frame.pack(fill="x", padx=pad, pady=(0, pad))
-        ctk.CTkLabel(general_frame, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
+        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
         ctk.CTkOptionMenu(
-            general_frame,
+            scroll,
             values=[label for _, label in _TRAY_CLICK_OPTIONS],
             variable=self._tray_click_var,
             width=160,
         ).pack(anchor="w", pady=(2, 4))
         ctk.CTkCheckBox(
-            general_frame,
+            scroll,
             text="PC起動時に自動で起動 (Windows)",
             variable=self._startup_var,
-        ).pack(anchor="w")
+        ).pack(anchor="w", pady=(0, 12))
 
-        admin_frame = ctk.CTkFrame(self, fg_color="transparent")
-        admin_frame.pack(fill="x", padx=pad, pady=(0, pad))
-        ctk.CTkLabel(admin_frame, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(admin_frame, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 8))
         ctk.CTkButton(
-            admin_frame,
+            scroll,
             text="社員・顔・音声の管理を開く…",
             command=self._on_open_face_registry_admin,
-            fg_color="transparent",
-            border_width=1,
-        ).pack(anchor="w")
+        ).pack(anchor="w", fill="x")
         ctk.CTkButton(
-            admin_frame,
+            scroll,
             text="自分の顔を登録…",
             command=self._on_open_face_self_register,
-            fg_color="transparent",
-            border_width=1,
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="w", fill="x", pady=(6, 12))
 
-        # 機能見出し
-        ctk.CTkLabel(self, text="機能 (任意でON)", font=("", 14, "bold")).pack(
-            padx=pad, anchor="w", pady=(0, 2)
-        )
+        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
         ctk.CTkLabel(
-            self,
+            scroll,
             text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
             text_color=("gray40", "gray60"),
             anchor="w",
-        ).pack(padx=pad, anchor="w", pady=(0, 4))
-
-        # 機能チェックボックスはスクロール可能領域に (項目が増えても見切れない)
-        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        scroll.pack(fill="both", expand=True, padx=pad, pady=(0, pad))
+        ).pack(anchor="w", pady=(0, 8))
 
         features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
         for key, label, desc in _FEATURE_ROWS:
@@ -239,8 +222,7 @@ class SettingsDialog(ctk.CTkToplevel):
             self._feature_vars[key] = var
             row = ctk.CTkFrame(scroll, fg_color="transparent")
             row.pack(fill="x", pady=(0, 6))
-            cb = ctk.CTkCheckBox(row, text=label, variable=var)
-            cb.pack(anchor="w")
+            ctk.CTkCheckBox(row, text=label, variable=var).pack(anchor="w")
             ctk.CTkLabel(
                 row,
                 text=desc,
@@ -250,17 +232,15 @@ class SettingsDialog(ctk.CTkToplevel):
                 anchor="w",
             ).pack(fill="x", padx=(28, 0))
 
-        tr_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        tr_frame.pack(fill="x", pady=(4, 0))
-        ctk.CTkLabel(tr_frame, text="タスクリマインド時刻 (HH:MM, カンマ区切り)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(tr_frame, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(scroll, text="タスクリマインド時刻 (HH:MM, カンマ区切り)", anchor="w").pack(fill="x", pady=(8, 0))
+        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
         ctk.CTkCheckBox(
-            tr_frame,
+            scroll,
             text="平日のみ (土日は鳴らさない)",
             variable=self._task_remind_weekdays_var,
         ).pack(anchor="w")
         ctk.CTkButton(
-            tr_frame,
+            scroll,
             text="今日はタスクリマインドを止める",
             command=self._on_pause_task_remind_today,
             fg_color="transparent",
@@ -268,11 +248,9 @@ class SettingsDialog(ctk.CTkToplevel):
             text_color=("gray20", "gray80"),
         ).pack(anchor="w", pady=(4, 0))
 
-        cal_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        cal_frame.pack(fill="x", pady=(8, 0))
-        ctk.CTkLabel(cal_frame, text="カレンダーリマインド (開始の何分前)", anchor="w").pack(fill="x")
-        cal_row = ctk.CTkFrame(cal_frame, fg_color="transparent")
-        cal_row.pack(fill="x", pady=(2, 0))
+        ctk.CTkLabel(scroll, text="カレンダーリマインド (開始の何分前)", anchor="w").pack(fill="x", pady=(12, 0))
+        cal_row = ctk.CTkFrame(scroll, fg_color="transparent")
+        cal_row.pack(fill="x", pady=(2, 8))
         ctk.CTkOptionMenu(
             cal_row,
             values=[str(i) for i in range(1, 16)],

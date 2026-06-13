@@ -28,6 +28,7 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
         self.minsize(440, 400)
         self.resizable(True, True)
+        self.attributes("-topmost", True)
 
         self._cfg = dict(cfg) if cfg is not None else load_config()
         self._status_data: dict = {}
@@ -60,6 +61,8 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
 
         self._step = ""
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.lift()
+        self.focus_force()
         self.after(50, self._init_status)
 
     def _clear_content(self) -> None:
@@ -339,6 +342,8 @@ def open_face_self_register_dialog(master=None, cfg: Optional[dict] = None) -> O
     if _dialog_instance is not None:
         try:
             _dialog_instance.lift()
+            _dialog_instance.focus_force()
+            _dialog_instance.attributes("-topmost", True)
             return _dialog_instance
         except Exception:
             _dialog_instance = None

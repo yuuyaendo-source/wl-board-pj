@@ -339,6 +339,7 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         self.title("社員・顔・音声の管理")
         self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
         self.minsize(640, 500)
+        self.attributes("-topmost", True)
         try:
             base = os.path.dirname(os.path.abspath(__file__))
             ico = os.path.join(base, "assets", "linko.ico")
@@ -966,6 +967,7 @@ def open_face_registry_admin_dialog(master=None, cfg: Optional[dict] = None) -> 
         try:
             _dialog_instance.lift()
             _dialog_instance.focus_force()
+            _dialog_instance.attributes("-topmost", True)
             return _dialog_instance
         except Exception:
             _dialog_instance = None
