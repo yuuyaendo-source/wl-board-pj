@@ -83,6 +83,11 @@ _FEATURE_ROWS = [
         "社員・顔・音声の管理 (管理者)",
         "linko-system の社員名簿・顔・音声サンプルを管理（要: linko_admin_token）。管理者 PC のみ ON にしてください。",
     ),
+    (
+        "face_registry_self",
+        "自分の顔を登録",
+        "社内メールで本人確認後、自分の顔を登録（連写3枚）。要: linko 名簿にメール登録済み・社内ネットワーク。",
+    ),
 ]
 
 
@@ -205,6 +210,13 @@ class SettingsDialog(ctk.CTkToplevel):
             fg_color="transparent",
             border_width=1,
         ).pack(anchor="w")
+        ctk.CTkButton(
+            admin_frame,
+            text="自分の顔を登録…",
+            command=self._on_open_face_self_register,
+            fg_color="transparent",
+            border_width=1,
+        ).pack(anchor="w", pady=(4, 0))
 
         # 機能見出し
         ctk.CTkLabel(self, text="機能 (任意でON)", font=("", 14, "bold")).pack(
@@ -292,6 +304,24 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("社員・顔の管理", str(e), parent=self)
             except Exception:
                 print(f"face registry admin open failed: {e}", flush=True)
+
+    def _on_open_face_self_register(self) -> None:
+        try:
+            from face_registry_self_dialog import open_face_self_register_dialog
+
+            draft = dict(self._cfg)
+            features = dict(draft.get("features") or {})
+            if "face_registry_self" in self._feature_vars:
+                features["face_registry_self"] = bool(self._feature_vars["face_registry_self"].get())
+            draft["features"] = features
+            open_face_self_register_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("自分の顔を登録", str(e), parent=self)
+            except Exception:
+                print(f"face self register open failed: {e}", flush=True)
 
     def _on_pause_task_remind_today(self) -> None:
         try:

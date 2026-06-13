@@ -86,6 +86,7 @@ def _get_defaults():
             "calendar_create": False,
             "remind_voice": False,
             "face_registry_manage": False,
+            "face_registry_self": False,
         },
         # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
         "task_remind_times": ["13:00", "17:00"],
