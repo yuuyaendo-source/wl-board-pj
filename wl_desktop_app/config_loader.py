@@ -63,6 +63,7 @@ def _get_defaults():
         "update_network_check_max_wait_sec": 180,
         "board_system_url": "https://wl-ai-board.internal.wonder-link.com/api/bs",  # Board System のベース URL
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
+        "board_system_email": "",  # Board System ログイン時のメール（セルフ顔登録などのプリフィル用）
         # linko-system (AI-Board) の Socket.IO サーバ URL。features.visitor_notify=True のときに接続して来客通知を受ける
         "linko_server_url": "https://linko-board.internal.wonder-link.com",
         # linko-system 管理 API 用（管理者 PC の config.json のみ。MSI 同梱しない）
@@ -87,6 +88,7 @@ def _get_defaults():
             "remind_voice": False,
             "face_registry_manage": False,
             "face_registry_self": False,
+            "voice_registry_self": False,
         },
         # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
         "task_remind_times": ["13:00", "17:00"],
@@ -163,6 +165,7 @@ def save_config(cfg):
     out["update_network_check_max_wait_sec"] = cfg.get("update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180))
     out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
+    out["board_system_email"] = cfg.get("board_system_email", defaults.get("board_system_email", ""))
     out["linko_server_url"] = cfg.get("linko_server_url", defaults.get("linko_server_url", ""))
     out["linko_admin_token"] = cfg.get("linko_admin_token", defaults.get("linko_admin_token", ""))
     # features は辞書を丸ごと保存（未知キーも保つ）
@@ -254,3 +257,50 @@ def get_effective_board_system_url(cfg=None):
     import re
     base = re.sub(r"/boards/.*$", "", task).rstrip("/")
     return f"{base}/api/bs" if base else ""
+
+
+def save_board_system_login(cfg: dict, *, board_url: str, user_id, user_data: dict, login_email: str = "") -> None:
+    """Board System ログイン成功時に config へ user id / 表示名 / メールを保存する。"""
+    cfg["board_system_url"] = (board_url or "").strip().rstrip("/")
+    cfg["board_system_personal_id"] = str(user_id)
+    cfg["user_id"] = str(user_id)
+    if (user_data.get("call_name") or user_data.get("name") or "").strip():
+        cfg["display_name"] = (user_data.get("call_name") or user_data.get("name") or "").strip()
+    email = (login_email or user_data.get("email") or "").strip()
+    if email and "@" in email:
+        cfg["board_system_email"] = email
+    save_config(cfg)
+
+
+def get_board_system_login_email(cfg=None) -> str:
+    """Board System ログイン済みユーザーのメール。config または API から取得。"""
+    if cfg is None:
+        cfg = load_config()
+    email = (cfg.get("board_system_email") or "").strip()
+    if email and "@" in email:
+        return email
+    pid = (cfg.get("board_system_personal_id") or "").strip()
+    board_url = get_effective_board_system_url(cfg)
+    if not pid or not board_url:
+        return ""
+    try:
+        import requests
+
+        from security import assert_http_url
+
+        user_url = f"{board_url}/users/{pid}"
+        assert_http_url(user_url, cfg, purpose="users_get")
+        r = requests.get(user_url, timeout=10)
+        if r.status_code != 200:
+            return ""
+        data = r.json() if r.content else {}
+        if not isinstance(data, dict):
+            return ""
+        fetched = (data.get("email") or "").strip()
+        if fetched and "@" in fetched:
+            cfg["board_system_email"] = fetched
+            save_config(cfg)
+            return fetched
+    except Exception:
+        pass
+    return ""

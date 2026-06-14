@@ -93,12 +93,9 @@ def _prompt_email_and_resolve_personal(parent=None):
         user_id = data.get("id")
         if user_id is None:
             return None
-        cfg["board_system_url"] = board_url
-        cfg["board_system_personal_id"] = str(user_id)
-        cfg["user_id"] = str(user_id)
-        if (data.get("call_name") or data.get("name") or "").strip():
-            cfg["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
-        save_config(cfg)
+        from config_loader import save_board_system_login
+
+        save_board_system_login(cfg, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
         return get_board_system_personal_url(cfg)
     except Exception:
         return None

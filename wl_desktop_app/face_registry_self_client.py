@@ -152,3 +152,59 @@ def upload_faces_self_serial(
                     continue
                 return ok, total, last_err
     return ok, total, last_err
+
+
+def get_voice_challenges(cfg: dict, token: str) -> dict:
+    data = _request(cfg, "GET", "/self_register/voice/challenges", token=token)
+    return data if isinstance(data, dict) else {}
+
+
+def update_voice_self(
+    cfg: dict,
+    person_id: str,
+    token: str,
+    enroll_session_id: str,
+    challenge_id: str,
+    voice_data_url: str,
+) -> dict:
+    pid = quote(str(person_id), safe="")
+    data = _request(
+        cfg,
+        "PUT",
+        f"/{pid}/voice",
+        json_body={
+            "voiceData": voice_data_url,
+            "enroll_session_id": enroll_session_id,
+            "challenge_id": challenge_id,
+        },
+        token=token,
+        params={"self_register": "1"},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def upload_voices_self_serial(
+    cfg: dict,
+    person_id: str,
+    token: str,
+    enroll_session_id: str,
+    samples: list[tuple[str, str]],
+) -> tuple[int, int, Optional[str]]:
+    total = len(samples)
+    ok = 0
+    last_err: Optional[str] = None
+    for challenge_id, data_url in samples:
+        if not data_url or not challenge_id:
+            continue
+        for attempt in range(2):
+            try:
+                update_voice_self(cfg, person_id, token, enroll_session_id, challenge_id, data_url)
+                ok += 1
+                last_err = None
+                break
+            except FaceSelfRegisterError as e:
+                last_err = str(e)
+                if attempt == 0:
+                    continue
+                return ok, total, last_err
+    return ok, total, last_err

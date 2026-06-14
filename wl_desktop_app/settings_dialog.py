@@ -88,6 +88,11 @@ _FEATURE_ROWS = [
         "自分の顔を登録",
         "社内メールで本人確認後、自分の顔を登録（連写3枚）。要: linko 名簿にメール登録済み・社内ネットワーク。",
     ),
+    (
+        "voice_registry_self",
+        "自分の声を登録",
+        "同一 OTP で声紋を登録（チャレンジ付きライブ録音3回）。要: linko 音声セルフ登録 ON・社内ネットワーク。",
+    ),
 ]
 
 
@@ -206,6 +211,11 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll,
             text="自分の顔を登録…",
             command=self._on_open_face_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 0))
+        ctk.CTkButton(
+            scroll,
+            text="自分の声を登録…",
+            command=self._on_open_voice_self_register,
         ).pack(anchor="w", fill="x", pady=(6, 12))
 
         ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
@@ -300,6 +310,24 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("自分の顔を登録", str(e), parent=self)
             except Exception:
                 print(f"face self register open failed: {e}", flush=True)
+
+    def _on_open_voice_self_register(self) -> None:
+        try:
+            from voice_registry_self_dialog import open_voice_self_register_dialog
+
+            draft = dict(self._cfg)
+            features = dict(draft.get("features") or {})
+            if "voice_registry_self" in self._feature_vars:
+                features["voice_registry_self"] = bool(self._feature_vars["voice_registry_self"].get())
+            draft["features"] = features
+            open_voice_self_register_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("自分の声を登録", str(e), parent=self)
+            except Exception:
+                print(f"voice self register open failed: {e}", flush=True)
 
     def _on_pause_task_remind_today(self) -> None:
         try:

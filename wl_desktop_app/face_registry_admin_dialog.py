@@ -287,14 +287,32 @@ class FaceCaptureDialog(ctk.CTkToplevel):
 class VoiceCaptureDialog(ctk.CTkToplevel):
     """マイクから音声サンプルを録音する（将来の話者照合用）。"""
 
-    def __init__(self, master=None, *, person_name: str = "", on_captured: Optional[Callable[[str], None]] = None):
+    def __init__(
+        self,
+        master=None,
+        *,
+        person_name: str = "",
+        challenge_phrase: str = "",
+        sample_index: int = 1,
+        sample_total: int = 1,
+        on_captured: Optional[Callable[[str], None]] = None,
+    ):
         super().__init__(master)
         self._on_captured = on_captured
         self._recording = False
+        self._challenge_phrase = (challenge_phrase or "").strip()
+        self._sample_index = max(1, int(sample_index))
+        self._sample_total = max(1, int(sample_total))
+        self._countdown_running = False
 
-        self.title(f"音声を録音 — {person_name or '社員'}")
-        self.geometry("480x220")
-        self.resizable(False, False)
+        title_suffix = ""
+        if self._challenge_phrase:
+            title_suffix = f"（{self._sample_index}/{self._sample_total}）"
+        self.title(f"音声を録音 — {person_name or '社員'}{title_suffix}")
+        win_h = 380 if self._challenge_phrase else 280
+        self.geometry(f"560x{win_h}")
+        self.minsize(520, 320 if self._challenge_phrase else 240)
+        self.resizable(True, True)
         self.attributes("-topmost", True)
 
         pad = 12
@@ -302,22 +320,90 @@ class VoiceCaptureDialog(ctk.CTkToplevel):
             self,
             text="マイクの準備を確認しています…",
             anchor="w",
-            wraplength=440,
+            wraplength=520,
             justify="left",
         )
         self._status.pack(fill="x", padx=pad, pady=(pad, 8))
-        ctk.CTkLabel(
-            self,
-            text="例: 「おはようございます、○○です」のように、普段の声で話してください。",
-            text_color=("gray40", "gray60"),
-            wraplength=440,
-            justify="left",
-            anchor="w",
-        ).pack(fill="x", padx=pad, pady=(0, 12))
+        if self._challenge_phrase:
+            ctk.CTkLabel(
+                self,
+                text="読み上げるセリフ",
+                font=("", 14, "bold"),
+                anchor="w",
+            ).pack(fill="x", padx=pad, pady=(0, 4))
+            self._phrase_box = ctk.CTkFrame(
+                self,
+                fg_color=("gray92", "gray18"),
+                corner_radius=10,
+                border_width=2,
+                border_color=("gray65", "gray35"),
+            )
+            self._phrase_box.pack(fill="both", expand=True, padx=pad, pady=(0, 8))
+            self._phrase_label = ctk.CTkLabel(
+                self._phrase_box,
+                text=self._challenge_phrase,
+                font=("", 22, "bold"),
+                wraplength=500,
+                justify="center",
+            )
+            self._phrase_label.place(relx=0.5, rely=0.38, anchor="center")
+            self._overlay = ctk.CTkLabel(
+                self._phrase_box,
+                text="",
+                fg_color="transparent",
+                text_color=("#1d4ed8", "#93c5fd"),
+                font=("", 64, "bold"),
+            )
+            self._overlay.place(relx=0.5, rely=0.78, anchor="center")
+            self._overlay.place_forget()
+            ctk.CTkLabel(
+                self,
+                text="※ カウントダウン後、上のセリフをはっきり・自然な声で読み上げてください（約4秒）。",
+                text_color=("gray40", "gray60"),
+                wraplength=520,
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=pad, pady=(0, 8))
+        else:
+            self._phrase_box = None
+            self._phrase_label = None
+            self._overlay = None
+            ctk.CTkLabel(
+                self,
+                text="読み上げる例",
+                font=("", 14, "bold"),
+                anchor="w",
+            ).pack(fill="x", padx=pad, pady=(0, 4))
+            example_box = ctk.CTkFrame(
+                self,
+                fg_color=("gray92", "gray18"),
+                corner_radius=10,
+                border_width=1,
+                border_color=("gray75", "gray30"),
+            )
+            example_box.pack(fill="x", padx=pad, pady=(0, 8))
+            ctk.CTkLabel(
+                example_box,
+                text="「おはようございます、○○です」",
+                font=("", 18, "bold"),
+                wraplength=500,
+                justify="center",
+            ).pack(fill="x", padx=16, pady=16)
+            ctk.CTkLabel(
+                self,
+                text="普段の声で、上記のような挨拶を話してください。",
+                text_color=("gray40", "gray60"),
+                wraplength=520,
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=pad, pady=(0, 12))
 
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(fill="x", padx=pad, pady=(0, pad))
-        self._btn_record = ctk.CTkButton(btn_row, text="録音して登録（約4秒）", command=self._on_record, state="disabled")
+        btn_text = "録音して登録（約4秒）"
+        if self._challenge_phrase:
+            btn_text = f"{self._sample_index} 件目を録音"
+        self._btn_record = ctk.CTkButton(btn_row, text=btn_text, command=self._on_record, state="disabled")
         self._btn_record.pack(side="left")
         ctk.CTkButton(btn_row, text="キャンセル", command=self._on_close, fg_color="transparent", border_width=1).pack(
             side="right"
@@ -325,6 +411,8 @@ class VoiceCaptureDialog(ctk.CTkToplevel):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._check_mic)
+        self.lift()
+        self.focus_force()
 
     def _check_mic(self) -> None:
         from voice_capture import is_available
@@ -334,15 +422,60 @@ class VoiceCaptureDialog(ctk.CTkToplevel):
                 text="マイク録音が使えません。Windows で sounddevice / numpy をインストールし、マイクを許可してください。"
             )
             return
-        self._status.configure(text="準備できました。「録音して登録」を押すと約4秒間録音します。")
+        if self._challenge_phrase:
+            self._status.configure(
+                text=(
+                    f"{self._sample_index}/{self._sample_total} 件目。"
+                    "「録音」を押すと 3・2・1 のあと、枠内のセリフをそのまま読み上げます。"
+                )
+            )
+        else:
+            self._status.configure(
+                text="準備できました。例のセリフを参考に「録音して登録」を押すと約4秒間録音します。"
+            )
         self._btn_record.configure(state="normal")
 
     def _on_record(self) -> None:
+        if self._recording or self._countdown_running:
+            return
+        self._btn_record.configure(state="disabled")
+        if self._challenge_phrase and self._overlay is not None:
+            self._countdown_running = True
+            self._run_countdown(3)
+            return
+        self._start_recording()
+
+    def _run_countdown(self, n: int) -> None:
+        if not self.winfo_exists():
+            return
+        if n > 0:
+            if self._overlay is not None:
+                self._overlay.configure(text=str(n))
+                self._overlay.place(relx=0.5, rely=0.78, anchor="center")
+            if self._phrase_box is not None:
+                self._phrase_box.configure(border_color=("#1d4ed8", "#3b82f6"))
+            self._status.configure(text=f"読み上げ準備… {n}（セリフを確認してください）")
+            self.after(800, lambda: self._run_countdown(n - 1))
+            return
+        if self._overlay is not None:
+            self._overlay.place_forget()
+            self._overlay.configure(text="")
+        if self._phrase_box is not None:
+            self._phrase_box.configure(border_color=("#16a34a", "#22c55e"))
+        self._countdown_running = False
+        self._start_recording()
+
+    def _start_recording(self) -> None:
         if self._recording:
             return
         self._recording = True
         self._btn_record.configure(state="disabled")
-        self._status.configure(text="録音中… 普段の声で話してください。")
+        if self._challenge_phrase:
+            self._status.configure(text="録音中… 枠内のセリフをそのまま読み上げてください。")
+            if self._phrase_box is not None:
+                self._phrase_box.configure(border_color=("#dc2626", "#ef4444"))
+        else:
+            self._status.configure(text="録音中… 普段の声で話してください。")
 
         def work() -> None:
             from voice_capture import record_wav_data_url
@@ -354,8 +487,11 @@ class VoiceCaptureDialog(ctk.CTkToplevel):
 
     def _finish_record(self, data_url: Optional[str]) -> None:
         self._recording = False
+        self._countdown_running = False
         if not data_url:
             self._status.configure(text="録音に失敗しました。マイク設定を確認して再試行してください。")
+            if self._phrase_box is not None:
+                self._phrase_box.configure(border_color=("gray65", "gray35"))
             self._btn_record.configure(state="normal")
             return
         if self._on_captured:

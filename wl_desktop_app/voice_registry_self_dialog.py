@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""社員向け顔セルフ登録ウィザード。"""
+"""社員向け音声セルフ登録ウィザード（OTP 共通 + チャレンジ録音）。"""
 from __future__ import annotations
 
 import threading
@@ -14,17 +14,17 @@ except ImportError as e:
 
 from config_loader import load_config
 
-_dialog_instance: Optional["FaceSelfRegisterDialog"] = None
+_dialog_instance: Optional["VoiceSelfRegisterDialog"] = None
 _capture_instance = None
 
 
-class FaceSelfRegisterDialog(ctk.CTkToplevel):
+class VoiceSelfRegisterDialog(ctk.CTkToplevel):
     WIDTH = 500
     HEIGHT = 480
 
     def __init__(self, master=None, cfg: Optional[dict] = None):
         super().__init__(master)
-        self.title("自分の顔を登録")
+        self.title("自分の声を登録")
         self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
         self.minsize(440, 400)
         self.resizable(True, True)
@@ -87,13 +87,13 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         try:
             self._status_data = get_self_register_status(self._cfg)
         except FaceSelfRegisterError as e:
-            self._show_error("自分の顔を登録", str(e))
+            self._show_error("自分の声を登録", str(e))
             self._on_close()
             return
-        if not self._status_data.get("face_enabled"):
+        if not self._status_data.get("voice_enabled"):
             self._show_error(
-                "自分の顔を登録",
-                "管理者が顔セルフ登録を有効にしていません。\n管理者に名簿登録・有効化を依頼してください。",
+                "自分の声を登録",
+                "管理者が音声セルフ登録を有効にしていません。\n管理者に名簿登録・有効化を依頼してください。",
             )
             self._on_close()
             return
@@ -103,15 +103,19 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         self._step = "consent"
         self._clear_content()
         self._status.configure(text="")
-        text = (self._status_data.get("consent_text_ja") or "").strip() or (
-            "登録する顔画像は、入退室・執務室モード等での本人確認のために利用されます。"
+        text = (self._status_data.get("voice_consent_text_ja") or "").strip() or (
+            "登録する音声は、エントランス等での本人確認・開錠のために利用されます。"
         )
+        required = int(self._status_data.get("voice_samples_required") or 3)
         ctk.CTkLabel(self._content, text=text, justify="left", anchor="w", wraplength=self.WIDTH - 48).pack(
             fill="x", pady=(0, 12)
         )
         ctk.CTkLabel(
             self._content,
-            text="撮影は連写3枚です。照合データは最大5件（古いものから入れ替え）。",
+            text=(
+                f"録音はチャレンジ付き {required} サンプルです。"
+                "各回、画面に表示されるセリフをそのまま読み上げます。ファイルアップロードはできません。"
+            ),
             text_color=("gray40", "gray60"),
             justify="left",
             anchor="w",
@@ -148,13 +152,16 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self._content, text="確認コード（6桁）", anchor="w").pack(fill="x", pady=(0, 4))
         self._otp_entry = ctk.CTkEntry(self._content, placeholder_text="123456")
         self._otp_entry.pack(fill="x")
+        self._btn_back.configure(state="normal")
         self._btn_next.configure(text="確認")
 
     def _on_back(self) -> None:
-        if self._step == "email":
-            self._show_consent_step()
-        elif self._step == "otp":
+        if self._step == "otp":
             self._show_email_step()
+        elif self._step == "email":
+            self._show_consent_step()
+        elif self._step == "consent":
+            self._on_close()
 
     def _on_next(self) -> None:
         if self._step == "consent":
@@ -175,11 +182,11 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
             self._show_error("メール", "有効なメールアドレスを入力してください。")
             return
         self._btn_next.configure(state="disabled")
-        self._status.configure(text="送信中…")
+        self._status.configure(text="送信しています…")
 
         def work() -> None:
+            self._cfg = load_config()
             try:
-                self._cfg = load_config()
                 data = start_self_register(self._cfg, email)
             except FaceSelfRegisterError as e:
                 self.after(0, lambda: self._email_failed(str(e)))
@@ -191,21 +198,18 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
     def _email_failed(self, msg: str) -> None:
         self._btn_next.configure(state="normal")
         self._status.configure(text="")
-        self._show_error("送信", msg)
+        self._show_error("確認コード", msg)
 
     def _email_done(self, data: dict) -> None:
         self._btn_next.configure(state="normal")
-        if data.get("skip_otp") and data.get("self_register_token"):
+        if data.get("skip_otp"):
             self._apply_session(data)
-            self._open_capture(burst_count=3)
+            self._open_capture()
             return
         self._challenge_id = str(data.get("challenge_id") or "")
         masked = str(data.get("email_masked") or "")
-        self._status.configure(text=str(data.get("message") or "確認コードを送信しました。"))
-        if self._status_data.get("otp_required", True):
-            self._show_otp_step(masked)
-        else:
-            self._show_info("送信", "メールを確認してください。")
+        self._status.configure(text="確認コードを送信しました（届かない場合は管理者に名簿登録を確認してください）。")
+        self._show_otp_step(masked)
 
     def _submit_otp(self) -> None:
         from face_registry_self_client import FaceSelfRegisterError, verify_self_register
@@ -215,11 +219,11 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
             self._show_error("確認コード", "確認コードを入力してください。")
             return
         self._btn_next.configure(state="disabled")
-        self._status.configure(text="確認中…")
+        self._status.configure(text="確認しています…")
 
         def work() -> None:
+            self._cfg = load_config()
             try:
-                self._cfg = load_config()
                 data = verify_self_register(self._cfg, self._challenge_id, otp)
             except FaceSelfRegisterError as e:
                 self.after(0, lambda: self._otp_failed(str(e)))
@@ -236,11 +240,11 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
     def _otp_done(self, data: dict) -> None:
         self._btn_next.configure(state="normal")
         scopes = data.get("scopes") or []
-        if isinstance(scopes, list) and "face_put" not in scopes:
-            self._show_error("自分の顔を登録", "このセッションでは顔登録が許可されていません。")
+        if isinstance(scopes, list) and "voice_put" not in scopes:
+            self._show_error("自分の声を登録", "このセッションでは音声登録が許可されていません。")
             return
         self._apply_session(data)
-        self._open_capture(burst_count=3)
+        self._open_capture()
 
     def _apply_session(self, data: dict) -> None:
         self._token = str(data.get("self_register_token") or "")
@@ -249,103 +253,20 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         scopes = data.get("scopes") or []
         self._scopes = list(scopes) if isinstance(scopes, list) else []
 
-    def _open_capture(self, *, burst_count: int = 3) -> None:
-        global _capture_instance
-        from face_registry_admin_dialog import FaceCaptureDialog
+    def _open_capture(self) -> None:
+        begin_voice_self_capture(self, self._cfg, self._person_id, self._person_name, self._token)
 
-        if _capture_instance is not None:
-            try:
-                _capture_instance.lift()
-                return
-            except Exception:
-                _capture_instance = None
-
-        person_id = self._person_id
-        person_name = self._person_name
-        token = self._token
-
-        def _upload(data_urls: List[str]) -> None:
-            def work() -> None:
-                from face_registry_self_client import FaceSelfRegisterError, upload_faces_self_serial
-
-                self._cfg = load_config()
-                try:
-                    ok, total, err = upload_faces_self_serial(self._cfg, person_id, token, data_urls)
-                except FaceSelfRegisterError as e:
-                    self.after(0, lambda: self._show_error("顔登録", str(e)))
-                    return
-                prompt_glasses = burst_count >= 3 and ok == total and total >= 3
-                self.after(
-                    0,
-                    lambda: self._on_faces_uploaded(person_id, person_name, token, ok, total, err, prompt_glasses),
-                )
-
-            threading.Thread(target=work, daemon=True).start()
-
-        _capture_instance = FaceCaptureDialog(
-            self, person_name=person_name, burst_count=burst_count, on_captured=_upload
-        )
-        _capture_instance.lift()
-        _capture_instance.focus_force()
-        _capture_instance.attributes("-topmost", True)
-
-    def _on_faces_uploaded(
-        self,
-        person_id: str,
-        person_name: str,
-        token: str,
-        ok: int,
-        total: int,
-        err: Optional[str],
-        prompt_glasses: bool,
-    ) -> None:
+    def _on_uploaded(self, ok: int, total: int, err: Optional[str]) -> None:
         if ok == 0:
-            self._show_error("顔登録", err or "登録に失敗しました。")
+            self._show_error("音声登録", err or "登録に失敗しました。")
             return
         if ok == total:
-            if total == 1:
-                msg = f"{person_name} さんの顔を1枚登録しました。"
-            else:
-                msg = f"{person_name} さんの顔を{ok}枚登録しました。"
+            msg = f"{self._person_name} さんの声を{ok}サンプル登録しました。"
         else:
             reason = err or "通信エラー"
-            msg = f"{person_name} さんの顔を {ok}/{total} 枚登録しました（{total - ok}枚は{reason}）。"
+            msg = f"{self._person_name} さんの声を {ok}/{total} サンプル登録しました（{total - ok}件は{reason}）。"
         self._show_info("登録完了", msg)
-        if prompt_glasses and ok == total:
-            self._prompt_glasses_extra(person_id, person_name, token)
-        else:
-            self._maybe_prompt_voice()
-
-    def _maybe_prompt_voice(self) -> None:
-        if "voice_put" not in self._scopes:
-            return
-        if not self._status_data.get("voice_enabled"):
-            return
-        from tkinter import messagebox
-
-        if messagebox.askyesno(
-            "音声登録",
-            "同じセッションで声の登録も行いますか？（チャレンジ付き3サンプル）",
-            parent=self,
-        ):
-            from voice_registry_self_dialog import begin_voice_self_capture
-
-            begin_voice_self_capture(self, self._cfg, self._person_id, self._person_name, self._token)
-
-    def _prompt_glasses_extra(self, person_id: str, person_name: str, token: str) -> None:
-        from tkinter import messagebox
-
-        if messagebox.askyesno(
-            "追加撮影",
-            "眼鏡をかけて撮影した場合、外した状態でもう1枚追加すると認識率が上がります。追加撮影しますか？",
-            parent=self,
-        ):
-            self._token = token
-            self._person_id = person_id
-            self._person_name = person_name
-            self._open_capture(burst_count=1)
-        else:
-            self._maybe_prompt_voice()
+        self._on_close()
 
     def _on_close(self) -> None:
         global _dialog_instance
@@ -356,19 +277,96 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
             pass
 
 
-def open_face_self_register_dialog(master=None, cfg: Optional[dict] = None) -> Optional[FaceSelfRegisterDialog]:
+def begin_voice_self_capture(
+    master,
+    cfg: dict,
+    person_id: str,
+    person_name: str,
+    token: str,
+) -> None:
+    """OTP 済みセッションでチャレンジ録音→アップロードを開始する。"""
+    global _capture_instance
+    from face_registry_admin_dialog import VoiceCaptureDialog
+    from face_registry_self_client import FaceSelfRegisterError, get_voice_challenges, upload_voices_self_serial
+
+    if _capture_instance is not None:
+        try:
+            _capture_instance.lift()
+            return
+        except Exception:
+            _capture_instance = None
+
+    try:
+        ch_data = get_voice_challenges(cfg, token)
+    except FaceSelfRegisterError as e:
+        if master is not None and hasattr(master, "_show_error"):
+            master._show_error("音声登録", str(e))
+        return
+
+    session_id = str(ch_data.get("session_id") or "")
+    challenges = ch_data.get("challenges") or []
+    if not session_id or not isinstance(challenges, list) or not challenges:
+        if master is not None and hasattr(master, "_show_error"):
+            master._show_error("音声登録", "チャレンジの取得に失敗しました。")
+        return
+
+    samples: list[tuple[str, str]] = []
+    total = len(challenges)
+
+    def _upload_all(items: list[tuple[str, str]]) -> None:
+        def work() -> None:
+            try:
+                ok, total_n, err = upload_voices_self_serial(cfg, person_id, token, session_id, items)
+            except FaceSelfRegisterError as e:
+                if master is not None and hasattr(master, "after"):
+                    master.after(0, lambda: master._on_uploaded(0, total, str(e)))
+                return
+            if master is not None and hasattr(master, "after"):
+                master.after(0, lambda: master._on_uploaded(ok, total_n, err))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def capture_next(index: int) -> None:
+        global _capture_instance
+        if index >= total:
+            _upload_all(list(samples))
+            return
+        ch = challenges[index]
+        phrase = str(ch.get("phrase_ja") or "")
+        cid = str(ch.get("challenge_id") or "")
+
+        def on_one(data_url: str) -> None:
+            samples.append((cid, data_url))
+            capture_next(index + 1)
+
+        _capture_instance = VoiceCaptureDialog(
+            master,
+            person_name=person_name,
+            challenge_phrase=phrase,
+            sample_index=index + 1,
+            sample_total=total,
+            on_captured=on_one,
+        )
+        _capture_instance.lift()
+        _capture_instance.focus_force()
+        _capture_instance.attributes("-topmost", True)
+
+    capture_next(0)
+
+
+def open_voice_self_register_dialog(master=None, cfg: Optional[dict] = None) -> Optional[VoiceSelfRegisterDialog]:
     global _dialog_instance
     from config_loader import is_feature_enabled, load_config
 
     if cfg is None:
         cfg = load_config()
-    if not is_feature_enabled("face_registry_self", cfg):
+    if not is_feature_enabled("voice_registry_self", cfg):
         from tkinter import messagebox
 
         if master is not None:
             messagebox.showinfo(
-                "自分の顔を登録",
-                "設定で「自分の顔を登録」を ON にしてください。",
+                "自分の声を登録",
+                "設定で「自分の声を登録」を ON にしてください。",
                 parent=master,
             )
         return None
@@ -376,7 +374,7 @@ def open_face_self_register_dialog(master=None, cfg: Optional[dict] = None) -> O
         from tkinter import messagebox
 
         if master is not None:
-            messagebox.showerror("自分の顔を登録", "linko_server_url が未設定です。", parent=master)
+            messagebox.showerror("自分の声を登録", "linko_server_url が未設定です。", parent=master)
         return None
 
     if _dialog_instance is not None:
@@ -387,5 +385,6 @@ def open_face_self_register_dialog(master=None, cfg: Optional[dict] = None) -> O
             return _dialog_instance
         except Exception:
             _dialog_instance = None
-    _dialog_instance = FaceSelfRegisterDialog(master=master, cfg=cfg)
+
+    _dialog_instance = VoiceSelfRegisterDialog(master, cfg=cfg)
     return _dialog_instance

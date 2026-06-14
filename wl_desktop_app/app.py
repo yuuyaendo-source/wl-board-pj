@@ -546,12 +546,9 @@ def _board_system_login_clicked(*args):
             data = r.json()
             user_id = data.get("id")
             if user_id is not None:
-                _config["board_system_url"] = board_url
-                _config["board_system_personal_id"] = str(user_id)
-                _config["user_id"] = str(user_id)
-                if (data.get("call_name") or data.get("name") or "").strip():
-                    _config["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
-                save_config(_config)
+                from config_loader import save_board_system_login
+
+                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
                 notifications.show_toast(
                     "Wonder Linko",
                     f"ログインしました（{data.get('name', '')}）。パーソナルを開くで Board System のパーソナルボードが開きます。",
@@ -638,12 +635,9 @@ def _prompt_board_system_login_if_needed():
             data = r.json()
             user_id = data.get("id")
             if user_id is not None:
-                _config["board_system_url"] = board_url
-                _config["board_system_personal_id"] = str(user_id)
-                _config["user_id"] = str(user_id)
-                if (data.get("call_name") or data.get("name") or "").strip():
-                    _config["display_name"] = (data.get("call_name") or data.get("name") or "").strip()
-                save_config(_config)
+                from config_loader import save_board_system_login
+
+                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
                 notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
     except Exception:
         pass
