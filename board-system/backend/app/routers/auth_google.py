@@ -33,6 +33,7 @@ from app.models import (
 from app.models.sticky_note import NoteStatus
 from app.services.calendar_placement import (
     CALENDAR_PLACEMENT_SOURCES,
+    events_fingerprint,
     placement_source_for_event,
     should_skip_calendar_sticky,
 )
@@ -331,13 +332,17 @@ async def _sync_user_calendar_events_cache(
     return len(events)
 
 
-async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> int:
+async def _refresh_user_calendar_and_today(
+    user_id: int, db: AsyncSession, events: list[dict] | None = None
+) -> int:
     """
     指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、
     PersonalSummaryCache の events と today（LLM 短縮文）を上書き保存する。
+    events を渡した場合は再取得しない（live 同期の二重取得回避）。
     戻り値: 取得した予定件数。トークンなし・エラー時は 0。
     """
-    events = await _fetch_today_events_for_user(user_id, db)
+    if events is None:
+        events = await _fetch_today_events_for_user(user_id, db)
     person_id = str(user_id)
     events_json = json.dumps(events)
     today_items = []
@@ -347,6 +352,16 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
             today_items = await asyncio.to_thread(run_today_short_summaries, events)
         except Exception as e:
             logger.warning("Today 短縮文生成に失敗 user_id=%s: %s", user_id, e)
+    if events and not today_items:
+        today_items = [
+            {
+                "label": ((e.get("summary") or "")[:50] or "(無題)"),
+                "summary": e.get("summary", ""),
+                "start": e.get("start", ""),
+                "end": e.get("end", ""),
+            }
+            for e in events
+        ]
     today_json = json.dumps(today_items)
     result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
     row = result.scalar_one_or_none()
@@ -456,16 +471,32 @@ async def daily_calendar_refresh(db: AsyncSession = Depends(get_db)):
 
 @router.get("/api/personal/{user_id}/calendar/events/live")
 async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Google から今日の予定をリアルタイム取得し、キャッシュの events も更新して返す。"""
+    """Google から今日の予定をリアルタイム取得。変更があれば Today 紫付箋も更新する。"""
     result = await db.execute(select(User).where(User.id == user_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
     r_tok = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
     if r_tok.scalar_one_or_none() is None:
-        return {"events": [], "synced": False}
+        return {"events": [], "synced": False, "stickies_updated": False}
+    person_id = str(user_id)
+    cached_events: list[dict] = []
+    r_cache = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
+    )
+    cache_row = r_cache.scalar_one_or_none()
+    if cache_row and cache_row.events:
+        try:
+            cached_events = json.loads(cache_row.events)
+        except (TypeError, ValueError):
+            cached_events = []
+
     events = await _fetch_today_events_for_user(user_id, db)
-    await _sync_user_calendar_events_cache(user_id, db, events)
-    return {"events": events, "synced": True}
+    stickies_updated = events_fingerprint(cached_events) != events_fingerprint(events)
+    if stickies_updated:
+        await _refresh_user_calendar_and_today(user_id, db, events=events)
+    else:
+        await _sync_user_calendar_events_cache(user_id, db, events)
+    return {"events": events, "synced": True, "stickies_updated": stickies_updated}
 
 
 @router.post("/api/personal/calendar_sync_all")

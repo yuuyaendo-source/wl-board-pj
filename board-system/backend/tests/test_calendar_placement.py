@@ -35,9 +35,19 @@ def test_manual_task_included():
     assert include_in_task_remind(None)
 
 
+def test_events_fingerprint_detects_change():
+    a = [{"id": "1", "start": "2026-06-01", "summary": "タスク", "eventType": "default"}]
+    b = [{"id": "1", "start": "2026-06-01", "summary": "タスク変更", "eventType": "default"}]
+    from app.services.calendar_placement import events_fingerprint
+
+    assert events_fingerprint(a) == events_fingerprint(a)
+    assert events_fingerprint(a) != events_fingerprint(b)
+
+
 if __name__ == "__main__":
     test_working_location_skipped()
     test_all_day_calendar_source()
     test_timed_calendar_source_excluded_from_task_remind()
     test_manual_task_included()
+    test_events_fingerprint_detects_change()
     print("test_calendar_placement: OK")

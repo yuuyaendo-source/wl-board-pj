@@ -36,3 +36,21 @@ def is_calendar_placement_source(src: str | None) -> bool:
 def include_in_task_remind(placement_source: str | None) -> bool:
     """定時タスクリマインド（13:00/17:00）の対象か。時刻付き会議は除外。"""
     return placement_source != PLACEMENT_SOURCE_CALENDAR_TIMED
+
+
+def events_fingerprint(events: list[dict]) -> str:
+    """予定一覧の変更検知用（id・開始・タイトル・種別）。"""
+    parts: list[str] = []
+    for e in events or []:
+        parts.append(
+            "|".join(
+                [
+                    str(e.get("id") or ""),
+                    str(e.get("start") or ""),
+                    str(e.get("end") or ""),
+                    str(e.get("summary") or ""),
+                    str(e.get("eventType") or ""),
+                ]
+            )
+        )
+    return "\n".join(sorted(parts))

@@ -161,6 +161,7 @@ async def get_board_personal(
             sort_order=p.sort_order,
             note_content=n.content,
             note_status=n.status.value,
+            placement_source=p.placement_source,
             is_from_task=(n.id in task_note_ids),
         )
         for p, n in rows

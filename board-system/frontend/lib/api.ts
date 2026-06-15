@@ -132,11 +132,13 @@ export const api = {
   /** Google カレンダーから今日の予定を取得してキャッシュに保存。その後 personalSummary を再取得すると反映される。 */
   personalCalendarRefresh: (ownerId: number) =>
     fetchApi<{ ok: boolean; events_count: number }>(`/api/personal/${ownerId}/calendar/refresh`, { method: "POST" }),
-  /** Google から今日の予定をリアルタイム取得（キャッシュ events も更新） */
+  /** Google から今日の予定をリアルタイム取得（変更時は Today 紫付箋も更新） */
   personalCalendarLive: (ownerId: number) =>
-    fetchApi<{ events: { id?: string; summary?: string; start?: string; end?: string }[]; synced: boolean }>(
-      `/api/personal/${ownerId}/calendar/events/live`
-    ),
+    fetchApi<{
+      events: { id?: string; summary?: string; start?: string; end?: string }[];
+      synced: boolean;
+      stickies_updated?: boolean;
+    }>(`/api/personal/${ownerId}/calendar/events/live`),
 
   dailyReset: {
     messages: (ownerId: number) =>

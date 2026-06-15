@@ -401,6 +401,10 @@ function PersonalCalendarPanel({
         const data = await api.personalCalendarLive(ownerId);
         if (!cancelled && data.synced && Array.isArray(data.events)) {
           setLiveEvents(data.events);
+          if (data.stickies_updated) {
+            await onRefresh();
+            if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
+          }
         }
       } catch {
         // 未連携・オフライン時はキャッシュ表示のまま
@@ -417,7 +421,7 @@ function PersonalCalendarPanel({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [ownerId]);
+  }, [ownerId, onRefresh, onAfterCalendarRefresh]);
 
   const handleRefreshFromGoogle = useCallback(async () => {
     setRefreshing(true);
