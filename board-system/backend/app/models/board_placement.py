@@ -54,7 +54,7 @@ class BoardPlacement(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    # カレンダー更新で作成した Today 付箋の識別用（'calendar' | NULL）
+    # カレンダー更新で作成した Today 付箋（'calendar' 終日 | 'calendar_timed' 時刻付き | NULL）
     placement_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     note = relationship("StickyNote", back_populates="board_placements")

@@ -18,7 +18,7 @@ export interface PlacementWithNote {
   sort_order: number;
   note_content: string;
   note_status: string;
-  /** MORNING のみ: 'news' のときニュース枠（リン子ピックアップ） */
+  /** MORNING: 'news' / Personal Today: 'calendar'（終日）| 'calendar_timed'（時刻付き） */
   placement_source?: string | null;
   /** Personal のみ: タスクボードからコピーされた付箋か */
   is_from_task?: boolean;

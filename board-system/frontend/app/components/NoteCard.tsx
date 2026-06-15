@@ -14,7 +14,9 @@ interface NoteCardProps {
   /** ドラッグ時に dataTransfer に追加でセットする値（Personal のゴミ箱/タスクリリース制限用） */
   dragData?: Record<string, string>;
   /** Task/Personal の付箋色（未指定時は placement.task_color または黄） */
-  cardColor?: "yellow" | "green" | "grey" | "blue" | "red";
+  cardColor?: "yellow" | "green" | "grey" | "blue" | "red" | "purple";
+  /** カレンダー由来の付箋印 */
+  showCalendarBadge?: boolean;
   /** Task 用: 引き取り者（短縮名アイコン表示） */
   takenBy?: TakenByUser[];
   /** 追記コールバック（指定時は追記入力欄を表示。付箋は追記のみ） */
@@ -29,6 +31,7 @@ const BG_COLOR = {
   grey: "bg-zinc-300 border-zinc-300",
   blue: "bg-blue-100 border-blue-300",
   red: "bg-red-100 border-red-400",
+  purple: "bg-violet-100 border-violet-300",
 } as const;
 
 export default function NoteCard({
@@ -38,6 +41,7 @@ export default function NoteCard({
   draggable = false,
   dragData,
   cardColor,
+  showCalendarBadge = false,
   takenBy = [],
   onAppendContent,
   onDragStart,
@@ -65,6 +69,14 @@ export default function NoteCard({
           )}
         </p>
         <div className="flex shrink-0 items-center gap-1">
+          {showCalendarBadge && (
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded bg-violet-500 text-[10px] font-bold text-white"
+              title="カレンダー予定"
+            >
+              C
+            </span>
+          )}
           {showPersonalBadge && (
             <span
               className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] font-bold text-white"

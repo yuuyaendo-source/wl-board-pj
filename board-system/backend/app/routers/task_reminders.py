@@ -2,7 +2,7 @@
 """
 Personal Today タスクのリマインド API（デスクトップアプリ用）。
 
-- GET  pending: 指定スロットで未表示の Today 付箋（calendar 由来除外）
+- GET  pending: 指定スロットで未表示の Today 付箋（終日カレンダー＋手動。時刻付き会議は除外）
 - POST shown:  表示済みとして記録（同日同スロット再送防止）
 - POST ack:    continue / done（done は lane=DONE に更新）
 """
@@ -20,11 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.models import BoardPlacement, BoardType, Lane, StickyNote, TaskReminderLog, User
+from app.services.calendar_placement import include_in_task_remind
 
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
 logger = logging.getLogger(__name__)
 
-PLACEMENT_SOURCE_CALENDAR = "calendar"
 MAX_TITLE_LEN = 40
 
 
@@ -105,7 +105,7 @@ async def _today_placements(user_id: int, db: AsyncSession) -> list[tuple[BoardP
     out = []
     for p, n in rows:
         src = getattr(p, "placement_source", None)
-        if src == PLACEMENT_SOURCE_CALENDAR:
+        if not include_in_task_remind(src):
             continue
         out.append((p, n))
     return out

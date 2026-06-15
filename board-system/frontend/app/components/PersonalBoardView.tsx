@@ -26,6 +26,21 @@ interface SummaryTodayItem {
 const REFETCH_DELAY_MS = 120;
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+function isCalendarPlacement(src?: string | null): boolean {
+  return src === "calendar" || src === "calendar_timed";
+}
+
+function personalCardColor(
+  lane: LaneType,
+  placement: PlacementWithNote
+): "yellow" | "green" | "grey" | "blue" | "red" | "purple" {
+  if (lane === "HELP_REQUEST") return "red";
+  if (lane === "DONE") return "grey";
+  if (isCalendarPlacement(placement.placement_source)) return "purple";
+  if (placement.is_from_task) return "green";
+  return "blue";
+}
+
 /** 表示順: 応援要請 → Today → タスク → Done */
 const LANES: { key: LaneType; label: string }[] = [
   { key: "HELP_REQUEST", label: "応援要請" },
@@ -535,16 +550,13 @@ function LaneColumn({
             <NoteCard
             placement={p}
             draggable
-            showPersonalBadge={p.is_from_task === false && lane !== "HELP_REQUEST"}
-            cardColor={
-              lane === "HELP_REQUEST"
-                ? "red"
-                : lane === "DONE"
-                  ? "grey"
-                  : p.is_from_task
-                    ? "green"
-                    : "blue"
+            showPersonalBadge={
+              p.is_from_task === false &&
+              lane !== "HELP_REQUEST" &&
+              !isCalendarPlacement(p.placement_source)
             }
+            showCalendarBadge={isCalendarPlacement(p.placement_source)}
+            cardColor={personalCardColor(lane, p)}
             dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
             onAppendContent={onAppendContent}
             onDragEnd={onRefresh}

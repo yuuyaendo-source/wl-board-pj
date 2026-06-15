@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -31,6 +31,11 @@ from app.models import (
     UserGoogleToken,
 )
 from app.models.sticky_note import NoteStatus
+from app.services.calendar_placement import (
+    CALENDAR_PLACEMENT_SOURCES,
+    placement_source_for_event,
+    should_skip_calendar_sticky,
+)
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -282,6 +287,7 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
                 "summary": e.get("summary", ""),
                 "start": start_str,
                 "end": end_str,
+                "eventType": e.get("eventType") or "default",
             })
         if refreshed:
             return out, creds.token, creds.expiry
@@ -358,13 +364,12 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
     await db.flush()
 
     # カレンダー由来の Today 付箋を削除してから今回分を追加（重複防止）
-    PLACEMENT_SOURCE_CALENDAR = "calendar"
     r_cal = await db.execute(
         select(BoardPlacement).where(
             BoardPlacement.board_type == BoardType.PERSONAL,
             BoardPlacement.owner_id == user_id,
             BoardPlacement.lane == Lane.TODAY,
-            BoardPlacement.placement_source == PLACEMENT_SOURCE_CALENDAR,
+            BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
         )
     )
     cal_placements = list(r_cal.scalars().all())
@@ -395,7 +400,13 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
             )
         )
         next_sort = (r.scalar() or 0) + 1
+    sticky_index = 0
     for i, item in enumerate(today_items):
+        if i >= len(events):
+            break
+        ev = events[i]
+        if should_skip_calendar_sticky(ev):
+            continue
         label = (item.get("label") or item.get("summary") or "").strip() or "(無題)"
         note = StickyNote(
             content=label,
@@ -411,10 +422,11 @@ async def _refresh_user_calendar_and_today(user_id: int, db: AsyncSession) -> in
             board_type=BoardType.PERSONAL,
             owner_id=user_id,
             lane=Lane.TODAY,
-            sort_order=next_sort + i,
-            placement_source=PLACEMENT_SOURCE_CALENDAR,
+            sort_order=next_sort + sticky_index,
+            placement_source=placement_source_for_event(ev),
         )
         db.add(placement)
+        sticky_index += 1
     await db.flush()
     return len(events)
 
