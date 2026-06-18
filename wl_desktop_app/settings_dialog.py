@@ -66,7 +66,7 @@ _FEATURE_ROWS = [
     (
         "calendar_notify",
         "カレンダー予定をリマインド",
-        "Personal ボードで Google 連携済みのとき、開始の N 分前に通知（下で 1〜15 分を指定）。未連携時は何もしません。",
+        "Personal ボードで Google 連携済みのとき、開始の N 分前に通知（下で複数指定可、各 1〜15 分）。未連携時は何もしません。",
     ),
     (
         "calendar_create",
@@ -131,10 +131,11 @@ class SettingsDialog(ctk.CTkToplevel):
         self._task_remind_weekdays_var = tk.BooleanVar(
             value=bool(self._cfg.get("task_remind_weekdays_only", True))
         )
-        from config_loader import normalize_calendar_remind_minutes
+        from config_loader import parse_calendar_remind_minutes_list
 
+        cal_mins = parse_calendar_remind_minutes_list(self._cfg)
         self._calendar_remind_minutes_var = tk.StringVar(
-            value=str(normalize_calendar_remind_minutes(self._cfg.get("calendar_remind_minutes_before")))
+            value=", ".join(str(m) for m in cal_mins)
         )
         tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
         tray_action = self._cfg.get("tray_click_action", "postit")
@@ -242,8 +243,18 @@ class SettingsDialog(ctk.CTkToplevel):
                 anchor="w",
             ).pack(fill="x", padx=(28, 0))
 
-        ctk.CTkLabel(scroll, text="タスクリマインド時刻 (HH:MM, カンマ区切り)", anchor="w").pack(fill="x", pady=(8, 0))
+        ctk.CTkLabel(
+            scroll,
+            text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
+            anchor="w",
+        ).pack(fill="x", pady=(8, 0))
         ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(
+            scroll,
+            text="例: 13:00, 17:00",
+            text_color=("gray40", "gray60"),
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
         ctk.CTkCheckBox(
             scroll,
             text="平日のみ (土日は鳴らさない)",
@@ -258,20 +269,20 @@ class SettingsDialog(ctk.CTkToplevel):
             text_color=("gray20", "gray80"),
         ).pack(anchor="w", pady=(4, 0))
 
-        ctk.CTkLabel(scroll, text="カレンダーリマインド (開始の何分前)", anchor="w").pack(fill="x", pady=(12, 0))
-        cal_row = ctk.CTkFrame(scroll, fg_color="transparent")
-        cal_row.pack(fill="x", pady=(2, 8))
-        ctk.CTkOptionMenu(
-            cal_row,
-            values=[str(i) for i in range(1, 16)],
-            variable=self._calendar_remind_minutes_var,
-            width=80,
-        ).pack(side="left")
         ctk.CTkLabel(
-            cal_row,
-            text="分前（1〜15。calendar_notify が ON のとき有効）",
+            scroll,
+            text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
+            anchor="w",
+        ).pack(fill="x", pady=(12, 0))
+        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(
+            scroll,
+            text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
             text_color=("gray40", "gray60"),
-        ).pack(side="left", padx=(8, 0))
+            wraplength=self.WIDTH - 80,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 8))
 
     # --- ハンドラ ----------------------------------------------------------
     def _on_open_face_registry_admin(self) -> None:
@@ -360,23 +371,17 @@ class SettingsDialog(ctk.CTkToplevel):
         prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
         self._cfg["features"] = features
         parsed_times = []
-        for part in self._task_remind_times_var.get().replace("、", ",").split(","):
-            s = part.strip()
-            try:
-                from task_remind_client import _normalize_time
-                norm = _normalize_time(s)
-            except Exception:
-                norm = None
-            if norm:
-                parsed_times.append(norm)
+        from config_loader import parse_task_remind_times_from_text
+
+        parsed_times = parse_task_remind_times_from_text(self._task_remind_times_var.get())
         if parsed_times:
             self._cfg["task_remind_times"] = parsed_times
         self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
-        from config_loader import normalize_calendar_remind_minutes
+        from config_loader import parse_calendar_remind_minutes_from_text
 
-        self._cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
-            self._calendar_remind_minutes_var.get()
-        )
+        cal_mins = parse_calendar_remind_minutes_from_text(self._calendar_remind_minutes_var.get())
+        self._cfg["calendar_remind_minutes_before_list"] = cal_mins
+        self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
         import sys
 
         if sys.platform == "win32":

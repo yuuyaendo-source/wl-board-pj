@@ -25,6 +25,47 @@ def normalize_calendar_remind_minutes(value) -> int:
     return max(CALENDAR_REMIND_MINUTES_MIN, min(CALENDAR_REMIND_MINUTES_MAX, n))
 
 
+def parse_calendar_remind_minutes_list(cfg: dict) -> list[int]:
+    """カレンダーリマインドの「何分前」を複数返す（降順・重複なし）。"""
+    raw = cfg.get("calendar_remind_minutes_before_list")
+    out: list[int] = []
+    if isinstance(raw, list) and raw:
+        for v in raw:
+            out.append(normalize_calendar_remind_minutes(v))
+    elif cfg.get("calendar_remind_minutes_before") is not None:
+        out.append(normalize_calendar_remind_minutes(cfg.get("calendar_remind_minutes_before")))
+    else:
+        out.append(CALENDAR_REMIND_MINUTES_DEFAULT)
+    return sorted(set(out), reverse=True)
+
+
+def parse_calendar_remind_minutes_from_text(text: str) -> list[int]:
+    """設定文字列 (分, カンマ区切り) → 正規化済み「何分前」リスト（降順・重複なし）。"""
+    out: list[int] = []
+    for part in (text or "").replace("、", ",").split(","):
+        s = part.strip()
+        if not s:
+            continue
+        n = normalize_calendar_remind_minutes(s)
+        if n not in out:
+            out.append(n)
+    if not out:
+        return [CALENDAR_REMIND_MINUTES_DEFAULT]
+    return sorted(out, reverse=True)
+
+
+def parse_task_remind_times_from_text(text: str) -> list[str]:
+    """設定文字列 (HH:MM, カンマ区切り) → 正規化済み時刻リスト。"""
+    from task_remind_client import _normalize_time
+
+    out: list[str] = []
+    for part in (text or "").replace("、", ",").split(","):
+        norm = _normalize_time(part.strip())
+        if norm and norm not in out:
+            out.append(norm)
+    return out
+
+
 def get_app_base_dir():
     """アプリのベースディレクトリ（exe 時は exe と同じフォルダ）。config.json・toast_icon の基準に使う。"""
     return _BASE_DIR
@@ -95,7 +136,8 @@ def _get_defaults():
         "task_remind_weekdays_only": True,
         "task_remind_slots_shown": {"date": "", "slots": []},  # 当日表示済みスロット（自動更新）
         "task_remind_paused_until": "",  # YYYY-MM-DD。当日までリマインド停止（空=停止なし）
-        "calendar_remind_minutes_before": 15,  # カレンダー予定の何分前に通知するか
+        "calendar_remind_minutes_before": 15,  # 後方互換（先頭1件）。複数は calendar_remind_minutes_before_list
+        "calendar_remind_minutes_before_list": [15],  # 例: [15, 5] で15分前と5分前に通知
         # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
         "security": {
             "allowed_host_suffixes": [".internal.wonder-link.com"],
@@ -138,6 +180,9 @@ def load_config():
     cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
         cfg.get("calendar_remind_minutes_before")
     )
+    mins_list = parse_calendar_remind_minutes_list(cfg)
+    cfg["calendar_remind_minutes_before_list"] = mins_list
+    cfg["calendar_remind_minutes_before"] = mins_list[0] if mins_list else CALENDAR_REMIND_MINUTES_DEFAULT
     return cfg
 
 
@@ -179,6 +224,11 @@ def save_config(cfg):
     out["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
         cfg.get("calendar_remind_minutes_before", defaults.get("calendar_remind_minutes_before", 15))
     )
+    mins_list = parse_calendar_remind_minutes_list(cfg)
+    if not mins_list:
+        mins_list = parse_calendar_remind_minutes_list(defaults)
+    out["calendar_remind_minutes_before_list"] = mins_list
+    out["calendar_remind_minutes_before"] = mins_list[0]
     if isinstance(cfg.get("security"), dict):
         out["security"] = cfg["security"]
     try:

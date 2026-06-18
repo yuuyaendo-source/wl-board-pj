@@ -348,10 +348,13 @@ def _on_calendar_remind_ui(items):
             return
         item = items[index]
         try:
-            from calendar_notify_client import calendar_remind_minutes, post_shown
+            from calendar_notify_client import post_shown
             from remind_notify import deliver_remind
             cfg = load_config()
-            minutes = calendar_remind_minutes(cfg)
+            minutes = item.get("minutes_before")
+            if minutes is None:
+                from calendar_notify_client import calendar_remind_minutes
+                minutes = calendar_remind_minutes(cfg)
             if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
             deliver_remind(

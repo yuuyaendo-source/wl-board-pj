@@ -29,11 +29,28 @@ DEFAULT_MINUTES_BEFORE = 15
 
 
 def calendar_remind_minutes(cfg: dict) -> int:
-    from config_loader import normalize_calendar_remind_minutes
+    """後方互換: 先頭1件の「何分前」を返す。"""
+    from config_loader import parse_calendar_remind_minutes_list
 
-    return normalize_calendar_remind_minutes(
-        cfg.get("calendar_remind_minutes_before") or DEFAULT_MINUTES_BEFORE
-    )
+    mins = parse_calendar_remind_minutes_list(cfg)
+    return mins[0] if mins else DEFAULT_MINUTES_BEFORE
+
+
+def calendar_remind_minutes_list(cfg: dict) -> list[int]:
+    from config_loader import parse_calendar_remind_minutes_list
+
+    return parse_calendar_remind_minutes_list(cfg)
+
+
+def fetch_pending_all(cfg: dict) -> list[dict]:
+    """設定された各「何分前」で pending を取得し、minutes_before を付与して返す。"""
+    out: list[dict] = []
+    for minutes in calendar_remind_minutes_list(cfg):
+        for it in fetch_pending(cfg, minutes_before=minutes):
+            enriched = dict(it)
+            enriched["minutes_before"] = minutes
+            out.append(enriched)
+    return out
 _thread: Optional[threading.Thread] = None
 _busy_lock = threading.Lock()
 _busy = False
@@ -141,15 +158,14 @@ def start_calendar_notify_poll(
                     if _busy:
                         time.sleep(POLL_INTERVAL_SEC)
                         continue
-                minutes = calendar_remind_minutes(cfg)
-                items = fetch_pending(cfg, minutes_before=minutes)
+                items = fetch_pending_all(cfg)
                 if not items:
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 with _busy_lock:
                     _busy = True
                 log_info(
-                    f"[calendar_notify] リマインド ({len(items)}件): "
+                    f"[calendar_notify] リマインド ({len(items)}件, offsets={calendar_remind_minutes_list(cfg)}): "
                     + ", ".join((it.get("title") or "?")[:20] for it in items[:3])
                 )
                 _dispatch(items)
