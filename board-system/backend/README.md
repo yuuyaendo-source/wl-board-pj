@@ -1,7 +1,7 @@
 # Board System Backend (Wonder Rinko)
 
-4ボード（Main / Task / Personal / Morning）用の FastAPI バックエンド。  
-SQLite（開発）を async SQLAlchemy + aiosqlite で利用。将来は PostgreSQL へ `DATABASE_URL` の変更のみで移行可能。
+4ボード（Main / Task / Personal / Meeting）用の FastAPI バックエンド。  
+開発は SQLite（async）、**本番 Docker は PostgreSQL**（`docker-compose.prod.yml` + `docker-compose.db.yml`）。
 
 ## 技術スタック
 
@@ -9,7 +9,7 @@ SQLite（開発）を async SQLAlchemy + aiosqlite で利用。将来は Postgre
 - **ORM**: SQLAlchemy 2.0（非同期）
 - **DB ドライバ**: aiosqlite（SQLite）。本番は `postgresql+asyncpg` を想定
 - **設定**: pydantic-settings + .env
-- **AI（フェーズ3）**: Google Gemini（自動仕分け・マトリクススコア・日次リセット）
+- **AI**: 社内 Ollama（`OLLAMA_URL`）。自動仕分け・マトリクススコア・日次リセット・ブレスト・ニュース要約
 
 ## セットアップ
 
@@ -76,9 +76,15 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | boards | GET | `/boards/main` | Main ボード View |
 | | GET | `/boards/task` | Task ボード View（5列対応。各配置に `taken_by`, `task_color` 付与） |
 | | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
-| | GET | `/boards/morning` | Morning ボード View（MORNING 配置一覧） |
-| daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧（Logic 3） |
-| | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー（cron 10:15 用・テスト用） |
+| | GET | `/boards/morning` | Meeting ボード View（MORNING 配置一覧。フロントは `/meeting`） |
+| brainstorm | POST | `/brainstorm` | デスクトップ向けブレスト（SSE ストリーミング） |
+| task_reminders | GET/POST | `/users/{id}/task_reminders/*` | デスクトップ向け Today タスクリマインド |
+| calendar_reminders | GET/POST | `/users/{id}/calendar_reminders/*` | デスクトップ向けカレンダーリマインド |
+| news | POST | `/news/fetch`, `/news/clear` | ニュース取得・クリア（スケジューラからも呼ばれる） |
+| auth_google | GET | `/auth/google`, `/auth/google/callback` | Google カレンダー OAuth |
+| daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧 |
+| daily_reset | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー |
+| daily_reset | POST | `/daily_reset/run_8am` | 8:00 日次処理（Meeting リセット + カレンダー同期） |
 
 - **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
 - **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。

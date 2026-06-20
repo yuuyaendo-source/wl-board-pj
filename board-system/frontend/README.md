@@ -24,7 +24,8 @@ npm run dev
 | `/main` | Main Board（フリーキャンバス）。付箋をドラッグで配置。1行投稿。AI 仕分け付箋は ✨。 |
 | `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done。引き取り者を短縮名（例: 浅）で表示。 |
 | `/personal` | **Personal Board**。3レーン（Today / タスク / Done）。1行入力で投稿。付箋色：**緑**=タスクボードから取り込んだもの、**青**=パーソナルで投稿したもの、**灰**=Done。ゴミ箱・タスクリリースは横並び。タスクリリースで Personal 配置を削除すると Task ボードに戻る。 |
-| `/meeting` | **Meeting**。参加者ごとに MORNING スナップショット表示。（毎朝 10:15 に反映）と「今の Today を反映（テスト用）」ボタン。 |
+| `/meeting` | **Meeting ボード**。参加者ごとに MORNING スナップショット。毎朝 10:15 反映 + ニュース要約。「今の Today を反映」テストボタンあり。 |
+| `/admin/system` | LLM スロット切替などの管理 UI |
 
 - 本番では basePath `/boards` のため、実際の URL は `/boards`、`/boards/taskboard`、`/boards/personal/:slug`、`/boards/meeting`。
 
