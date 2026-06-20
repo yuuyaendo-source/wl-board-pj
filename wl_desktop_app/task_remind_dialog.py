@@ -19,10 +19,34 @@ LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
 _dialog_instance: Optional["TaskRemindListDialog"] = None
 
 
+def _ensure_master_visible(master) -> None:
+    """タスクリマインド表示前にミニポートを前面へ。"""
+    if master is None:
+        return
+    try:
+        if str(master.state()) == "withdrawn":
+            master.deiconify()
+    except Exception:
+        pass
+    try:
+        if hasattr(master, "focus_and_raise"):
+            master.focus_and_raise()
+        else:
+            master.lift()
+            master.attributes("-topmost", True)
+    except Exception:
+        pass
+
+
 class TaskRemindListDialog(ctk.CTkToplevel):
     WIDTH = 400
     MAX_HEIGHT = 520
     ROW_HEIGHT = 72
+    _GAP = 8
+
+    @staticmethod
+    def _rects_overlap(x1, y1, w1, h1, x2, y2, w2, h2) -> bool:
+        return not (x1 + w1 <= x2 or x1 >= x2 + w2 or y1 + h1 <= y2 or y1 >= y2 + h2)
 
     def __init__(
         self,
@@ -55,31 +79,84 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         except Exception:
             pass
         self._build_ui()
+        _ensure_master_visible(master)
+        if master is not None:
+            try:
+                self.transient(master)
+            except Exception:
+                pass
         self._position_near(master)
         self.protocol("WM_DELETE_WINDOW", self._on_dismiss_all_continue)
+        try:
+            if master is not None:
+                self.lift(master)
+        except Exception:
+            pass
+        self.attributes("-topmost", True)
         self.lift()
         self.focus_force()
 
     def _position_near(self, master) -> None:
+        """ミニポートの近く・画面内に収まる位置へ配置する（右側固定は画面外になりやすい）。"""
+        self.update_idletasks()
+        pw = self.winfo_width() or self.WIDTH
+        ph = self.winfo_height() or 200
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        gap = self._GAP
+
+        def clamp_x(x: int) -> int:
+            return max(0, min(int(x), max(0, sw - pw - gap)))
+
+        def clamp_y(y: int) -> int:
+            return max(0, min(int(y), max(0, sh - ph - gap)))
+
         if master is None:
-            self.update_idletasks()
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-            h = self.winfo_height()
-            x = sw - self.WIDTH - 24
-            y = sh - h - 80
+            x = clamp_x(sw - pw - 24)
+            y = clamp_y(sh - ph - 80)
             self.geometry(f"+{x}+{y}")
             return
+
         try:
             master.update_idletasks()
-            mx = master.winfo_x()
-            my = master.winfo_y()
-            mw = master.winfo_width()
-            x = mx + mw + 8
-            y = my
+            mx = master.winfo_rootx()
+            my = master.winfo_rooty()
+            mw = master.winfo_width() or 264
+            mh = master.winfo_height() or 224
+
+            def fits(x: int, y: int) -> bool:
+                return (
+                    x >= 0
+                    and y >= 0
+                    and x + pw <= sw
+                    and y + ph <= sh
+                    and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
+                )
+
+            candidates = [
+                (mx + mw - pw, my - ph - gap),   # 上・右端揃え（ミニポート直上）
+                (mx, my - ph - gap),              # 上・左端揃え
+                (mx - pw - gap, my + mh - ph),    # 左・下揃え
+                (mx - pw - gap, my),              # 左・上揃え
+                (mx + mw - pw, my + mh + gap),    # 下・右端揃え
+                (mx, my + mh + gap),              # 下・左端揃え
+                (mx + mw + gap, my),              # 右（画面右端ならスキップされやすい）
+            ]
+
+            x, y = candidates[0]
+            for cx, cy in candidates:
+                cx, cy = clamp_x(cx), clamp_y(cy)
+                if fits(cx, cy):
+                    x, y = cx, cy
+                    break
+            else:
+                x, y = clamp_x(mx + mw - pw), clamp_y(my - ph - gap)
+
             self.geometry(f"+{x}+{y}")
         except Exception:
-            pass
+            x = clamp_x(sw - pw - 24)
+            y = clamp_y(sh - ph - 80)
+            self.geometry(f"+{x}+{y}")
 
     def _build_ui(self) -> None:
         pad = 12
@@ -241,7 +318,11 @@ def show_task_remind_dialog(
         return None
     if _dialog_instance is not None:
         try:
+            _ensure_master_visible(master)
+            _dialog_instance.lift(master)
+            _dialog_instance.attributes("-topmost", True)
             _dialog_instance.lift()
+            _dialog_instance._position_near(master)
             return _dialog_instance
         except Exception:
             _dialog_instance = None
