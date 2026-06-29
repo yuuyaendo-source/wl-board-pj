@@ -378,13 +378,13 @@ cd wl_desktop_app
 1. `version.py` の `__version__` を bump
 2. `board-system/backend/desktop_app_releases/latest.json` を同バージョンに更新
 3. Windows: `.\build_msi.ps1` → MSI 生成
-4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.2.msi`）
+4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.3.msi`）
 5. **v3.2.3 以降:** `desktop_app_releases/` は bind mount のため **git pull + scp で即反映**（通常 deploy 不要）
 
 ```json
 {
-  "version": "3.9.2",
-  "url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.2.msi"
+  "version": "3.9.3",
+  "url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.3.msi"
 }
 ```
 
