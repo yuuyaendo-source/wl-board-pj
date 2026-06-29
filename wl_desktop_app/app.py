@@ -102,6 +102,7 @@ from postit_poll import start_postit_poll, fetch_summary_with_error
 import startup
 from version import __version__
 from update_checker import check_and_notify, wait_for_network
+from network_readiness import resolve_probe_url
 
 from app_log import setup_app_log, log_info
 
@@ -820,7 +821,7 @@ def main():
         log_info(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
     # 起動後にバックグラウンドで更新チェック（update_check_url が設定されている場合のみ）
-    # ネットワーク確立（Ping）を待ってからチェックする（update_network_check_host が設定時）
+    # ネットワーク確立（HTTP プローブ）を待ってからチェックする
     _cfg = load_config()
     _update_url = (_cfg.get("update_check_url") or "").strip()
     if _update_url:
@@ -829,9 +830,9 @@ def main():
         _max_wait = int(_cfg.get("update_network_check_max_wait_sec") or 180)
 
         def _startup_update_check():
-            if _network_host:
+            if _network_host or resolve_probe_url(_cfg):
                 log_info("更新チェック: ネットワーク確立を待機中")
-                if not wait_for_network(_network_host, _interval, _max_wait):
+                if not wait_for_network(_network_host, _interval, _max_wait, cfg=_cfg):
                     return
             log_info("更新チェック開始: 起動時")
             logging.getLogger("WonderLinko").info("更新チェック開始: 起動時")

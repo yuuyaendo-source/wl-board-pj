@@ -144,7 +144,11 @@ def start_calendar_notify_poll(
             try:
                 from config_loader import is_feature_enabled, load_config
                 from task_remind_client import are_notifications_ok
+                from network_readiness import is_network_ready, unreachable_backoff_sec
                 cfg = load_config()
+                if not is_network_ready(cfg):
+                    time.sleep(unreachable_backoff_sec(cfg))
+                    continue
                 if not is_feature_enabled("calendar_notify", cfg):
                     time.sleep(POLL_INTERVAL_SEC)
                     continue

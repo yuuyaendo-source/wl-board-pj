@@ -29,28 +29,21 @@ def _log(msg: str):
         pass
 
 
-def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180) -> bool:
+def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None) -> bool:
     """
-    Ping が通るまで待つ。ネットワーク確立後の更新チェック用。
+    社内ネットワーク到達を待つ（HTTP プローブ。ping は使わない）。
+
+    host 引数は後方互換のため残すが、cfg にプローブ URL があれば host は無視する。
     戻り値: 成功で True、タイムアウトで False。
     """
-    if not host or not (host := host.strip()):
-        return True
-    deadline = time.monotonic() + max_wait_sec
-    while time.monotonic() < deadline:
+    if cfg is None:
         try:
-            if sys.platform == "win32":
-                r = subprocess.run(["ping", "-n", "1", host], timeout=5, capture_output=True)
-            else:
-                r = subprocess.run(["ping", "-c", "1", "-W", "3", host], timeout=5, capture_output=True)
-            if r.returncode == 0:
-                _log(f"ネットワーク確立: {host} へ Ping 成功")
-                return True
+            from config_loader import load_config
+            cfg = load_config()
         except Exception:
-            pass
-        time.sleep(interval_sec)
-    _log(f"ネットワーク待機タイムアウト: {host} へ {max_wait_sec}秒以内に Ping 不通")
-    return False
+            cfg = {}
+    from network_readiness import wait_for_network_ready
+    return wait_for_network_ready(cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec)
 
 
 def _version_tuple(version_str: str) -> tuple:

@@ -99,9 +99,11 @@ def _get_defaults():
         "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
-        "update_network_check_host": "172.16.1.4",  # 起動時更新チェック前に Ping でネットワーク確立を待つ先。空なら待たない
+        "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない
+        "update_network_check_host": "172.16.1.4",  # 後方互換（非推奨）。到達確認は update_network_check_url / update_check_url の HTTP を使用
         "update_network_check_interval_sec": 5,
         "update_network_check_max_wait_sec": 180,
+        "network_unreachable_backoff_sec": 30,  # CATO 未接続時、ポーリングの再試行間隔（秒）
         "board_system_url": "https://wl-ai-board.internal.wonder-link.com/api/bs",  # Board System のベース URL
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
         "board_system_email": "",  # Board System ログイン時のメール（セルフ顔登録などのプリフィル用）
@@ -205,9 +207,21 @@ def save_config(cfg):
     out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"))
     out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))
     out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
-    out["update_network_check_host"] = cfg.get("update_network_check_host", defaults.get("update_network_check_host", ""))
-    out["update_network_check_interval_sec"] = cfg.get("update_network_check_interval_sec", defaults.get("update_network_check_interval_sec", 5))
-    out["update_network_check_max_wait_sec"] = cfg.get("update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180))
+    out["update_network_check_url"] = cfg.get(
+        "update_network_check_url", defaults.get("update_network_check_url", "")
+    )
+    out["update_network_check_host"] = cfg.get(
+        "update_network_check_host", defaults.get("update_network_check_host", "")
+    )
+    out["update_network_check_interval_sec"] = cfg.get(
+        "update_network_check_interval_sec", defaults.get("update_network_check_interval_sec", 5)
+    )
+    out["update_network_check_max_wait_sec"] = cfg.get(
+        "update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180)
+    )
+    out["network_unreachable_backoff_sec"] = cfg.get(
+        "network_unreachable_backoff_sec", defaults.get("network_unreachable_backoff_sec", 30)
+    )
     out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
     out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
     out["board_system_email"] = cfg.get("board_system_email", defaults.get("board_system_email", ""))

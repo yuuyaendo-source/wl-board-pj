@@ -4,7 +4,7 @@
 
 来客通知・リン子アバター・ブレスト・タスク/カレンダーリマインド・顔/音声セルフ登録などは **`features.*` で任意に ON**（機能フラグは既定すべて OFF。`brainstorm_voice` のみ既定 ON）。
 
-> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.2**）。MSI ビルドと自動更新チェックがこの値を参照する。
+> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.3**）。MSI ビルドと自動更新チェックがこの値を参照する。
 
 ---
 
@@ -312,7 +312,9 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 | `calendar_remind_minutes_before_list` | カレンダー「何分前」（1〜15、複数可。例: `[15, 5]`） |
 | `calendar_remind_minutes_before` | 後方互換（先頭 1 件） |
 | `update_check_url` | 自動更新 JSON の URL |
-| `update_network_check_host` | 起動時更新前の Ping 先（VPN 確立待ち） |
+| `update_network_check_url` | 起動時・ポーリング前の到達確認 URL（空なら `update_check_url` 等を自動選択。ping は使わない） |
+| `update_network_check_interval_sec` / `update_network_check_max_wait_sec` | 起動時更新チェック前の到達待ち |
+| `network_unreachable_backoff_sec` | CATO 未接続時、ポーリング再試行までの待ち（秒。既定 30） |
 | `features` | 上表の機能フラグ |
 | `security` | URL 許可リスト（`allowed_host_suffixes` 等） |
 

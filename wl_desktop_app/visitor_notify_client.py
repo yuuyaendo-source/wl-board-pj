@@ -110,10 +110,22 @@ def start_visitor_notify() -> bool:
         二度と接続しない問題があるため、自前の retry loop でラップする。
         """
         import time as _time
+        from network_readiness import is_network_ready, unreachable_backoff_sec
+        from config_loader import load_config
         # backoff: 5s, 10s, 20s, 30s, 30s, ...
         backoff_schedule = [5, 10, 20, 30]
         attempt = 0
         while not _stop_event.is_set():
+            cfg = load_config()
+            if not is_network_ready(cfg):
+                wait_sec = unreachable_backoff_sec(cfg)
+                if attempt == 0 or attempt % 5 == 0:
+                    log_info(f"[visitor_notify] 社内ネットワーク未到達のため接続待機 ({wait_sec}秒)")
+                for _ in range(wait_sec):
+                    if _stop_event.is_set():
+                        return
+                    _time.sleep(1)
+                continue
             attempt += 1
             try:
                 log_info(f"[visitor_notify] {url} へ接続を試みます… (attempt={attempt})")

@@ -274,7 +274,11 @@ def start_task_remind_poll(
         while True:
             try:
                 from config_loader import is_feature_enabled, load_config
+                from network_readiness import is_network_ready, unreachable_backoff_sec
                 cfg = load_config()
+                if not is_network_ready(cfg):
+                    time.sleep(unreachable_backoff_sec(cfg))
+                    continue
                 if not is_feature_enabled("task_remind", cfg):
                     time.sleep(POLL_INTERVAL_SEC)
                     continue

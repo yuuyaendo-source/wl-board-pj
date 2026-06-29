@@ -6,6 +6,8 @@ import threading
 import time
 import requests
 
+from network_readiness import is_network_ready, unreachable_backoff_sec
+
 POLL_TIMEOUT_SEC = 5
 
 
@@ -102,6 +104,9 @@ def start_postit_poll(config_getter, on_new_notes):
                 time.sleep(interval)
             first_poll = False
             cfg = config_getter()
+            if not is_network_ready(cfg):
+                time.sleep(unreachable_backoff_sec(cfg))
+                continue
             url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
             board_ids = _get_poll_board_ids(cfg)
             if not url or not board_ids:
