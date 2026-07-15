@@ -215,9 +215,15 @@ def _handle_visitor_arrived(data: dict) -> None:
     audio_text = (data.get("audio_text") or message or "").strip()
     audio_url = (data.get("audio_url") or "").strip()
     server_click_url = (data.get("click_url") or "").strip()
+    action = (data.get("action") or "").strip()
+
+    # セキュリティ警報（なりすまし疑いで開錠を止め、人間の確認を要求するイベント）。
+    # 通常の来客通知とは重みが違うため、opt-in の音設定にも TTS 成否にも依存せず必ず鳴らし、
+    # トーストも強制表示する（見逃すと不審者の入館を許しかねない）。
+    is_security_alert = action == "unlock_failed"
 
     title_map = {"entrance": "入口", "office_lobby": "ロビー", "meeting_room": "会議室"}
-    title = title_map.get(location, "来客")
+    title = "⚠️ 開錠失敗（要確認）" if is_security_alert else title_map.get(location, "来客")
 
     log_info(
         f"[visitor_notify] visitor_arrived 受信: name={name} location={location} "
@@ -245,14 +251,25 @@ def _handle_visitor_arrived(data: dict) -> None:
     try:
         from notifications import show_toast
         log_info(f"[visitor_notify] show_toast 呼び出し: title={title!r} click_url={click_url!r}")
-        show_toast(title, message, url=click_url or None, duration_sec=8, force_show=False)
+        show_toast(title, message, url=click_url or None, duration_sec=8, force_show=is_security_alert)
         log_info("[visitor_notify] show_toast 完了")
     except Exception as e:
         import traceback
         log_warn(f"[visitor_notify] トースト表示失敗: {e}")
         log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
-    # 音声 (opt-in) + アバター連動 (Phase 2.1: 吹き出し + 口パク)
+    # セキュリティ警報は最優先で「必ず鳴る」音を出す（opt-in 設定にも TTS にも依存しない）。
+    # TTS 音声が来ていれば、警報音のあとに重ねて読み上げる（無くても警報は既に鳴っている）。
+    if is_security_alert:
+        _play_security_alert()
+        try:
+            if audio_url:
+                _play_visitor_audio(audio_url, audio_text=audio_text)
+        except Exception as e:
+            log_warn(f"[visitor_notify] セキュリティ警報の読み上げ失敗（警報音は再生済み）: {e}")
+        return
+
+    # 通常の来客通知の音声 (opt-in) + アバター連動 (Phase 2.1: 吹き出し + 口パク)
     try:
         from config_loader import is_feature_enabled
 
@@ -263,6 +280,31 @@ def _handle_visitor_arrived(data: dict) -> None:
             log_info(f"[visitor_notify] 音声再生スキップ (sound_enabled={is_feature_enabled('visitor_notify_sound')}, audio_url={'有り' if audio_url else '無し'})")
     except Exception as e:
         log_warn(f"[visitor_notify] 音声再生失敗: {e}")
+
+
+def _play_security_alert() -> None:
+    """なりすまし疑い等のセキュリティ警報音。
+
+    通常の来客通知（opt-in・TTS 依存）とは別に、**必ず鳴る**確実な警報を出す。
+    winsound.Beep をアラームパターンで鳴らすため音源ファイル同梱は不要。TTS(VOICEVOX/
+    GPT-SoVITS)が落ちていても、音設定が OFF でも鳴る。Beep はブロッキングなので
+    バックグラウンドスレッドで実行し、socket ハンドラを止めない。Windows 以外は no-op。
+    """
+    import threading
+
+    def _beep():
+        try:
+            import winsound
+
+            # 高低を繰り返す明確なアラーム音（通常の通知と区別できるパターン）。
+            for _ in range(3):
+                winsound.Beep(880, 250)
+                winsound.Beep(660, 200)
+            log_info("[visitor_notify] セキュリティ警報音を再生（unlock_failed）")
+        except Exception as e:
+            log_warn(f"[visitor_notify] セキュリティ警報音の再生に失敗: {e}")
+
+    threading.Thread(target=_beep, daemon=True).start()
 
 
 def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:
