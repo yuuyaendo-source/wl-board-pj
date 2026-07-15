@@ -118,6 +118,45 @@ def verify_self_register(cfg: dict, challenge_id: str, otp: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def get_self_profile(cfg: dict, person_id: str, token: str) -> dict:
+    """本人の現在プロフィール（呼び名・敬称・読み）を取得。編集フォームのプリフィル用。"""
+    data = _request(
+        cfg,
+        "GET",
+        "/self_register/profile",
+        token=token,
+        params={"person_id": str(person_id)},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def update_self_profile(
+    cfg: dict,
+    person_id: str,
+    token: str,
+    *,
+    call_name: Optional[str] = None,
+    honorific: Optional[str] = None,
+    call_name_kana: Optional[str] = None,
+) -> dict:
+    """本人の呼び名・敬称・読みを更新。渡した項目だけ更新される。"""
+    body: dict[str, str] = {"person_id": str(person_id)}
+    if call_name is not None:
+        body["call_name"] = call_name
+    if honorific is not None:
+        body["honorific"] = honorific
+    if call_name_kana is not None:
+        body["call_name_kana"] = call_name_kana
+    data = _request(
+        cfg,
+        "POST",
+        "/self_register/profile",
+        json_body=body,
+        token=token,
+    )
+    return data if isinstance(data, dict) else {}
+
+
 def update_face_self(cfg: dict, person_id: str, token: str, face_data_url: str) -> dict:
     pid = quote(str(person_id), safe="")
     data = _request(

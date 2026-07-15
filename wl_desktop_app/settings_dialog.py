@@ -217,6 +217,11 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll,
             text="自分の声を登録…",
             command=self._on_open_voice_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 0))
+        ctk.CTkButton(
+            scroll,
+            text="呼ばれ方を編集（呼び名・敬称）…",
+            command=self._on_open_edit_name,
         ).pack(anchor="w", fill="x", pady=(6, 12))
 
         ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
@@ -339,6 +344,19 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("自分の声を登録", str(e), parent=self)
             except Exception:
                 print(f"voice self register open failed: {e}", flush=True)
+
+    def _on_open_edit_name(self) -> None:
+        try:
+            from edit_name_dialog import open_edit_name_dialog
+
+            open_edit_name_dialog(master=self, cfg=dict(self._cfg))
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("呼ばれ方を編集", str(e), parent=self)
+            except Exception:
+                print(f"edit name open failed: {e}", flush=True)
 
     def _on_pause_task_remind_today(self) -> None:
         try:
