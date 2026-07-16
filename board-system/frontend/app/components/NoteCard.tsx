@@ -90,6 +90,14 @@ export default function NoteCard({
               ✨
             </span>
           )}
+          {placement.matrix_quadrant === 4 && (
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded bg-amber-500 text-[10px] font-bold text-white shadow-sm"
+              title="重要"
+            >
+              ⭐
+            </span>
+          )}
         </div>
       </div>
       {takenBy.length > 0 && (

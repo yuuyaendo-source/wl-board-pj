@@ -25,13 +25,11 @@ function getStoredAutoImport(): boolean {
   return stored === "true";
 }
 
-/** 5列: アイデア(1), 短期タスク(2), 長期タスク(3), 重要(4), 完了(5) */
 const COLUMNS = [
-  { q: 1, title: "アイデア" },
-  { q: 2, title: "短期タスク" },
-  { q: 3, title: "長期タスク" },
-  { q: 4, title: "重要" },
-  { q: 5, title: "完了" },
+  { id: "unassigned", title: "応援要請・未振り分け", targetQ: null, droppable: false },
+  { id: "ideas", title: "アイデア", targetQ: 1, droppable: true },
+  { id: "tasks", title: "タスク", targetQ: 2, droppable: true },
+  { id: "done", title: "完了", targetQ: 5, droppable: true },
 ] as const;
 
 type PostitNote = { id: string; text: string; author?: string; createdAt?: number; gray?: boolean };
@@ -184,19 +182,33 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
-  const byColumnRaw = placements.reduce(
-    (acc, p) => {
+  const byColumnRaw: Record<string, PlacementWithNote[]> = {
+    unassigned: [],
+    ideas: [],
+    tasks: [],
+    done: [],
+  };
+
+  placements.forEach((p) => {
+    if (p.task_color === "red" || p.task_color === "yellow") {
+      byColumnRaw.unassigned.push(p);
+    } else {
       const q = p.matrix_quadrant ?? 1;
-      if (!acc[q]) acc[q] = [];
-      acc[q].push(p);
-      return acc;
-    },
-    {} as Record<number, PlacementWithNote[]>
-  );
-  // 応援要請（赤）の付箋を各列の一番上に
-  const byColumn: Record<number, PlacementWithNote[]> = {};
-  for (const q of Object.keys(byColumnRaw).map(Number)) {
-    byColumn[q] = [...(byColumnRaw[q] ?? [])].sort((a, b) =>
+      if (q === 1) {
+        byColumnRaw.ideas.push(p);
+      } else if (q === 2 || q === 3 || q === 4) {
+        byColumnRaw.tasks.push(p);
+      } else if (q === 5) {
+        byColumnRaw.done.push(p);
+      } else {
+        byColumnRaw.ideas.push(p);
+      }
+    }
+  });
+
+  const byColumn: Record<string, PlacementWithNote[]> = {};
+  for (const key of Object.keys(byColumnRaw)) {
+    byColumn[key] = [...byColumnRaw[key]].sort((a, b) =>
       (a.task_color === "red" ? 0 : 1) - (b.task_color === "red" ? 0 : 1)
     );
   }
@@ -269,16 +281,16 @@ export default function TaskBoardPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {COLUMNS.map(({ q, title }) => (
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {COLUMNS.map(({ id, title, targetQ, droppable }) => (
           <ColumnDropZone
-            key={q}
-            column={q}
+            key={id}
             title={title}
-            placements={byColumn[q] ?? []}
-            onDrop={(placementId) => handleDrop(placementId, q)}
+            placements={byColumn[id] ?? []}
+            onDrop={droppable && targetQ !== null ? (placementId) => handleDrop(placementId, targetQ) : undefined}
             onRefresh={fetchTask}
             onAppendContent={handleAppendContent}
+            droppable={droppable}
           />
         ))}
       </div>
@@ -356,29 +368,31 @@ function MemberDropZone({
 }
 
 function ColumnDropZone({
-  column,
   title,
   placements,
   onDrop,
   onRefresh,
   onAppendContent,
+  droppable = true,
 }: {
-  column: number;
   title: string;
   placements: PlacementWithNote[];
-  onDrop: (placementId: number) => void;
+  onDrop?: (placementId: number) => void;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  droppable?: boolean;
 }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (!droppable || !onDrop) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
   const handleDrop = async (e: React.DragEvent) => {
+    if (!droppable || !onDrop) return;
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
