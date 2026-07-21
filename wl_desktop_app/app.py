@@ -249,6 +249,20 @@ def _personal_url():
     return base + "/personal" + ("?" + q if q else "")
 
 
+def _linko_cards_url():
+    """リン子カード・コレクション（PoC）の URL。"""
+    from linko_cards import build_linko_cards_url
+
+    return build_linko_cards_url(_config)
+
+
+def open_linko_cards(*args):
+    """リン子カード・コレクションをブラウザで開く。"""
+    from security import safe_webbrowser_open
+
+    safe_webbrowser_open(_linko_cards_url(), _config)
+
+
 def _postit_board_url():
     """付箋ボードの該当ボードを開くURL。"""
     base = (_config.get("postit_board_url") or "").rstrip("/")
@@ -395,7 +409,14 @@ def _on_task_remind_ui(items, slot, summary=""):
 
     try:
         from task_remind_dialog import show_task_remind_dialog
-        show_task_remind_dialog(_miniport_window, items, slot, _ack, summary=summary or None)
+        show_task_remind_dialog(
+            _miniport_window,
+            items,
+            slot,
+            _ack,
+            summary=summary or None,
+            on_open_cards=open_linko_cards,
+        )
     except Exception as e:
         log_info(f"[task_remind] dialog failed: {e}")
         try:
