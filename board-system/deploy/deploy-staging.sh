@@ -7,7 +7,7 @@ APP_DIR="/var/www/wlinko-pj/board-system"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 DOCKER_COMPOSE_STAGING="$APP_DIR/docker-compose.staging.yml"
 DOCKER_COMPOSE_DB="$APP_DIR/docker-compose.db.yml"
-STAGING_HOST="${STAGING_HOST:-staging.wl-ai-board.internal.wonder-link.co.jp}"
+STAGING_HOST="${STAGING_HOST:-staging.wl-ai-board.internal.wonder-link.com}"
 STAGING_DB_NAME="linko_board_system_staging"
 
 docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-net

@@ -78,3 +78,4 @@ class BoardPlacementWithNoteResponse(BaseModel):
     # Task 用: 誰が引き取ったか・付箋の色（yellow=未引き取り, green=引き取り中, grey=Done, red=応援要請）
     taken_by: list[TakenByUser] = []
     task_color: str = "yellow"  # "yellow" | "green" | "grey" | "red"
+    is_accepted_by_others: bool = False

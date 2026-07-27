@@ -26,6 +26,8 @@ export interface PlacementWithNote {
   taken_by?: TakenByUser[];
   /** Task 用: 付箋の色 yellow=未引き取り green=引き取り中 grey=誰かがDone red=応援要請 */
   task_color?: "yellow" | "green" | "grey" | "red";
+  /** 応援要請に対して、元の担当者以外の第三者が引き受けた（コピーした）か */
+  is_accepted_by_others?: boolean;
 }
 
 export interface User {

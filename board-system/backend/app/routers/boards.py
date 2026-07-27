@@ -60,6 +60,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     taken_by_map: dict[int, list[tuple[int, str, str]]] = {}  # note_id -> [(user_id, name, name_short)]
     done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
+    accepted_by_others_note_ids: set[int] = set()
     if note_ids:
         personal_result = await db.execute(
             select(BoardPlacement.note_id, BoardPlacement.owner_id, BoardPlacement.lane)
@@ -87,6 +88,8 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 done_note_ids.add(note_id)
             if lane == Lane.HELP_REQUEST:
                 help_request_note_ids.add(note_id)
+            else:
+                accepted_by_others_note_ids.add(note_id)
     out = []
     for p, n in rows:
         taken = taken_by_map.get(n.id, [])
@@ -116,6 +119,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 note_status=n.status.value,
                 taken_by=taken_by,
                 task_color=task_color,
+                is_accepted_by_others=n.id in accepted_by_others_note_ids,
             )
         )
     return out

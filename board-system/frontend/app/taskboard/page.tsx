@@ -190,7 +190,8 @@ export default function TaskBoardPage() {
   };
 
   placements.forEach((p) => {
-    if (p.task_color === "red" || p.task_color === "yellow") {
+    const isUnassignedRed = p.task_color === "red" && !p.is_accepted_by_others;
+    if (isUnassignedRed || p.task_color === "yellow") {
       byColumnRaw.unassigned.push(p);
     } else {
       const q = p.matrix_quadrant ?? 1;
