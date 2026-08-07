@@ -33,7 +33,9 @@ def parse_calendar_remind_minutes_list(cfg: dict) -> list[int]:
         for v in raw:
             out.append(normalize_calendar_remind_minutes(v))
     elif cfg.get("calendar_remind_minutes_before") is not None:
-        out.append(normalize_calendar_remind_minutes(cfg.get("calendar_remind_minutes_before")))
+        out.append(
+            normalize_calendar_remind_minutes(cfg.get("calendar_remind_minutes_before"))
+        )
     else:
         out.append(CALENDAR_REMIND_MINUTES_DEFAULT)
     return sorted(set(out), reverse=True)
@@ -100,7 +102,7 @@ def _get_defaults():
         "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない
-        "update_network_check_host": "172.16.1.4",  # 後方互換（非推奨）。到達確認は update_network_check_url / update_check_url の HTTP を使用
+        "update_network_check_host": "172.16.1.150",  # 後方互換（非推奨）。到達確認は update_network_check_url / update_check_url の HTTP を使用
         "update_network_check_interval_sec": 5,
         "update_network_check_max_wait_sec": 180,
         "network_unreachable_backoff_sec": 30,  # CATO 未接続時、ポーリングの再試行間隔（秒）
@@ -136,10 +138,15 @@ def _get_defaults():
         # タスクリマインド（features.task_remind=ON 時）。Today レーンのみ。
         "task_remind_times": ["13:00", "17:00"],
         "task_remind_weekdays_only": True,
-        "task_remind_slots_shown": {"date": "", "slots": []},  # 当日表示済みスロット（自動更新）
+        "task_remind_slots_shown": {
+            "date": "",
+            "slots": [],
+        },  # 当日表示済みスロット（自動更新）
         "task_remind_paused_until": "",  # YYYY-MM-DD。当日までリマインド停止（空=停止なし）
         "calendar_remind_minutes_before": 15,  # 後方互換（先頭1件）。複数は calendar_remind_minutes_before_list
-        "calendar_remind_minutes_before_list": [15],  # 例: [15, 5] で15分前と5分前に通知
+        "calendar_remind_minutes_before_list": [
+            15
+        ],  # 例: [15, 5] で15分前と5分前に通知
         # 外向き URL の許可ホスト (security.py)。未設定時は社内サフィックス + localhost のみ。
         "security": {
             "allowed_host_suffixes": [".internal.wonder-link.com"],
@@ -167,15 +174,46 @@ def load_config():
             cfg.update(loaded)
         except Exception:
             pass
-    cfg["ai_board_url"] = os.environ.get("AI_BOARD_URL", cfg["ai_board_url"]).rstrip("/") + "/"
-    cfg["postit_board_url"] = os.environ.get("POSTIT_BOARD_URL", cfg["postit_board_url"]).rstrip("/") + "/"
-    cfg["mini_port_api_url"] = (os.environ.get("MINI_PORT_API_URL", cfg.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"))).rstrip("/")
-    cfg["mini_port_taskboard_url"] = (os.environ.get("MINI_PORT_TASKBOARD_URL", cfg.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))).strip()
-    cfg["board_system_url"] = (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "").strip().rstrip("/")
-    cfg["linko_server_url"] = (os.environ.get("LINKO_SERVER_URL", cfg.get("linko_server_url", "")) or "").strip().rstrip("/")
-    cfg["linko_admin_token"] = (os.environ.get("LINKO_ADMIN_TOKEN", cfg.get("linko_admin_token", "")) or "").strip()
+    cfg["ai_board_url"] = (
+        os.environ.get("AI_BOARD_URL", cfg["ai_board_url"]).rstrip("/") + "/"
+    )
+    cfg["postit_board_url"] = (
+        os.environ.get("POSTIT_BOARD_URL", cfg["postit_board_url"]).rstrip("/") + "/"
+    )
+    cfg["mini_port_api_url"] = (
+        os.environ.get(
+            "MINI_PORT_API_URL",
+            cfg.get(
+                "mini_port_api_url",
+                "https://wl-ai-board.internal.wonder-link.com/board/wl",
+            ),
+        )
+    ).rstrip("/")
+    cfg["mini_port_taskboard_url"] = (
+        os.environ.get(
+            "MINI_PORT_TASKBOARD_URL",
+            cfg.get(
+                "mini_port_taskboard_url",
+                "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",
+            ),
+        )
+    ).strip()
+    cfg["board_system_url"] = (
+        (os.environ.get("BOARD_SYSTEM_URL", cfg.get("board_system_url", "")) or "")
+        .strip()
+        .rstrip("/")
+    )
+    cfg["linko_server_url"] = (
+        (os.environ.get("LINKO_SERVER_URL", cfg.get("linko_server_url", "")) or "")
+        .strip()
+        .rstrip("/")
+    )
+    cfg["linko_admin_token"] = (
+        os.environ.get("LINKO_ADMIN_TOKEN", cfg.get("linko_admin_token", "")) or ""
+    ).strip()
     try:
         from security import sanitize_config_urls
+
         sanitize_config_urls(cfg, _get_defaults())
     except Exception as e:
         print(f"[security] config URL sanitize skipped: {e}", flush=True)
@@ -184,29 +222,58 @@ def load_config():
     )
     mins_list = parse_calendar_remind_minutes_list(cfg)
     cfg["calendar_remind_minutes_before_list"] = mins_list
-    cfg["calendar_remind_minutes_before"] = mins_list[0] if mins_list else CALENDAR_REMIND_MINUTES_DEFAULT
+    cfg["calendar_remind_minutes_before"] = (
+        mins_list[0] if mins_list else CALENDAR_REMIND_MINUTES_DEFAULT
+    )
     return cfg
 
 
 def save_config(cfg):
     """config.json に保存（AI_BOARD_URL 等は保存しない）。"""
     defaults = _get_defaults()
-    out = {k: v for k, v in cfg.items() if k in defaults and k not in ("ai_board_url", "postit_board_url")}
+    out = {
+        k: v
+        for k, v in cfg.items()
+        if k in defaults and k not in ("ai_board_url", "postit_board_url")
+    }
     out["ai_board_url"] = cfg.get("ai_board_url", defaults["ai_board_url"])
     out["postit_board_url"] = cfg.get("postit_board_url", defaults["postit_board_url"])
     out["user_id"] = cfg.get("user_id", defaults["user_id"])
     out["display_name"] = cfg.get("display_name", defaults.get("display_name", ""))
     out["personal_path"] = cfg.get("personal_path", defaults.get("personal_path", ""))
-    out["postit_board_id"] = cfg.get("postit_board_id", defaults.get("postit_board_id", ""))
+    out["postit_board_id"] = cfg.get(
+        "postit_board_id", defaults.get("postit_board_id", "")
+    )
     if cfg.get("postit_board_ids") is not None:
         out["postit_board_ids"] = cfg.get("postit_board_ids")
-    out["postit_poll_interval_sec"] = cfg.get("postit_poll_interval_sec", defaults.get("postit_poll_interval_sec", 60))
-    out["tray_click_action"] = cfg.get("tray_click_action", defaults.get("tray_click_action", "postit"))
-    out["toast_icon_path"] = cfg.get("toast_icon_path", defaults.get("toast_icon_path", ""))
-    out["notifications_enabled"] = cfg.get("notifications_enabled", defaults.get("notifications_enabled", True))
-    out["mini_port_api_url"] = cfg.get("mini_port_api_url", defaults.get("mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"))
-    out["mini_port_taskboard_url"] = cfg.get("mini_port_taskboard_url", defaults.get("mini_port_taskboard_url", "https://wl-ai-board.internal.wonder-link.com/boards/taskboard"))
-    out["update_check_url"] = cfg.get("update_check_url", defaults.get("update_check_url", ""))
+    out["postit_poll_interval_sec"] = cfg.get(
+        "postit_poll_interval_sec", defaults.get("postit_poll_interval_sec", 60)
+    )
+    out["tray_click_action"] = cfg.get(
+        "tray_click_action", defaults.get("tray_click_action", "postit")
+    )
+    out["toast_icon_path"] = cfg.get(
+        "toast_icon_path", defaults.get("toast_icon_path", "")
+    )
+    out["notifications_enabled"] = cfg.get(
+        "notifications_enabled", defaults.get("notifications_enabled", True)
+    )
+    out["mini_port_api_url"] = cfg.get(
+        "mini_port_api_url",
+        defaults.get(
+            "mini_port_api_url", "https://wl-ai-board.internal.wonder-link.com/board/wl"
+        ),
+    )
+    out["mini_port_taskboard_url"] = cfg.get(
+        "mini_port_taskboard_url",
+        defaults.get(
+            "mini_port_taskboard_url",
+            "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",
+        ),
+    )
+    out["update_check_url"] = cfg.get(
+        "update_check_url", defaults.get("update_check_url", "")
+    )
     out["update_network_check_url"] = cfg.get(
         "update_network_check_url", defaults.get("update_network_check_url", "")
     )
@@ -214,29 +281,51 @@ def save_config(cfg):
         "update_network_check_host", defaults.get("update_network_check_host", "")
     )
     out["update_network_check_interval_sec"] = cfg.get(
-        "update_network_check_interval_sec", defaults.get("update_network_check_interval_sec", 5)
+        "update_network_check_interval_sec",
+        defaults.get("update_network_check_interval_sec", 5),
     )
     out["update_network_check_max_wait_sec"] = cfg.get(
-        "update_network_check_max_wait_sec", defaults.get("update_network_check_max_wait_sec", 180)
+        "update_network_check_max_wait_sec",
+        defaults.get("update_network_check_max_wait_sec", 180),
     )
     out["network_unreachable_backoff_sec"] = cfg.get(
-        "network_unreachable_backoff_sec", defaults.get("network_unreachable_backoff_sec", 30)
+        "network_unreachable_backoff_sec",
+        defaults.get("network_unreachable_backoff_sec", 30),
     )
-    out["board_system_url"] = cfg.get("board_system_url", defaults.get("board_system_url", ""))
-    out["board_system_personal_id"] = cfg.get("board_system_personal_id", defaults.get("board_system_personal_id", ""))
-    out["board_system_email"] = cfg.get("board_system_email", defaults.get("board_system_email", ""))
-    out["linko_server_url"] = cfg.get("linko_server_url", defaults.get("linko_server_url", ""))
-    out["linko_admin_token"] = cfg.get("linko_admin_token", defaults.get("linko_admin_token", ""))
+    out["board_system_url"] = cfg.get(
+        "board_system_url", defaults.get("board_system_url", "")
+    )
+    out["board_system_personal_id"] = cfg.get(
+        "board_system_personal_id", defaults.get("board_system_personal_id", "")
+    )
+    out["board_system_email"] = cfg.get(
+        "board_system_email", defaults.get("board_system_email", "")
+    )
+    out["linko_server_url"] = cfg.get(
+        "linko_server_url", defaults.get("linko_server_url", "")
+    )
+    out["linko_admin_token"] = cfg.get(
+        "linko_admin_token", defaults.get("linko_admin_token", "")
+    )
     # features は辞書を丸ごと保存（未知キーも保つ）
     src_features = cfg.get("features") if isinstance(cfg.get("features"), dict) else {}
     out["features"] = {**(defaults.get("features") or {}), **src_features}
-    out["task_remind_times"] = cfg.get("task_remind_times", defaults.get("task_remind_times", ["13:00", "17:00"]))
-    out["task_remind_weekdays_only"] = cfg.get("task_remind_weekdays_only", defaults.get("task_remind_weekdays_only", True))
+    out["task_remind_times"] = cfg.get(
+        "task_remind_times", defaults.get("task_remind_times", ["13:00", "17:00"])
+    )
+    out["task_remind_weekdays_only"] = cfg.get(
+        "task_remind_weekdays_only", defaults.get("task_remind_weekdays_only", True)
+    )
     if isinstance(cfg.get("task_remind_slots_shown"), dict):
         out["task_remind_slots_shown"] = cfg["task_remind_slots_shown"]
-    out["task_remind_paused_until"] = cfg.get("task_remind_paused_until", defaults.get("task_remind_paused_until", ""))
+    out["task_remind_paused_until"] = cfg.get(
+        "task_remind_paused_until", defaults.get("task_remind_paused_until", "")
+    )
     out["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
-        cfg.get("calendar_remind_minutes_before", defaults.get("calendar_remind_minutes_before", 15))
+        cfg.get(
+            "calendar_remind_minutes_before",
+            defaults.get("calendar_remind_minutes_before", 15),
+        )
     )
     mins_list = parse_calendar_remind_minutes_list(cfg)
     if not mins_list:
@@ -247,6 +336,7 @@ def save_config(cfg):
         out["security"] = cfg["security"]
     try:
         from security import sanitize_config_urls
+
         sanitize_config_urls(out, defaults)
     except Exception as e:
         print(f"[security] config save sanitize skipped: {e}", flush=True)
@@ -286,7 +376,7 @@ def get_board_system_frontend_base(cfg=None):
     if not base:
         return ""
     if base.endswith("/api/bs"):
-        return base[:-len("/api/bs")].rstrip("/")
+        return base[: -len("/api/bs")].rstrip("/")
     return base
 
 
@@ -300,6 +390,7 @@ def get_board_system_personal_url(cfg=None):
         return None
     try:
         from security import validate_http_url, validate_personal_board_id
+
         ok, _ = validate_http_url(frontend, cfg, purpose="personal_board")
         if not ok or not validate_personal_board_id(pid):
             return None
@@ -319,17 +410,22 @@ def get_effective_board_system_url(cfg=None):
     if not task:
         return ""
     import re
+
     base = re.sub(r"/boards/.*$", "", task).rstrip("/")
     return f"{base}/api/bs" if base else ""
 
 
-def save_board_system_login(cfg: dict, *, board_url: str, user_id, user_data: dict, login_email: str = "") -> None:
+def save_board_system_login(
+    cfg: dict, *, board_url: str, user_id, user_data: dict, login_email: str = ""
+) -> None:
     """Board System ログイン成功時に config へ user id / 表示名 / メールを保存する。"""
     cfg["board_system_url"] = (board_url or "").strip().rstrip("/")
     cfg["board_system_personal_id"] = str(user_id)
     cfg["user_id"] = str(user_id)
     if (user_data.get("call_name") or user_data.get("name") or "").strip():
-        cfg["display_name"] = (user_data.get("call_name") or user_data.get("name") or "").strip()
+        cfg["display_name"] = (
+            user_data.get("call_name") or user_data.get("name") or ""
+        ).strip()
     email = (login_email or user_data.get("email") or "").strip()
     if email and "@" in email:
         cfg["board_system_email"] = email

@@ -427,19 +427,19 @@ app.prepare().then(() => {
 
             // AI-Board (Python) に通知してリン子のコメントを生成（新規追加時のみ。AI自身の付箋は除く）
             if (existingIndex < 0 && note.author !== 'AI') {
-                 try {
-                     fetch(`${AI_BOARD_BASE}/api/receive_note`, {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({
-                             id: note.id,
-                             text: note.text,
-                             author: note.author
-                         })
-                     }).catch(err => console.error('Failed to notify AI-Board:', err.message));
-                 } catch (e) {
-                     console.error('Error notifying AI-Board:', e);
-                 }
+                try {
+                    fetch(`${AI_BOARD_BASE}/api/receive_note`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: note.id,
+                            text: note.text,
+                            author: note.author
+                        })
+                    }).catch(err => console.error('Failed to notify AI-Board:', err.message));
+                } catch (e) {
+                    console.error('Error notifying AI-Board:', e);
+                }
             }
 
             console.log(`Note ${existingIndex >= 0 ? 'updated' : 'added'} via API: ${note.id} to board ${boardId}`);

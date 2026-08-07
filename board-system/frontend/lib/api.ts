@@ -37,19 +37,29 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-import type { LaneType, PlacementWithNote, User } from "./types";
+import type { LaneType, PlacementWithNote, Team, User } from "./types";
 
 export const api = {
   health: () => fetchApi<{ status: string }>("/health"),
 
   users: {
     list: () => fetchApi<User[]>("/users"),
-    create: (body: { name: string; email?: string; call_name?: string; role?: string }) =>
+    create: (body: { name: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
       fetchApi<User>("/users", { method: "POST", body: JSON.stringify(body) }),
-    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string }) =>
+    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
       fetchApi<User>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (userId: number) =>
       fetchApi<undefined>(`/users/${userId}`, { method: "DELETE" }),
+  },
+
+  teams: {
+    list: () => fetchApi<Team[]>("/teams"),
+    create: (body: { name: string }) =>
+      fetchApi<Team>("/teams", { method: "POST", body: JSON.stringify(body) }),
+    update: (teamId: number, body: { name?: string }) =>
+      fetchApi<Team>(`/teams/${teamId}`, { method: "PATCH", body: JSON.stringify(body) }),
+    delete: (teamId: number) =>
+      fetchApi<undefined>(`/teams/${teamId}`, { method: "DELETE" }),
   },
 
   stickyNotes: {
@@ -83,6 +93,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    copyToTeam: (noteId: number, body: { team_id: number; lane?: string }) =>
+      fetchApi<{ created: number; user_ids: number[]; message: string }>(
+        `/sticky_notes/${noteId}/copy_to_team`,
+        { method: "POST", body: JSON.stringify(body) }
+      ),
     releaseToTask: (noteId: number) =>
       fetchApi<unknown>(`/sticky_notes/${noteId}/release_to_task_board`, { method: "POST" }),
   },

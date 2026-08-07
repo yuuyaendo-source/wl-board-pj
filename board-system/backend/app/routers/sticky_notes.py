@@ -12,6 +12,8 @@ from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
+    CopyToTeamBody,
+    CopyToTeamResponse,
     ImportFromPostitBody,
     ImportFromPostitResponse,
     StickyNoteCreate,
@@ -460,4 +462,74 @@ async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)
         sort_order=placement.sort_order,
         created_at=placement.created_at,
         updated_at=placement.updated_at,
+    )
+
+
+@router.post("/{note_id}/copy_to_team", response_model=CopyToTeamResponse)
+async def copy_to_team(
+    note_id: int,
+    body: CopyToTeamBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """指定チームに所属するメンバー全員のパーソナルボードへ付箋をコピーする。"""
+    from app.models.team import Team
+    from app.models.board_placement import Lane as LaneEnum
+
+    # 付箋の存在確認
+    result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Sticky note not found")
+
+    # チームの存在確認
+    from sqlalchemy.orm import selectinload
+    team_result = await db.execute(
+        select(Team).options(selectinload(Team.users)).where(Team.id == body.team_id)
+    )
+    team = team_result.scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    members = team.users or []
+    if not members:
+        raise HTTPException(status_code=400, detail="チームに所属するメンバーがいません")
+
+    # lane のバリデーション
+    try:
+        lane_value = LaneEnum(body.lane)
+    except ValueError:
+        lane_value = LaneEnum.INBOX
+
+    created_user_ids: list[int] = []
+    for member in members:
+        owner_id = member.id
+        # 既存の (note_id, PERSONAL, owner_id) があれば lane を更新、なければ新規作成
+        r = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.note_id == note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.owner_id == owner_id,
+            )
+        )
+        placement = r.scalar_one_or_none()
+        if placement:
+            placement.lane = lane_value
+        else:
+            placement = BoardPlacement(
+                note_id=note_id,
+                board_type=BoardType.PERSONAL,
+                owner_id=owner_id,
+                lane=lane_value,
+                sort_order=0,
+            )
+            db.add(placement)
+            created_user_ids.append(owner_id)
+        await db.flush()
+
+    member_count = len(members)
+    message = f"{team.name} チーム全員（{member_count}名）にコピーしました"
+    return CopyToTeamResponse(
+        created=len(created_user_ids),
+        user_ids=[m.id for m in members],
+        message=message,
     )

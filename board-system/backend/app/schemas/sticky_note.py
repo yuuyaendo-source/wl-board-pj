@@ -53,3 +53,17 @@ class ImportFromPostitResponse(BaseModel):
     """取り込み結果。重複はスキップ。"""
     created: int
     skipped: int
+
+
+class CopyToTeamBody(BaseModel):
+    """チーム全員にコピーするリクエスト。"""
+    team_id: int
+    lane: str = "INBOX"
+
+
+class CopyToTeamResponse(BaseModel):
+    """チームコピー結果。"""
+    created: int
+    user_ids: list[int]
+    message: str
+

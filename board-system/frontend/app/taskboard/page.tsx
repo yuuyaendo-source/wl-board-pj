@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
+import type { Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
@@ -42,6 +43,7 @@ export default function TaskBoardPage() {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
   const { members: personalMembers } = usePersonalMembers();
+  const [teams, setTeams] = useState<Team[]>([]);
 
   // 初回マウント時に localStorage から復元（デフォルトはON）
   useEffect(() => {
@@ -70,9 +72,19 @@ export default function TaskBoardPage() {
     }
   }, []);
 
+  const fetchTeams = useCallback(async () => {
+    try {
+      const data = await api.teams.list();
+      setTeams(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => {
     fetchTask();
-  }, [fetchTask]);
+    fetchTeams();
+  }, [fetchTask, fetchTeams]);
 
   const handleImportFromPostit = useCallback(async () => {
     setImporting(true);
@@ -150,6 +162,22 @@ export default function TaskBoardPage() {
         setTimeout(() => setImportMessage(null), 2000);
       } catch (err) {
         setImportMessage(err instanceof Error ? err.message : "コピーに失敗しました");
+      }
+    },
+    [fetchTask]
+  );
+
+  const handleCopyToTeam = useCallback(
+    async (noteId: number, teamId: number, teamName: string) => {
+      try {
+        const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId, lane: "INBOX" });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+        setImportMessage(res.message);
+        setTimeout(() => setImportMessage(null), 3000);
+      } catch (err) {
+        setImportMessage(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
+        setTimeout(() => setImportMessage(null), 5000);
       }
     },
     [fetchTask]
@@ -279,6 +307,20 @@ export default function TaskBoardPage() {
               />
             ))}
           </div>
+          {teams.length > 0 && (
+            <>
+              <span className="text-sm text-zinc-500 mt-1">チームへ一括コピー（付箋をチームにドロップ）</span>
+              <div className="flex flex-wrap gap-2">
+                {teams.map((team) => (
+                  <TeamDropZone
+                    key={team.id}
+                    team={team}
+                    onDrop={(noteId) => handleCopyToTeam(noteId, team.id, team.name)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -364,6 +406,48 @@ function MemberDropZone({
       onDrop={handleDrop}
     >
       {name}
+    </div>
+  );
+}
+
+function TeamDropZone({
+  team,
+  onDrop,
+}: {
+  team: { id: number; name: string; member_count: number };
+  onDrop: (noteId: number) => void;
+}) {
+  const [over, setOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setOver(true);
+  };
+  const handleDragLeave = () => setOver(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOver(false);
+    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
+    if (noteId) onDrop(Number(noteId));
+  };
+
+  return (
+    <div
+      className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${
+        over
+          ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+          : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <span>👥</span>
+      <span className="font-medium">{team.name}</span>
+      <span className="text-xs opacity-60">({team.member_count}名)</span>
     </div>
   );
 }

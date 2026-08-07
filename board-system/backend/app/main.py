@@ -26,6 +26,7 @@ from app.routers import (
     sticky_notes,
     task_reminders,
     calendar_reminders,
+    teams,
     users,
 )
 
@@ -39,8 +40,9 @@ _DESKTOP_APP_RELEASES_DIR = Path(__file__).resolve().parent.parent / "desktop_ap
 async def lifespan(app: FastAPI):
     """起動時に DB 初期化（テーブル作成）とパーソナル用ユーザーシード。"""
     await init_db()
-    from app.db import seed_personal_users
+    from app.db import seed_personal_users, seed_teams
     await seed_personal_users()
+    await seed_teams()
     from app.services.llm_settings import get_effective_llm_target_sync, get_resolved_ollama_sync
 
     url, model_ov = get_resolved_ollama_sync()
@@ -84,6 +86,7 @@ app.add_middleware(
 )
 
 app.include_router(users.router)
+app.include_router(teams.router)
 app.include_router(sticky_notes.router)
 app.include_router(board_placements.router)
 app.include_router(boards.router)

@@ -36,6 +36,15 @@ export interface User {
   email: string | null;
   call_name: string | null;
   role: string | null;
+  team_id?: number | null;
+}
+
+export interface Team {
+  id: number;
+  name: string;
+  member_count: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type LaneType = "INBOX" | "TODAY" | "DONE" | "HELP_REQUEST";
