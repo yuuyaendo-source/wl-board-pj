@@ -13,18 +13,19 @@ cp .env.local.example .env.local   # 必要に応じて NEXT_PUBLIC_API_URL を�
 npm run dev
 ```
 
-- フロント: http://localhost:3000（単体）または http://localhost:3001（付箋ボード併用時）
+- フロント: <http://localhost:3000（単体）または> <http://localhost:3001（付箋ボード併用時）>
 - **各ボードはバックエンドが起動していないとエラーになります。** 先に `board-system/backend` で `uvicorn app.main:app --port 8000` を起動してください。トップページで「API 接続済み」と表示されれば OK。
 - ポート 8000 が使用中な場合: `uvicorn app.main:app --port 8001` で起動し、`.env.local` に `NEXT_PUBLIC_API_URL=http://localhost:8001` を設定。
 
 ## ボード（開発状況・引き継ぎ用）
 
 | パス | 説明 |
-|------|------|
+| ------ | ------ |
 | `/main` | Main Board（フリーキャンバス）。付箋をドラッグで配置。1行投稿。AI 仕分け付箋は ✨。 |
-| `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done。引き取り者を短縮名（例: 浅）で表示。 |
+| `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）・**チームへ一括コピー（チームドロップ: 👥 ネットワーク等）**は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done。引き取り者を短縮名（例: 浅）で表示。 |
 | `/personal` | **Personal Board**。3レーン（Today / タスク / Done）。1行入力で投稿。付箋色：**緑**=タスクボードから取り込んだもの、**青**=パーソナルで投稿したもの、**灰**=Done。ゴミ箱・タスクリリースは横並び。タスクリリースで Personal 配置を削除すると Task ボードに戻る。 |
 | `/meeting` | **Meeting ボード**。参加者ごとに MORNING スナップショット。毎朝 10:15 反映 + ニュース要約。「今の Today を反映」テストボタンあり。 |
+| `メンバー・チーム管理` | ヘッダーの「メンバー管理」ボタンで開く 2 タブ形式ダイアログ。**メンバー管理**（ユーザー登録・編集・所属チーム選択・削除）と**チーム管理**（チーム新規追加・チーム名変更・チーム削除・所属メンバー確認）を提供。 |
 | `/admin/system` | LLM スロット切替などの管理 UI |
 
 - 本番では basePath `/boards` のため、実際の URL は `/boards`、`/boards/taskboard`、`/boards/personal/:slug`、`/boards/meeting`。
@@ -32,7 +33,7 @@ npm run dev
 ## 環境変数
 
 | 変数 | 説明 | 例 |
-|------|------|-----|
+| ------ | ------ | ----- |
 | `NEXT_PUBLIC_API_URL` | バックエンド API の URL | 開発: `http://localhost:8000`、本番: `https://wl-ai-board.internal.wonder-link.com/api/bs` |
 | `NEXT_PUBLIC_LEGACY_BOARD_URL` | 付箋ボード（02_1）の URL（Task の付箋取り込み用） | 本番: `https://wl-ai-board.internal.wonder-link.com` |
 

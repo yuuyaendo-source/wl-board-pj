@@ -41,11 +41,12 @@ backend/
 ├── app/
 │   ├── ai/            # Rinko Core（triage, matrix, daily_reset）
 │   ├── config.py      # 設定（DATABASE_URL, GEMINI_API_KEY 等）
-│   ├── db.py          # 非同期エンジン・セッション・Base
+│   ├── db.py          # 非同期エンジン・セッション・Base・seed
 │   ├── main.py        # FastAPI アプリ
-│   ├── models/        # User, StickyNote, BoardPlacement
-│   ├── routers/       # users, sticky_notes, boards, daily_reset
+│   ├── models/        # User, Team, StickyNote, BoardPlacement
+│   ├── routers/       # users, teams, sticky_notes, boards, daily_reset
 │   └── schemas/       # Pydantic スキーマ
+├── scripts/           # seed_personal_members.py, seed_teams.py
 ├── alembic.ini
 ├── .env.example
 ├── requirements.txt
@@ -66,10 +67,14 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 | 死活 | GET | `/health` | ヘルスチェック |
 | admin | GET | `/admin/llm` | 実効 LLM スロット・解決 URL・モデルモード（DB 上書きと env を表示） |
 | admin | PUT | `/admin/llm` | body `{"llm_target":1}` など 1〜3 で DB に保存即反映、`{"llm_target":null}` で DB 上書き解除（env の `LLM_TARGET` に従う） |
-| users | GET/POST | `/users` | 一覧・作成 |
+| users | GET/POST | `/users` | 一覧・作成（`team_id` 対応） |
+| | PATCH | `/users/{id}` | ユーザー情報・所属チーム更新 |
+| teams | GET/POST | `/teams` | チーム一覧取得・新規チーム作成 |
+| | PATCH/DELETE | `/teams/{id}` | チーム名更新・チーム削除（メンバーの team_id は Set NULL） |
 | sticky_notes | GET/POST | `/sticky_notes` | 一覧・作成（作成時 MAIN＋**AI で Task/Personal にも自動配置**） |
 | | GET/PATCH/DELETE | `/sticky_notes/{id}` | 1件取得・更新・削除 |
 | | POST | `/sticky_notes/{id}/move_to_personal` | Personal に配置（body: `owner_id`, `lane`） |
+| | POST | `/sticky_notes/{id}/copy_to_team` | 指定チーム所属メンバー全員の Personal ボードへ付箋を一括コピー |
 | | POST | `/sticky_notes/{id}/release_to_task_board` | Task Board に配置 |
 | board_placements | GET/POST | `/board_placements` | 一覧（`?board_type=&owner_id=`）・作成 |
 | | GET/PATCH/DELETE | `/board_placements/{id}` | 1件取得・更新・削除 |

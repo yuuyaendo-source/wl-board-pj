@@ -33,12 +33,17 @@ export PORT_STICKY=3031
 export NEXT_PUBLIC_API_URL="https://${STAGING_HOST}/api/bs"
 export NEXT_PUBLIC_LEGACY_BOARD_URL="https://${STAGING_HOST}"
 
-echo "Building and starting staging (ports 3030/8030/3031, DB: $STAGING_DB_NAME)..."
-docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_COMPOSE_STAGING" -p board-system-staging up -d --build
+echo "Building images for staging..."
+docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_COMPOSE_STAGING" -p board-system-staging build
 
 echo "Running migrations on staging DB..."
-sleep 5
-docker exec linko-backend-staging alembic upgrade head 2>/dev/null || true
+docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_COMPOSE_STAGING" -p board-system-staging run --rm backend alembic upgrade head
+
+echo "Running team seeds on staging DB..."
+docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_COMPOSE_STAGING" -p board-system-staging run --rm backend python scripts/seed_teams.py
+
+echo "Starting staging containers (ports 3030/8030/3031, DB: $STAGING_DB_NAME)..."
+docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_COMPOSE_STAGING" -p board-system-staging up -d
 
 echo "Staging is up. Ensure ${STAGING_HOST} resolves to this server (DNS or /etc/hosts)."
 echo "Nginx で staging.conf が include されていること。URL: https://${STAGING_HOST}/"

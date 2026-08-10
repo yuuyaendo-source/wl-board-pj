@@ -103,6 +103,10 @@ done
 echo "Running database migrations..."
 docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend alembic -c /app/alembic.ini upgrade head
 
+echo "Running team seeds..."
+docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend python scripts/seed_teams.py
+
+
 # Nginx切り替え
 echo "Switching traffic..."
 cat <<EOF > "$ACTIVE_ENV_FILE"

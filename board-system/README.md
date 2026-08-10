@@ -20,11 +20,12 @@ board-system/
 ## 開発状況（2026年6月時点）
 
 | 項目 | 状態 | 備考 |
-|------|------|------|
+| ------ | ------ | ------ |
 | 4 ボード UI | 完了 | `/main` `/taskboard` `/personal/:slug` `/meeting` |
-| Task ボード | 完了 | 5 列（アイデア・短期・長期・重要・完了）。色・引き取り者表示 |
+| Task ボード | 完了 | 5 列（アイデア・短期・長期・重要・完了）。色・引き取り者表示。👥 チームへの付箋一括コピー |
 | Personal ボード | 完了 | Today / タスク / Done。Task 連動・Google カレンダー「今日の予定」 |
 | Meeting ボード | 完了 | 毎朝 10:15 に Personal Today を MORNING へコピー。ニュース要約付箋も反映 |
+| チーム管理 | 完了 | メンバー管理・チーム作成/編集/削除、チーム所属メンバー全員への一括コピー |
 | AI 自動仕分け | 完了 | Ollama（`OLLAMA_URL`）。Gemini は不使用 |
 | Google カレンダー | 完了 | OAuth 連携・今日の予定・デスクトップ向けリマインド API |
 | ブレスト API | 完了 | `POST /brainstorm`（SSE）。デスクトップアプリから利用 |
@@ -37,7 +38,7 @@ board-system/
 ## 本番 URL（Docker 構成）
 
 | 用途 | パス（FQDN 配下） |
-|------|-------------------|
+| ------ | ------------------- |
 | 付箋ボード | `/board/wl` 等 |
 | Board System フロント | `/boards` |
 | Board System API | `/api/bs` |
@@ -63,7 +64,7 @@ cd board-system/frontend
 npm install && npm run dev
 ```
 
-- フロント: http://localhost:3000（単体）または :3001（付箋ボード併用）
+- フロント: <http://localhost:3000（単体）または> :3001（付箋ボード併用）
 - トップで「API 接続済み」と表示されれば OK
 
 **付箋ボード併用**: `wl-sticky-note` を 3000、board-system フロントを 3001。  
@@ -78,8 +79,8 @@ docker compose up -d --build
 docker exec -it linko-backend alembic upgrade head   # 初回のみ
 ```
 
-- Board System: http://localhost:3010
-- 付箋ボード: http://localhost:3011
+- Board System: <http://localhost:3010>
+- 付箋ボード: <http://localhost:3011>
 
 詳細: [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) のローカル確認セクション
 
@@ -88,7 +89,7 @@ docker exec -it linko-backend alembic upgrade head   # 初回のみ
 `SCHEDULER_ENABLED=true`（既定）のとき、外部 cron 不要。
 
 | 時刻 (JST) | 処理 |
-|------------|------|
+| ------------ | ------ |
 | 毎日 8:00 | `POST /daily_reset/run_8am` — Meeting リセット + 全ユーザーの今日の予定取得・Today 付箋 |
 | 毎日 10:00 | `POST /news/clear` — ニュース付箋クリア |
 | 毎日 10:15 | `POST /daily_reset/sync_to_morning` — Personal Today → Meeting ボード |
@@ -99,7 +100,7 @@ Docker 内では `SCHEDULER_BASE_URL` をコンテナから見える自サーバ
 ## 本番デプロイ・更新
 
 | やりたいこと | 参照 |
-|--------------|------|
+| -------------- | ------ |
 | Docker 本番（推奨） | [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) |
 | 要約・よく使うコマンド | [DEPLOY.md](DEPLOY.md) |
 | 非 Docker（PM2） | [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md) |
@@ -117,7 +118,7 @@ docker exec -it linko-backend-blue alembic upgrade head   # マイグレーシ�
 ## サブディレクトリ
 
 | ディレクトリ | README | 内容 |
-|--------------|--------|------|
+| -------------- | -------- | ------ |
 | [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker、マイグレーション |
 | [frontend/](frontend/README.md) | あり | Next.js、ボード別パス、環境変数 |
 | [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップ MSI 自動更新配信 |
@@ -125,7 +126,7 @@ docker exec -it linko-backend-blue alembic upgrade head   # マイグレーシ�
 ## 関連リポジトリ・サービス
 
 | コンポーネント | 場所 |
-|----------------|------|
+| ---------------- | ------ |
 | 付箋ボード | `wl-board-pj/wl-sticky-note` |
 | デスクトップアプリ | `wl-board-pj/wl_desktop_app` |
 | AI 受付（リン子） | `linko-system`（別リポジトリ） |
