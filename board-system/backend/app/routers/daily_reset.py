@@ -5,6 +5,8 @@ Personal Board の Today レーン未完了タスクについて「持ち越し�
 毎朝の Meeting 用: Today を MORNING にコピーする sync_to_morning（cron 等で 10:15 に実行想定）。
 """
 import asyncio
+from datetime import date
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import delete, select
@@ -15,6 +17,7 @@ from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.ai import run_daily_reset_messages
 
+JST = ZoneInfo("Asia/Tokyo")
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
 
 
@@ -97,11 +100,73 @@ async def reset_meeting(db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
+async def apply_due_date_rules(db: AsyncSession) -> dict:
+    """
+    期限（due_date）の設定されたパーソナル配置に対して、期限までの日数に応じて Today または INBOX に自動移動する。
+    - DONE レーンの配置は除外（完了済みタスクは自動移動しない）。
+    - is_manually_moved_to_today == True の配置はスキップ（手動移動が優先）。
+    - 日本時間（JST）を基準として判定する。
+    戻り値: {"today_count": int, "inbox_count": int} 各レーンへ移動した件数。
+    """
+    today_jst = date.today()  # サーバーが JST の場合はこれで OK
+    # Dockerで TZ=Asia/Tokyo が設定されている前提。さらに確実にする場合は datetime.now(JST).date() を使う。
+    from datetime import datetime as _dt
+    today_jst = _dt.now(JST).date()
+
+    # DONE 以外の PERSONAL 配置で、期限が設定されているものを取得
+    result = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane != Lane.DONE,
+            StickyNote.due_date.isnot(None),
+        )
+    )
+    rows = result.all()
+
+    today_count = 0
+    inbox_count = 0
+    for p, n in rows:
+        # 手動移動フラグが立っている場合は自動移動をスキップ
+        if p.is_manually_moved_to_today:
+            continue
+
+        days = (n.due_date - today_jst).days
+        target_lane: Lane
+
+        if days < 0:
+            # 期限切れ: 毎日 Today
+            target_lane = Lane.TODAY
+        elif days < 30:
+            # 短期ルール: 1ヶ月未満
+            if days in (0, 1, 2, 3, 4, 5, 10, 20):
+                target_lane = Lane.TODAY
+            else:
+                target_lane = Lane.INBOX
+        else:
+            # 長期ルール: 1ヶ月以上
+            if days % 30 == 0:
+                target_lane = Lane.TODAY
+            else:
+                target_lane = Lane.INBOX
+
+        if p.lane != target_lane:
+            p.lane = target_lane
+            if target_lane == Lane.TODAY:
+                today_count += 1
+            else:
+                inbox_count += 1
+
+    await db.flush()
+    return {"today_count": today_count, "inbox_count": inbox_count}
+
+
 @router.post("/run_8am")
 async def run_8am(db: AsyncSession = Depends(get_db)):
     """
-    毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、
-    今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
+    毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 期限タスクの自動移動
+    (3) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
     cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
     """
     from app.config import settings
@@ -113,9 +178,17 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
     await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
     await db.flush()
 
+    # 期限タスクの自動移動
+    due_date_result = await apply_due_date_rules(db)
+    log.info(
+        "run_8am: 期限タスク自動移動 today=%s inbox=%s",
+        due_date_result["today_count"],
+        due_date_result["inbox_count"],
+    )
+
     if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
         log.info("run_8am: Google Calendar 未設定のためカレンダー取得をスキップ")
-        return {"ok": True, "refreshed": [], "failed": []}
+        return {"ok": True, "refreshed": [], "failed": [], "due_date_moved": due_date_result}
 
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
     user_ids = [r[0] for r in result.all()]
@@ -128,4 +201,5 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
         except Exception as e:
             log.warning("run_8am user_id=%s: %s", uid, e)
             failed.append(uid)
-    return {"ok": True, "refreshed": refreshed, "failed": failed}
+    return {"ok": True, "refreshed": refreshed, "failed": failed, "due_date_moved": due_date_result}
+

@@ -167,6 +167,8 @@ async def get_board_personal(
             note_status=n.status.value,
             placement_source=p.placement_source,
             is_from_task=(n.id in task_note_ids),
+            is_manually_moved_to_today=p.is_manually_moved_to_today,
+            due_date=n.due_date.isoformat() if n.due_date else None,
         )
         for p, n in rows
     ]

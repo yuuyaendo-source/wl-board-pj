@@ -86,7 +86,7 @@ export const api = {
     delete: (noteId: number) =>
       fetchApi<undefined>(`/sticky_notes/${noteId}`, { method: "DELETE" }),
     /** 付箋の content を更新（追記反映。付箋ボード連携付箋の場合は付箋ボード側にも同期される） */
-    update: (noteId: number, body: { content?: string; status?: string }) =>
+    update: (noteId: number, body: { content?: string; status?: string; due_date?: string }) =>
       fetchApi<unknown>(`/sticky_notes/${noteId}`, { method: "PATCH", body: JSON.stringify(body) }),
     moveToPersonal: (noteId: number, body: { owner_id: number; lane?: LaneType }) =>
       fetchApi<unknown>(`/sticky_notes/${noteId}/move_to_personal`, {

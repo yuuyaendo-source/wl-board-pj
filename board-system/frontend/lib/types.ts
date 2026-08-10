@@ -28,6 +28,10 @@ export interface PlacementWithNote {
   task_color?: "yellow" | "green" | "grey" | "red";
   /** 応援要請に対して、元の担当者以外の第三者が引き受けた（コピーした）か */
   is_accepted_by_others?: boolean;
+  /** 手動で Today に移動されたフラグ。True のとき期限による自動移動をスキップ */
+  is_manually_moved_to_today?: boolean;
+  /** 紐づく付箋の期限（YYYY-MM-DD 文字列）*/
+  due_date?: string | null;
 }
 
 export interface User {

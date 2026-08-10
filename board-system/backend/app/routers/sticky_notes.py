@@ -242,7 +242,13 @@ def _notify_postit_text(board_id: str, note_id: str, text: str) -> None:
 
 @router.patch("/{note_id}", response_model=StickyNoteResponse)
 async def update_sticky_note(note_id: int, body: StickyNoteUpdate, db: AsyncSession = Depends(get_db)):
-    """付箋の content / status を更新。付箋ボード連携付箋の場合は追記内容を付箋ボード側にも反映する。"""
+    """付箋の content / status / due_date を更新。
+    - due_date を変更した場合、対応する全 BoardPlacement の is_manually_moved_to_today を False にリセット。
+    - 付箋ボード連携付箋の場合は追記内容を付箋ボード側にも反映する。
+    """
+    from datetime import date as DateType
+    from sqlalchemy import update as sa_update
+
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -251,7 +257,34 @@ async def update_sticky_note(note_id: int, body: StickyNoteUpdate, db: AsyncSess
         note.content = body.content
     if body.status is not None:
         note.status = body.status
+
+    due_date_changed = False
+    if body.due_date is not None:
+        if body.due_date == "":
+            # 空文字列で期限をクリア
+            if note.due_date is not None:
+                note.due_date = None
+                due_date_changed = True
+        else:
+            try:
+                parsed = DateType.fromisoformat(body.due_date)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="due_date は YYYY-MM-DD 形式で指定してください")
+            if note.due_date != parsed:
+                note.due_date = parsed
+                due_date_changed = True
+
     await db.flush()
+
+    # due_date 変更時、紐づく全 BoardPlacement の is_manually_moved_to_today を False に一括リセット
+    if due_date_changed:
+        await db.execute(
+            sa_update(BoardPlacement)
+            .where(BoardPlacement.note_id == note_id)
+            .values(is_manually_moved_to_today=False)
+        )
+        await db.flush()
+
     await db.refresh(note)
     # 付箋ボード連携付箋の場合、追記内容を付箋ボード側に反映
     if body.content is not None and note.postit_board_id and note.postit_note_id:

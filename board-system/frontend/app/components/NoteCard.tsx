@@ -21,6 +21,8 @@ interface NoteCardProps {
   takenBy?: TakenByUser[];
   /** 追記コールバック（指定時は追記入力欄を表示。付箋は追記のみ） */
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  /** 期限変更コールバック。YYYY-MM-DD 文字列（クリア時は ""） */
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
 }
@@ -34,6 +36,122 @@ const BG_COLOR = {
   purple: "bg-violet-100 border-violet-300",
 } as const;
 
+/** 残り日数を計算（due_date: YYYY-MM-DD 文字列 → 整数、past なら負の数） */
+function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
+  if (!dueDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // YYYY-MM-DD をローカル時間として解析（UTC 換算ズレを防ぐ）
+  const [y, m, d] = dueDateStr.split("-").map(Number);
+  const due = new Date(y, m - 1, d);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/** 期限バッジのスタイル（残り日数に応じて色を動的に変える） */
+function DueDateBadge({
+  dueDate,
+  onClick,
+}: {
+  dueDate: string | null | undefined;
+  onClick?: () => void;
+}) {
+  const days = calcDaysLeft(dueDate);
+  if (days === null) return null;
+
+  let label = "";
+  let badgeCls = "";
+
+  if (days < 0) {
+    label = `期限切れ（${Math.abs(days)}日）`;
+    badgeCls = "bg-red-500 text-white";
+  } else if (days === 0) {
+    label = "今日が期限";
+    badgeCls = "bg-orange-500 text-white";
+  } else if (days <= 3) {
+    label = `期限まで${days}日`;
+    badgeCls = "bg-orange-400 text-white";
+  } else if (days <= 10) {
+    label = `期限まで${days}日`;
+    badgeCls = "bg-yellow-400 text-zinc-800";
+  } else {
+    label = `期限まで${days}日`;
+    badgeCls = "bg-zinc-200 text-zinc-600";
+  }
+
+  return (
+    <span
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      className={`inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-tight transition-opacity hover:opacity-80 ${badgeCls}`}
+      title={`期限: ${dueDate}`}
+    >
+      📅 {label}
+    </span>
+  );
+}
+
+/** カレンダー日付入力UI（インライン） */
+function DueDatePicker({
+  noteId,
+  currentDueDate,
+  onSave,
+  onClose,
+}: {
+  noteId: number;
+  currentDueDate: string | null | undefined;
+  onSave: (noteId: number, dateStr: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(currentDueDate ?? "");
+
+  const handleSave = () => {
+    onSave(noteId, value); // value は "" (クリア) or "YYYY-MM-DD"
+    onClose();
+  };
+
+  const handleClear = () => {
+    onSave(noteId, "");
+    onClose();
+  };
+
+  return (
+    <div
+      className="mt-1 flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 shadow-md"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="rounded border border-zinc-300 px-1.5 py-0.5 text-xs"
+      />
+      <button
+        type="button"
+        onClick={handleSave}
+        className="rounded bg-blue-500 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-blue-600"
+      >
+        保存
+      </button>
+      {currentDueDate && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="rounded bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-300"
+        >
+          クリア
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClose}
+        className="text-[10px] text-zinc-400 hover:text-zinc-600"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export default function NoteCard({
   placement,
   showAiBadge = false,
@@ -44,10 +162,12 @@ export default function NoteCard({
   showCalendarBadge = false,
   takenBy = [],
   onAppendContent,
+  onDueDateChange,
   onDragStart,
   onDragEnd,
 }: NoteCardProps) {
   const [appendText, setAppendText] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
 
@@ -100,6 +220,38 @@ export default function NoteCard({
           )}
         </div>
       </div>
+
+      {/* 期限バッジ */}
+      {placement.due_date && (
+        <div>
+          <DueDateBadge
+            dueDate={placement.due_date}
+            onClick={() => onDueDateChange && setShowDatePicker((v) => !v)}
+          />
+        </div>
+      )}
+
+      {/* 期限未設定の場合：設定ボタン */}
+      {!placement.due_date && onDueDateChange && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setShowDatePicker((v) => !v); }}
+          className="w-fit text-[10px] text-zinc-400 hover:text-zinc-600"
+        >
+          📅 期限を設定
+        </button>
+      )}
+
+      {/* 日付ピッカー */}
+      {showDatePicker && onDueDateChange && (
+        <DueDatePicker
+          noteId={placement.note_id}
+          currentDueDate={placement.due_date}
+          onSave={onDueDateChange}
+          onClose={() => setShowDatePicker(false)}
+        />
+      )}
+
       {takenBy.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {takenBy.map((u) => (

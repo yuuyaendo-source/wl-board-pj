@@ -118,6 +118,12 @@ async def update_board_placement(
     prev_matrix = placement.matrix_quadrant
     if body.lane is not None:
         placement.lane = body.lane
+        # PERSONAL ボードでの手動レーン変更時にフラグを制御
+        if placement.board_type == BoardType.PERSONAL:
+            if body.lane == Lane.TODAY:
+                placement.is_manually_moved_to_today = True
+            else:
+                placement.is_manually_moved_to_today = False
     if body.position_x is not None:
         placement.position_x = body.position_x
     if body.position_y is not None:

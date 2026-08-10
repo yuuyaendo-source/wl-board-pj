@@ -227,6 +227,20 @@ export default function PersonalBoardView({
     [fetchPersonal]
   );
 
+  /** 期限（due_date）変更。YYYY-MM-DD 文字列または ""（クリア）を受け取る */
+  const handleDueDateChange = useCallback(
+    async (noteId: number, dueDateStr: string) => {
+      try {
+        await api.stickyNotes.update(noteId, { due_date: dueDateStr });
+        await delay(REFETCH_DELAY_MS);
+        await fetchPersonal();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+      }
+    },
+    [fetchPersonal]
+  );
+
   if (loading) return <div className="p-6">Loading...</div>;
   if (error)
     return (
@@ -258,6 +272,7 @@ export default function PersonalBoardView({
             onDrop={(placementId, targetIndex) => handleDrop(placementId, key, targetIndex)}
             onRefresh={fetchPersonal}
             onAppendContent={handleAppendContent}
+            onDueDateChange={handleDueDateChange}
           />
         ))}
         <PersonalCalendarPanel
@@ -495,6 +510,7 @@ function LaneColumn({
   onDrop,
   onRefresh,
   onAppendContent,
+  onDueDateChange,
 }: {
   lane: LaneType;
   label: string;
@@ -502,6 +518,7 @@ function LaneColumn({
   onDrop: (placementId: number, targetIndex?: number) => void | Promise<void>;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
 }) {
   const [over, setOver] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
@@ -563,6 +580,7 @@ function LaneColumn({
             cardColor={personalCardColor(lane, p)}
             dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
             onAppendContent={onAppendContent}
+            onDueDateChange={onDueDateChange}
             onDragEnd={onRefresh}
           />
           </div>
@@ -571,3 +589,4 @@ function LaneColumn({
     </div>
   );
 }
+

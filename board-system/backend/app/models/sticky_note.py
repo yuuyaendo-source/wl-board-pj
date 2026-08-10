@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """sticky_notes テーブル。付箋本文・投稿者・ステータス。"""
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text  # String for postit_*
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, Text  # String for postit_*
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -33,6 +33,7 @@ class StickyNote(Base):
         nullable=False,
         default=NoteStatus.ACTIVE,
     )
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

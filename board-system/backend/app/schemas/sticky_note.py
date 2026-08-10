@@ -19,6 +19,7 @@ class StickyNoteCreate(BaseModel):
 class StickyNoteUpdate(BaseModel):
     content: str | None = None
     status: NoteStatus | None = None
+    due_date: str | None = None  # YYYY-MM-DD 形式。空文字列「""」で発送すると期限をクリア。
 
 
 class StickyNoteResponse(BaseModel):
@@ -26,6 +27,7 @@ class StickyNoteResponse(BaseModel):
     content: str
     author_id: int | None
     status: NoteStatus
+    due_date: str | None = None  # YYYY-MM-DD 形式。
     created_at: datetime
     updated_at: datetime
 
