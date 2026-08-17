@@ -7,24 +7,14 @@ ACTIVE_ENV_FILE="$NGINX_CONF_DIR/active_env.conf"
 
 # 現在のアクティブ環境を確認
 if grep -q "3010" "$ACTIVE_ENV_FILE"; then
-    CURRENT_PORT="3010"
-    TARGET_PORT="3020"
     TARGET_ENV="green"
 else
-    CURRENT_PORT="3020"
-    TARGET_PORT="3010"
     TARGET_ENV="blue"
 fi
 
-echo "Rolling back to: $TARGET_ENV ($TARGET_PORT)"
+echo "Rolling back to: $TARGET_ENV"
 
-# 単純に Nginx の向き先を元に戻す
-cat <<EOF > "$ACTIVE_ENV_FILE"
-upstream current_frontend { server 127.0.0.1:$TARGET_PORT; }
-# backend, sticky も同様に変数のポート番号を使って戻す必要があるが
-# 簡易的に、TARGET_ENV に応じてハードコードするか、deploy.sh と同様のロジックで戻す
-EOF
-
+# Nginx の向き先を元に戻す
 if [ "$TARGET_ENV" = "blue" ]; then
     cat <<EOF > "$ACTIVE_ENV_FILE"
 upstream current_frontend { server 127.0.0.1:3010; }
