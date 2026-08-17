@@ -195,6 +195,18 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
+  // 期限変更ハンドラー
+  const handleDueDateChange = useCallback(
+    async (noteId: number, dueDateStr: string) => {
+      await api.stickyNotes.update(noteId, {
+        due_date: dueDateStr === "" ? "" : dueDateStr,
+      });
+      await delay(REFETCH_DELAY_MS);
+      await fetchTask();
+    },
+    [fetchTask]
+  );
+
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
       setImportMessage(null);
@@ -280,7 +292,7 @@ export default function TaskBoardPage() {
           >
             付箋ボードから取り込む
           </button>
-          
+
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
             <input
               type="checkbox"
@@ -333,6 +345,7 @@ export default function TaskBoardPage() {
             onDrop={droppable && targetQ !== null ? (placementId) => handleDrop(placementId, targetQ) : undefined}
             onRefresh={fetchTask}
             onAppendContent={handleAppendContent}
+            onDueDateChange={handleDueDateChange}
             droppable={droppable}
           />
         ))}
@@ -359,9 +372,8 @@ function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
-        over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
-      }`}
+      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -398,9 +410,8 @@ function MemberDropZone({
 
   return (
     <div
-      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
-      }`}
+      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -436,11 +447,10 @@ function TeamDropZone({
 
   return (
     <div
-      className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${
-        over
+      className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${over
           ? "border-indigo-400 bg-indigo-50 text-indigo-700"
           : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
-      }`}
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -458,6 +468,7 @@ function ColumnDropZone({
   onDrop,
   onRefresh,
   onAppendContent,
+  onDueDateChange,
   droppable = true,
 }: {
   title: string;
@@ -465,6 +476,7 @@ function ColumnDropZone({
   onDrop?: (placementId: number) => void;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
   droppable?: boolean;
 }) {
   const [over, setOver] = useState(false);
@@ -486,9 +498,8 @@ function ColumnDropZone({
 
   return (
     <div
-      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50/50" : ""
-      }`}
+      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : ""
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -503,6 +514,7 @@ function ColumnDropZone({
             cardColor={p.task_color}
             takenBy={p.taken_by}
             onAppendContent={onAppendContent}
+            onDueDateChange={onDueDateChange}
             onDragEnd={onRefresh}
           />
         ))}

@@ -7,20 +7,34 @@ const COLORS = [
     "#fff9c4", "#c5e1a5", "#ffccbc", "#b3e5fc", "#ffffff"
 ];
 
+function calcDaysLeft(dueDateStr) {
+    if (!dueDateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [y, m, d] = dueDateStr.split("-").map(Number);
+    const due = new Date(y, m - 1, d);
+    due.setHours(0, 0, 0, 0);
+    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDown, onMouseUp }) {
     const [isDragging, setIsDragging] = useState(false);
     const [appendText, setAppendText] = useState("");
+    const [showColorPicker, setShowColorPicker] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
 
     const isLarge = note.ratioW && note.ratioW >= 0.2;
+    const dueDateVal = note.dueDate || note.due_date || "";
+    const daysLeft = calcDaysLeft(dueDateVal);
 
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e); // Propagate to parent for line drawing
         if (e.defaultPrevented || e.altKey) return; // Don't drag if line drawing
         if (note.pinned) return; // Don't drag if pinned
 
-        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return; // Allow text selection and button clicks
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return; // Allow text selection and button clicks
 
         e.stopPropagation(); // Prevent board scroll when dragging note
         e.preventDefault(); // Also prevent default to ensure board drag doesn't start
@@ -35,14 +49,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
 
     const handleTouchStart = (e) => {
         if (note.pinned) return;
-        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return;
-
-        // e.stopPropagation(); // Might interfere with scrolling if not dragging?
-        // For dragging, we generally want to capture it.
-        // But if the user taps a button, we don't want to start dragging.
-
-        // Touch events usually don't have defaultPrevented in the same way for "line drawing" unless we handle it.
-        // Assuming line drawing isn't primary on touch yet or works differently.
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
 
         setIsDragging(true);
         const touch = e.touches[0];
@@ -57,8 +64,6 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         const handleMouseMove = (e) => {
             if (!isDragging) return;
 
-            // Calculate new position relative to parent (canvas)
-            // We need to account for scale
             const parentRect = noteRef.current.parentElement.getBoundingClientRect();
 
             const newX = (e.clientX - parentRect.left - offset.current.x) / scale;
@@ -107,11 +112,14 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         onUpdate({ ...note, pinned: !note.pinned });
     };
 
-    const [showColorPicker, setShowColorPicker] = useState(false);
-
     const changeColor = (newColor) => {
         onUpdate({ ...note, color: newColor });
         setShowColorPicker(false);
+    };
+
+    const handleDueDateChange = (newDate) => {
+        onUpdate({ ...note, dueDate: newDate, due_date: newDate });
+        setShowDatePicker(false);
     };
 
     const submitAppend = () => {
@@ -121,6 +129,18 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         onUpdate({ ...note, text: newText });
         setAppendText("");
     };
+
+    let badgeBg = "bg-zinc-200 text-zinc-700";
+    let badgeText = `📅 ${dueDateVal}`;
+    if (daysLeft !== null) {
+        if (daysLeft < 0) {
+            badgeBg = "bg-red-500 text-white";
+            badgeText = `📅 期限切れ (${Math.abs(daysLeft)}日)`;
+        } else if (daysLeft === 0) {
+            badgeBg = "bg-orange-500 text-white";
+            badgeText = "📅 今日が期限";
+        }
+    }
 
     return (
         <div
@@ -155,6 +175,17 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                 🎨
             </button>
             <button
+                style={{ position: "absolute", top: "4px", right: "28px", background: "none", border: "none", cursor: "pointer", fontSize: "12px" }}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDatePicker(!showDatePicker);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="期限を設定"
+            >
+                📅
+            </button>
+            <button
                 className={styles.deleteButton}
                 onClick={(e) => {
                     e.stopPropagation();
@@ -167,6 +198,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             >
                 🗑️
             </button>
+
             {showColorPicker && (
                 <div className={styles.colorPicker}>
                     {COLORS.map((c) => (
@@ -180,13 +212,73 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     ))}
                 </div>
             )}
+
+            {showDatePicker && (
+                <div
+                    style={{
+                        position: "absolute",
+                        top: "28px",
+                        right: "8px",
+                        background: "#fff",
+                        padding: "6px",
+                        borderRadius: "6px",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                        zIndex: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <input
+                        type="date"
+                        value={dueDateVal}
+                        onChange={(e) => handleDueDateChange(e.target.value)}
+                        style={{ fontSize: "12px", padding: "2px" }}
+                    />
+                    {dueDateVal && (
+                        <button
+                            type="button"
+                            onClick={() => handleDueDateChange("")}
+                            style={{ fontSize: "10px", padding: "2px 4px" }}
+                        >
+                            消去
+                        </button>
+                    )}
+                </div>
+            )}
+
             {note.imageUrl && (
                 <div className={styles.imageContainer}>
                     <img src={note.imageUrl} alt="Sticky note capture" className={styles.image} />
                 </div>
             )}
+
+            {dueDateVal && (
+                <div style={{ marginTop: "16px", marginBottom: "4px" }}>
+                    <span
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDatePicker(!showDatePicker);
+                        }}
+                        style={{
+                            fontSize: "11px",
+                            fontWeight: "bold",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            display: "inline-block"
+                        }}
+                        className={badgeBg}
+                    >
+                        {badgeText}
+                    </span>
+                </div>
+            )}
+
             {/* 既存テキストは表示のみ（URLはリンク化）。追記のみ可能 */}
-            <div className={styles.noteContent}>
+            <div className={styles.noteContent} style={{ marginTop: dueDateVal ? "4px" : "18px" }}>
                 {(note.text || "").trim() ? (
                     <LinkifiedText text={note.text} className={styles.linkifiedText} />
                 ) : null}
