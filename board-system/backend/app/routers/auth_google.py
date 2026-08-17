@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -60,6 +61,7 @@ def _pkce_code_challenge(verifier: str) -> str:
 def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) -> dict:
     """トークンエンドポイントに code_verifier を付けて POST（自前実装で確実に送る）。"""
     import requests
+
     resp = requests.post(
         GOOGLE_TOKEN_URI,
         data={
@@ -92,7 +94,9 @@ def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
     try:
         session = getattr(flow, "oauth2session", None)
         if session is not None:
-            client = getattr(session, "_client", None) or getattr(session, "client", None)
+            client = getattr(session, "_client", None) or getattr(
+                session, "client", None
+            )
             if client is not None:
                 setattr(client, "code_verifier", code_verifier)
     except Exception:
@@ -102,6 +106,7 @@ def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
 def _google_flow(redirect_uri: str, code_verifier: str | None = None):
     """Google OAuth Flow を生成（同期）。code_verifier を渡すと PKCE で使用。"""
     from google_auth_oauthlib.flow import Flow
+
     flow = Flow.from_client_config(
         {
             "web": {
@@ -126,11 +131,16 @@ async def auth_google_start(
     db: AsyncSession = Depends(get_db),
 ):
     """Google OAuth 開始。user_id を state に載せて Google へリダイレクト。PKCE の code_verifier を DB に保存。"""
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         raise HTTPException(status_code=503, detail="Google Calendar is not configured")
     redirect_uri = settings.google_calendar_redirect_uri
     if not redirect_uri:
-        raise HTTPException(status_code=503, detail="google_calendar_redirect_uri is not set")
+        raise HTTPException(
+            status_code=503, detail="google_calendar_redirect_uri is not set"
+        )
     try:
         # PKCE: code_verifier を生成し、認可URLを自前で組み立て（ライブラリ任せだと code_challenge が一致しないため）
         code_verifier = secrets.token_urlsafe(32)
@@ -148,8 +158,14 @@ async def auth_google_start(
         }
         authorization_url = GOOGLE_AUTH_URI + "?" + urllib.parse.urlencode(params)
         expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
-        await db.execute(delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id)))
-        db.add(OAuthPkceState(state=str(user_id), code_verifier=code_verifier, expires_at=expires_at))
+        await db.execute(
+            delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id))
+        )
+        db.add(
+            OAuthPkceState(
+                state=str(user_id), code_verifier=code_verifier, expires_at=expires_at
+            )
+        )
         await db.flush()
         logger.info("PKCE state saved for state=%s (user_id=%s)", user_id, user_id)
         return RedirectResponse(url=authorization_url)
@@ -172,7 +188,9 @@ async def auth_google_callback(
         raise HTTPException(status_code=400, detail="invalid state")
     redirect_uri = settings.google_calendar_redirect_uri
     if not redirect_uri:
-        raise HTTPException(status_code=503, detail="google_calendar_redirect_uri is not set")
+        raise HTTPException(
+            status_code=503, detail="google_calendar_redirect_uri is not set"
+        )
 
     result = await db.execute(
         select(OAuthPkceState).where(
@@ -187,7 +205,9 @@ async def auth_google_callback(
         await db.delete(row)
         await db.flush()
     else:
-        logger.warning("PKCE state not found for state=%s (expired or not saved)", state)
+        logger.warning(
+            "PKCE state not found for state=%s (expired or not saved)", state
+        )
 
     if not code_verifier:
         raise HTTPException(
@@ -196,15 +216,20 @@ async def auth_google_callback(
         )
 
     try:
-        data = await asyncio.to_thread(_exchange_token_with_pkce, code, redirect_uri, code_verifier)
+        data = await asyncio.to_thread(
+            _exchange_token_with_pkce, code, redirect_uri, code_verifier
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"token exchange failed: {e}")
 
     # upsert user_google_tokens
-    result = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    result = await db.execute(
+        select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+    )
     row = result.scalar_one_or_none()
     expiry = data["expiry"]
     if row:
+        # 代入処理時に暗号化保存が行われる
         row.access_token = data["access_token"]
         if data["refresh_token"]:
             row.refresh_token = data["refresh_token"]
@@ -233,9 +258,33 @@ async def auth_google_callback(
 
 async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[dict]:
     """指定ユーザーの Google トークンで今日の予定を取得。"""
-    result = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
-    row = result.scalar_one_or_none()
-    if not row:
+
+    # 復号エラー（暗号化キー不一致や破損等）を安全にフォールバックする
+    try:
+        result = await db.execute(
+            select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return []
+
+        # access_token 等への参照時に暗号化型からの透過的復号が発生します。
+        raw_access_token = row.access_token
+        raw_refresh_token = row.refresh_token
+        token_expiry = row.token_expiry
+    except Exception as e:
+        logger.warning(f"[OAuth] トークンの復号に失敗しました (User: {user_id}): {e}")
+        try:
+            # 復号不能なトークンは安全に削除して再連携を促す
+            await db.execute(
+                delete(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+            )
+            await db.commit()
+        except SQLAlchemyError as db_err:
+            logger.error(
+                f"[OAuth] 破損トークンの削除に失敗しました (User: {user_id}): {db_err}"
+            )
+            await db.rollback()
         return []
 
     def _fetch():
@@ -257,25 +306,29 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         time_max = end.isoformat()
 
         creds = Credentials(
-            token=row.access_token,
-            refresh_token=row.refresh_token,
+            token=raw_access_token,
+            refresh_token=raw_refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=settings.google_calendar_client_id,
             client_secret=settings.google_calendar_client_secret,
             scopes=GOOGLE_SCOPE,
         )
         refreshed = False
-        if row.token_expiry and creds.expired and creds.refresh_token:
+        if token_expiry and creds.expired and creds.refresh_token:
             creds.refresh(Request())
             refreshed = True
         service = build("calendar", "v3", credentials=creds)
-        events_result = service.events().list(
-            calendarId="primary",
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime",
-        ).execute()
+        events_result = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
         events = events_result.get("items", [])
         out = []
         for e in events:
@@ -283,13 +336,15 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             end_info = e.get("end", {}) or {}
             start_str = start_info.get("dateTime") or start_info.get("date") or ""
             end_str = end_info.get("dateTime") or end_info.get("date") or ""
-            out.append({
-                "id": e.get("id", ""),
-                "summary": e.get("summary", ""),
-                "start": start_str,
-                "end": end_str,
-                "eventType": e.get("eventType") or "default",
-            })
+            out.append(
+                {
+                    "id": e.get("id", ""),
+                    "summary": e.get("summary", ""),
+                    "start": start_str,
+                    "end": end_str,
+                    "eventType": e.get("eventType") or "default",
+                }
+            )
         if refreshed:
             return out, creds.token, creds.expiry
         return out, None, None
@@ -299,12 +354,22 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         if len(ret) == 3:
             events, new_token, new_expiry = ret
             if new_token is not None:
-                row.access_token = new_token
-                if new_expiry:
-                    # PostgreSQL TIMESTAMP WITHOUT TIME ZONE 用に naive に変換
-                    row.token_expiry = new_expiry.replace(tzinfo=None) if getattr(new_expiry, "tzinfo", None) else new_expiry
-                row.updated_at = datetime.utcnow()
-                await db.flush()
+                # この代入処理時にも透過的暗号化が行われます。
+                # ただし row はセッションからデタッチされている可能性があるため再度取得またはマージが安全です。
+                result = await db.execute(
+                    select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+                )
+                refresh_row = result.scalar_one_or_none()
+                if refresh_row:
+                    refresh_row.access_token = new_token
+                    if new_expiry:
+                        refresh_row.token_expiry = (
+                            new_expiry.replace(tzinfo=None)
+                            if getattr(new_expiry, "tzinfo", None)
+                            else new_expiry
+                        )
+                    refresh_row.updated_at = datetime.utcnow()
+                    await db.flush()
         else:
             events = ret[0]
         return events
@@ -320,7 +385,9 @@ async def _sync_user_calendar_events_cache(
         events = await _fetch_today_events_for_user(user_id, db)
     person_id = str(user_id)
     events_json = json.dumps(events)
-    result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
+    result = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
+    )
     row = result.scalar_one_or_none()
     if row is None:
         row = PersonalSummaryCache(person_id=person_id, events=events_json, today="[]")
@@ -349,6 +416,7 @@ async def _refresh_user_calendar_and_today(
     if events:
         try:
             from app.ai import run_today_short_summaries
+
             today_items = await asyncio.to_thread(run_today_short_summaries, events)
         except Exception as e:
             logger.warning("Today 短縮文生成に失敗 user_id=%s: %s", user_id, e)
@@ -363,7 +431,9 @@ async def _refresh_user_calendar_and_today(
             for e in events
         ]
     today_json = json.dumps(today_items)
-    result = await db.execute(select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id))
+    result = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
+    )
     row = result.scalar_one_or_none()
     if row is None:
         row = PersonalSummaryCache(
@@ -453,7 +523,10 @@ async def daily_calendar_refresh(db: AsyncSession = Depends(get_db)):
     PersonalSummaryCache の events と today（LLM 短縮文）をクリア＆更新する。
     毎日 8:00 に cron 等で呼ぶ想定。
     """
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         raise HTTPException(status_code=503, detail="Google Calendar is not configured")
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
     user_ids = [r[0] for r in result.all()]
@@ -475,7 +548,9 @@ async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_
     result = await db.execute(select(User).where(User.id == user_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
-    r_tok = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    r_tok = await db.execute(
+        select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+    )
     if r_tok.scalar_one_or_none() is None:
         return {"events": [], "synced": False, "stickies_updated": False}
     person_id = str(user_id)
@@ -502,7 +577,10 @@ async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_
 @router.post("/api/personal/calendar_sync_all")
 async def calendar_sync_all_events(db: AsyncSession = Depends(get_db)):
     """全 Google 連携ユーザーの今日の予定を Google から取得し、キャッシュ events のみ更新（定期同期用）。"""
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         return {"ok": True, "synced": [], "failed": [], "skipped": True}
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
     user_ids = [r[0] for r in result.all()]
@@ -524,7 +602,10 @@ async def refresh_personal_calendar(
     db: AsyncSession = Depends(get_db),
 ):
     """指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、events と Today 短縮文を保存。"""
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         raise HTTPException(status_code=503, detail="Google Calendar is not configured")
     result = await db.execute(select(User).where(User.id == user_id))
     if result.scalar_one_or_none() is None:
