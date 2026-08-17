@@ -448,8 +448,8 @@ function TeamDropZone({
   return (
     <div
       className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${over
-          ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-          : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
+        ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+        : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
