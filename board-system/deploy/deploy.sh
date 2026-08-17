@@ -16,14 +16,14 @@ docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-
 echo "Ensuring DB is running..."
 docker compose -f "$DOCKER_COMPOSE_DB" up -d
 
-# --- 追加: 確実なDB起動待ち ---
+# --- 確実なDB起動待ち ---
 echo "Waiting for PostgreSQL to start..."
 until docker exec linko-db pg_isready -U linko_user > /dev/null 2>&1; do
   echo "PostgreSQL is unavailable - sleeping..."
   sleep 1
 done
 echo "PostgreSQL is up and running!"
-# ----------------------------
+# ------------------------
 
 # active_env.conf が存在しない場合の初期化
 if [ ! -f "$ACTIVE_ENV_FILE" ]; then
