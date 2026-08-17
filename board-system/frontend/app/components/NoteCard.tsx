@@ -36,16 +36,22 @@ const BG_COLOR = {
   purple: "bg-violet-100 border-violet-300",
 } as const;
 
-/** 残り日数を計算（due_date: YYYY-MM-DD 文字列 → 整数、past なら負の数） */
-function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
-  if (!dueDateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  // YYYY-MM-DD をローカル時間として解析（UTC 換算ズレを防ぐ）
-  const [y, m, d] = dueDateStr.split("-").map(Number);
-  const due = new Date(y, m - 1, d);
-  due.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+/** JSTを基準として、due_date（YYYY-MM-DD）の期限に応じた背景色・文字色を返す */
+function getDueDateColor(dueDateStr: string | null | undefined): string {
+  if (!dueDateStr) return "text-zinc-600 bg-zinc-200";
+
+  const now = new Date();
+  const jstFormatter = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const parts = jstFormatter.formatToParts(now);
+  const jstDateStr = `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}`;
+
+  if (dueDateStr < jstDateStr) {
+    return "bg-red-500 text-white"; // 期限切れ (強く強調)
+  } else if (dueDateStr === jstDateStr) {
+    return "bg-orange-500 text-white"; // 今日 (強調)
+  } else {
+    return "bg-zinc-200 text-zinc-700"; // 未来 (控えめ)
+  }
 }
 
 /** 期限バッジのスタイル（残り日数に応じて色を動的に変える） */
@@ -56,36 +62,16 @@ function DueDateBadge({
   dueDate: string | null | undefined;
   onClick?: () => void;
 }) {
-  const days = calcDaysLeft(dueDate);
-  if (days === null) return null;
+  if (!dueDate) return null;
 
-  let label = "";
-  let badgeCls = "";
-
-  if (days < 0) {
-    label = `期限切れ（${Math.abs(days)}日）`;
-    badgeCls = "bg-red-500 text-white";
-  } else if (days === 0) {
-    label = "今日が期限";
-    badgeCls = "bg-orange-500 text-white";
-  } else if (days <= 3) {
-    label = `期限まで${days}日`;
-    badgeCls = "bg-orange-400 text-white";
-  } else if (days <= 10) {
-    label = `期限まで${days}日`;
-    badgeCls = "bg-yellow-400 text-zinc-800";
-  } else {
-    label = `期限まで${days}日`;
-    badgeCls = "bg-zinc-200 text-zinc-600";
-  }
-
+  const badgeCls = getDueDateColor(dueDate);
   return (
     <span
       onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      className={`inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold leading-tight transition-opacity hover:opacity-80 ${badgeCls}`}
+      className={`inline-flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold leading-tight transition-opacity hover:opacity-80 shadow-sm ${badgeCls}`}
       title={`期限: ${dueDate}`}
     >
-      📅 {label}
+      📅 {dueDate}
     </span>
   );
 }
@@ -296,9 +282,8 @@ export default function NoteCard({
     </div>
   );
 
-  const className = `rounded-xl border border-[var(--border)] p-3 shadow-sm ${bg} ${
-    draggable ? "cursor-grab active:cursor-grabbing" : ""
-  }`;
+  const className = `rounded-xl border border-[var(--border)] p-3 shadow-sm ${bg} ${draggable ? "cursor-grab active:cursor-grabbing" : ""
+    }`;
 
   if (draggable) {
     return (

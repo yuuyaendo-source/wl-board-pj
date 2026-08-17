@@ -70,9 +70,10 @@ export const api = {
       postit_board_id?: string;
       postit_note_id?: string;
       personal_only?: boolean;
+      due_date?: string | null;
     }) => fetchApi<{ id: number }>("/sticky_notes", { method: "POST", body: JSON.stringify(body) }),
     /** パーソナルボードに直接投稿（1リクエストで create + Personal 配置。move_to_personal の 404 を防ぐ） */
-    createPersonal: (body: { content: string; owner_id: number; lane?: LaneType }) =>
+    createPersonal: (body: { content: string; owner_id: number; lane?: LaneType; due_date?: string | null; }) =>
       fetchApi<{ id: number; note_id: number }>("/sticky_notes/create_personal", {
         method: "POST",
         body: JSON.stringify(body),

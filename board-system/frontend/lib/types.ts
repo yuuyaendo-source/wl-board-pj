@@ -52,3 +52,19 @@ export interface Team {
 }
 
 export type LaneType = "INBOX" | "TODAY" | "DONE" | "HELP_REQUEST";
+
+export interface StickyNoteCreatePayload {
+  content: string;
+  author_id?: number;
+  postit_board_id?: string;
+  postit_note_id?: string;
+  personal_only?: boolean;
+  due_date?: string | null;
+}
+
+export interface PersonalNoteCreatePayload {
+  content: string;
+  owner_id: number;
+  lane?: LaneType;
+  due_date?: string | null;
+}
