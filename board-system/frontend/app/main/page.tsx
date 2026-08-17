@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import OneLineInput from "../components/OneLineInput";
+import NoteCard from "../components/NoteCard";
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
 const REFETCH_DELAY_MS = 120;
@@ -76,9 +77,22 @@ export default function MainBoardPage() {
     });
   }, [placements, containerSize]);
 
+  // 新規投稿（期限受け取り対応）
   const handlePost = useCallback(
-    async (text: string) => {
-      await api.stickyNotes.create({ content: text });
+    async (text: string, dueDate?: string | null) => {
+      await api.stickyNotes.create({ content: text, due_date: dueDate || null });
+      await delay(REFETCH_DELAY_MS);
+      await fetchMain();
+    },
+    [fetchMain]
+  );
+
+  // 既存付箋の期限変更ハンドラー
+  const handleDueDateChange = useCallback(
+    async (noteId: number, dueDateStr: string) => {
+      await api.stickyNotes.update(noteId, {
+        due_date: dueDateStr === "" ? "" : dueDateStr,
+      });
       await delay(REFETCH_DELAY_MS);
       await fetchMain();
     },
@@ -162,34 +176,14 @@ export default function MainBoardPage() {
             }}
             onDrag={(ev) => syncPositionFromElement(p.id, ev)}
           >
-            <MainBoardNoteCard
-              content={p.note_content}
+            <NoteCard
+              placement={p}
               showAiBadge={aiMovedNoteIds.has(p.note_id)}
+              onDueDateChange={handleDueDateChange}
             />
           </motion.div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function MainBoardNoteCard({
-  content,
-  showAiBadge,
-}: {
-  content: string;
-  showAiBadge: boolean;
-}) {
-  return (
-    <div className="flex max-w-[220px] items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 shadow-md dark:border-amber-800 dark:bg-amber-950/40">
-      <p className="min-h-[1.5em] flex-1 whitespace-pre-wrap text-sm font-medium text-zinc-900">
-        {content || "（空）"}
-      </p>
-      {showAiBadge && (
-        <span className="shrink-0 text-amber-600 dark:text-amber-400" title="AI が配置">
-          ✨
-        </span>
-      )}
     </div>
   );
 }
