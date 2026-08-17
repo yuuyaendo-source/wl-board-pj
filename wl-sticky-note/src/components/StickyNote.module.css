@@ -37,6 +37,7 @@
 }
 
 .pinButton,
+.dateButton,
 .colorButton,
 .deleteButton {
     position: absolute;
@@ -55,15 +56,20 @@
     right: 4px;
 }
 
-.colorButton {
+.dateButton {
     right: 32px;
 }
 
-.deleteButton {
+.colorButton {
     right: 60px;
 }
 
+.deleteButton {
+    right: 88px;
+}
+
 .pinButton:hover,
+.dateButton:hover,
 .colorButton:hover,
 .deleteButton:hover {
     background: rgba(255, 255, 255, 1);
@@ -98,6 +104,88 @@
     border-color: #333;
 }
 
+/* 期限設定ポップオーバー */
+.datePickerPopover {
+    position: absolute;
+    top: 32px;
+    right: 4px;
+    background: #ffffff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 100;
+}
+
+.dateInput {
+    font-size: 12px;
+    padding: 2px 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.saveBtn {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.saveBtn:hover {
+    background: #1d4ed8;
+}
+
+.clearBtn {
+    background: #e5e7eb;
+    color: #374151;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.clearBtn:hover {
+    background: #d1d5db;
+}
+
+/* 期限バッジ */
+.dueDateContainer {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.dueDateBadge {
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-block;
+}
+
+.badgeDefault {
+    background-color: #e4e4e7;
+    color: #3f3f46;
+}
+
+.badgeToday {
+    background-color: #f97316;
+    color: #ffffff;
+}
+
+.badgeExpired {
+    background-color: #ef4444;
+    color: #ffffff;
+}
+
 .noteContent {
     flex: 1;
     overflow: auto;
@@ -106,13 +194,16 @@
     line-height: 1.4;
     word-break: break-all;
 }
+
 .noteContent a {
     color: #1565c0;
     text-decoration: underline;
 }
+
 .linkifiedText {
     white-space: pre-wrap;
 }
+
 .appendInput {
     width: 100%;
     min-height: 2.5em;
@@ -120,12 +211,13 @@
     padding: 4px 0;
     background: transparent;
     border: none;
-    border-top: 1px solid rgba(0,0,0,0.1);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
     resize: none;
     font-family: inherit;
     font-size: 1rem;
     outline: none;
 }
+
 .note.large .appendInput {
     font-size: 1.2rem;
 }

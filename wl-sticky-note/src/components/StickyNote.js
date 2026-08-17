@@ -12,6 +12,7 @@ function calcDaysLeft(dueDateStr) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const [y, m, d] = dueDateStr.split("-").map(Number);
+    if (!y || !m || !d) return null;
     const due = new Date(y, m - 1, d);
     due.setHours(0, 0, 0, 0);
     return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -22,12 +23,19 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const [appendText, setAppendText] = useState("");
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
+
+    const dueDateVal = note.dueDate || note.due_date || "";
+    const [tempDueDate, setTempDueDate] = useState(dueDateVal);
+
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
 
     const isLarge = note.ratioW && note.ratioW >= 0.2;
-    const dueDateVal = note.dueDate || note.due_date || "";
     const daysLeft = calcDaysLeft(dueDateVal);
+
+    useEffect(() => {
+        setTempDueDate(note.dueDate || note.due_date || "");
+    }, [note.dueDate, note.due_date]);
 
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e); // Propagate to parent for line drawing
@@ -117,7 +125,8 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         setShowColorPicker(false);
     };
 
-    const handleDueDateChange = (newDate) => {
+    // 期限の保存処理
+    const saveDueDate = (newDate) => {
         onUpdate({ ...note, dueDate: newDate, due_date: newDate });
         setShowDatePicker(false);
     };
@@ -130,14 +139,14 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         setAppendText("");
     };
 
-    let badgeBg = "bg-zinc-200 text-zinc-700";
+    let badgeClass = styles.badgeDefault;
     let badgeText = `📅 ${dueDateVal}`;
     if (daysLeft !== null) {
         if (daysLeft < 0) {
-            badgeBg = "bg-red-500 text-white";
+            badgeClass = styles.badgeExpired;
             badgeText = `📅 期限切れ (${Math.abs(daysLeft)}日)`;
         } else if (daysLeft === 0) {
-            badgeBg = "bg-orange-500 text-white";
+            badgeClass = styles.badgeToday;
             badgeText = "📅 今日が期限";
         }
     }
@@ -167,23 +176,29 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                 {note.pinned ? "📌" : "📍"}
             </button>
             <button
-                className={styles.colorButton}
-                onClick={() => setShowColorPicker(!showColorPicker)}
-                onMouseDown={(e) => e.stopPropagation()}
-                title="色を変更"
-            >
-                🎨
-            </button>
-            <button
-                style={{ position: "absolute", top: "4px", right: "28px", background: "none", border: "none", cursor: "pointer", fontSize: "12px" }}
+                className={styles.dateButton}
                 onClick={(e) => {
                     e.stopPropagation();
+                    setTempDueDate(dueDateVal);
                     setShowDatePicker(!showDatePicker);
+                    setShowColorPicker(false);
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title="期限を設定"
             >
                 📅
+            </button>
+            <button
+                className={styles.colorButton}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setShowColorPicker(!showColorPicker);
+                    setShowDatePicker(false);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="色を変更"
+            >
+                🎨
             </button>
             <button
                 className={styles.deleteButton}
@@ -215,33 +230,30 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
 
             {showDatePicker && (
                 <div
-                    style={{
-                        position: "absolute",
-                        top: "28px",
-                        right: "8px",
-                        background: "#fff",
-                        padding: "6px",
-                        borderRadius: "6px",
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                        zIndex: 10,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px"
-                    }}
+                    className={styles.datePickerPopover}
                     onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
                 >
                     <input
                         type="date"
-                        value={dueDateVal}
-                        onChange={(e) => handleDueDateChange(e.target.value)}
-                        style={{ fontSize: "12px", padding: "2px" }}
+                        value={tempDueDate}
+                        onChange={(e) => setTempDueDate(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={styles.dateInput}
                     />
+                    <button
+                        type="button"
+                        onClick={() => saveDueDate(tempDueDate)}
+                        className={styles.saveBtn}
+                    >
+                        保存
+                    </button>
                     {dueDateVal && (
                         <button
                             type="button"
-                            onClick={() => handleDueDateChange("")}
-                            style={{ fontSize: "10px", padding: "2px 4px" }}
+                            onClick={() => saveDueDate("")}
+                            className={styles.clearBtn}
                         >
                             消去
                         </button>
@@ -256,21 +268,16 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             )}
 
             {dueDateVal && (
-                <div style={{ marginTop: "16px", marginBottom: "4px" }}>
+                <div className={styles.dueDateContainer}>
                     <span
                         onClick={(e) => {
                             e.stopPropagation();
+                            setTempDueDate(dueDateVal);
                             setShowDatePicker(!showDatePicker);
+                            setShowColorPicker(false);
                         }}
-                        style={{
-                            fontSize: "11px",
-                            fontWeight: "bold",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            display: "inline-block"
-                        }}
-                        className={badgeBg}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`${styles.dueDateBadge} ${badgeClass}`}
                     >
                         {badgeText}
                     </span>
@@ -278,7 +285,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             )}
 
             {/* 既存テキストは表示のみ（URLはリンク化）。追記のみ可能 */}
-            <div className={styles.noteContent} style={{ marginTop: dueDateVal ? "4px" : "18px" }}>
+            <div className={styles.noteContent}>
                 {(note.text || "").trim() ? (
                     <LinkifiedText text={note.text} className={styles.linkifiedText} />
                 ) : null}
@@ -295,6 +302,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     }
                 }}
                 onBlur={() => appendText.trim() && submitAppend()}
+                onMouseDown={(e) => e.stopPropagation()}
             />
             {note.groupId && (
                 <div className={styles.groupBadge} title={`Group ID: ${note.groupId}`}>
