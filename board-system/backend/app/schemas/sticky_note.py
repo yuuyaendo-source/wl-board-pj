@@ -21,7 +21,7 @@ class StickyNoteUpdate(BaseModel):
     content: str | None = None
     status: NoteStatus | None = None
     due_date: str | None = (
-        None  # YYYY-MM-DD 形式。空文字列「""」で発送すると期限をクリア。
+        None  # YYYY-MM-DD 形式。空文字列「""」で送信すると期限をクリア。
     )
 
 
@@ -40,7 +40,7 @@ class StickyNoteResponse(BaseModel):
 class StickyNoteWithPlacementsResponse(StickyNoteResponse):
     """付箋 + 配置一覧（ボード View 用）。"""
 
-    pass  # 同じ形。配置は別リストで返すか、ネストするかは API 次第
+    pass
 
 
 class ImportFromPostitItem(BaseModel):

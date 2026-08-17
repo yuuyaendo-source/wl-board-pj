@@ -8,20 +8,13 @@ import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 interface NoteCardProps {
   placement: PlacementWithNote;
   showAiBadge?: boolean;
-  /** パーソナル投稿（自分で作成）の印。タスクへ移動したら表示しない */
   showPersonalBadge?: boolean;
   draggable?: boolean;
-  /** ドラッグ時に dataTransfer に追加でセットする値（Personal のゴミ箱/タスクリリース制限用） */
   dragData?: Record<string, string>;
-  /** Task/Personal の付箋色（未指定時は placement.task_color または黄） */
   cardColor?: "yellow" | "green" | "grey" | "blue" | "red" | "purple";
-  /** カレンダー由来の付箋印 */
   showCalendarBadge?: boolean;
-  /** Task 用: 引き取り者（短縮名アイコン表示） */
   takenBy?: TakenByUser[];
-  /** 追記コールバック（指定時は追記入力欄を表示。付箋は追記のみ） */
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
-  /** 期限変更コールバック。YYYY-MM-DD 文字列（クリア時は ""） */
   onDueDateChange?: (noteId: number, dueDateStr: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
@@ -36,25 +29,29 @@ const BG_COLOR = {
   purple: "bg-violet-100 border-violet-300",
 } as const;
 
-/** JSTを基準として、due_date（YYYY-MM-DD）の期限に応じた背景色・文字色を返す */
-function getDueDateColor(dueDateStr: string | null | undefined): string {
-  if (!dueDateStr) return "text-zinc-600 bg-zinc-200";
-
-  const now = new Date();
-  const jstFormatter = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' });
-  const parts = jstFormatter.formatToParts(now);
-  const jstDateStr = `${parts.find(p => p.type === 'year')?.value}-${parts.find(p => p.type === 'month')?.value}-${parts.find(p => p.type === 'day')?.value}`;
-
-  if (dueDateStr < jstDateStr) {
-    return "bg-red-500 text-white"; // 期限切れ (強く強調)
-  } else if (dueDateStr === jstDateStr) {
-    return "bg-orange-500 text-white"; // 今日 (強調)
-  } else {
-    return "bg-zinc-200 text-zinc-700"; // 未来 (控えめ)
-  }
+/** 残り日数を計算（due_date: YYYY-MM-DD 文字列 → 整数） */
+function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
+  if (!dueDateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [y, m, d] = dueDateStr.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const due = new Date(y, m - 1, d);
+  due.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-/** 期限バッジのスタイル（残り日数に応じて色を動的に変える） */
+/** 期限に応じたカード外枠の強調スタイル */
+function getDueDateBorderClass(dueDateStr: string | null | undefined): string {
+  const days = calcDaysLeft(dueDateStr);
+  if (days === null) return "";
+  if (days < 0) return "ring-2 ring-red-500 border-red-500"; // 期限切れ: 鮮やかな赤枠
+  if (days === 0) return "ring-2 ring-amber-500 border-amber-500"; // 今日: 鮮やかなオレンジ枠
+  if (days <= 3) return "border-orange-400 border-2"; // 間近: オレンジ太枠
+  return "";
+}
+
+/** 視認性を大幅に拡大した期限バッジ Component */
 function DueDateBadge({
   dueDate,
   onClick,
@@ -62,21 +59,44 @@ function DueDateBadge({
   dueDate: string | null | undefined;
   onClick?: () => void;
 }) {
-  if (!dueDate) return null;
+  const days = calcDaysLeft(dueDate);
+  if (days === null) return null;
 
-  const badgeCls = getDueDateColor(dueDate);
+  let label = "";
+  let badgeCls = "";
+
+  if (days < 0) {
+    label = `⚠️ 期限切れ（${Math.abs(days)}日経過）`;
+    badgeCls = "bg-red-600 text-white font-extrabold text-sm py-1 px-3 shadow-md animate-pulse";
+  } else if (days === 0) {
+    label = "🔥 本期日が期限！";
+    badgeCls = "bg-amber-500 text-white font-extrabold text-sm py-1 px-3 shadow-md";
+  } else if (days <= 3) {
+    label = `⏰ 期限まであと${days}日`;
+    badgeCls = "bg-orange-500 text-white font-bold text-xs py-1 px-2.5 shadow-sm";
+  } else if (days <= 10) {
+    label = `📅 期限まであと${days}日`;
+    badgeCls = "bg-yellow-400 text-zinc-900 font-bold text-xs py-1 px-2.5 shadow-sm";
+  } else {
+    label = `📅 期限: ${dueDate}`;
+    badgeCls = "bg-blue-100 text-blue-800 font-semibold text-xs py-1 px-2.5";
+  }
+
   return (
     <span
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      className={`inline-flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold leading-tight transition-opacity hover:opacity-80 shadow-sm ${badgeCls}`}
-      title={`期限: ${dueDate}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border leading-none transition-all hover:opacity-80 hover:scale-105 ${badgeCls}`}
+      title={`クリックして期限を変更 (期限: ${dueDate})`}
     >
-      📅 {dueDate}
+      {label}
     </span>
   );
 }
 
-/** カレンダー日付入力UI（インライン） */
+/** インライン日付入力ピッカー */
 function DueDatePicker({
   noteId,
   currentDueDate,
@@ -90,31 +110,36 @@ function DueDatePicker({
 }) {
   const [value, setValue] = useState(currentDueDate ?? "");
 
-  const handleSave = () => {
-    onSave(noteId, value); // value は "" (クリア) or "YYYY-MM-DD"
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onSave(noteId, value);
     onClose();
   };
 
-  const handleClear = () => {
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
     onSave(noteId, "");
     onClose();
   };
 
   return (
     <div
-      className="mt-1 flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1.5 shadow-md"
+      className="mt-1 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg z-10"
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <input
         type="date"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className="rounded border border-zinc-300 px-1.5 py-0.5 text-xs"
+        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800"
       />
       <button
         type="button"
         onClick={handleSave}
-        className="rounded bg-blue-500 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-blue-600"
+        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700"
       >
         保存
       </button>
@@ -122,15 +147,18 @@ function DueDatePicker({
         <button
           type="button"
           onClick={handleClear}
-          className="rounded bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-300"
+          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300"
         >
           クリア
         </button>
       )}
       <button
         type="button"
-        onClick={onClose}
-        className="text-[10px] text-zinc-400 hover:text-zinc-600"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="text-xs text-zinc-400 hover:text-zinc-600 px-1"
       >
         ✕
       </button>
@@ -156,6 +184,7 @@ export default function NoteCard({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
+  const borderHighlight = getDueDateBorderClass(placement.due_date);
 
   const handleSubmitAppend = () => {
     const trimmed = appendText.trim();
@@ -186,7 +215,7 @@ export default function NoteCard({
           {showPersonalBadge && (
             <span
               className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] font-bold text-white"
-              title="パーソナル投稿（自分で作成）"
+              title="パーソナル投稿"
             >
               P
             </span>
@@ -209,7 +238,7 @@ export default function NoteCard({
 
       {/* 期限バッジ */}
       {placement.due_date && (
-        <div>
+        <div className="mt-0.5">
           <DueDateBadge
             dueDate={placement.due_date}
             onClick={() => onDueDateChange && setShowDatePicker((v) => !v)}
@@ -217,12 +246,15 @@ export default function NoteCard({
         </div>
       )}
 
-      {/* 期限未設定の場合：設定ボタン */}
+      {/* 期限未設定時の設定ボタン */}
       {!placement.due_date && onDueDateChange && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); setShowDatePicker((v) => !v); }}
-          className="w-fit text-[10px] text-zinc-400 hover:text-zinc-600"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDatePicker((v) => !v);
+          }}
+          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium"
         >
           📅 期限を設定
         </button>
@@ -268,12 +300,12 @@ export default function NoteCard({
             autoComplete="off"
             {...{ "data-1p-ignore": true }}
             {...{ "data-lpignore": true }}
-            className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs"
+            className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-900"
           />
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-gray-300 hover:bg-amber-300"
+            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300"
           >
             追記
           </button>
@@ -282,7 +314,7 @@ export default function NoteCard({
     </div>
   );
 
-  const className = `rounded-xl border border-[var(--border)] p-3 shadow-sm ${bg} ${draggable ? "cursor-grab active:cursor-grabbing" : ""
+  const className = `rounded-xl border p-3 shadow-sm ${bg} ${borderHighlight} ${draggable ? "cursor-grab active:cursor-grabbing" : ""
     }`;
 
   if (draggable) {
@@ -298,8 +330,6 @@ export default function NoteCard({
             e.dataTransfer.setData("text/plain", noteIdStr);
             if (dragData) {
               Object.entries(dragData).forEach(([k, v]) => e.dataTransfer.setData(k, v));
-              // dragover では getData が空になるブラウザがあるため、Task リリース用に型だけ付与（drop ゾーンで types を参照）
-              // isFromTask: タスク由来の付箋をリリース（配置削除）。canReleaseToTask: パーソナル投稿もタスクへ追加可能
               if (dragData.isFromTask === "true" || dragData.canReleaseToTask === "true") {
                 e.dataTransfer.setData("application/x-board-task-release", "1");
               }

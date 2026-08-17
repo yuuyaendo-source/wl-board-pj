@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import asyncio
-from datetime import date, datetime
+from datetime import date as DateType, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.config import settings
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -26,17 +26,72 @@ from app.schemas.sticky_note import (
 router = APIRouter(prefix="/sticky_notes", tags=["sticky_notes"])
 
 
-def get_jst_today() -> date:
-    """JST基準の現在日付を取得する"""
+def _get_jst_today() -> DateType:
+    """JST基準の現在日付を取得"""
     return datetime.now(ZoneInfo("Asia/Tokyo")).date()
 
 
+async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
+    """改善計画6に基づく期限連動移動ロジック:
+    - DONE レーンにある配置は絶対に対象外（何もしない）
+    - is_manually_moved_to_today が True の配置は判定をスキップ
+    - days <= 0 (期限切れ・今日): TODAY
+    - 0 < days < 30 (短期): [1, 2, 3, 4, 5, 10, 20] 日前なら TODAY、それ以外は INBOX
+    - days >= 30 (長期): days % 30 == 0 なら TODAY、それ以外は INBOX
+    """
+    result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
+    note = result.scalar_one_or_none()
+    if not note:
+        return
+
+    placements_res = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+        )
+    )
+    placements = list(placements_res.scalars().all())
+    if not placements:
+        return
+
+    today = _get_jst_today()
+
+    for p in placements:
+        # DONE レーンにあるタスクは期限切れであっても移動しない
+        if p.lane == Lane.DONE or p.lane == "DONE":
+            continue
+        # 手動移動済みフラグが ON の場合はスキップ
+        if p.is_manually_moved_to_today:
+            continue
+
+        if not note.due_date:
+            # 期限がクリアされた場合、TODAY にあれば INBOX に戻す
+            if p.lane == Lane.TODAY:
+                p.lane = Lane.INBOX
+            continue
+
+        days = (note.due_date - today).days
+
+        should_be_today = False
+        if days <= 0:
+            should_be_today = True
+        elif days < 30:
+            if days in [1, 2, 3, 4, 5, 10, 20]:
+                should_be_today = True
+        else:
+            if days % 30 == 0:
+                should_be_today = True
+
+        new_lane = Lane.TODAY if should_be_today else Lane.INBOX
+        if p.lane != new_lane:
+            p.lane = new_lane
+
+    await db.flush()
+
+
 def _note_response(note: StickyNote) -> StickyNoteResponse:
-    # isoformatで文字列化して返す
     due_date_str = (
-        note.due_date.isoformat()
-        if hasattr(note, "due_date") and note.due_date
-        else None
+        note.due_date.isoformat() if getattr(note, "due_date", None) else None
     )
     return StickyNoteResponse(
         id=note.id,
@@ -51,7 +106,6 @@ def _note_response(note: StickyNote) -> StickyNoteResponse:
 
 @router.get("", response_model=list[StickyNoteResponse])
 async def list_sticky_notes(db: AsyncSession = Depends(get_db)):
-    """付箋一覧。"""
     result = await db.execute(select(StickyNote).order_by(StickyNote.id.desc()))
     return [_note_response(n) for n in result.scalars().all()]
 
@@ -60,7 +114,6 @@ async def list_sticky_notes(db: AsyncSession = Depends(get_db)):
 async def import_from_postit(
     body: ImportFromPostitBody, db: AsyncSession = Depends(get_db)
 ):
-    """付箋ボードから一括取り込み。重複はスキップ。取り込んだ各付箋は AI で自動振り分け（Task 列・担当者→Personal）。"""
     from app.models.sticky_note import NoteStatus
     from app.services.orchestrator import process_new_note_ai
 
@@ -99,11 +152,10 @@ async def import_from_postit(
         db.add(placement_main)
         await db.flush()
         created += 1
-        # 取り込んだ付箋を AI で自動振り分け（Task の列・担当者→Personal）
         try:
             await process_new_note_ai(note.id, db)
         except Exception:
-            pass  # 1件失敗しても他は続行
+            pass
     return ImportFromPostitResponse(created=created, skipped=skipped)
 
 
@@ -111,7 +163,6 @@ async def import_from_postit(
 async def create_sticky_note(
     body: StickyNoteCreate, db: AsyncSession = Depends(get_db)
 ):
-    """付箋作成。Main Board に1件配置。postit_* あり時は付箋ボード連携用。"""
     from app.models.sticky_note import NoteStatus
 
     status = body.status if body.status is not None else NoteStatus.ACTIVE
@@ -119,7 +170,7 @@ async def create_sticky_note(
     parsed_due_date = None
     if body.due_date:
         try:
-            parsed_due_date = date.fromisoformat(body.due_date)
+            parsed_due_date = DateType.fromisoformat(body.due_date)
         except ValueError:
             pass
 
@@ -133,6 +184,7 @@ async def create_sticky_note(
     )
     db.add(note)
     await db.flush()
+
     placement = BoardPlacement(
         note_id=note.id,
         board_type=BoardType.MAIN,
@@ -142,27 +194,16 @@ async def create_sticky_note(
     db.add(placement)
     await db.flush()
 
-    # personal_only でないときのみ AI 自動振り分け（Triage → Task 配置・Personal 配布）
     if not getattr(body, "personal_only", False):
         try:
             from app.services.orchestrator import process_new_note_ai
 
             await process_new_note_ai(note.id, db)
-
-            # AI振り分けによって作られたパーソナル配置で、期限が今日ならTODAYに移動
-            if parsed_due_date and parsed_due_date == get_jst_today():
-                from sqlalchemy import update as sa_update
-
-                await db.execute(
-                    sa_update(BoardPlacement)
-                    .where(
-                        BoardPlacement.note_id == note.id,
-                        BoardPlacement.board_type == BoardType.PERSONAL,
-                    )
-                    .values(lane=Lane.TODAY)
-                )
         except Exception:
-            pass  # 付箋と Main 配置は作成済み。AI 失敗時は Task/Personal 配置をスキップ
+            pass
+
+    # AI等で割り当てられたパーソナル配置に期限ルールを自動適用
+    await apply_due_date_rules_for_note(note.id, db)
 
     await db.commit()
     await db.refresh(note)
@@ -170,8 +211,6 @@ async def create_sticky_note(
 
 
 class CreatePersonalNoteBody(BaseModel):
-    """パーソナルボードに直接投稿する際のリクエスト。create + move_to_personal を1トランザクションで行う。"""
-
     content: str
     owner_id: int
     lane: Lane = Lane.INBOX
@@ -183,7 +222,6 @@ async def create_personal_note(
     body: CreatePersonalNoteBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """パーソナルボードに付箋を1件作成し、指定 owner の Personal に配置する。1リクエストで完結するため、複数インスタンスやコミットタイミングの影響を受けない。"""
     from app.models.sticky_note import NoteStatus
 
     user_result = await db.execute(select(User).where(User.id == body.owner_id))
@@ -196,7 +234,7 @@ async def create_personal_note(
     parsed_due_date = None
     if body.due_date:
         try:
-            parsed_due_date = date.fromisoformat(body.due_date)
+            parsed_due_date = DateType.fromisoformat(body.due_date)
         except ValueError:
             pass
 
@@ -210,6 +248,7 @@ async def create_personal_note(
     )
     db.add(note)
     await db.flush()
+
     placement_main = BoardPlacement(
         note_id=note.id,
         board_type=BoardType.MAIN,
@@ -219,19 +258,20 @@ async def create_personal_note(
     db.add(placement_main)
     await db.flush()
 
-    target_lane = body.lane
-    if parsed_due_date and parsed_due_date == get_jst_today():
-        target_lane = Lane.TODAY
-
     placement_personal = BoardPlacement(
         note_id=note.id,
         board_type=BoardType.PERSONAL,
         owner_id=body.owner_id,
-        lane=target_lane,
+        lane=body.lane,
         sort_order=0,
     )
     db.add(placement_personal)
     await db.flush()
+
+    # 期限ルール適用（今日・期限切れ等なら TODAY に変更）
+    await apply_due_date_rules_for_note(note.id, db)
+
+    await db.commit()
     await db.refresh(placement_personal)
     return BoardPlacementResponse(
         id=placement_personal.id,
@@ -249,8 +289,6 @@ async def create_personal_note(
 
 
 class SyncFromPostitBody(BaseModel):
-    """付箋ボードの付箋テキストを Board System の該当付箋に反映する。"""
-
     board_id: str
     note_id: str
     content: str
@@ -260,7 +298,6 @@ class SyncFromPostitBody(BaseModel):
 async def sync_from_postit(
     body: SyncFromPostitBody, db: AsyncSession = Depends(get_db)
 ):
-    """付箋ボードで追記された内容を、Board System の該当付箋（postit_board_id + postit_note_id）に反映する。"""
     result = await db.execute(
         select(StickyNote)
         .where(
@@ -282,7 +319,6 @@ async def sync_from_postit(
 
 @router.get("/{note_id}", response_model=StickyNoteResponse)
 async def get_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋1件取得。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -291,7 +327,6 @@ async def get_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
 
 
 def _notify_postit_text(board_id: str, note_id: str, text: str) -> None:
-    """付箋ボードの付箋テキストを更新（Board System で追記した内容を反映）。"""
     import json
     import urllib.request
     from app.config import settings
@@ -314,66 +349,53 @@ async def update_sticky_note(
     note_id: int, body: StickyNoteUpdate, db: AsyncSession = Depends(get_db)
 ):
     """付箋の content / status / due_date を更新。
-    - due_date を変更した場合、対応する全 BoardPlacement の is_manually_moved_to_today を False にリセット。
-    - 変更された期限が「今日」なら、全パーソナル配置のレーンをTODAYに移動。
-    - 付箋ボード連携付箋の場合は追記内容を付箋ボード側にも反映する。
+    - due_date 変更時、is_manually_moved_to_today フラグを False に一括リセット
+    - 改善計画6のルールに従い、パーソナル配置のレーンを自動判定して移動
     """
-    from datetime import date as DateType
-    from sqlalchemy import update as sa_update
-
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
+
     if body.content is not None:
         note.content = body.content
     if body.status is not None:
         note.status = body.status
 
     due_date_changed = False
-    parsed = None
     if body.due_date is not None:
         if body.due_date == "":
-            # 空文字列で期限をクリア
             if note.due_date is not None:
                 note.due_date = None
                 due_date_changed = True
         else:
             try:
-                parsed = DateType.fromisoformat(body.due_date)
+                parsed_date = DateType.fromisoformat(body.due_date)
             except ValueError:
                 raise HTTPException(
                     status_code=422,
                     detail="due_date は YYYY-MM-DD 形式で指定してください",
                 )
-            if note.due_date != parsed:
-                note.due_date = parsed
+            if note.due_date != parsed_date:
+                note.due_date = parsed_date
                 due_date_changed = True
 
     await db.flush()
 
-    # due_date 変更時、紐づく全 BoardPlacement の is_manually_moved_to_today を False に一括リセット
     if due_date_changed:
+        # 手動移動フラグの一括リセット（改善計画6）
         await db.execute(
             sa_update(BoardPlacement)
             .where(BoardPlacement.note_id == note_id)
             .values(is_manually_moved_to_today=False)
         )
-
-        # 変更された期限が今日(JST)なら、パーソナル配置のレーンをTODAYへ移動
-        if parsed and parsed == get_jst_today():
-            await db.execute(
-                sa_update(BoardPlacement)
-                .where(
-                    BoardPlacement.note_id == note_id,
-                    BoardPlacement.board_type == BoardType.PERSONAL,
-                )
-                .values(lane=Lane.TODAY)
-            )
         await db.flush()
+        # 最新の due_date に基づきパーソナル配置のレーンルールを適用
+        await apply_due_date_rules_for_note(note_id, db)
 
+    await db.commit()
     await db.refresh(note)
-    # 付箋ボード連携付箋の場合、追記内容を付箋ボード側に反映
+
     if body.content is not None and note.postit_board_id and note.postit_note_id:
         await asyncio.to_thread(
             _notify_postit_text, note.postit_board_id, note.postit_note_id, note.content
@@ -382,7 +404,6 @@ async def update_sticky_note(
 
 
 def _notify_postit_archive(board_id: str, note_id: str) -> None:
-    """付箋ボード（02_1）の付箋を削除せずグレー化。同期で呼ぶ。"""
     import json
     import urllib.request
     from app.config import settings
@@ -402,11 +423,10 @@ def _notify_postit_archive(board_id: str, note_id: str) -> None:
 
 @router.delete("/by_postit", status_code=204)
 async def delete_sticky_notes_by_postit(
-    board_id: str = Query(..., description="付箋ボードの board_id (例: wl)"),
+    board_id: str = Query(..., description="付箋ボードの board_id"),
     note_id: str = Query(..., description="付箋ボード上の note id"),
     db: AsyncSession = Depends(get_db),
 ):
-    """付箋ボードで付箋が削除されたときに呼ぶ。該当する Board System の付箋を削除。"""
     result = await db.execute(
         select(StickyNote).where(
             StickyNote.postit_board_id == board_id,
@@ -422,13 +442,9 @@ async def delete_sticky_notes_by_postit(
 
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋削除。複数人が持っている場合は全員がDoneにするまで削除不可。付箋ボード連携時は 02_1 では削除せずグレー化（PATCH）。
-    パスは sticky_note.id を想定。誤って board_placement.id が渡された場合も PERSONAL 配置から note_id を解決して削除する。
-    """
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
-        # フロントが placement.id を渡した場合のフォールバック: PERSONAL 配置から note_id を解決
         placement_result = await db.execute(
             select(BoardPlacement)
             .where(
@@ -447,7 +463,6 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
         if not note:
             raise HTTPException(status_code=404, detail="Sticky note not found")
 
-    # 複数人が持っている付箋は全員がDoneにするまで削除できない
     r = await db.execute(
         select(BoardPlacement).where(
             BoardPlacement.note_id == note_id,
@@ -478,18 +493,18 @@ async def move_to_personal(
     body: MoveToPersonalBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """付箋を Personal Board に配置する。既に同じ (note_id, PERSONAL, owner_id) があれば lane を更新。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
-    # owner_id は users.id の外部キー。ユーザーが存在しないと DB エラーになるため事前チェック
+
     user_result = await db.execute(select(User).where(User.id == body.owner_id))
     if user_result.scalar_one_or_none() is None:
         raise HTTPException(
             status_code=400,
-            detail=f"owner_id={body.owner_id} のユーザーが存在しません。パーソナルボードを使うには users テーブルに該当 ID のユーザーが必要です。",
+            detail=f"owner_id={body.owner_id} のユーザーが存在しません。",
         )
+
     r = await db.execute(
         select(BoardPlacement).where(
             BoardPlacement.note_id == note_id,
@@ -530,8 +545,6 @@ async def move_to_personal(
 
 @router.post("/{note_id}/release_to_task_board", response_model=BoardPlacementResponse)
 async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)):
-    """付箋を Task Board に配置する。既に TASK 配置があればそのまま返す。
-    パーソナル投稿をリリースした場合は当該付箋の Personal 配置を削除し、タスクボードでは黄色（未引き取り）で表示する。"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -556,7 +569,7 @@ async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)
         db.add(placement)
         await db.flush()
         await db.refresh(placement)
-    # パーソナル投稿をリリースした場合：Personal 配置を削除し、タスクボードで黄色（誰でも引き継げる状態）にする
+
     await db.execute(
         delete(BoardPlacement).where(
             BoardPlacement.note_id == note_id,
@@ -565,7 +578,6 @@ async def release_to_task_board(note_id: int, db: AsyncSession = Depends(get_db)
     )
     await db.flush()
 
-    # 付箋ボード連携なしの付箋がタスクになったら付箋ボードに反映
     if not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_sync
 
@@ -602,17 +614,14 @@ async def copy_to_team(
     body: CopyToTeamBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """指定チームに所属するメンバー全員のパーソナルボードへ付箋をコピーする。"""
     from app.models.team import Team
     from app.models.board_placement import Lane as LaneEnum
 
-    # 付箋の存在確認
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
 
-    # チームの存在確認
     from sqlalchemy.orm import selectinload
 
     team_result = await db.execute(
@@ -628,7 +637,6 @@ async def copy_to_team(
             status_code=400, detail="チームに所属するメンバーがいません"
         )
 
-    # lane のバリデーション
     try:
         lane_value = LaneEnum(body.lane)
     except ValueError:
@@ -637,7 +645,6 @@ async def copy_to_team(
     created_user_ids: list[int] = []
     for member in members:
         owner_id = member.id
-        # 既存の (note_id, PERSONAL, owner_id) があれば lane を更新、なければ新規作成
         r = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == note_id,

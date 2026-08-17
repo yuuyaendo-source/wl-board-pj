@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """4ボード View 用の集約 API。各ボードの配置一覧を付箋本文付きで返す。"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
@@ -58,9 +58,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     )
     rows = result.all()
     note_ids = [n.id for _, n in rows]
-    taken_by_map: dict[int, list[tuple[int, str, str]]] = (
-        {}
-    )  # note_id -> [(user_id, name, name_short)]
+    taken_by_map: dict[int, list[tuple[int, str, str]]] = {}
     done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
     accepted_by_others_note_ids: set[int] = set()
@@ -103,10 +101,8 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
             TakenByUser(id=uid, name=name, name_short=short)
             for uid, name, short in taken
         ]
-        # 赤: 誰かが Personal の「応援要請」にしている
         if n.id in help_request_note_ids:
             task_color = "red"
-        # グレー: 誰かが Personal の Done にしている、またはタスクボード上で「完了」列（matrix_quadrant=5）にある
         elif n.id in done_note_ids or (
             p.matrix_quadrant is not None and p.matrix_quadrant == 5
         ):
@@ -142,7 +138,7 @@ async def get_board_personal(
     owner_id: int = Query(..., description="Personal の所有者"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Personal Board: 指定 owner の INBOX/TODAY/DONE 配置。is_from_task = 当該 note が TASK に存在する。"""
+    """Personal Board: 指定 owner の INBOX/TODAY/DONE 配置。"""
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -190,7 +186,7 @@ async def get_board_personal(
 
 @router.get("/morning", response_model=list[BoardPlacementWithNoteResponse])
 async def get_board_morning(db: AsyncSession = Depends(get_db)):
-    """Morning Meeting Board: 参加者の Today スナップショット用（現状は MORNING 配置一覧）。"""
+    """Morning Meeting Board"""
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)

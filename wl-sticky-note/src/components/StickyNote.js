@@ -38,14 +38,14 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     }, [note.dueDate, note.due_date]);
 
     const handleMouseDown = (e) => {
-        if (onMouseDown) onMouseDown(e); // Propagate to parent for line drawing
-        if (e.defaultPrevented || e.altKey) return; // Don't drag if line drawing
-        if (note.pinned) return; // Don't drag if pinned
+        if (onMouseDown) onMouseDown(e);
+        if (e.defaultPrevented || e.altKey) return;
+        if (note.pinned) return;
 
-        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return; // Allow text selection and button clicks
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
 
-        e.stopPropagation(); // Prevent board scroll when dragging note
-        e.preventDefault(); // Also prevent default to ensure board drag doesn't start
+        e.stopPropagation();
+        e.preventDefault();
 
         setIsDragging(true);
         const rect = noteRef.current.getBoundingClientRect();
@@ -86,7 +86,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
 
         const handleTouchMove = (e) => {
             if (!isDragging) return;
-            e.preventDefault(); // Prevent scrolling while dragging
+            e.preventDefault();
 
             const touch = e.touches[0];
             const parentRect = noteRef.current.parentElement.getBoundingClientRect();
@@ -125,7 +125,6 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         setShowColorPicker(false);
     };
 
-    // 期限の保存処理
     const saveDueDate = (newDate) => {
         onUpdate({ ...note, dueDate: newDate, due_date: newDate });
         setShowDatePicker(false);
@@ -140,14 +139,21 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     };
 
     let badgeClass = styles.badgeDefault;
-    let badgeText = `📅 ${dueDateVal}`;
+    let cardHighlightClass = "";
+    let badgeText = `📅 期限: ${dueDateVal}`;
+
     if (daysLeft !== null) {
         if (daysLeft < 0) {
             badgeClass = styles.badgeExpired;
-            badgeText = `📅 期限切れ (${Math.abs(daysLeft)}日)`;
+            cardHighlightClass = styles.noteExpiredBorder;
+            badgeText = `⚠️ 期限切れ (${Math.abs(daysLeft)}日経過)`;
         } else if (daysLeft === 0) {
             badgeClass = styles.badgeToday;
-            badgeText = "📅 今日が期限";
+            cardHighlightClass = styles.noteTodayBorder;
+            badgeText = "🔥 本日が期限！";
+        } else if (daysLeft <= 3) {
+            badgeClass = styles.badgeToday;
+            badgeText = `⏰ 期限まであと${daysLeft}日`;
         }
     }
 
@@ -155,7 +161,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         <div
             ref={noteRef}
             data-sticky-note="true"
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''} ${cardHighlightClass}`}
             style={{
                 left: note.x,
                 top: note.y,
@@ -284,7 +290,6 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                 </div>
             )}
 
-            {/* 既存テキストは表示のみ（URLはリンク化）。追記のみ可能 */}
             <div className={styles.noteContent}>
                 {(note.text || "").trim() ? (
                     <LinkifiedText text={note.text} className={styles.linkifiedText} />
