@@ -200,7 +200,7 @@ app.prepare().then(() => {
                     socket.to(boardId).emit('note-updated', note);
                     saveBoards();
 
-                    // Board System: 付箋ボードの追記内容を同期
+                    // Board System: 付箋ボードの追記内容・期限を同期
                     try {
                         fetch(`${BOARD_SYSTEM_API_BASE}/sticky_notes/sync_from_postit`, {
                             method: 'PATCH',
@@ -208,7 +208,8 @@ app.prepare().then(() => {
                             body: JSON.stringify({
                                 board_id: boardId,
                                 note_id: String(note.id),
-                                content: note.text || ''
+                                content: note.text || '',
+                                due_date: note.dueDate || note.due_date || null
                             })
                         }).catch(err => console.error('Board System sync_from_postit:', err.message));
                     } catch (e) {
@@ -346,6 +347,7 @@ app.prepare().then(() => {
                 author: n.author || '',
                 createdAt: n.createdAt || 0,
                 gray: !!n.gray,
+                dueDate: n.dueDate || n.due_date || null,
             }));
             return res.json({ boardId, notes });
         } catch (error) {
@@ -354,12 +356,12 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 付箋のグレー化またはテキスト更新（Board System 連携: 追記を付箋ボードに反映するときに text を送る）
+    // REST API: 付箋のグレー化またはテキスト・期限更新（Board System 連携用）
     server.patch('/api/boards/:id/notes/:noteId', (req, res) => {
         try {
             const boardId = req.params.id;
             const noteId = req.params.noteId;
-            const { gray, text } = req.body || {};
+            const { gray, text, dueDate, due_date } = req.body || {};
             if (!boards[boardId]) {
                 return res.status(404).json({ error: `Board ${boardId} not found` });
             }
@@ -369,6 +371,11 @@ app.prepare().then(() => {
             }
             if (gray !== undefined) note.gray = gray === true;
             if (text !== undefined) note.text = String(text);
+            const targetDueDate = dueDate !== undefined ? dueDate : due_date;
+            if (targetDueDate !== undefined) {
+                note.dueDate = targetDueDate || null;
+                note.due_date = targetDueDate || null;
+            }
             io.to(boardId).emit('note-updated', note);
             saveBoards();
             return res.json({ success: true, note });
