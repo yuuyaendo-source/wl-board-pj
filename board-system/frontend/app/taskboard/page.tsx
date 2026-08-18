@@ -33,7 +33,15 @@ const COLUMNS = [
   { id: "done", title: "完了", targetQ: 5, droppable: true },
 ] as const;
 
-type PostitNote = { id: string; text: string; author?: string; createdAt?: number; gray?: boolean };
+type PostitNote = {
+  id: string;
+  text: string;
+  author?: string;
+  createdAt?: number;
+  gray?: boolean;
+  dueDate?: string;
+  due_date?: string;
+};
 
 export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
@@ -98,6 +106,7 @@ export default function TaskBoardPage() {
         .map((n) => ({
           id: String(n.id),
           text: n.text || "",
+          due_date: n.dueDate || n.due_date || null,
         }));
       const result = await api.stickyNotes.importFromPostit({
         board_id: POSTIT_BOARD_ID,
@@ -135,7 +144,11 @@ export default function TaskBoardPage() {
         const data = (await res.json()) as { notes: PostitNote[] };
         const notes = (data.notes || [])
           .filter((n) => !n.gray)
-          .map((n) => ({ id: String(n.id), text: n.text || "" }));
+          .map((n) => ({
+            id: String(n.id),
+            text: n.text || "",
+            due_date: n.dueDate || n.due_date || null,
+          }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
         await delay(REFETCH_DELAY_MS);

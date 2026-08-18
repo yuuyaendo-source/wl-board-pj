@@ -76,7 +76,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    importFromPostit: (body: { board_id: string; notes: { id: string; text: string }[] }) =>
+    importFromPostit: (body: { board_id: string; notes: { id: string; text: string; due_date?: string | null }[] }) =>
       fetchApi<{ created: number; skipped: number }>("/sticky_notes/import_from_postit", {
         method: "POST",
         body: JSON.stringify(body),

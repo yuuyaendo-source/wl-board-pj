@@ -123,6 +123,14 @@ async def import_from_postit(
         content = (item.text or "").strip()
         if not content:
             continue
+
+        parsed_due_date = None
+        if item.due_date:
+            try:
+                parsed_due_date = DateType.fromisoformat(item.due_date)
+            except ValueError:
+                pass
+
         r = await db.execute(
             select(StickyNote)
             .where(
@@ -131,15 +139,23 @@ async def import_from_postit(
             )
             .limit(1)
         )
-        if r.scalar_one_or_none() is not None:
+        existing_note = r.scalar_one_or_none()
+        if existing_note is not None:
+            # 既存付箋で due_date が変更されている場合は更新
+            if item.due_date is not None and existing_note.due_date != parsed_due_date:
+                existing_note.due_date = parsed_due_date
+                await db.flush()
+                await apply_due_date_rules_for_note(existing_note.id, db)
             skipped += 1
             continue
+
         note = StickyNote(
             content=content,
             author_id=None,
             status=NoteStatus.ACTIVE,
             postit_board_id=body.board_id,
             postit_note_id=str(item.id),
+            due_date=parsed_due_date,
         )
         db.add(note)
         await db.flush()
@@ -152,6 +168,10 @@ async def import_from_postit(
         db.add(placement_main)
         await db.flush()
         created += 1
+
+        if parsed_due_date:
+            await apply_due_date_rules_for_note(note.id, db)
+
         try:
             await process_new_note_ai(note.id, db)
         except Exception:

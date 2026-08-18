@@ -48,6 +48,7 @@ class ImportFromPostitItem(BaseModel):
 
     id: str
     text: str
+    due_date: str | None = None  # YYYY-MM-DD 形式
 
 
 class ImportFromPostitBody(BaseModel):
