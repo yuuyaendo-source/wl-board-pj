@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote
 from app.models.board_placement import Lane
 from app.models.sticky_note import NoteStatus
+from app.services.llm_settings import ollama_configured_async
 from app.services.news_fetcher import fetch_and_summarize_news
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,13 @@ async def fetch_news(db: AsyncSession = Depends(get_db)):
     RSS を取得し Ollama で要約して、Meeting（MORNING）ボードに付箋として追加する。
     OLLAMA_URL 未設定時はスキップ。テスト・手動用および 10:15 スケジューラから呼ぶ。
     """
-    from app.services.llm_settings import ollama_configured_sync
-
-    if not ollama_configured_sync():
-        return {"ok": True, "skipped": True, "reason": "OLLAMA_URL 未設定", "created": 0}
+    if not await ollama_configured_async(db):
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "OLLAMA_URL 未設定",
+            "created": 0,
+        }
 
     def _run() -> str | None:
         return fetch_and_summarize_news()

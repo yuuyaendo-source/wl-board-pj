@@ -9,6 +9,8 @@ from app.ai.client import generate_json
 
 def run_daily_reset_messages(
     items: list[dict],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
 ) -> list[str]:
     """
     items: [{"note_id": int, "content": str}, ...]（Today レーンの付箋一覧）
@@ -27,7 +29,7 @@ def run_daily_reset_messages(
 回答は必ず JSON の配列のみにしてください。順番はタスク一覧と同じにしてください。
 ["昨日の『タスク1』は持ち越しますか？", "昨日の『タスク2』は持ち越しますか？", ...]
 """
-    data = generate_json(prompt)
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if isinstance(data, list) and len(data) >= len(items):
         return [str(m) for m in data[: len(items)]]
     if isinstance(data, list):

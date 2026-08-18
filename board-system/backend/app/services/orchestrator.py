@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import run_matrix_scoring, run_triage
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
+from app.services.llm_settings import get_resolved_ollama_async
 
 logger = logging.getLogger("uvicorn")
 
@@ -36,49 +37,35 @@ def _normalize_assignee_name(name: str) -> str:
     return s
 
 
-def _sync_database_url() -> str:
-    """非同期用 URL を同期用に変換（別接続で担当者検索するため）。"""
-    from app.config import settings
-
-    url = settings.database_url
-    if "postgresql+asyncpg" in url:
-        return url.replace("postgresql+asyncpg", "postgresql+psycopg2", 1)
-    if "sqlite+aiosqlite" in url:
-        return url.replace("sqlite+aiosqlite", "sqlite", 1)
-    return url
-
-
-def _resolve_assignee_to_user_id_sync(assignee_name: str) -> int | None:
-    """担当者名から users.id を取得。完全一致を優先し、なければ部分一致。同期専用エンジンで実行。"""
-    from sqlalchemy import create_engine, select as sync_select
-    from sqlalchemy.orm import Session
-
+async def _resolve_assignee_user_async(
+    assignee_name: str, db: AsyncSession
+) -> User | None:
+    """担当者名から User オブジェクトを非同期取得。完全一致を優先し、なければ部分一致。"""
     raw = (assignee_name or "").strip()
     normalized = _normalize_assignee_name(raw) if raw else ""
     if not raw and not normalized:
         return None
 
-    url = _sync_database_url()
-    engine = create_engine(url)
-    with Session(engine) as session:
-        # 完全一致を優先（姓のみ or フルネーム）
-        for candidate in (normalized, raw):
-            if not candidate:
-                continue
-            row = session.execute(
-                sync_select(User.id).where(User.name == candidate).limit(1)
-            ).first()
-            if row:
-                return row[0]
-        # 部分一致（User.name に candidate が含まれる）
-        for candidate in (normalized, raw):
-            if not candidate:
-                continue
-            row = session.execute(
-                sync_select(User.id).where(User.name.contains(candidate)).limit(1)
-            ).first()
-            if row:
-                return row[0]
+    # 完全一致を優先（姓のみ or フルネーム）
+    for candidate in (normalized, raw):
+        if not candidate:
+            continue
+        result = await db.execute(select(User).where(User.name == candidate).limit(1))
+        user = result.scalar_one_or_none()
+        if user:
+            return user
+
+    # 部分一致（User.name に candidate が含まれる）
+    for candidate in (normalized, raw):
+        if not candidate:
+            continue
+        result = await db.execute(
+            select(User).where(User.name.contains(candidate)).limit(1)
+        )
+        user = result.scalar_one_or_none()
+        if user:
+            return user
+
     return None
 
 
@@ -100,12 +87,19 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         return
 
     content = note.content or ""
-    content_preview = (content[:300] + "…") if len(content) > 300 else (content or "(空)")
+    content_preview = (
+        (content[:300] + "…") if len(content) > 300 else (content or "(空)")
+    )
     logger.info("[Rinko AI] Note %s 内容: %s", note_id, content_preview)
+
+    # 非同期で LLM 設定（URL, モデル上書き）を取得
+    ollama_url, model_ov = await get_resolved_ollama_async(db)
 
     # --- 1. Triage ---
     try:
-        triage_result = await asyncio.to_thread(run_triage, content)
+        triage_result = await asyncio.to_thread(
+            run_triage, content, ollama_url, model_ov
+        )
     except Exception as e:
         logger.warning("[Rinko AI] Triage failed: %s", e)
         triage_result = None
@@ -117,9 +111,13 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
-        logger.info("[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）", note_id)
+        logger.info(
+            "[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
+            note_id,
+        )
         if not note.postit_note_id:
             from app.config import settings
+
             ok = await asyncio.to_thread(
                 _sync_note_to_postit_sync,
                 note.id,
@@ -144,7 +142,6 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)  # 1=アイデア
         await db.flush()
-        # 担当者名があれば Personal 配布を試みる（下記 4 と共通のためここで続行）
 
     triage_reason = triage_result.get("reason") or ""
     if triage_reason and triage_result.get("is_task"):
@@ -155,7 +152,9 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     column_name = "アイデア"
     if triage_result.get("is_task"):
         try:
-            matrix_result = await asyncio.to_thread(run_matrix_scoring, content)
+            matrix_result = await asyncio.to_thread(
+                run_matrix_scoring, content, ollama_url, model_ov
+            )
         except Exception as e:
             logger.warning("[Rinko AI] Matrix scoring failed: %s", e)
             matrix_result = None
@@ -177,7 +176,11 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         )
         await _place_on_task_board(db, note_id, urgency, importance, column)
         await db.flush()
-        logger.info("[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置", note_id, column_name)
+        logger.info(
+            "[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置",
+            note_id,
+            column_name,
+        )
 
     # --- 4. Personal へ配布（担当者あり） ---
     assignee_name = triage_result.get("assignee_name")
@@ -185,27 +188,27 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         assignee_name = assignee_name.strip()
     if assignee_name:
         try:
-            owner_id = await asyncio.to_thread(
-                _resolve_assignee_to_user_id_sync, assignee_name
-            )
+            user = await _resolve_assignee_user_async(assignee_name, db)
         except Exception as e:
             logger.warning("[Rinko AI] Assignee resolve failed: %s", e)
-            owner_id = None
-        if owner_id is not None:
-            result_user = await db.execute(select(User).where(User.id == owner_id))
-            user = result_user.scalar_one_or_none()
-            if user:
-                logger.info("[Rinko AI] Assigning to user: %s", user.name)
-                personal = BoardPlacement(
-                    note_id=note_id,
-                    board_type=BoardType.PERSONAL,
-                    owner_id=owner_id,
-                    lane=Lane.INBOX,
-                    sort_order=0,
-                )
-                db.add(personal)
-                await db.flush()
-                logger.info("[Rinko AI] Note %s 振り分け完了: Task + Personal（%s）に配布", note_id, user.name)
+            user = None
+
+        if user:
+            logger.info("[Rinko AI] Assigning to user: %s", user.name)
+            personal = BoardPlacement(
+                note_id=note_id,
+                board_type=BoardType.PERSONAL,
+                owner_id=user.id,
+                lane=Lane.INBOX,
+                sort_order=0,
+            )
+            db.add(personal)
+            await db.flush()
+            logger.info(
+                "[Rinko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
+                note_id,
+                user.name,
+            )
         else:
             logger.warning("[Rinko AI] Assignee '%s' not found in DB.", assignee_name)
     else:
@@ -229,7 +232,9 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
 
 
-def _sync_note_to_postit_sync(note_id: int, content: str, board_id: str, base_url: str) -> bool:
+def _sync_note_to_postit_sync(
+    note_id: int, content: str, board_id: str, base_url: str
+) -> bool:
     """Board System の付箋を付箋ボードに追加する（同期）。成功時 True。"""
     postit_note_id = f"bs-{note_id}"
     payload = {
