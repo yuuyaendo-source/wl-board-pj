@@ -5,7 +5,7 @@
     padding: 16px;
     padding-top: 36px;
     box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.2);
-    transition: transform 0.1s;
+    transition: transform 0.1s, border-color 0.2s;
     cursor: grab;
     display: flex;
     flex-direction: column;
@@ -18,6 +18,18 @@
 .note.pinned {
     cursor: default;
     box-shadow: 0 0 0 3px var(--primary, #79dc89);
+}
+
+/* 期限切れカードの赤枠強調 */
+.noteExpiredBorder {
+    border: 3px solid #ef4444 !important;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* 本日期限カードのオレンジ枠強調 */
+.noteTodayBorder {
+    border: 3px solid #f97316 !important;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.4) !important;
 }
 
 /* 完了済み（Board System ゴミ箱で落とした付箋）。取り込み対象外 */
@@ -37,6 +49,7 @@
 }
 
 .pinButton,
+.dateButton,
 .colorButton,
 .deleteButton {
     position: absolute;
@@ -55,15 +68,20 @@
     right: 4px;
 }
 
-.colorButton {
+.dateButton {
     right: 32px;
 }
 
-.deleteButton {
+.colorButton {
     right: 60px;
 }
 
+.deleteButton {
+    right: 88px;
+}
+
 .pinButton:hover,
+.dateButton:hover,
 .colorButton:hover,
 .deleteButton:hover {
     background: rgba(255, 255, 255, 1);
@@ -98,6 +116,94 @@
     border-color: #333;
 }
 
+/* 期限設定ポップオーバー */
+.datePickerPopover {
+    position: absolute;
+    top: 32px;
+    right: 4px;
+    background: #ffffff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 100;
+}
+
+.dateInput {
+    font-size: 12px;
+    padding: 2px 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.saveBtn {
+    background: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.saveBtn:hover {
+    background: #1d4ed8;
+}
+
+.clearBtn {
+    background: #e5e7eb;
+    color: #374151;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.clearBtn:hover {
+    background: #d1d5db;
+}
+
+/* 期限バッジ（大きさと強調） */
+.dueDateContainer {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.dueDateBadge {
+    font-size: 13px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-block;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.badgeDefault {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.badgeWarning {
+    background-color: #facc15;
+    color: #18181b;
+}
+
+.badgeToday {
+    background-color: #f97316;
+    color: #ffffff;
+}
+
+.badgeExpired {
+    background-color: #ef4444;
+    color: #ffffff;
+}
+
 .noteContent {
     flex: 1;
     overflow: auto;
@@ -106,13 +212,16 @@
     line-height: 1.4;
     word-break: break-all;
 }
+
 .noteContent a {
     color: #1565c0;
     text-decoration: underline;
 }
+
 .linkifiedText {
     white-space: pre-wrap;
 }
+
 .appendInput {
     width: 100%;
     min-height: 2.5em;
@@ -120,12 +229,13 @@
     padding: 4px 0;
     background: transparent;
     border: none;
-    border-top: 1px solid rgba(0,0,0,0.1);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
     resize: none;
     font-family: inherit;
     font-size: 1rem;
     outline: none;
 }
+
 .note.large .appendInput {
     font-size: 1.2rem;
 }

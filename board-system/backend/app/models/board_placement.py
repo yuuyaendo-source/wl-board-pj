@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -56,6 +56,8 @@ class BoardPlacement(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # カレンダー更新で作成した Today 付箋（'calendar' 終日 | 'calendar_timed' 時刻付き | NULL）
     placement_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 手動で Today に移動された場合 True。期限による自動移動をスキップするフラグ。
+    is_manually_moved_to_today: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     note = relationship("StickyNote", back_populates="board_placements")
     owner = relationship("User", back_populates="board_placements_owned")

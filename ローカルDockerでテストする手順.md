@@ -84,10 +84,10 @@ docker exec linko-backend alembic upgrade head
 ブラウザで次の URL を開きます。
 
 | 用途 | URL |
-|------|-----|
-| **Board System**（タスク・パーソナル・Meeting） | http://localhost:3010 |
-| **付箋ボード** | http://localhost:3011（`--profile sticky` で起動した場合のみ） |
-| **Board System API**（ヘルス確認） | http://localhost:8010/health |
+| ------ | ----- |
+| **Board System**（タスク・パーソナル・Meeting） | <http://localhost:3010> |
+| **付箋ボード** | <http://localhost:3011（`--profile> sticky` で起動した場合のみ） |
+| **Board System API**（ヘルス確認） | <http://localhost:8010/health> |
 
 - 付箋ボードを起動している場合は、付箋を作成 → Board System の「取り込み」で取り込み
 - タスクボード・パーソナルボード・Meeting の各機能を確認
@@ -125,7 +125,7 @@ docker compose up -d --build
 ## ポート一覧（ローカル）
 
 | サービス | ホストポート | 用途 |
-|----------|--------------|------|
+| ---------- | -------------- | ------ |
 | Frontend | 3010 | Board System（Next.js） |
 | Sticky Note | 3011 | 付箋ボード（`--profile sticky` 時のみ） |
 | Backend | 8010 | Board System API |
@@ -136,7 +136,7 @@ docker compose up -d --build
 ## トラブルシューティング
 
 | 現象 | 対処 |
-|------|------|
+| ------ | ------ |
 | `path ".../wl-sticky-note" not found`（または 02_1_sticky-note/src） | 付箋ボードなしで起動する場合は `docker compose up -d --build` のみでよい（sticky は profile でオプション）。付箋ボードも使う場合は、`wlinko-pj/wl-sticky-note` を用意して `docker compose --profile sticky up -d --build`。 |
 | ビルドが遅い・止まる | プロキシ環境では `export DOCKER_BUILDKIT=0` のあと `docker compose up -d --build` を再実行 |
 | マイグレーションで「relation already exists」 | DB に既にテーブルがあるため。**スタンプ**してから `upgrade head` する（下記「既存DBでマイグレーションを進める」参照） |
@@ -152,12 +152,14 @@ docker compose up -d --build
 
 1. **初期スキーマだけある場合**（users / sticky_notes / board_placements はあるが、`sticky_notes` に `postit_board_id` がない場合）  
    コンテナ内で:
+
    ```bash
    docker exec linko-backend alembic stamp 18f12e452b24
    docker exec linko-backend alembic upgrade head
    ```
 
 2. **Postit 用カラムも既にある場合**（`sticky_notes` に `postit_board_id` / `postit_note_id` がある場合）  
+
    ```bash
    docker exec linko-backend alembic stamp a1b2c3d4e5f6
    docker exec linko-backend alembic upgrade head

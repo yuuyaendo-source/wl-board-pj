@@ -1,0 +1,1151 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: board-system/backend/app/routers/task_reminders.py, wl_desktop_app/task_remind_client.py, wl_desktop_app/task_remind_dialog.py
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+board-system/
+  backend/
+    app/
+      routers/
+        task_reminders.py
+wl_desktop_app/
+  task_remind_client.py
+  task_remind_dialog.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="board-system/backend/app/routers/task_reminders.py">
+# -*- coding: utf-8 -*-
+"""
+Personal Today タスクのリマインド API（デスクトップアプリ用）。
+
+- GET  pending: 指定スロットで未表示の Today 付箋（終日カレンダー＋手動。時刻付き会議は除外）
+- POST shown:  表示済みとして記録（同日同スロット再送防止）
+- POST ack:    continue / done（done は lane=DONE に更新）
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.db import get_db
+from app.models import (
+    BoardPlacement,
+    BoardType,
+    Lane,
+    StickyNote,
+    TaskReminderLog,
+    User,
+)
+from app.services.calendar_placement import include_in_task_remind
+
+router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
+logger = logging.getLogger(__name__)
+
+MAX_TITLE_LEN = 40
+
+
+def _jst_today() -> str:
+    tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Asia/Tokyo")
+    return datetime.now(tz).strftime("%Y-%m-%d")
+
+
+def _short_title(content: str) -> str:
+    text = (content or "").strip().replace("\n", " ")
+    if len(text) <= MAX_TITLE_LEN:
+        return text or "（無題）"
+    return text[: MAX_TITLE_LEN - 1] + "…"
+
+
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+
+def _remind_message(title: str) -> str:
+    return f"「{title}」、進みましたか？"
+
+
+class PendingItem(BaseModel):
+    placement_id: int
+    note_id: int
+    title: str
+    message: str
+    due_date: Optional[str] = None
+
+
+class PendingResponse(BaseModel):
+    owner_id: int
+    slot: str
+    remind_date: str
+    summary: str = LIST_SUMMARY_MESSAGE
+    items: list[PendingItem]
+
+
+class ShownSlotBody(BaseModel):
+    """スロット単位で Today 全タスクを表示済みにする（一括リマインド用）。"""
+
+    slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+
+
+class ShownBody(BaseModel):
+    placement_id: int
+    note_id: int
+    slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+
+
+class AckBody(BaseModel):
+    placement_id: int
+    note_id: int
+    slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    action: str = Field(..., pattern=r"^(continue|done)$")
+
+
+async def _ensure_user(user_id: int, db: AsyncSession) -> None:
+    r = await db.execute(select(User).where(User.id == user_id))
+    if r.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+
+async def _today_placements(
+    user_id: int, db: AsyncSession
+) -> list[tuple[BoardPlacement, StickyNote]]:
+    result = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.lane == Lane.TODAY,
+        )
+        .order_by(BoardPlacement.sort_order, BoardPlacement.id)
+    )
+    rows = result.all()
+    out = []
+    for p, n in rows:
+        src = getattr(p, "placement_source", None)
+        if not include_in_task_remind(src):
+            continue
+        out.append((p, n))
+    return out
+
+
+async def _logged_note_ids(
+    user_id: int, remind_date: str, slot: str, db: AsyncSession
+) -> set[int]:
+    r = await db.execute(
+        select(TaskReminderLog.note_id).where(
+            TaskReminderLog.user_id == user_id,
+            TaskReminderLog.remind_date == remind_date,
+            TaskReminderLog.slot == slot,
+        )
+    )
+    return {row[0] for row in r.all()}
+
+
+@router.get("/{user_id}/task_reminders/pending", response_model=PendingResponse)
+async def get_pending_task_reminders(
+    user_id: int,
+    slot: str = Query(
+        ..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """指定スロットでまだ表示していない Today タスクをすべて返す（一括リマインド）。"""
+    await _ensure_user(user_id, db)
+    remind_date = _jst_today()
+    logged = await _logged_note_ids(user_id, remind_date, slot, db)
+    placements = await _today_placements(user_id, db)
+    items: list[PendingItem] = []
+    for p, n in placements:
+        if p.note_id in logged:
+            continue
+        title = _short_title(n.content)
+        due_date_str = n.due_date.isoformat() if getattr(n, "due_date", None) else None
+        items.append(
+            PendingItem(
+                placement_id=p.id,
+                note_id=p.note_id,
+                title=title,
+                message=_remind_message(title),
+                due_date=due_date_str,
+            )
+        )
+    summary = LIST_SUMMARY_MESSAGE
+    if len(items) > 1:
+        summary = f"{LIST_SUMMARY_MESSAGE}（{len(items)}件）"
+    return PendingResponse(
+        owner_id=user_id,
+        slot=slot,
+        remind_date=remind_date,
+        summary=summary,
+        items=items,
+    )
+
+
+@router.post("/{user_id}/task_reminders/shown_slot")
+async def mark_task_reminder_slot_shown(
+    user_id: int,
+    body: ShownSlotBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """このスロットで Today の全タスクを表示済みにする（同日同スロットの再送を防ぐ）。"""
+    await _ensure_user(user_id, db)
+    remind_date = _jst_today()
+    logged = await _logged_note_ids(user_id, remind_date, body.slot, db)
+    placements = await _today_placements(user_id, db)
+    marked = 0
+    for p, _n in placements:
+        if p.note_id in logged:
+            continue
+        db.add(
+            TaskReminderLog(
+                user_id=user_id,
+                note_id=p.note_id,
+                placement_id=p.id,
+                remind_date=remind_date,
+                slot=body.slot,
+                action=None,
+            )
+        )
+        logged.add(p.note_id)
+        marked += 1
+    await db.flush()
+    return {"ok": True, "marked": marked}
+
+
+@router.post("/{user_id}/task_reminders/shown")
+async def mark_task_reminder_shown(
+    user_id: int,
+    body: ShownBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """デスクトップがリマインド UI を表示したとき呼ぶ（同日同スロットの再送防止）。"""
+    await _ensure_user(user_id, db)
+    remind_date = _jst_today()
+    r = await db.execute(
+        select(TaskReminderLog).where(
+            TaskReminderLog.user_id == user_id,
+            TaskReminderLog.note_id == body.note_id,
+            TaskReminderLog.remind_date == remind_date,
+            TaskReminderLog.slot == body.slot,
+        )
+    )
+    if r.scalar_one_or_none() is not None:
+        return {"ok": True, "already": True}
+    r_pl = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.id == body.placement_id,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane == Lane.TODAY,
+        )
+    )
+    if r_pl.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=404, detail="Placement not found or not in TODAY"
+        )
+    row = TaskReminderLog(
+        user_id=user_id,
+        note_id=body.note_id,
+        placement_id=body.placement_id,
+        remind_date=remind_date,
+        slot=body.slot,
+        action=None,
+    )
+    db.add(row)
+    await db.flush()
+    return {"ok": True, "already": False}
+
+
+@router.post("/{user_id}/task_reminders/ack")
+async def ack_task_reminder(
+    user_id: int,
+    body: AckBody,
+    db: AsyncSession = Depends(get_db),
+):
+    """継続 / 完了 の応答。done のとき Personal を DONE に移動（Task 完了連動は board_placements と同じ）。"""
+    await _ensure_user(user_id, db)
+    remind_date = _jst_today()
+    r = await db.execute(
+        select(TaskReminderLog).where(
+            TaskReminderLog.user_id == user_id,
+            TaskReminderLog.note_id == body.note_id,
+            TaskReminderLog.remind_date == remind_date,
+            TaskReminderLog.slot == body.slot,
+        )
+    )
+    log_row = r.scalar_one_or_none()
+    if log_row is None:
+        log_row = TaskReminderLog(
+            user_id=user_id,
+            note_id=body.note_id,
+            placement_id=body.placement_id,
+            remind_date=remind_date,
+            slot=body.slot,
+        )
+        db.add(log_row)
+        await db.flush()
+
+    r_pl = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.id == body.placement_id,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+        )
+    )
+    placement = r_pl.scalar_one_or_none()
+    if placement is None:
+        raise HTTPException(status_code=404, detail="Placement not found")
+
+    log_row.action = body.action
+    log_row.acked_at = datetime.utcnow()
+
+    if body.action == "done" and placement.lane != Lane.DONE:
+        prev_lane = placement.lane
+        placement.lane = Lane.DONE
+        r_task = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.TASK,
+                BoardPlacement.owner_id.is_(None),
+            )
+        )
+        task_placement = r_task.scalar_one_or_none()
+        if task_placement:
+            task_placement.matrix_quadrant = 5
+        elif prev_lane == Lane.HELP_REQUEST:
+            pass  # HELP_REQUEST から DONE は既存 PATCH と同様 task 連動のみ
+
+    await db.flush()
+    return {
+        "ok": True,
+        "action": body.action,
+        "lane": placement.lane.value if placement.lane else None,
+    }
+</file>
+
+<file path="wl_desktop_app/task_remind_client.py">
+# -*- coding: utf-8 -*-
+"""Personal Today タスクリマインド（Board System API ポーリング）。
+
+features.task_remind=True かつ board_system_personal_id 設定時のみ動作。
+時刻スロット（既定 13:00 / 17:00）は config の task_remind_times で変更可。
+"""
+from __future__ import annotations
+
+import threading
+import time
+from datetime import datetime
+from typing import Callable, Optional
+from zoneinfo import ZoneInfo
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    from app_log import log_info, log_warn
+except Exception:
+    def log_info(msg: str) -> None:
+        print(msg, flush=True)
+
+    def log_warn(msg: str) -> None:
+        print(msg, flush=True)
+
+try:
+    JST = ZoneInfo("Asia/Tokyo")
+except Exception:
+    # Windows 等で tzdata 未インストール時のフォールバック (UTC+9 固定)
+    from datetime import timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+
+POLL_INTERVAL_SEC = 30
+SLOT_WINDOW_MINUTES = 15
+_thread: Optional[threading.Thread] = None
+_showing_lock = threading.Lock()
+_showing = False
+
+
+def _normalize_time(raw: str) -> Optional[str]:
+    """'9:5' → '09:05'。不正なら None。"""
+    s = (raw or "").strip()
+    if not s or ":" not in s:
+        return None
+    parts = s.split(":", 1)
+    try:
+        h, m = int(parts[0]), int(parts[1])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+    except ValueError:
+        pass
+    return None
+
+
+def _parse_times(cfg: dict) -> list[str]:
+    raw = cfg.get("task_remind_times")
+    if isinstance(raw, list) and raw:
+        out = []
+        for t in raw:
+            norm = _normalize_time(str(t))
+            if norm:
+                out.append(norm)
+        if out:
+            return out
+    return ["13:00", "17:00"]
+
+
+def _is_weekday_jst() -> bool:
+    return datetime.now(JST).weekday() < 5
+
+
+def _is_paused_today(cfg: dict) -> bool:
+    paused = (cfg.get("task_remind_paused_until") or "").strip()
+    if not paused:
+        return False
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    return today <= paused
+
+
+def active_slot_now(cfg: dict, now: Optional[datetime] = None) -> Optional[str]:
+    """現在時刻がリマインドウィンドウ内ならスロット文字列 (HH:MM) を返す。"""
+    if now is None:
+        now = datetime.now(JST)
+    if cfg.get("task_remind_weekdays_only", True) and now.weekday() >= 5:
+        return None
+    hm = now.hour * 60 + now.minute
+    for slot in _parse_times(cfg):
+        try:
+            h, m = slot.split(":")
+            start = int(h) * 60 + int(m)
+        except ValueError:
+            continue
+        if start <= hm < start + SLOT_WINDOW_MINUTES:
+            return slot
+    return None
+
+
+def _api_base(cfg: dict) -> str:
+    from config_loader import get_effective_board_system_url
+    return (get_effective_board_system_url(cfg) or "").rstrip("/")
+
+
+def _owner_id(cfg: dict) -> Optional[int]:
+    pid = (cfg.get("board_system_personal_id") or "").strip()
+    if not pid:
+        return None
+    try:
+        return int(pid)
+    except ValueError:
+        return None
+
+
+def _personal_api_url(cfg: dict, owner: int, suffix: str) -> str:
+    """board_system_url ベースで personal API の URL を組み立てる。"""
+    base = _api_base(cfg)
+    return f"{base}/api/personal/{owner}/{suffix}"
+
+
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+
+def fetch_pending(cfg: dict, slot: str) -> tuple[list[dict], str]:
+    """pending API を呼び、(items, summary) を返す。失敗時は ([], '')。"""
+    if requests is None:
+        return [], ""
+    base = _api_base(cfg)
+    owner = _owner_id(cfg)
+    if not base or owner is None:
+        return [], ""
+    url = _personal_api_url(cfg, owner, "task_reminders/pending")
+    try:
+        from security import validate_http_url
+        ok, err = validate_http_url(url, cfg, purpose="task_remind")
+        if not ok:
+            log_warn(f"[task_remind] URL 拒否: {err}")
+            return [], ""
+    except Exception as e:
+        log_warn(f"[task_remind] URL 検証エラー: {e}")
+        return [], ""
+    try:
+        r = requests.get(url, params={"slot": slot}, timeout=10)
+        if r.status_code != 200:
+            log_warn(f"[task_remind] pending HTTP {r.status_code}: {r.text[:200]}")
+            return [], ""
+        data = r.json()
+        summary = (data.get("summary") or LIST_SUMMARY_MESSAGE).strip()
+        return list(data.get("items") or []), summary
+    except Exception as e:
+        log_warn(f"[task_remind] pending 取得失敗: {e}")
+        return [], ""
+
+
+def _slots_shown_record(cfg: dict) -> dict:
+    rec = cfg.get("task_remind_slots_shown")
+    if not isinstance(rec, dict):
+        return {"date": "", "slots": []}
+    return {"date": str(rec.get("date") or ""), "slots": list(rec.get("slots") or [])}
+
+
+def slot_already_shown_today(cfg: dict, slot: str) -> bool:
+    """このスロットは今日すでにリマインド表示済みか（クライアント側ガード）。"""
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    rec = _slots_shown_record(cfg)
+    return rec.get("date") == today and slot in rec.get("slots", [])
+
+
+def mark_slot_shown_today(cfg: dict, slot: str) -> None:
+    """スロット表示済みを config に記録（翌日・別スロットはリセット）。"""
+    from config_loader import save_config
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    rec = _slots_shown_record(cfg)
+    slots = list(rec.get("slots") or []) if rec.get("date") == today else []
+    if slot not in slots:
+        slots.append(slot)
+    cfg["task_remind_slots_shown"] = {"date": today, "slots": slots}
+    save_config(cfg)
+
+
+def post_shown_slot(cfg: dict, slot: str) -> bool:
+    """Today 全タスクをこのスロットで表示済みにする（サーバ側一括登録）。"""
+    base = _api_base(cfg)
+    owner = _owner_id(cfg)
+    if not base or owner is None or requests is None:
+        return False
+    url = _personal_api_url(cfg, owner, "task_reminders/shown_slot")
+    try:
+        r = requests.post(url, json={"slot": slot}, timeout=15)
+        return r.status_code == 200
+    except Exception as e:
+        log_warn(f"[task_remind] shown_slot POST 失敗: {e}")
+        return False
+
+
+def post_shown(cfg: dict, item: dict, slot: str) -> bool:
+    base = _api_base(cfg)
+    owner = _owner_id(cfg)
+    if not base or owner is None or requests is None:
+        return False
+    url = _personal_api_url(cfg, owner, "task_reminders/shown")
+    try:
+        r = requests.post(
+            url,
+            json={
+                "placement_id": item["placement_id"],
+                "note_id": item["note_id"],
+                "slot": slot,
+            },
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception as e:
+        log_warn(f"[task_remind] shown POST 失敗: {e}")
+        return False
+
+
+def post_ack(cfg: dict, item: dict, slot: str, action: str) -> bool:
+    base = _api_base(cfg)
+    owner = _owner_id(cfg)
+    if not base or owner is None or requests is None:
+        return False
+    url = _personal_api_url(cfg, owner, "task_reminders/ack")
+    try:
+        r = requests.post(
+            url,
+            json={
+                "placement_id": item["placement_id"],
+                "note_id": item["note_id"],
+                "slot": slot,
+                "action": action,
+            },
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception as e:
+        log_warn(f"[task_remind] ack POST 失敗: {e}")
+        return False
+
+
+def pause_reminders_today(cfg: Optional[dict] = None) -> None:
+    """今日いっぱいリマインドを止める（翌日自動復帰）。"""
+    from config_loader import load_config, save_config
+    if cfg is None:
+        cfg = load_config()
+    today = datetime.now(JST).strftime("%Y-%m-%d")
+    cfg["task_remind_paused_until"] = today
+    save_config(cfg)
+
+
+def start_task_remind_poll(
+    config_getter: Callable[[], dict],
+    on_remind: Callable[[list, str, str], None],
+    tk_master=None,
+) -> bool:
+    """ポーリングスレッドを開始。on_remind(items, slot) はバックグラウンドから呼ばれる。"""
+    global _thread
+    if _thread is not None and _thread.is_alive():
+        return False
+
+    def _dispatch(items: list, slot: str, summary: str) -> None:
+        if tk_master is not None:
+            try:
+                tk_master.after(0, lambda its=items, s=slot, sm=summary: on_remind(its, s, sm))
+                return
+            except Exception:
+                pass
+        on_remind(items, slot, summary)
+
+    def loop():
+        global _showing
+        last_diag = ""
+        while True:
+            try:
+                from config_loader import is_feature_enabled, load_config
+                from network_readiness import is_network_ready, unreachable_backoff_sec
+                cfg = load_config()
+                if not is_network_ready(cfg):
+                    time.sleep(unreachable_backoff_sec(cfg))
+                    continue
+                if not is_feature_enabled("task_remind", cfg):
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if _owner_id(cfg) is None:
+                    diag = "board_system_personal_id 未設定 (パーソナルログインが必要)"
+                    if diag != last_diag:
+                        log_warn(f"[task_remind] {diag}")
+                        last_diag = diag
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if _is_paused_today(cfg):
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if not are_notifications_ok(cfg):
+                    diag = "notifications_enabled=OFF (🔕)"
+                    if diag != last_diag:
+                        log_info(f"[task_remind] スキップ: {diag}")
+                        last_diag = diag
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                slot = active_slot_now(cfg)
+                if not slot:
+                    last_diag = ""
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                if slot_already_shown_today(cfg, slot):
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                with _showing_lock:
+                    if _showing:
+                        time.sleep(POLL_INTERVAL_SEC)
+                        continue
+                items, summary = fetch_pending(cfg, slot)
+                if not items:
+                    diag = f"slot={slot} pending=0 (Today レーンに未通知タスクがあるか確認)"
+                    if diag != last_diag:
+                        log_info(f"[task_remind] {diag}")
+                        last_diag = diag
+                    time.sleep(POLL_INTERVAL_SEC)
+                    continue
+                with _showing_lock:
+                    _showing = True
+                last_diag = ""
+                titles = ", ".join((it.get("title") or "?")[:24] for it in items[:3])
+                if len(items) > 3:
+                    titles += f" ほか{len(items) - 3}件"
+                log_info(f"[task_remind] リマインド一覧表示 ({len(items)}件) slot={slot}: {titles}")
+                _dispatch(items, slot, summary)
+            except Exception as e:
+                log_warn(f"[task_remind] poll エラー: {e}")
+            time.sleep(POLL_INTERVAL_SEC)
+
+    _thread = threading.Thread(target=loop, daemon=True, name="task_remind_poll")
+    _thread.start()
+    return True
+
+
+def are_notifications_ok(cfg: dict) -> bool:
+    try:
+        from notifications import are_enabled
+        return are_enabled(cfg)
+    except Exception:
+        return True
+
+
+def notify_dialog_closed() -> None:
+    """ダイアログを閉じたあと次のポーリングを許可する。"""
+    global _showing
+    with _showing_lock:
+        _showing = False
+</file>
+
+<file path="wl_desktop_app/task_remind_dialog.py">
+# -*- coding: utf-8 -*-
+"""タスクリマインド用ダイアログ（Today 一覧・タスクごとに継続/完了/相談）。"""
+from __future__ import annotations
+
+import os
+import sys
+from datetime import datetime
+from typing import Callable, Optional
+from zoneinfo import ZoneInfo
+
+try:
+    import customtkinter as ctk
+except ImportError as e:
+    print("customtkinter が見つかりません。", e)
+    raise
+
+from config_loader import is_feature_enabled, load_config
+
+try:
+    JST = ZoneInfo("Asia/Tokyo")
+except Exception:
+    from datetime import timedelta, timezone
+
+    JST = timezone(timedelta(hours=9))
+
+LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
+
+_dialog_instance: Optional["TaskRemindListDialog"] = None
+
+
+def format_due_date_info(due_date_str: Optional[str]) -> tuple[str, str]:
+    """due_date 文字列 (YYYY-MM-DD) から表示テキストとカラーコードを取得する。"""
+    if not due_date_str:
+        return "", ""
+    try:
+        due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return f"📅 期限: {due_date_str}", "#4b5563"
+
+    today = datetime.now(JST).date()
+    days = (due_date - today).days
+
+    if days < 0:
+        return f"⚠️ 期限切れ（{abs(days)}日経過）", "#ef4444"
+    elif days == 0:
+        return "🔥 本期日が期限！", "#ea580c"
+    elif 0 < days <= 3:
+        return f"⏰ 期限まであと{days}日", "#d97706"
+    else:
+        return f"📅 期限: {due_date_str}", "#2563eb"
+
+
+def _ensure_master_visible(master) -> None:
+    """タスクリマインド表示前にミニポートを前面へ。"""
+    if master is None:
+        return
+    try:
+        if str(master.state()) == "withdrawn":
+            master.deiconify()
+    except Exception:
+        pass
+    try:
+        if hasattr(master, "focus_and_raise"):
+            master.focus_and_raise()
+        else:
+            master.lift()
+            master.attributes("-topmost", True)
+    except Exception:
+        pass
+
+
+class TaskRemindListDialog(ctk.CTkToplevel):
+    WIDTH = 420
+    MAX_HEIGHT = 540
+    ROW_HEIGHT = 90
+    _GAP = 8
+
+    @staticmethod
+    def _rects_overlap(x1, y1, w1, h1, x2, y2, w2, h2) -> bool:
+        return not (x1 + w1 <= x2 or x1 >= x2 + w2 or y1 + h1 <= y2 or y1 >= y2 + h2)
+
+    def __init__(
+        self,
+        master=None,
+        *,
+        items: list[dict],
+        slot: str,
+        summary: str,
+        on_ack: Callable[[dict, str], None],
+    ):
+        super().__init__(master)
+        self._items = list(items)
+        self._slot = slot
+        self._summary = summary
+        self._on_ack = on_ack
+        self._row_frames: dict[int, ctk.CTkFrame] = {}
+        self._acked: set[int] = set()
+        self.title("タスクリマインド")
+        est_h = min(self.MAX_HEIGHT, 140 + len(self._items) * self.ROW_HEIGHT)
+        self.geometry(f"{self.WIDTH}x{est_h}")
+        self.minsize(self.WIDTH, 200)
+        self.maxsize(self.WIDTH, self.MAX_HEIGHT)
+        self.resizable(True, True)
+        self.attributes("-topmost", True)
+        try:
+            base = os.path.dirname(os.path.abspath(__file__))
+            ico = os.path.join(base, "assets", "linko.ico")
+            if os.path.isfile(ico) and sys.platform.startswith("win"):
+                self.iconbitmap(ico)
+        except Exception:
+            pass
+        self._build_ui()
+        _ensure_master_visible(master)
+        if master is not None:
+            try:
+                self.transient(master)
+            except Exception:
+                pass
+        self._position_near(master)
+        self.protocol("WM_DELETE_WINDOW", self._on_dismiss_all_continue)
+        try:
+            if master is not None:
+                self.lift(master)
+        except Exception:
+            pass
+        self.attributes("-topmost", True)
+        self.lift()
+        self.focus_force()
+
+    def _position_near(self, master) -> None:
+        """ミニポートの近く・画面内に収まる位置へ配置する（右側固定は画面外になりやすい）。"""
+        self.update_idletasks()
+        pw = self.winfo_width() or self.WIDTH
+        ph = self.winfo_height() or 200
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        gap = self._GAP
+
+        def clamp_x(x: int) -> int:
+            return max(0, min(int(x), max(0, sw - pw - gap)))
+
+        def clamp_y(y: int) -> int:
+            return max(0, min(int(y), max(0, sh - ph - gap)))
+
+        if master is None:
+            x = clamp_x(sw - pw - 24)
+            y = clamp_y(sh - ph - 80)
+            self.geometry(f"+{x}+{y}")
+            return
+
+        try:
+            master.update_idletasks()
+            mx = master.winfo_rootx()
+            my = master.winfo_rooty()
+            mw = master.winfo_width() or 264
+            mh = master.winfo_height() or 224
+
+            def fits(x: int, y: int) -> bool:
+                return (
+                    x >= 0
+                    and y >= 0
+                    and x + pw <= sw
+                    and y + ph <= sh
+                    and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
+                )
+
+            candidates = [
+                (mx + mw - pw, my - ph - gap),  # 上・右端揃え（ミニポート直上）
+                (mx, my - ph - gap),  # 上・左端揃え
+                (mx - pw - gap, my + mh - ph),  # 左・下揃え
+                (mx - pw - gap, my),  # 左・上揃え
+                (mx + mw - pw, my + mh + gap),  # 下・右端揃え
+                (mx, my + mh + gap),  # 下・左端揃え
+                (mx + mw + gap, my),  # 右（画面右端ならスキップされやすい）
+            ]
+
+            x, y = candidates[0]
+            for cx, cy in candidates:
+                cx, cy = clamp_x(cx), clamp_y(cy)
+                if fits(cx, cy):
+                    x, y = cx, cy
+                    break
+            else:
+                x, y = clamp_x(mx + mw - pw), clamp_y(my - ph - gap)
+
+            self.geometry(f"+{x}+{y}")
+        except Exception:
+            x = clamp_x(sw - pw - 24)
+            y = clamp_y(sh - ph - 80)
+            self.geometry(f"+{x}+{y}")
+
+    def _build_ui(self) -> None:
+        pad = 12
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=pad, pady=(pad, 4))
+        count = len(self._items)
+        ctk.CTkLabel(
+            header,
+            text=f"Today のタスク（{count}件）",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        ).pack(fill="x")
+        ctk.CTkLabel(
+            header,
+            text=self._summary,
+            wraplength=self.WIDTH - pad * 2,
+            justify="left",
+            anchor="w",
+            text_color=("gray25", "gray75"),
+        ).pack(fill="x", pady=(4, 0))
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(4, pad))
+
+        show_consult = is_feature_enabled("brainstorm")
+        for item in self._items:
+            self._add_task_row(scroll, item, show_consult)
+
+        ctk.CTkButton(
+            self,
+            text="閉じる（未操作は継続）",
+            command=self._on_dismiss_all_continue,
+            fg_color=("gray70", "gray35"),
+            hover_color=("gray60", "gray45"),
+        ).pack(fill="x", padx=pad, pady=(0, pad))
+
+    def _add_task_row(self, parent, item: dict, show_consult: bool) -> None:
+        note_id = item["note_id"]
+        row = ctk.CTkFrame(parent, corner_radius=8)
+        row.pack(fill="x", pady=(0, 8))
+        self._row_frames[note_id] = row
+
+        title = item.get("title") or "（無題）"
+        ctk.CTkLabel(
+            row,
+            text=title,
+            wraplength=self.WIDTH - 80,
+            justify="left",
+            anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        # 期限情報の表示を追加
+        due_date_str = item.get("due_date")
+        due_text, due_color = format_due_date_info(due_date_str)
+        if due_text:
+            ctk.CTkLabel(
+                row,
+                text=due_text,
+                text_color=due_color,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                anchor="w",
+            ).pack(fill="x", padx=10, pady=(0, 4))
+
+        btn_row = ctk.CTkFrame(row, fg_color="transparent")
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        ctk.CTkButton(
+            btn_row,
+            text="継続",
+            width=72,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            command=lambda i=item: self._on_action(i, "continue"),
+            fg_color=("#5a9a5c", "#2e7d32"),
+        ).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(
+            btn_row,
+            text="完了",
+            width=72,
+            height=28,
+            font=ctk.CTkFont(size=12),
+            command=lambda i=item: self._on_action(i, "done"),
+            fg_color=("#3d7ea6", "#1565c0"),
+        ).pack(side="left", padx=(0, 4))
+        if show_consult:
+            ctk.CTkButton(
+                btn_row,
+                text="相談",
+                width=72,
+                height=28,
+                font=ctk.CTkFont(size=12),
+                command=lambda i=item: self._on_consult(i),
+                fg_color=("#7b5ea7", "#5e35b1"),
+            ).pack(side="left")
+
+    def _on_action(self, item: dict, action: str) -> None:
+        note_id = item["note_id"]
+        if note_id in self._acked:
+            return
+        self._acked.add(note_id)
+        try:
+            self._on_ack(item, action)
+        except Exception as e:
+            print(f"[task_remind] ack callback error: {e}", flush=True)
+        self._remove_row(note_id)
+        if not self._row_frames:
+            self._close()
+
+    def _on_consult(self, item: dict) -> None:
+        title = item.get("title") or ""
+        note_id = item.get("note_id")
+        self._on_action(item, "continue")
+        try:
+            from chat_panel import open_chat_panel_with_task
+
+            open_chat_panel_with_task(
+                master=self.master,
+                task_title=title,
+                note_id=note_id,
+            )
+        except Exception as e:
+            print(f"[task_remind] consult open failed: {e}", flush=True)
+
+    def _remove_row(self, note_id: int) -> None:
+        frame = self._row_frames.pop(note_id, None)
+        if frame is not None:
+            try:
+                frame.destroy()
+            except Exception:
+                pass
+
+    def _on_dismiss_all_continue(self) -> None:
+        for item in list(self._items):
+            nid = item["note_id"]
+            if nid not in self._acked:
+                self._acked.add(nid)
+                try:
+                    self._on_ack(item, "continue")
+                except Exception:
+                    pass
+        self._close()
+
+    def _close(self) -> None:
+        global _dialog_instance
+        _dialog_instance = None
+        try:
+            from task_remind_client import notify_dialog_closed
+
+            notify_dialog_closed()
+        except Exception:
+            pass
+        try:
+            import linko_avatar
+
+            linko_avatar.dismiss_ui()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
+def show_task_remind_dialog(
+    master,
+    items: list[dict],
+    slot: str,
+    on_ack: Callable[[dict, str], None],
+    summary: Optional[str] = None,
+) -> Optional[TaskRemindListDialog]:
+    """Today タスク一覧のリマインドダイアログを表示（シングルトン）。"""
+    global _dialog_instance
+    if not items:
+        return None
+    if _dialog_instance is not None:
+        try:
+            _ensure_master_visible(master)
+            _dialog_instance.lift(master)
+            _dialog_instance.attributes("-topmost", True)
+            _dialog_instance.lift()
+            _dialog_instance._position_near(master)
+            return _dialog_instance
+        except Exception:
+            _dialog_instance = None
+
+    cfg = load_config()
+    from task_remind_client import (
+        mark_slot_shown_today,
+        notify_dialog_closed,
+        post_shown_slot,
+    )
+
+    if not post_shown_slot(cfg, slot):
+        notify_dialog_closed()
+        print("[task_remind] shown_slot API 失敗 — リマインドをスキップ", flush=True)
+        return None
+    mark_slot_shown_today(cfg, slot)
+
+    summary_text = (summary or LIST_SUMMARY_MESSAGE).strip()
+    count = len(items)
+    if count > 1 and "件" not in summary_text:
+        summary_text = f"{summary_text}\n（{count}件）"
+
+    from remind_notify import TASK_VOICE_TEXT, deliver_remind
+
+    titles = "、".join((it.get("title") or "")[:20] for it in items[:5])
+    if len(items) > 5:
+        titles += f" ほか{len(items) - 5}件"
+    bubble = summary_text.split("\n")[0]
+    deliver_remind(
+        "Wonder Linko",
+        f"{LIST_SUMMARY_MESSAGE}\n{titles}\n（横のパネルで選択してください）",
+        bubble,
+        voice_text=TASK_VOICE_TEXT,
+        duration_sec=12,
+    )
+    _dialog_instance = TaskRemindListDialog(
+        master=master,
+        items=items,
+        slot=slot,
+        summary=summary_text,
+        on_ack=on_ack,
+    )
+    return _dialog_instance
+</file>
+
+</files>

@@ -5,3 +5,8 @@ services:
   backend:
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system_staging
+
+  sticky-note:
+    environment:
+      # Docker 内部ネットワーク経由で直接ステージングの backend コンテナに通信（SSLエラー回避）
+      BOARD_SYSTEM_API_URL: "http://backend:8000"

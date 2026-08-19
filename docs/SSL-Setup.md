@@ -5,12 +5,12 @@
 ## 本番で使用する証明書（board-system / wl-sticky-note）
 
 | 項目 | 内容 |
-|------|------|
+| ------ | ------ |
 | **発行** | Let's Encrypt（CN: \*.internal.wonder-link.com、発行: Let's Encrypt） |
 | **配置場所** | 開発: `/home/hisashi/dev/sv_cert/` / 本番: `/home/devuser01/sv_cert/` |
 | **ファイル** | `fullchain.pem`（証明書）、`privkey.pem`（秘密鍵） |
 | **FQDN** | `https://wl-ai-board.internal.wonder-link.com/` |
-| **IP（例）** | 172.16.1.83 または 172.16.1.84（CATO 内で linko-system は別ホスト 172.16.1.251） |
+| **IP（例）** | 172.16.1.83 または 172.16.1.203（CATO 内で linko-system は別ホスト 172.16.1.251） |
 
 `board-system/nginx/nginx.conf`（開発）・`nginx.conf.production-server`（本番）・`staging.conf`・`wl-sticky-note/src/nginx.conf` はいずれも上記パスを参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
 
@@ -80,7 +80,7 @@ server_name board.example.com;
 ### 対象ファイル
 
 | ファイル | 用途 |
-|----------|------|
+| ---------- | ------ |
 | `board-system/nginx/nginx.conf` | Board System 本番（Docker + active_env） |
 | `wl-sticky-note/src/nginx.conf` | 付箋ボード単体デプロイ用 |
 | `docs/nginx-with-board-system.conf.example` | 設定例（コピーして使う用） |

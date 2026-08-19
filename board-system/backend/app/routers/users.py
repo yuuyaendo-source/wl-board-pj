@@ -23,6 +23,7 @@ def _user_to_response(user: User) -> UserResponse:
         email=user.email,
         call_name=user.call_name,
         role=user.role,
+        team_id=user.team_id,
         face_count=len(user.faces) if user.faces else 0,
     )
 
@@ -91,6 +92,7 @@ async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)):
         email=email_clean,
         call_name=(body.call_name or "").strip() or None,
         role=body.role,
+        team_id=body.team_id,
     )
     db.add(user)
     await db.flush()
@@ -127,6 +129,9 @@ async def update_user(
         user.call_name = body.call_name.strip() or None
     if body.role is not None:
         user.role = body.role
+    # team_id: None が渡されたら未所属（NULL）に変更、数値なら設定
+    if "team_id" in body.model_fields_set:
+        user.team_id = body.team_id
     await db.flush()
     await db.refresh(user)
     return _user_to_response(user)

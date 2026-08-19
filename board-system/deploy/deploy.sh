@@ -16,6 +16,15 @@ docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-
 echo "Ensuring DB is running..."
 docker compose -f "$DOCKER_COMPOSE_DB" up -d
 
+# --- 確実なDB起動待ち ---
+echo "Waiting for PostgreSQL to start..."
+until docker exec linko-db pg_isready -U linko_user > /dev/null 2>&1; do
+  echo "PostgreSQL is unavailable - sleeping..."
+  sleep 1
+done
+echo "PostgreSQL is up and running!"
+# ------------------------
+
 # active_env.conf が存在しない場合の初期化
 if [ ! -f "$ACTIVE_ENV_FILE" ]; then
     echo "Initializing active_env.conf..."
@@ -102,6 +111,10 @@ done
 # マイグレーション実行（新コンテナ＝新イメージで実行）
 echo "Running database migrations..."
 docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend alembic -c /app/alembic.ini upgrade head
+
+echo "Running team seeds..."
+docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend python scripts/seed_teams.py
+
 
 # Nginx切り替え
 echo "Switching traffic..."

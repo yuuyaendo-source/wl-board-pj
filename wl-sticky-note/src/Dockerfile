@@ -25,7 +25,7 @@ RUN npm run build
 
 # データ永続化ディレクトリ（docker-compose でボリュームマウント）
 ENV DATA_DIR=/app/data
-RUN mkdir -p /app/data && echo "[]" > /app/data/boards.json
+RUN mkdir -p /app/data && echo "{}" > /app/data/boards.json
 
 EXPOSE 3000
 

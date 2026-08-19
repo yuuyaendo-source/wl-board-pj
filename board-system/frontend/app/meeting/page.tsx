@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 import type { PlacementWithNote } from "@/lib/types";
 import ApiErrorBanner from "../components/ApiErrorBanner";
+import DueDateBadge, { getDueDateBorderClass } from "../components/DueDateBadge";
 
 export default function MeetingBoardPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -146,12 +147,12 @@ export default function MeetingBoardPage() {
                   dangerouslySetInnerHTML={{
                     __html: p.note_content
                       ? p.note_content
-                          .replace(
-                            /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g,
-                            (_, label, url) =>
-                              `<a href="${encodeURI(url)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${(label || url).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</a>`
-                          )
-                          .replace(/\n/g, "<br />")
+                        .replace(
+                          /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g,
+                          (_, label, url) =>
+                            `<a href="${encodeURI(url)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${(label || url).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</a>`
+                        )
+                        .replace(/\n/g, "<br />")
                       : "",
                   }}
                 />
@@ -166,14 +167,19 @@ export default function MeetingBoardPage() {
           <section key={u.id} className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
             <h2 className="mb-3 font-semibold text-zinc-800">{u.name}</h2>
             <ul className="flex flex-col gap-2">
-              {(byOwner[u.id] ?? []).map((p) => (
-                <li
-                  key={p.id}
-                  className="rounded-xl border border-[var(--border)] bg-[#fff9c4] px-3 py-2 text-sm font-medium text-zinc-900"
-                >
-                  {p.note_content || "（空）"}
-                </li>
-              ))}
+              {(byOwner[u.id] ?? []).map((p) => {
+                const borderClass = getDueDateBorderClass(p.due_date);
+                return (
+                  <li
+                    key={p.id}
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-[#fff9c4] px-3 py-2 text-sm font-medium text-zinc-900 ${borderClass || "border-[var(--border)]"
+                      }`}
+                  >
+                    <span className="flex-1 whitespace-pre-wrap break-words">{p.note_content || "（空）"}</span>
+                    {p.due_date && <DueDateBadge dueDate={p.due_date} />}
+                  </li>
+                );
+              })}
             </ul>
             {(byOwner[u.id] ?? []).length === 0 && (
               <p className="text-sm text-zinc-500">今日のタスクなし</p>

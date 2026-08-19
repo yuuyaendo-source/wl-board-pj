@@ -10,7 +10,7 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 
-// 開発: localhost / 本番: wl-ai-board.internal.wonder-link.com または 172.16.1.84（同一オリジンなら空でOK）
+// 開発: localhost / 本番: wl-ai-board.internal.wonder-link.com または 172.16.1.203（同一オリジンなら空でOK）
 const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
@@ -185,7 +185,7 @@ export default function BoardPage() {
         }
     };
 
-    const addNote = (initialText = "") => {
+    const addNote = (initialText = "", dueDate = null) => {
         // タイムスタンプとランダム値でユニークIDを生成
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
@@ -212,6 +212,8 @@ export default function BoardPage() {
             x: centerX + Math.random() * 20 - 10,
             y: bottomY + Math.random() * 20 - 10,
             color: color,
+            dueDate: dueDate || null,
+            due_date: dueDate || null,
             pinned: false,
             author: username,
             createdAt: Date.now()
@@ -221,8 +223,8 @@ export default function BoardPage() {
         socket.emit("add-note", { boardId, note: newNote });
     };
 
-    const handleNoteSubmit = (text) => {
-        addNote(text);
+    const handleNoteSubmit = (text, dueDate) => {
+        addNote(text, dueDate);
         setShowNoteDialog(false);
     };
 

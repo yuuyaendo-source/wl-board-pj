@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import BoardPlacement, BoardType
+from app.models.board_placement import Lane
 from app.schemas.board_placement import (
     BoardPlacementCreate,
     BoardPlacementResponse,
@@ -33,7 +34,9 @@ def _placement_response(p: BoardPlacement) -> BoardPlacementResponse:
 
 @router.get("", response_model=list[BoardPlacementResponse])
 async def list_board_placements(
-    board_type: BoardType | None = Query(None, description="MAIN, TASK, PERSONAL, MORNING"),
+    board_type: BoardType | None = Query(
+        None, description="MAIN, TASK, PERSONAL, MORNING"
+    ),
     owner_id: int | None = Query(None, description="Personal の場合は必須"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -48,7 +51,9 @@ async def list_board_placements(
 
 
 @router.post("", response_model=BoardPlacementResponse)
-async def create_board_placement(body: BoardPlacementCreate, db: AsyncSession = Depends(get_db)):
+async def create_board_placement(
+    body: BoardPlacementCreate, db: AsyncSession = Depends(get_db)
+):
     """配置1件作成。同一 (note_id, board_type, owner_id) は一意制約のため重複不可。"""
     placement = BoardPlacement(
         note_id=body.note_id,
@@ -94,7 +99,9 @@ async def reorder_personal_lane(
 @router.get("/{placement_id}", response_model=BoardPlacementResponse)
 async def get_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
     """配置1件取得。"""
-    result = await db.execute(select(BoardPlacement).where(BoardPlacement.id == placement_id))
+    result = await db.execute(
+        select(BoardPlacement).where(BoardPlacement.id == placement_id)
+    )
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
@@ -110,7 +117,9 @@ async def update_board_placement(
     """配置の lane / position_x,y / matrix_quadrant / sort_order を更新。
     1) Personal で DONE にしたらパーソナルにも残しつつ Task を完了(5)に連動。
     2) Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻す（グレー→緑）。"""
-    result = await db.execute(select(BoardPlacement).where(BoardPlacement.id == placement_id))
+    result = await db.execute(
+        select(BoardPlacement).where(BoardPlacement.id == placement_id)
+    )
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
@@ -118,6 +127,12 @@ async def update_board_placement(
     prev_matrix = placement.matrix_quadrant
     if body.lane is not None:
         placement.lane = body.lane
+        # PERSONAL ボードでの手動レーン変更時にフラグを制御
+        if placement.board_type == BoardType.PERSONAL:
+            if body.lane == Lane.TODAY:
+                placement.is_manually_moved_to_today = True
+            else:
+                placement.is_manually_moved_to_today = False
     if body.position_x is not None:
         placement.position_x = body.position_x
     if body.position_y is not None:
@@ -126,8 +141,6 @@ async def update_board_placement(
         placement.matrix_quadrant = body.matrix_quadrant
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
-
-    from app.models.board_placement import Lane
 
     # Personal の DONE ↔ 他レーン変更時に Task の matrix_quadrant（5=完了）を連動
     # Personal で応援要請へ移動したらタスクボードにも載せ、以後タスクとして扱う
@@ -180,7 +193,9 @@ async def update_board_placement(
 @router.delete("/{placement_id}", status_code=204)
 async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
     """配置1件削除（付箋は削除されない）。"""
-    result = await db.execute(select(BoardPlacement).where(BoardPlacement.id == placement_id))
+    result = await db.execute(
+        select(BoardPlacement).where(BoardPlacement.id == placement_id)
+    )
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import type { PlacementWithNote } from "@/lib/types";
+import type { Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
@@ -25,16 +26,22 @@ function getStoredAutoImport(): boolean {
   return stored === "true";
 }
 
-/** 5列: アイデア(1), 短期タスク(2), 長期タスク(3), 重要(4), 完了(5) */
 const COLUMNS = [
-  { q: 1, title: "アイデア" },
-  { q: 2, title: "短期タスク" },
-  { q: 3, title: "長期タスク" },
-  { q: 4, title: "重要" },
-  { q: 5, title: "完了" },
+  { id: "unassigned", title: "応援要請・未振り分け", targetQ: null, droppable: false },
+  { id: "ideas", title: "アイデア", targetQ: 1, droppable: true },
+  { id: "tasks", title: "タスク", targetQ: 2, droppable: true },
+  { id: "done", title: "完了", targetQ: 5, droppable: true },
 ] as const;
 
-type PostitNote = { id: string; text: string; author?: string; createdAt?: number; gray?: boolean };
+type PostitNote = {
+  id: string;
+  text: string;
+  author?: string;
+  createdAt?: number;
+  gray?: boolean;
+  dueDate?: string;
+  due_date?: string;
+};
 
 export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
@@ -44,6 +51,7 @@ export default function TaskBoardPage() {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
   const { members: personalMembers } = usePersonalMembers();
+  const [teams, setTeams] = useState<Team[]>([]);
 
   // 初回マウント時に localStorage から復元（デフォルトはON）
   useEffect(() => {
@@ -72,9 +80,19 @@ export default function TaskBoardPage() {
     }
   }, []);
 
+  const fetchTeams = useCallback(async () => {
+    try {
+      const data = await api.teams.list();
+      setTeams(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => {
     fetchTask();
-  }, [fetchTask]);
+    fetchTeams();
+  }, [fetchTask, fetchTeams]);
 
   const handleImportFromPostit = useCallback(async () => {
     setImporting(true);
@@ -88,6 +106,7 @@ export default function TaskBoardPage() {
         .map((n) => ({
           id: String(n.id),
           text: n.text || "",
+          due_date: n.dueDate || n.due_date || null,
         }));
       const result = await api.stickyNotes.importFromPostit({
         board_id: POSTIT_BOARD_ID,
@@ -125,7 +144,11 @@ export default function TaskBoardPage() {
         const data = (await res.json()) as { notes: PostitNote[] };
         const notes = (data.notes || [])
           .filter((n) => !n.gray)
-          .map((n) => ({ id: String(n.id), text: n.text || "" }));
+          .map((n) => ({
+            id: String(n.id),
+            text: n.text || "",
+            due_date: n.dueDate || n.due_date || null,
+          }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
         await delay(REFETCH_DELAY_MS);
@@ -157,12 +180,40 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
+  const handleCopyToTeam = useCallback(
+    async (noteId: number, teamId: number, teamName: string) => {
+      try {
+        const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId, lane: "INBOX" });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+        setImportMessage(res.message);
+        setTimeout(() => setImportMessage(null), 3000);
+      } catch (err) {
+        setImportMessage(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
+        setTimeout(() => setImportMessage(null), 5000);
+      }
+    },
+    [fetchTask]
+  );
+
   const handleAppendContent = useCallback(
     async (noteId: number, currentContent: string | null, appendedText: string) => {
       const newContent = (currentContent || "").trim()
         ? `${(currentContent || "").trim()}\n${appendedText}`
         : appendedText;
       await api.stickyNotes.update(noteId, { content: newContent });
+      await delay(REFETCH_DELAY_MS);
+      await fetchTask();
+    },
+    [fetchTask]
+  );
+
+  // 期限変更ハンドラー
+  const handleDueDateChange = useCallback(
+    async (noteId: number, dueDateStr: string) => {
+      await api.stickyNotes.update(noteId, {
+        due_date: dueDateStr === "" ? "" : dueDateStr,
+      });
       await delay(REFETCH_DELAY_MS);
       await fetchTask();
     },
@@ -184,19 +235,34 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
-  const byColumnRaw = placements.reduce(
-    (acc, p) => {
+  const byColumnRaw: Record<string, PlacementWithNote[]> = {
+    unassigned: [],
+    ideas: [],
+    tasks: [],
+    done: [],
+  };
+
+  placements.forEach((p) => {
+    const isUnassignedRed = p.task_color === "red" && !p.is_accepted_by_others;
+    if (isUnassignedRed || p.task_color === "yellow") {
+      byColumnRaw.unassigned.push(p);
+    } else {
       const q = p.matrix_quadrant ?? 1;
-      if (!acc[q]) acc[q] = [];
-      acc[q].push(p);
-      return acc;
-    },
-    {} as Record<number, PlacementWithNote[]>
-  );
-  // 応援要請（赤）の付箋を各列の一番上に
-  const byColumn: Record<number, PlacementWithNote[]> = {};
-  for (const q of Object.keys(byColumnRaw).map(Number)) {
-    byColumn[q] = [...(byColumnRaw[q] ?? [])].sort((a, b) =>
+      if (q === 1) {
+        byColumnRaw.ideas.push(p);
+      } else if (q === 2 || q === 3 || q === 4) {
+        byColumnRaw.tasks.push(p);
+      } else if (q === 5) {
+        byColumnRaw.done.push(p);
+      } else {
+        byColumnRaw.ideas.push(p);
+      }
+    }
+  });
+
+  const byColumn: Record<string, PlacementWithNote[]> = {};
+  for (const key of Object.keys(byColumnRaw)) {
+    byColumn[key] = [...byColumnRaw[key]].sort((a, b) =>
       (a.task_color === "red" ? 0 : 1) - (b.task_color === "red" ? 0 : 1)
     );
   }
@@ -239,7 +305,7 @@ export default function TaskBoardPage() {
           >
             付箋ボードから取り込む
           </button>
-          
+
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
             <input
               type="checkbox"
@@ -266,19 +332,34 @@ export default function TaskBoardPage() {
               />
             ))}
           </div>
+          {teams.length > 0 && (
+            <>
+              <span className="text-sm text-zinc-500 mt-1">チームへ一括コピー（付箋をチームにドロップ）</span>
+              <div className="flex flex-wrap gap-2">
+                {teams.map((team) => (
+                  <TeamDropZone
+                    key={team.id}
+                    team={team}
+                    onDrop={(noteId) => handleCopyToTeam(noteId, team.id, team.name)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {COLUMNS.map(({ q, title }) => (
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {COLUMNS.map(({ id, title, targetQ, droppable }) => (
           <ColumnDropZone
-            key={q}
-            column={q}
+            key={id}
             title={title}
-            placements={byColumn[q] ?? []}
-            onDrop={(placementId) => handleDrop(placementId, q)}
+            placements={byColumn[id] ?? []}
+            onDrop={droppable && targetQ !== null ? (placementId) => handleDrop(placementId, targetQ) : undefined}
             onRefresh={fetchTask}
             onAppendContent={handleAppendContent}
+            onDueDateChange={handleDueDateChange}
+            droppable={droppable}
           />
         ))}
       </div>
@@ -304,9 +385,8 @@ function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
-        over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
-      }`}
+      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -343,9 +423,8 @@ function MemberDropZone({
 
   return (
     <div
-      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
-      }`}
+      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -355,30 +434,75 @@ function MemberDropZone({
   );
 }
 
+function TeamDropZone({
+  team,
+  onDrop,
+}: {
+  team: { id: number; name: string; member_count: number };
+  onDrop: (noteId: number) => void;
+}) {
+  const [over, setOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setOver(true);
+  };
+  const handleDragLeave = () => setOver(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOver(false);
+    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
+    if (noteId) onDrop(Number(noteId));
+  };
+
+  return (
+    <div
+      className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${over
+        ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+        : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
+        }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <span>👥</span>
+      <span className="font-medium">{team.name}</span>
+      <span className="text-xs opacity-60">({team.member_count}名)</span>
+    </div>
+  );
+}
+
 function ColumnDropZone({
-  column,
   title,
   placements,
   onDrop,
   onRefresh,
   onAppendContent,
+  onDueDateChange,
+  droppable = true,
 }: {
-  column: number;
   title: string;
   placements: PlacementWithNote[];
-  onDrop: (placementId: number) => void;
+  onDrop?: (placementId: number) => void;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
+  droppable?: boolean;
 }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (!droppable || !onDrop) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
   const handleDrop = async (e: React.DragEvent) => {
+    if (!droppable || !onDrop) return;
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
@@ -387,9 +511,8 @@ function ColumnDropZone({
 
   return (
     <div
-      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50/50" : ""
-      }`}
+      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : ""
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -404,6 +527,7 @@ function ColumnDropZone({
             cardColor={p.task_color}
             takenBy={p.taken_by}
             onAppendContent={onAppendContent}
+            onDueDateChange={onDueDateChange}
             onDragEnd={onRefresh}
           />
         ))}

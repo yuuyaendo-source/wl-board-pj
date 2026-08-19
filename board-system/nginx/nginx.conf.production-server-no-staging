@@ -20,13 +20,13 @@ http {
 
     server {
         listen 80;
-        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
+        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
         return 301 https://$host$request_uri;
     }
 
     server {
         listen 443 ssl;
-        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
+        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
 
         ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
         ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;

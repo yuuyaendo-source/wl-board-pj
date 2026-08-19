@@ -247,7 +247,7 @@
         padding: 4px 0;
     }
 
-    .toolbar > .divider {
+    .toolbar>.divider {
         display: block;
         width: 80%;
         height: 1px;

@@ -60,13 +60,31 @@ class Settings(BaseSettings):
             return None
         return int(v)
 
-    @field_validator("ollama_model_1", "ollama_model_2", "ollama_model_3", mode="before")
+    @field_validator(
+        "ollama_model_1", "ollama_model_2", "ollama_model_3", mode="before"
+    )
     @classmethod
     def optional_model_strip(cls, v: str | None) -> str | None:
         if v is None:
             return None
         s = str(v).strip()
         return s if s else None
+
+    # OAuthトークン暗号化キー (AES-256用に32バイト推奨)
+    token_encryption_key: str | None = Field(default=None)
+
+    @field_validator("token_encryption_key", mode="before")
+    @classmethod
+    def validate_encryption_key_length(cls, v: object) -> str:
+        # None または 空文字 の場合はエラーを出してアプリ起動を止める
+        if v is None or str(v).strip() == "":
+            raise ValueError("TOKEN_ENCRYPTION_KEY が環境変数に設定されていません！")
+        v = str(v).strip()
+        key_bytes = v.encode("utf-8")
+        if len(key_bytes) < 32:
+            # 32バイト未満の場合はパディング（開発環境向け）
+            v = v.ljust(32, "0")
+        return v[:32]
 
     # Gemini API（未使用: ローカル LLM 利用のためコメントアウト）
     # gemini_api_key: str | None = None
@@ -87,7 +105,9 @@ class Settings(BaseSettings):
     # Google カレンダー連携（OAuth 2.0）。未設定ならカレンダー連携は無効
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
-    google_calendar_redirect_uri: str | None = None  # 例: https://wl-ai-board.example.com/auth/google/callback
+    google_calendar_redirect_uri: str | None = (
+        None  # 例: https://wl-ai-board.example.com/auth/google/callback
+    )
     # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
     calendar_timezone: str = "Asia/Tokyo"
 
@@ -125,7 +145,9 @@ class Settings(BaseSettings):
         v = (v or "").strip().rstrip("/")
         return v if v else None
 
-    def resolve_ollama_for_target(self, target: int | None) -> tuple[str | None, str | None]:
+    def resolve_ollama_for_target(
+        self, target: int | None
+    ) -> tuple[str | None, str | None]:
         """
         スロット target（None = 環境の OLLAMA_URL のみ）に対応する (base_url, model_override)。
         model_override が None のときは Ollama 側でモデル自動解決。
@@ -133,7 +155,11 @@ class Settings(BaseSettings):
         if target is None:
             return self.ollama_url, self.ollama_model
         urls = {1: self.ollama_url_1, 2: self.ollama_url_2, 3: self.ollama_url_3}
-        models = {1: self.ollama_model_1, 2: self.ollama_model_2, 3: self.ollama_model_3}
+        models = {
+            1: self.ollama_model_1,
+            2: self.ollama_model_2,
+            3: self.ollama_model_3,
+        }
         u = urls.get(target) or self.ollama_url
         m = models.get(target) or self.ollama_model
         return u, m

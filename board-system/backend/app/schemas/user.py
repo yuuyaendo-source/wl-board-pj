@@ -7,6 +7,7 @@ class UserCreate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
+    team_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -14,6 +15,7 @@ class UserUpdate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
+    team_id: int | None = None
 
 
 class UserResponse(BaseModel):
@@ -22,6 +24,8 @@ class UserResponse(BaseModel):
     email: str | None
     call_name: str | None
     role: str | None
+    team_id: int | None = None
     face_count: int = 0
 
     model_config = {"from_attributes": True}
+

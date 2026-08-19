@@ -1,9 +1,9 @@
-# 本番サーバ用 Nginx 設定（wl-board-sys-sv / devuser01）
+# 本番サーバ用 Nginx 設定（wlboardsys-app-01 / devuser01）
 # 使い方: サーバで以下を実行
 #   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl reload nginx
 #
-# FQDN: wl-ai-board.internal.wonder-link.co.jp / IP: 172.16.1.84
+# FQDN: wl-ai-board.internal.wonder-link.co.jp / IP: 172.16.1.203
 # 証明書: Let's Encrypt 発行の *.internal.wonder-link.co.jp を /home/devuser01/sv_cert/ に fullchain.pem / privkey.pem で配置
 # staging.conf も include する（ステージング環境を使う場合）
 
@@ -26,14 +26,14 @@ http {
     # HTTP → HTTPS リダイレクト
     server {
         listen 80;
-        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
+        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
         return 301 https://$host$request_uri;
     }
 
     # HTTPS（Let's Encrypt *.internal.wonder-link.co.jp を sv_cert に配置して使用）
     server {
         listen 443 ssl;
-        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
+        server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
 
         ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
         ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;

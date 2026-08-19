@@ -7,23 +7,45 @@ const COLORS = [
     "#fff9c4", "#c5e1a5", "#ffccbc", "#b3e5fc", "#ffffff"
 ];
 
+function calcDaysLeft(dueDateStr) {
+    if (!dueDateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [y, m, d] = dueDateStr.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    const due = new Date(y, m - 1, d);
+    due.setHours(0, 0, 0, 0);
+    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDown, onMouseUp }) {
     const [isDragging, setIsDragging] = useState(false);
     const [appendText, setAppendText] = useState("");
+    const [showColorPicker, setShowColorPicker] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+
+    const dueDateVal = note.dueDate || note.due_date || "";
+    const [tempDueDate, setTempDueDate] = useState(dueDateVal);
+
     const noteRef = useRef(null);
     const offset = useRef({ x: 0, y: 0 });
 
     const isLarge = note.ratioW && note.ratioW >= 0.2;
+    const daysLeft = calcDaysLeft(dueDateVal);
+
+    useEffect(() => {
+        setTempDueDate(note.dueDate || note.due_date || "");
+    }, [note.dueDate, note.due_date]);
 
     const handleMouseDown = (e) => {
-        if (onMouseDown) onMouseDown(e); // Propagate to parent for line drawing
-        if (e.defaultPrevented || e.altKey) return; // Don't drag if line drawing
-        if (note.pinned) return; // Don't drag if pinned
+        if (onMouseDown) onMouseDown(e);
+        if (e.defaultPrevented || e.altKey) return;
+        if (note.pinned) return;
 
-        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return; // Allow text selection and button clicks
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
 
-        e.stopPropagation(); // Prevent board scroll when dragging note
-        e.preventDefault(); // Also prevent default to ensure board drag doesn't start
+        e.stopPropagation();
+        e.preventDefault();
 
         setIsDragging(true);
         const rect = noteRef.current.getBoundingClientRect();
@@ -35,14 +57,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
 
     const handleTouchStart = (e) => {
         if (note.pinned) return;
-        if (e.target.tagName === "TEXTAREA" || e.target.closest('button')) return;
-
-        // e.stopPropagation(); // Might interfere with scrolling if not dragging?
-        // For dragging, we generally want to capture it.
-        // But if the user taps a button, we don't want to start dragging.
-
-        // Touch events usually don't have defaultPrevented in the same way for "line drawing" unless we handle it.
-        // Assuming line drawing isn't primary on touch yet or works differently.
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
 
         setIsDragging(true);
         const touch = e.touches[0];
@@ -57,8 +72,6 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         const handleMouseMove = (e) => {
             if (!isDragging) return;
 
-            // Calculate new position relative to parent (canvas)
-            // We need to account for scale
             const parentRect = noteRef.current.parentElement.getBoundingClientRect();
 
             const newX = (e.clientX - parentRect.left - offset.current.x) / scale;
@@ -73,7 +86,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
 
         const handleTouchMove = (e) => {
             if (!isDragging) return;
-            e.preventDefault(); // Prevent scrolling while dragging
+            e.preventDefault();
 
             const touch = e.touches[0];
             const parentRect = noteRef.current.parentElement.getBoundingClientRect();
@@ -107,11 +120,14 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         onUpdate({ ...note, pinned: !note.pinned });
     };
 
-    const [showColorPicker, setShowColorPicker] = useState(false);
-
     const changeColor = (newColor) => {
         onUpdate({ ...note, color: newColor });
         setShowColorPicker(false);
+    };
+
+    const saveDueDate = (newDate) => {
+        onUpdate({ ...note, dueDate: newDate, due_date: newDate });
+        setShowDatePicker(false);
     };
 
     const submitAppend = () => {
@@ -122,11 +138,33 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         setAppendText("");
     };
 
+    let badgeClass = styles.badgeDefault;
+    let cardHighlightClass = "";
+    let badgeText = `📅 期限: ${dueDateVal}`;
+
+    if (daysLeft !== null) {
+        if (daysLeft < 0) {
+            badgeClass = styles.badgeExpired;
+            cardHighlightClass = styles.noteExpiredBorder;
+            badgeText = `⚠️ 期限切れ（${Math.abs(daysLeft)}日経過）`;
+        } else if (daysLeft === 0) {
+            badgeClass = styles.badgeToday;
+            cardHighlightClass = styles.noteTodayBorder;
+            badgeText = "🔥 本期日が期限！";
+        } else if (daysLeft <= 3) {
+            badgeClass = styles.badgeToday;
+            badgeText = `⏰ 期限まであと${daysLeft}日`;
+        } else if (daysLeft <= 10) {
+            badgeClass = styles.badgeWarning;
+            badgeText = `📅 期限まであと${daysLeft}日`;
+        }
+    }
+
     return (
         <div
             ref={noteRef}
             data-sticky-note="true"
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''} ${cardHighlightClass}`}
             style={{
                 left: note.x,
                 top: note.y,
@@ -147,8 +185,25 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                 {note.pinned ? "📌" : "📍"}
             </button>
             <button
+                className={styles.dateButton}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setTempDueDate(dueDateVal);
+                    setShowDatePicker(!showDatePicker);
+                    setShowColorPicker(false);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="期限を設定"
+            >
+                📅
+            </button>
+            <button
                 className={styles.colorButton}
-                onClick={() => setShowColorPicker(!showColorPicker)}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setShowColorPicker(!showColorPicker);
+                    setShowDatePicker(false);
+                }}
                 onMouseDown={(e) => e.stopPropagation()}
                 title="色を変更"
             >
@@ -167,6 +222,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
             >
                 🗑️
             </button>
+
             {showColorPicker && (
                 <div className={styles.colorPicker}>
                     {COLORS.map((c) => (
@@ -180,12 +236,63 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     ))}
                 </div>
             )}
+
+            {showDatePicker && (
+                <div
+                    className={styles.datePickerPopover}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                >
+                    <input
+                        type="date"
+                        value={tempDueDate}
+                        onChange={(e) => setTempDueDate(e.target.value)}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={styles.dateInput}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => saveDueDate(tempDueDate)}
+                        className={styles.saveBtn}
+                    >
+                        保存
+                    </button>
+                    {dueDateVal && (
+                        <button
+                            type="button"
+                            onClick={() => saveDueDate("")}
+                            className={styles.clearBtn}
+                        >
+                            消去
+                        </button>
+                    )}
+                </div>
+            )}
+
             {note.imageUrl && (
                 <div className={styles.imageContainer}>
                     <img src={note.imageUrl} alt="Sticky note capture" className={styles.image} />
                 </div>
             )}
-            {/* 既存テキストは表示のみ（URLはリンク化）。追記のみ可能 */}
+
+            {dueDateVal && (
+                <div className={styles.dueDateContainer}>
+                    <span
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setTempDueDate(dueDateVal);
+                            setShowDatePicker(!showDatePicker);
+                            setShowColorPicker(false);
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className={`${styles.dueDateBadge} ${badgeClass}`}
+                    >
+                        {badgeText}
+                    </span>
+                </div>
+            )}
+
             <div className={styles.noteContent}>
                 {(note.text || "").trim() ? (
                     <LinkifiedText text={note.text} className={styles.linkifiedText} />
@@ -203,6 +310,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
                     }
                 }}
                 onBlur={() => appendText.trim() && submitAppend()}
+                onMouseDown={(e) => e.stopPropagation()}
             />
             {note.groupId && (
                 <div className={styles.groupBadge} title={`Group ID: ${note.groupId}`}>

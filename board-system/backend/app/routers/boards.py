@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """4ボード View 用の集約 API。各ボードの配置一覧を付箋本文付きで返す。"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
@@ -34,6 +34,7 @@ async def get_board_main(db: AsyncSession = Depends(get_db)):
             sort_order=p.sort_order,
             note_content=n.content,
             note_status=n.status.value,
+            due_date=n.due_date.isoformat() if n.due_date else None,
         )
         for p, n in rows
     ]
@@ -57,13 +58,15 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     )
     rows = result.all()
     note_ids = [n.id for _, n in rows]
-    taken_by_map: dict[int, list[tuple[int, str, str]]] = {}  # note_id -> [(user_id, name, name_short)]
+    taken_by_map: dict[int, list[tuple[int, str, str]]] = {}
     done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
+    accepted_by_others_note_ids: set[int] = set()
     if note_ids:
         personal_result = await db.execute(
-            select(BoardPlacement.note_id, BoardPlacement.owner_id, BoardPlacement.lane)
-            .where(
+            select(
+                BoardPlacement.note_id, BoardPlacement.owner_id, BoardPlacement.lane
+            ).where(
                 BoardPlacement.board_type == BoardType.PERSONAL,
                 BoardPlacement.note_id.in_(note_ids),
                 BoardPlacement.owner_id.isnot(None),
@@ -81,21 +84,28 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 continue
             if note_id not in taken_by_map:
                 taken_by_map[note_id] = []
-            if (owner_id, u.name, _name_short(u.name)) not in [(x[0], x[1], x[2]) for x in taken_by_map[note_id]]:
+            if (owner_id, u.name, _name_short(u.name)) not in [
+                (x[0], x[1], x[2]) for x in taken_by_map[note_id]
+            ]:
                 taken_by_map[note_id].append((owner_id, u.name, _name_short(u.name)))
             if lane == Lane.DONE:
                 done_note_ids.add(note_id)
             if lane == Lane.HELP_REQUEST:
                 help_request_note_ids.add(note_id)
+            else:
+                accepted_by_others_note_ids.add(note_id)
     out = []
     for p, n in rows:
         taken = taken_by_map.get(n.id, [])
-        taken_by = [TakenByUser(id=uid, name=name, name_short=short) for uid, name, short in taken]
-        # 赤: 誰かが Personal の「応援要請」にしている
+        taken_by = [
+            TakenByUser(id=uid, name=name, name_short=short)
+            for uid, name, short in taken
+        ]
         if n.id in help_request_note_ids:
             task_color = "red"
-        # グレー: 誰かが Personal の Done にしている、またはタスクボード上で「完了」列（matrix_quadrant=5）にある
-        elif n.id in done_note_ids or (p.matrix_quadrant is not None and p.matrix_quadrant == 5):
+        elif n.id in done_note_ids or (
+            p.matrix_quadrant is not None and p.matrix_quadrant == 5
+        ):
             task_color = "grey"
         elif taken:
             task_color = "green"
@@ -116,6 +126,8 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 note_status=n.status.value,
                 taken_by=taken_by,
                 task_color=task_color,
+                is_accepted_by_others=n.id in accepted_by_others_note_ids,
+                due_date=n.due_date.isoformat() if n.due_date else None,
             )
         )
     return out
@@ -126,7 +138,7 @@ async def get_board_personal(
     owner_id: int = Query(..., description="Personal の所有者"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Personal Board: 指定 owner の INBOX/TODAY/DONE 配置。is_from_task = 当該 note が TASK に存在する。"""
+    """Personal Board: 指定 owner の INBOX/TODAY/DONE 配置。"""
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -141,11 +153,13 @@ async def get_board_personal(
     task_note_ids = set()
     if note_ids:
         r_task = await db.execute(
-            select(BoardPlacement.note_id).where(
+            select(BoardPlacement.note_id)
+            .where(
                 BoardPlacement.board_type == BoardType.TASK,
                 BoardPlacement.owner_id.is_(None),
                 BoardPlacement.note_id.in_(note_ids),
-            ).distinct()
+            )
+            .distinct()
         )
         task_note_ids = {row[0] for row in r_task.all()}
     return [
@@ -163,6 +177,8 @@ async def get_board_personal(
             note_status=n.status.value,
             placement_source=p.placement_source,
             is_from_task=(n.id in task_note_ids),
+            is_manually_moved_to_today=p.is_manually_moved_to_today,
+            due_date=n.due_date.isoformat() if n.due_date else None,
         )
         for p, n in rows
     ]
@@ -170,7 +186,7 @@ async def get_board_personal(
 
 @router.get("/morning", response_model=list[BoardPlacementWithNoteResponse])
 async def get_board_morning(db: AsyncSession = Depends(get_db)):
-    """Morning Meeting Board: 参加者の Today スナップショット用（現状は MORNING 配置一覧）。"""
+    """Morning Meeting Board"""
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -192,6 +208,7 @@ async def get_board_morning(db: AsyncSession = Depends(get_db)):
             note_content=n.content,
             note_status=n.status.value,
             placement_source=p.placement_source,
+            due_date=n.due_date.isoformat() if n.due_date else None,
         )
         for p, n in rows
     ]

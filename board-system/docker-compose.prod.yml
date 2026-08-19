@@ -29,6 +29,9 @@ services:
       GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
       GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      # --- 追加: OAuth トークン暗号化キー ---
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-default-insecure-key-32-bytes-long!}
+      # ------------------------------------
       # OAuth 成功後のリダイレクト先。Next basePath が /boards のため /boards を指定（未設定時は /boards）
       OAUTH_SUCCESS_REDIRECT_BASE: ${OAUTH_SUCCESS_REDIRECT_BASE:-/boards}
       POSTIT_BOARD_URL: http://sticky-note:3000
@@ -73,7 +76,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-
 
       BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
       NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wl-ai-board.internal.wonder-link.com/boards
