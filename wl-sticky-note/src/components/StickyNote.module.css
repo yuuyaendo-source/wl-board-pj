@@ -189,6 +189,11 @@
     color: #1e40af;
 }
 
+.badgeWarning {
+    background-color: #facc15;
+    color: #18181b;
+}
+
 .badgeToday {
     background-color: #f97316;
     color: #ffffff;

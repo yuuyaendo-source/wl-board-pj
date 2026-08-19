@@ -146,14 +146,17 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
         if (daysLeft < 0) {
             badgeClass = styles.badgeExpired;
             cardHighlightClass = styles.noteExpiredBorder;
-            badgeText = `⚠️ 期限切れ (${Math.abs(daysLeft)}日経過)`;
+            badgeText = `⚠️ 期限切れ（${Math.abs(daysLeft)}日経過）`;
         } else if (daysLeft === 0) {
             badgeClass = styles.badgeToday;
             cardHighlightClass = styles.noteTodayBorder;
-            badgeText = "🔥 本日が期限！";
+            badgeText = "🔥 本期日が期限！";
         } else if (daysLeft <= 3) {
             badgeClass = styles.badgeToday;
             badgeText = `⏰ 期限まであと${daysLeft}日`;
+        } else if (daysLeft <= 10) {
+            badgeClass = styles.badgeWarning;
+            badgeText = `📅 期限まであと${daysLeft}日`;
         }
     }
 
