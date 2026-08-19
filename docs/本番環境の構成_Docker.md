@@ -22,7 +22,7 @@ Board System を **Docker** で本番デプロイしている場合の構成の�
 
 ## 2. なぜ「SQLite」や「table users already exists」が出たか
 
-- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wl-board-sys-sv` のシェル）で動いています。
+- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wlboardsys-app-01` のシェル）で動いています。
 - そのとき使われるのは **ホストの** `board-system/backend/.env` と、そこに書かれた `DATABASE_URL` です。
 - 多くの場合、開発用に `DATABASE_URL=sqlite+aiosqlite:///./board.db` のままなので、**ホスト上の SQLite ファイル（board.db）** に対してマイグレーションが走ります。
 - その SQLite が「既にテーブルあり・alembic_version は空」のような状態だと、「table users already exists」になります。

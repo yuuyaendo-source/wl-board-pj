@@ -6,7 +6,7 @@
 ## 配置ファイル
 
 | ファイル | 説明 |
-|---|---|
+| --- | --- |
 | `latest.json` | 最新バージョン情報 (`version` と `url`) |
 | `WonderLinko.msi` | wl_desktop_app でビルドした MSI (`.\build_msi.ps1` で生成) |
 
@@ -54,6 +54,7 @@ bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込�
    - git commit & push
 
 2. **Windows ビルド PC**
+
    ```powershell
    cd wl-board-pj\wl_desktop_app
    Copy-Item config.production.example.json config.json -Force
@@ -61,19 +62,22 @@ bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込�
    ```
 
 3. **本番サーバへ転送**
+
    ```powershell
-   scp dist\WonderLinko.msi devuser01@wl-board-sys-sv:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
+   scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
    ```
 
 4. **本番サーバで反映** (bind mount 化後)
+
    ```bash
-   ssh devuser01@wl-board-sys-sv
+   ssh devuser01@wlboardsys-app-01
    cd /var/www/wlinko-pj
    git pull                        # latest.json 更新を取得 → bind mount で即反映
    # deploy.sh は不要 (frontend/backend のコード変更時のみ)
    ```
 
 5. **反映確認**
+
    ```bash
    curl https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json
    # → 新 version が返れば成功

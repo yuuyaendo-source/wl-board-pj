@@ -1,4 +1,4 @@
-# 本番サーバ用 Nginx 設定（wl-board-sys-sv / devuser01）
+# 本番サーバ用 Nginx 設定（wlboardsys-app-01 / devuser01）
 # 使い方: サーバで以下を実行
 #   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl reload nginx

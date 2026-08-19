@@ -2080,7 +2080,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ## 前提
 
-- 本番サーバー: `wl-board-sys-sv`
+- 本番サーバー: `wlboardsys-app-01`
 - プロジェクト配置: `/var/www/wlinko-pj`（または `wlinko-pj` を clone したディレクトリ）
 - バックエンドコンテナ: `linko-backend-blue`（`COLOR=blue` の場合）
 - バックエンドのコード: `board-system/backend` をビルドした Docker イメージ
@@ -2115,7 +2115,7 @@ git push origin main
 本番サーバーで、デプロイ元のディレクトリに移動して pull します。
 
 ```bash
-ssh devuser01@wl-board-sys-sv
+ssh devuser01@wlboardsys-app-01
 
 cd /var/www/wlinko-pj
 # または: cd /var/www/wl-board-pj  など、実際のプロジェクトパスに合わせる
@@ -2182,9 +2182,11 @@ docker exec -it linko-backend-blue alembic -c /app/alembic.ini upgrade head
 
 2. **DB の確認（任意）**
    - PostgreSQL に接続し、`board_placements` に `placement_source` カラムがあることを確認:
+
    ```bash
    docker exec -it linko-db psql -U linko_user -d linko_board_system -c '\d board_placements'
    ```
+
    - 一覧に `placement_source | character varying(32) | nullable` が出ていれば OK です。
 
 ---
@@ -2192,7 +2194,7 @@ docker exec -it linko-backend-blue alembic -c /app/alembic.ini upgrade head
 ## よくあるパターン（環境に応じて読み替え）
 
 | 項目 | 例 |
-|------|-----|
+| ------ | ----- |
 | Compose ファイル | `docker-compose.prod.yml` / `docker-compose.staging.yml` など |
 | 環境変数 | `COLOR=blue` を `.env` に書くか、`export` してから compose 実行 |
 | デプロイ用ブランチ | `main` / `master` / `release` など |
@@ -2257,7 +2259,7 @@ docker run --rm \
   alpine cp /src/boards.json /data/boards.json
 ```
 
-3. 付箋コンテナを再起動すると、復元した内容が反映されます。
+1. 付箋コンテナを再起動すると、復元した内容が反映されます。
 
 ```bash
 # 現在トラフィックを受けている方のコンテナを再起動（例: blue）
@@ -6474,101 +6476,6 @@ GOOGLE_CALENDAR_REDIRECT_URI=http://localhost:8000/auth/google/callback
 | 「OAuth session expired or invalid」 | 認可開始とコールバックが同じサーバ・DBに届いていない可能性。証明書でリクエストがブロックされていないか確認。本番では Let's Encrypt 等でブラウザが信頼する証明書を使用すること。 |
 </file>
 
-<file path="docs/nginx-with-board-system.conf.example">
-# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（linko-system と同じ証明書）
-# 証明書: Let's Encrypt *.internal.wonder-link.co.jp（ホストの fullchain.pem, privkey.pem）
-# FQDN: https://wl-ai-board.internal.wonder-link.co.jp/
-# 参照: docs/本番デプロイ手順.md
-#
-# 他サイト（例: server_name _ の brainstorming）がある場合、付箋ボード用を default_server にすると
-# 同じ IP でアクセスしたときにこちらが優先される。
-
-# HTTP → HTTPS リダイレクト
-server {
-    listen 80 default_server;
-    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl default_server;
-    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.84;
-
-    ssl_certificate     /home/hisashi/dev/sv_cert/fullchain.pem;
-    ssl_certificate_key /home/hisashi/dev/sv_cert/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-
-    access_log /var/log/nginx/wl-sticky-note_access.log;
-    error_log /var/log/nginx/wl-sticky-note_error.log;
-    client_max_body_size 10M;
-
-    # ----- Board System API（/boards-api/ → バックエンド 8000） -----
-    location /boards-api/ {
-        proxy_pass http://127.0.0.1:8000/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # ----- Board System フロント（/boards および /boards/... → Next.js 3001） -----
-    # /boards のみのときは /boards/ へリダイレクト（Next の basePath と相性を合わせる）
-    location = /boards {
-        return 302 $scheme://$host/boards/;
-    }
-    # Board System フロント（proxy_pass の末尾にパスを付けないこと。付けると /boards/task が 3001 で /task になり RSC が 404 になる）
-    location /boards/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # ----- 付箋ボード用 _next（3000 のアセット。Board System は /boards/_next/ を使用） -----
-    location /_next/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # ----- 付箋ボード（Next.js + Socket.IO, 3000） -----
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    location /socket.io/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_connect_timeout 7d;
-        proxy_send_timeout 7d;
-        proxy_read_timeout 7d;
-    }
-}
-</file>
-
 <file path="docs/デプロイ・運用.md">
 # デプロイ・運用ドキュメント 索引
 
@@ -7437,7 +7344,7 @@ Board System を **Docker** で本番デプロイしている場合の構成の�
 
 ## 2. なぜ「SQLite」や「table users already exists」が出たか
 
-- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wl-board-sys-sv` のシェル）で動いています。
+- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wlboardsys-app-01` のシェル）で動いています。
 - そのとき使われるのは **ホストの** `board-system/backend/.env` と、そこに書かれた `DATABASE_URL` です。
 - 多くの場合、開発用に `DATABASE_URL=sqlite+aiosqlite:///./board.db` のままなので、**ホスト上の SQLite ファイル（board.db）** に対してマイグレーションが走ります。
 - その SQLite が「既にテーブルあり・alembic_version は空」のような状態だと、「table users already exists」になります。
@@ -8109,7 +8016,7 @@ cd wl-board-pj\wl_desktop_app
 #### E-1. ホスト側のファイルを最新化
 
 ```bash
-ssh devuser01@wl-board-sys-sv
+ssh devuser01@wlboardsys-app-01
 cd /var/www/wlinko-pj
 git pull   # latest.json (3.0.0) と version.py bump を取得
 ls -la board-system/backend/desktop_app_releases/
@@ -8119,7 +8026,7 @@ ls -la board-system/backend/desktop_app_releases/
 
 ```powershell
 # Windows 側 (ビルド PC)
-scp dist\WonderLinko.msi devuser01@wl-board-sys-sv:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
+scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
 ```
 
 ホスト側で `WonderLinko.msi` と `latest.json` が同じ desktop_app_releases/ にあることを確認。
@@ -8258,7 +8165,7 @@ cd wl_desktop_app
 
 ```powershell
 # バージョン付き名 (例: 3.1.0) で配置
-scp dist\WonderLinko.msi devuser01@wl-board-sys-sv:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko_3.1.0.msi
+scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko_3.1.0.msi
 ```
 
 そして dev リポジトリの `latest.json` の `url` も同じファイル名にして commit + push:
@@ -8276,7 +8183,7 @@ scp dist\WonderLinko.msi devuser01@wl-board-sys-sv:/var/www/wlinko-pj/board-syst
 ### 4. 本番サーバで git pull
 
 ```bash
-ssh devuser01@wl-board-sys-sv
+ssh devuser01@wlboardsys-app-01
 cd /var/www/wlinko-pj
 git pull   # latest.json bump を取得
 ```
@@ -13338,132 +13245,6 @@ Thumbs.db
 # ※ もし設定用のJSONまで無視されたくない場合は .json は除外しないでください
 </file>
 
-<file path="wl-sticky-note/README.md">
-# wl-sticky-note（付箋ボード）
-
-リアルタイム協調型のブレインストーミング・付箋ボードアプリです。Next.js + Express + Socket.IO で構成され、複数人で同じボード上に付箋を追加・編集・移動できます。AI-Board・デスクトップアプリとの連携APIを提供します。
-
-- **プロジェクト名**: wl-sticky-note
-- **本番サーバ**: IP `172.16.1.84` / ドメイン `wl-ai-board.internal.wonder-link.com`
-- **本番ボード（連携先）**: **https://wl-ai-board.internal.wonder-link.com/board/wl** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
-- **Board System との本番同一サーバ運用**: 付箋ボードと Board System（Task / Personal / Meeting）を同一サーバで動かす場合は、**wlinko-pj ルートの [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** に従う（02_1_sticky-note と board-system をまとめて clone・ビルド・Nginx 設定）。単体デプロイの場合は下記「本番デプロイ」を参照。
-- **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは sparse-checkout で 02_1_sticky-note と board-system の両方を取得してデプロイする構成も可。
-
----
-
-## 主な機能
-
-- **付箋** … 作成・編集・移動・9色のカラーパレット・ピン留め・ボードから削除
-- **ボード** … 複数ボード対応・ボード名の保存・ダウンロード・インポート
-- **協調** … Socket.IO によるリアルタイム同期（複数ユーザー同時編集）
-- **グループ化** … 付箋のコメント一覧からグルーピング・解除
-- **連携** … AI-Board への付箋送信、デスクトップアプリ向けサマリーAPI（新付箋通知）
-
----
-
-## 必要な環境
-
-- Node.js 18.x 以上
-- npm 9.x 以上
-
----
-
-## クイックスタート（ローカル開発）
-
-アプリのソースは `src/` にあります。
-
-```powershell
-cd src
-npm install
-npm run dev
-```
-
-または:
-
-```powershell
-cd src
-.\start_server.ps1
-```
-
-起動後、ブラウザで **http://localhost:3000** を開き、ボード一覧からボードを選ぶか、`/board/<ボードID>` にアクセスしてください。
-
----
-
-## 本番デプロイ
-
-- **付箋ボード＋Board System を同一サーバで運用する場合**: リポジトリルートの **[docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** を参照（推奨。clone・付箋ボード deploy・Board System backend/frontend・Nginx の一連手順）。
-- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: https://wl-ai-board.internal.wonder-link.com
-
----
-
-## プロジェクト構成
-
-```
-02_1_sticky-note/
-├── README.md           # 本ファイル
-├── docs/               # 設計書・デプロイ手順
-│   ├── デプロイ手順.md   # 本番デプロイ（正規版）
-│   ├── 本番連携の整理.md
-│   └── AI-Board・Desktopアプリの開発の進め方.md
-└── src/                # アプリ本体
-    ├── app/            # Next.js App Router（画面）
-    ├── components/     # React コンポーネント
-    ├── server.js       # Express + Socket.IO サーバー
-    ├── boards.json     # ボードデータ（自動作成）
-    ├── package.json
-    ├── deploy.sh       # 本番デプロイ用スクリプト
-    └── README.md       # 開発・デプロイの詳細
-```
-
----
-
-## 環境変数
-
-`src/.env` に以下を設定できます（任意）。`src/.env.example` をコピーして編集してください。
-
-| 変数 | 説明 | 例 |
-|------|------|-----|
-| `PORT` | サーバーのポート | `3001` |
-| `NODE_ENV` | 実行環境 | `production` |
-| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wl-ai-board.local` / ローカル: `http://127.0.0.1:5000` |
-| `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
-| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `https://wl-ai-board.internal.wonder-link.com/boards` |
-
----
-
-## 提供API（他システム連携用）
-
-| メソッド | パス | 説明 |
-|----------|------|------|
-| GET | `/api/health` | 死活確認（Express API 稼働確認用） |
-| GET | `/api/boards/:id/summary` | ボードのサマリー（付箋数・最終付箋時刻）。Desktopアプリのポーリング用 |
-| GET | `/api/boards/:id/notes` | **付箋全件取得**。`{ boardId, notes: [{ id, text, author, createdAt }] }` を返す。AI-Board の「付箋を全件取得」ボタン用。 |
-| POST | `/api/sticky_notes` | 付箋を追加・更新。AI-Board のカメラ検知付箋送信用 |
-| POST | `/api/boards/:id/clear` | 指定ボードの付箋・線を全削除 |
-
-- **本番連携先ボード**: `wl` → http://wl-sticky-note.local/board/wl
-- **本番と AI-Board・Desktop の連携**: [docs/本番連携の整理.md](docs/本番連携の整理.md) を参照
-
----
-
-## 関連アプリ
-
-- **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント・音声生成。また `GET /api/boards/:id/notes` で付箋を全件取得し、ローテーション表示する「付箋を全件取得」ボタンを提供。
-- **Wonder Rinko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
-
----
-
-## ドキュメント
-
-| ドキュメント | 内容 |
-|--------------|------|
-| [docs/デプロイ手順.md](docs/デプロイ手順.md) | 本番デプロイ（正規版・唯一の手順） |
-| [docs/本番連携の整理.md](docs/本番連携の整理.md) | 本番と AI-Board・Desktop の連携・チェックリスト |
-| [docs/AI-Board・Desktopアプリの開発の進め方.md](docs/AI-Board・Desktopアプリの開発の進め方.md) | Desktop 配布・AI-Board の本番連携 |
-| [docs/開発の進め方.md](docs/開発の進め方.md) | ローカル開発フロー・本番反映 |
-| [src/README.md](src/README.md) | 開発・デプロイの詳細・プロジェクト構造 |
-</file>
-
 <file path="wl-sticky-note/機能追加指示書1.md">
 # 目的
 
@@ -17789,7 +17570,7 @@ http {
 </file>
 
 <file path="board-system/nginx/nginx.conf.production-server">
-# 本番サーバ用 Nginx 設定（wl-board-sys-sv / devuser01）
+# 本番サーバ用 Nginx 設定（wlboardsys-app-01 / devuser01）
 # 使い方: サーバで以下を実行
 #   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl reload nginx
@@ -18217,6 +17998,101 @@ services:
 volumes:
   postgres_data:
   sticky_data:
+</file>
+
+<file path="docs/nginx-with-board-system.conf.example">
+# Nginx 設定例: 付箋ボード + Board System を同一ドメインで提供（linko-system と同じ証明書）
+# 証明書: Let's Encrypt *.internal.wonder-link.co.jp（ホストの fullchain.pem, privkey.pem）
+# FQDN: https://wl-ai-board.internal.wonder-link.co.jp/
+# 参照: docs/本番デプロイ手順.md
+#
+# 他サイト（例: server_name _ の brainstorming）がある場合、付箋ボード用を default_server にすると
+# 同じ IP でアクセスしたときにこちらが優先される。
+
+# HTTP → HTTPS リダイレクト
+server {
+    listen 80 default_server;
+    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name wl-ai-board.internal.wonder-link.co.jp 172.16.1.203;
+
+    ssl_certificate     /home/hisashi/dev/sv_cert/fullchain.pem;
+    ssl_certificate_key /home/hisashi/dev/sv_cert/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+
+    access_log /var/log/nginx/wl-sticky-note_access.log;
+    error_log /var/log/nginx/wl-sticky-note_error.log;
+    client_max_body_size 10M;
+
+    # ----- Board System API（/boards-api/ → バックエンド 8000） -----
+    location /boards-api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ----- Board System フロント（/boards および /boards/... → Next.js 3001） -----
+    # /boards のみのときは /boards/ へリダイレクト（Next の basePath と相性を合わせる）
+    location = /boards {
+        return 302 $scheme://$host/boards/;
+    }
+    # Board System フロント（proxy_pass の末尾にパスを付けないこと。付けると /boards/task が 3001 で /task になり RSC が 404 になる）
+    location /boards/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # ----- 付箋ボード用 _next（3000 のアセット。Board System は /boards/_next/ を使用） -----
+    location /_next/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # ----- 付箋ボード（Next.js + Socket.IO, 3000） -----
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_connect_timeout 7d;
+        proxy_send_timeout 7d;
+        proxy_read_timeout 7d;
+    }
+}
 </file>
 
 <file path="docs/SSL-Setup.md">
@@ -18828,6 +18704,38 @@ if ($msiPath) {
     Write-Host "Note: Put production config.json before building to bundle it." -ForegroundColor Gray
 } else {
     Write-Host "MSI not found in dist. Check build output." -ForegroundColor Yellow
+}
+</file>
+
+<file path="wl_desktop_app/config.json">
+{
+  "postit_board_id": "wl",
+  "postit_board_url": "http://127.0.0.1:3000/",
+  "mini_port_api_url": "http://127.0.0.1:3000/board/wl",
+  "mini_port_taskboard_url": "http://127.0.0.1:3000/boards/taskboard",
+  "board_system_url": "http://127.0.0.1:8000",
+  "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",
+  "user_id": "",
+  "display_name": "",
+  "board_system_personal_id": "",
+  "tray_click_action": "postit",
+  "postit_poll_interval_sec": 60,
+  "notifications_enabled": true,
+  "avatar_visible": false,
+  "sound_enabled": false,
+  "toast_duration_sec": 8,
+  "toast_icon_path": "",
+  "open_personal_on_start": false,
+  "personal_path": "",
+  "ai_board_url": "http://127.0.0.1:5000/",
+  "linko_server_url": "http://127.0.0.1:5000",
+  "features": {
+    "taskbar_mode": false,
+    "linko_avatar": false,
+    "visitor_notify": false,
+    "visitor_notify_sound": false,
+    "brainstorm": false
+  }
 }
 </file>
 
@@ -20582,6 +20490,132 @@ src/
 - **Webサーバー**: Nginx
 </file>
 
+<file path="wl-sticky-note/README.md">
+# wl-sticky-note（付箋ボード）
+
+リアルタイム協調型のブレインストーミング・付箋ボードアプリです。Next.js + Express + Socket.IO で構成され、複数人で同じボード上に付箋を追加・編集・移動できます。AI-Board・デスクトップアプリとの連携APIを提供します。
+
+- **プロジェクト名**: wl-sticky-note
+- **本番サーバ**: IP `172.16.1.203` / ドメイン `wl-ai-board.internal.wonder-link.com`
+- **本番ボード（連携先）**: **<https://wl-ai-board.internal.wonder-link.com/board/wl>** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
+- **Board System との本番同一サーバ運用**: 付箋ボードと Board System（Task / Personal / Meeting）を同一サーバで動かす場合は、**wlinko-pj ルートの [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** に従う（02_1_sticky-note と board-system をまとめて clone・ビルド・Nginx 設定）。単体デプロイの場合は下記「本番デプロイ」を参照。
+- **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは sparse-checkout で 02_1_sticky-note と board-system の両方を取得してデプロイする構成も可。
+
+---
+
+## 主な機能
+
+- **付箋** … 作成・編集・移動・9色のカラーパレット・ピン留め・ボードから削除
+- **ボード** … 複数ボード対応・ボード名の保存・ダウンロード・インポート
+- **協調** … Socket.IO によるリアルタイム同期（複数ユーザー同時編集）
+- **グループ化** … 付箋のコメント一覧からグルーピング・解除
+- **連携** … AI-Board への付箋送信、デスクトップアプリ向けサマリーAPI（新付箋通知）
+
+---
+
+## 必要な環境
+
+- Node.js 18.x 以上
+- npm 9.x 以上
+
+---
+
+## クイックスタート（ローカル開発）
+
+アプリのソースは `src/` にあります。
+
+```powershell
+cd src
+npm install
+npm run dev
+```
+
+または:
+
+```powershell
+cd src
+.\start_server.ps1
+```
+
+起動後、ブラウザで **<http://localhost:3000>** を開き、ボード一覧からボードを選ぶか、`/board/<ボードID>` にアクセスしてください。
+
+---
+
+## 本番デプロイ
+
+- **付箋ボード＋Board System を同一サーバで運用する場合**: リポジトリルートの **[docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** を参照（推奨。clone・付箋ボード deploy・Board System backend/frontend・Nginx の一連手順）。
+- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: <https://wl-ai-board.internal.wonder-link.com>
+
+---
+
+## プロジェクト構成
+
+```
+02_1_sticky-note/
+├── README.md           # 本ファイル
+├── docs/               # 設計書・デプロイ手順
+│   ├── デプロイ手順.md   # 本番デプロイ（正規版）
+│   ├── 本番連携の整理.md
+│   └── AI-Board・Desktopアプリの開発の進め方.md
+└── src/                # アプリ本体
+    ├── app/            # Next.js App Router（画面）
+    ├── components/     # React コンポーネント
+    ├── server.js       # Express + Socket.IO サーバー
+    ├── boards.json     # ボードデータ（自動作成）
+    ├── package.json
+    ├── deploy.sh       # 本番デプロイ用スクリプト
+    └── README.md       # 開発・デプロイの詳細
+```
+
+---
+
+## 環境変数
+
+`src/.env` に以下を設定できます（任意）。`src/.env.example` をコピーして編集してください。
+
+| 変数 | 説明 | 例 |
+| ------ | ------ | ----- |
+| `PORT` | サーバーのポート | `3001` |
+| `NODE_ENV` | 実行環境 | `production` |
+| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wl-ai-board.local` / ローカル: `http://127.0.0.1:5000` |
+| `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
+| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `https://wl-ai-board.internal.wonder-link.com/boards` |
+
+---
+
+## 提供API（他システム連携用）
+
+| メソッド | パス | 説明 |
+| ---------- | ------ | ------ |
+| GET | `/api/health` | 死活確認（Express API 稼働確認用） |
+| GET | `/api/boards/:id/summary` | ボードのサマリー（付箋数・最終付箋時刻）。Desktopアプリのポーリング用 |
+| GET | `/api/boards/:id/notes` | **付箋全件取得**。`{ boardId, notes: [{ id, text, author, createdAt }] }` を返す。AI-Board の「付箋を全件取得」ボタン用。 |
+| POST | `/api/sticky_notes` | 付箋を追加・更新。AI-Board のカメラ検知付箋送信用 |
+| POST | `/api/boards/:id/clear` | 指定ボードの付箋・線を全削除 |
+
+- **本番連携先ボード**: `wl` → <http://wl-sticky-note.local/board/wl>
+- **本番と AI-Board・Desktop の連携**: [docs/本番連携の整理.md](docs/本番連携の整理.md) を参照
+
+---
+
+## 関連アプリ
+
+- **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント・音声生成。また `GET /api/boards/:id/notes` で付箋を全件取得し、ローテーション表示する「付箋を全件取得」ボタンを提供。
+- **Wonder Rinko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
+
+---
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+| -------------- | ------ |
+| [docs/デプロイ手順.md](docs/デプロイ手順.md) | 本番デプロイ（正規版・唯一の手順） |
+| [docs/本番連携の整理.md](docs/本番連携の整理.md) | 本番と AI-Board・Desktop の連携・チェックリスト |
+| [docs/AI-Board・Desktopアプリの開発の進め方.md](docs/AI-Board・Desktopアプリの開発の進め方.md) | Desktop 配布・AI-Board の本番連携 |
+| [docs/開発の進め方.md](docs/開発の進め方.md) | ローカル開発フロー・本番反映 |
+| [src/README.md](src/README.md) | 開発・デプロイの詳細・プロジェクト構造 |
+</file>
+
 <file path="board-system/backend/app/models/board_placement.py">
 # -*- coding: utf-8 -*-
 """board_placements テーブル。付箋がどのボードのどこにあるかを管理。"""
@@ -22238,38 +22272,6 @@ def get_log_file_path() -> str:
     """ログファイルの絶対パスを返す。"""
     from config_loader import get_app_base_dir
     return os.path.join(get_app_base_dir(), "WonderLinko.log")
-</file>
-
-<file path="wl_desktop_app/config.json">
-{
-  "postit_board_id": "wl",
-  "postit_board_url": "http://127.0.0.1:3000/",
-  "mini_port_api_url": "http://127.0.0.1:3000/board/wl",
-  "mini_port_taskboard_url": "http://127.0.0.1:3000/boards/taskboard",
-  "board_system_url": "http://127.0.0.1:8000",
-  "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",
-  "user_id": "",
-  "display_name": "",
-  "board_system_personal_id": "",
-  "tray_click_action": "postit",
-  "postit_poll_interval_sec": 60,
-  "notifications_enabled": true,
-  "avatar_visible": false,
-  "sound_enabled": false,
-  "toast_duration_sec": 8,
-  "toast_icon_path": "",
-  "open_personal_on_start": false,
-  "personal_path": "",
-  "ai_board_url": "http://127.0.0.1:5000/",
-  "linko_server_url": "http://127.0.0.1:5000",
-  "features": {
-    "taskbar_mode": false,
-    "linko_avatar": false,
-    "visitor_notify": false,
-    "visitor_notify_sound": false,
-    "brainstorm": false
-  }
-}
 </file>
 
 <file path="wl_desktop_app/face_registry_self_client.py">
@@ -24711,6 +24713,53 @@ docker exec -it linko-backend-blue alembic upgrade head   # マイグレーシ�
 - [docs/開発・改善プラン/改善指示書11.md](../docs/開発・改善プラン/改善指示書11.md) — Task/Personal UI 仕様
 </file>
 
+<file path="wl_desktop_app/config.production.example.json">
+{
+  "_description": "本番用テンプレート。このファイルを config.json にコピーし、URL を環境に合わせて編集してから MSI ビルドまたは配布する。board_system_personal_id・user_id・display_name は、アプリ内でメールアドレスを入力すると Board System の /users/by_email で解決され、自動で保存される（ミニポートの「ボード」クリック時または初回起動時の案内）。personal_path はレガシー AI ボード用のため、Board System 利用時は空のままでよい。",
+  "postit_board_id": "wl",
+  "postit_board_url": "https://wl-ai-board.internal.wonder-link.com/",
+  "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",
+  "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",
+  "board_system_url": "https://wl-ai-board.internal.wonder-link.com/api/bs",
+  "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",
+  "update_network_check_url": "",
+  "update_network_check_interval_sec": 5,
+  "update_network_check_max_wait_sec": 180,
+  "network_unreachable_backoff_sec": 30,
+  "user_id": "",
+  "display_name": "",
+  "board_system_personal_id": "",
+  "tray_click_action": "postit",
+  "postit_poll_interval_sec": 60,
+  "notifications_enabled": true,
+  "avatar_visible": false,
+  "sound_enabled": false,
+  "toast_duration_sec": 8,
+  "toast_icon_path": "",
+  "open_personal_on_start": false,
+  "personal_path": "",
+  "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/",
+  "linko_server_url": "https://linko-board.internal.wonder-link.com",
+  "features": {
+    "taskbar_mode": false,
+    "linko_avatar": false,
+    "visitor_notify": false,
+    "visitor_notify_sound": false,
+    "brainstorm": false
+  },
+  "security": {
+    "allowed_host_suffixes": [
+      ".internal.wonder-link.com"
+    ],
+    "allowed_hosts": [
+      "localhost",
+      "127.0.0.1"
+    ],
+    "allow_private_ips": false
+  }
+}
+</file>
+
 <file path="wl_desktop_app/face_registry_client.py">
 # -*- coding: utf-8 -*-
 """linko-system の face_registry 管理 API クライアント（管理者デスクトップ用）。"""
@@ -25018,6 +25067,32 @@ def workspace_directory_sync(cfg: dict) -> dict:
 def is_admin_configured(cfg: dict) -> bool:
     """管理機能を使う最低条件（URL 設定済み）。"""
     return bool((cfg.get("linko_server_url") or "").strip())
+</file>
+
+<file path="wl_desktop_app/requirements.txt">
+# Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+# Python 3.10+
+pystray>=0.19.5
+Pillow>=10.0.0
+requests>=2.31.0
+customtkinter>=5.2.0
+pynput>=1.7.6
+# Phase 3 (来客通知): linko-system の visitor_arrived event を subscribe するため
+python-socketio[client]>=5.11.0
+# Phase 5a (資料添付): チャットで PDF/Word を読ませるためのテキスト抽出 (端末内処理)
+pypdf>=4.0.0
+python-docx>=1.1.0
+# Windows のみ（トースト通知用）。Linux/macOS ではスキップされる
+pywin32>=306; sys_platform == "win32"
+winotify>=1.1.0; sys_platform == "win32"
+win10toast-click>=0.1.2; sys_platform == "win32"
+# Windows の zoneinfo (Asia/Tokyo) 用
+tzdata>=2024.1; sys_platform == "win32"
+# 社員顔登録（管理者）: Webカメラ撮影
+opencv-python>=4.8.0; sys_platform == "win32"
+# 社員音声登録（管理者）: マイク録音
+sounddevice>=0.4.6; sys_platform == "win32"
+numpy>=1.24.0; sys_platform == "win32"
 </file>
 
 <file path="wl-sticky-note/src/components/StickyNote.module.css">
@@ -26749,53 +26824,6 @@ def notify_delivery_done() -> None:
         _busy = False
 </file>
 
-<file path="wl_desktop_app/config.production.example.json">
-{
-  "_description": "本番用テンプレート。このファイルを config.json にコピーし、URL を環境に合わせて編集してから MSI ビルドまたは配布する。board_system_personal_id・user_id・display_name は、アプリ内でメールアドレスを入力すると Board System の /users/by_email で解決され、自動で保存される（ミニポートの「ボード」クリック時または初回起動時の案内）。personal_path はレガシー AI ボード用のため、Board System 利用時は空のままでよい。",
-  "postit_board_id": "wl",
-  "postit_board_url": "https://wl-ai-board.internal.wonder-link.com/",
-  "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",
-  "mini_port_taskboard_url": "https://wl-ai-board.internal.wonder-link.com/boards/taskboard",
-  "board_system_url": "https://wl-ai-board.internal.wonder-link.com/api/bs",
-  "update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json",
-  "update_network_check_url": "",
-  "update_network_check_interval_sec": 5,
-  "update_network_check_max_wait_sec": 180,
-  "network_unreachable_backoff_sec": 30,
-  "user_id": "",
-  "display_name": "",
-  "board_system_personal_id": "",
-  "tray_click_action": "postit",
-  "postit_poll_interval_sec": 60,
-  "notifications_enabled": true,
-  "avatar_visible": false,
-  "sound_enabled": false,
-  "toast_duration_sec": 8,
-  "toast_icon_path": "",
-  "open_personal_on_start": false,
-  "personal_path": "",
-  "ai_board_url": "https://wl-ai-board.internal.wonder-link.com/",
-  "linko_server_url": "https://linko-board.internal.wonder-link.com",
-  "features": {
-    "taskbar_mode": false,
-    "linko_avatar": false,
-    "visitor_notify": false,
-    "visitor_notify_sound": false,
-    "brainstorm": false
-  },
-  "security": {
-    "allowed_host_suffixes": [
-      ".internal.wonder-link.com"
-    ],
-    "allowed_hosts": [
-      "localhost",
-      "127.0.0.1"
-    ],
-    "allow_private_ips": false
-  }
-}
-</file>
-
 <file path="wl_desktop_app/face_registry_self_dialog.py">
 # -*- coding: utf-8 -*-
 """社員向け顔セルフ登録ウィザード。"""
@@ -27188,32 +27216,6 @@ def open_face_self_register_dialog(master=None, cfg: Optional[dict] = None) -> O
             _dialog_instance = None
     _dialog_instance = FaceSelfRegisterDialog(master=master, cfg=cfg)
     return _dialog_instance
-</file>
-
-<file path="wl_desktop_app/requirements.txt">
-# Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
-# Python 3.10+
-pystray>=0.19.5
-Pillow>=10.0.0
-requests>=2.31.0
-customtkinter>=5.2.0
-pynput>=1.7.6
-# Phase 3 (来客通知): linko-system の visitor_arrived event を subscribe するため
-python-socketio[client]>=5.11.0
-# Phase 5a (資料添付): チャットで PDF/Word を読ませるためのテキスト抽出 (端末内処理)
-pypdf>=4.0.0
-python-docx>=1.1.0
-# Windows のみ（トースト通知用）。Linux/macOS ではスキップされる
-pywin32>=306; sys_platform == "win32"
-winotify>=1.1.0; sys_platform == "win32"
-win10toast-click>=0.1.2; sys_platform == "win32"
-# Windows の zoneinfo (Asia/Tokyo) 用
-tzdata>=2024.1; sys_platform == "win32"
-# 社員顔登録（管理者）: Webカメラ撮影
-opencv-python>=4.8.0; sys_platform == "win32"
-# 社員音声登録（管理者）: マイク録音
-sounddevice>=0.4.6; sys_platform == "win32"
-numpy>=1.24.0; sys_platform == "win32"
 </file>
 
 <file path="wl-sticky-note/src/components/StickyNote.js">
@@ -34526,6 +34528,496 @@ def open_chat_panel_with_task(
     return panel
 </file>
 
+<file path="wl_desktop_app/settings_dialog.py">
+# -*- coding: utf-8 -*-
+"""設定ダイアログ。
+
+v2 機能フラグ (features.*) の ON/OFF と、表示名・主要 URL の確認/編集を 1 画面で行う。
+
+トレイメニューまたはミニポートから ``open_settings_dialog()`` を呼ぶ。
+別スレッドから呼んでも安全なように、Tk のメインスレッドで実行されるよう
+``after`` でディスパッチするのは呼び出し側の責任とする (Tk の制約)。
+"""
+from __future__ import annotations
+
+import os
+import sys
+from typing import Optional
+
+try:
+    import customtkinter as ctk
+    import tkinter as tk
+except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
+    print("customtkinter が見つかりません。pip install -r requirements.txt を実行してください。", e)
+    raise
+
+from config_loader import load_config, save_config
+from version import __version__
+
+
+# --- features の表示メタデータ -------------------------------------------------
+# (キー, 表示ラベル, 説明文)。features 追加時はここに 1 行足すだけで UI に反映される。
+_TRAY_CLICK_OPTIONS = [
+    ("postit", "付箋ボード"),
+    ("personal", "パーソナル"),
+    ("last_notification", "最後のお知らせ"),
+]
+
+_FEATURE_ROWS = [
+    (
+        "taskbar_mode",
+        "タスクバーに常駐",
+        "フローティングのミニポートではなく、通常 Window としてタスクバーに常駐します。",
+    ),
+    (
+        "linko_avatar",
+        "リン子アバター表示",
+        "ミニポート / Window にリン子の 2D アバター (表情切替) を表示します。",
+    ),
+    (
+        "visitor_notify",
+        "来客通知 (トーストでお知らせ)",
+        "受付 (入口) で来客が検知されたとき、トースト通知でお知らせします。Chatwork 通知とは併用されます。",
+    ),
+    (
+        "visitor_notify_sound",
+        "来客通知に音声も鳴らす (visitor_notify が ON の場合)",
+        "上記がONのとき、リン子の音声 (受付で再生されたものと同じ) もデスクトップで鳴らします。会議中などは OFF 推奨。",
+    ),
+    (
+        "brainstorm",
+        "ブレスト機能 (チャット・音声)",
+        "業務サポート的なブレスト相手 (社内情報を踏まえた回答)。CATO 経由で社内 LAN 到達できることが前提。",
+    ),
+    (
+        "task_remind",
+        "個人タスクをリマインド (Today)",
+        "Today のタスクを一覧で確認します（既定 13:00 / 17:00）。各タスクに [継続][完了][相談] で応答。要: パーソナルログイン。",
+    ),
+    (
+        "calendar_notify",
+        "カレンダー予定をリマインド",
+        "Personal ボードで Google 連携済みのとき、開始の N 分前に通知（下で複数指定可、各 1〜15 分）。未連携時は何もしません。",
+    ),
+    (
+        "calendar_create",
+        "カレンダーに予定を登録 (リン子に依頼)",
+        "ブレストで「明日14時に会議入れて」などと話しかけ、確認後に Google カレンダーへ登録。要: パーソナルログイン・Google 連携。",
+    ),
+    (
+        "remind_voice",
+        "リマインドをリン子の声で読み上げる",
+        "タスク/カレンダーリマインド時に TTS 音声を再生 (要: linko_server_url)。会議中は OFF 推奨。",
+    ),
+    (
+        "face_registry_manage",
+        "社員・顔・音声の管理 (管理者)",
+        "linko-system の社員名簿・顔・音声サンプルを管理（要: linko_admin_token）。管理者 PC のみ ON にしてください。",
+    ),
+    (
+        "face_registry_self",
+        "自分の顔を登録",
+        "社内メールで本人確認後、自分の顔を登録（連写3枚）。要: linko 名簿にメール登録済み・社内ネットワーク。",
+    ),
+    (
+        "voice_registry_self",
+        "自分の声を登録",
+        "同一 OTP で声紋を登録（チャレンジ付きライブ録音3回）。要: linko 音声セルフ登録 ON・社内ネットワーク。",
+    ),
+]
+
+
+_dialog_instance: Optional["SettingsDialog"] = None
+
+
+class SettingsDialog(ctk.CTkToplevel):
+    """設定ダイアログ Window。シングルトンで運用する想定。"""
+
+    WIDTH = 520
+    HEIGHT = 660
+
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.title("Wonder Linko 設定")
+        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        self.resizable(False, False)
+        try:
+            # ウィンドウアイコンを assets/linko.ico に
+            base = os.path.dirname(os.path.abspath(__file__))
+            ico = os.path.join(base, "assets", "linko.ico")
+            if os.path.isfile(ico) and sys.platform.startswith("win"):
+                self.iconbitmap(ico)
+        except Exception:
+            pass
+
+        self._cfg = load_config()
+        self._feature_vars: dict[str, tk.BooleanVar] = {}
+        self._display_name_var = tk.StringVar(value=self._cfg.get("display_name", "") or "")
+        times = self._cfg.get("task_remind_times") or ["13:00", "17:00"]
+        if isinstance(times, list):
+            times_str = ", ".join(str(t) for t in times)
+        else:
+            times_str = "13:00, 17:00"
+        self._task_remind_times_var = tk.StringVar(value=times_str)
+        self._task_remind_weekdays_var = tk.BooleanVar(
+            value=bool(self._cfg.get("task_remind_weekdays_only", True))
+        )
+        from config_loader import parse_calendar_remind_minutes_list
+
+        cal_mins = parse_calendar_remind_minutes_list(self._cfg)
+        self._calendar_remind_minutes_var = tk.StringVar(
+            value=", ".join(str(m) for m in cal_mins)
+        )
+        tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
+        tray_action = self._cfg.get("tray_click_action", "postit")
+        self._tray_click_var = tk.StringVar(value=tray_labels.get(tray_action, "付箋ボード"))
+        try:
+            import startup
+
+            startup_on = startup.is_startup_enabled()
+        except Exception:
+            startup_on = False
+        self._startup_var = tk.BooleanVar(value=startup_on)
+        self._linko_admin_token_var = tk.StringVar(value=self._cfg.get("linko_admin_token", "") or "")
+
+        self._build_ui()
+
+        # 閉じた後に再オープン可能にする
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.lift()
+        self.focus_force()
+
+    # --- UI 構築 -----------------------------------------------------------
+    def _build_ui(self) -> None:
+        pad = 12
+
+        # 下部ボタンを先に bottom に確保
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=pad, pady=(6, pad), side="bottom")
+        ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
+        ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
+            side="right", padx=(0, 8)
+        )
+        ctk.CTkButton(
+            btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
+            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        ).pack(side="left")
+
+        # 設定全体をスクロール（機能 ON/OFF だけでなく表示名・管理者操作も含む）
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
+
+        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(
+            scroll,
+            text=f"バージョン v{__version__}",
+            text_color=("gray40", "gray60"),
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 8))
+
+        ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(fill="x", pady=(2, 12))
+
+        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
+        ctk.CTkOptionMenu(
+            scroll,
+            values=[label for _, label in _TRAY_CLICK_OPTIONS],
+            variable=self._tray_click_var,
+            width=160,
+        ).pack(anchor="w", pady=(2, 4))
+        ctk.CTkCheckBox(
+            scroll,
+            text="PC起動時に自動で起動 (Windows)",
+            variable=self._startup_var,
+        ).pack(anchor="w", pady=(0, 12))
+
+        ctk.CTkLabel(scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 8))
+        ctk.CTkButton(
+            scroll,
+            text="社員・顔・音声の管理を開く…",
+            command=self._on_open_face_registry_admin,
+        ).pack(anchor="w", fill="x")
+        ctk.CTkButton(
+            scroll,
+            text="自分の顔を登録…",
+            command=self._on_open_face_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 0))
+        ctk.CTkButton(
+            scroll,
+            text="自分の声を登録…",
+            command=self._on_open_voice_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 12))
+
+        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(
+            scroll,
+            text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
+            text_color=("gray40", "gray60"),
+            anchor="w",
+        ).pack(anchor="w", pady=(0, 8))
+
+        features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
+        for key, label, desc in _FEATURE_ROWS:
+            var = tk.BooleanVar(value=bool(features.get(key, False)))
+            self._feature_vars[key] = var
+            row = ctk.CTkFrame(scroll, fg_color="transparent")
+            row.pack(fill="x", pady=(0, 6))
+            ctk.CTkCheckBox(row, text=label, variable=var).pack(anchor="w")
+            ctk.CTkLabel(
+                row,
+                text=desc,
+                text_color=("gray40", "gray60"),
+                wraplength=self.WIDTH - 80,
+                justify="left",
+                anchor="w",
+            ).pack(fill="x", padx=(28, 0))
+
+        ctk.CTkLabel(
+            scroll,
+            text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
+            anchor="w",
+        ).pack(fill="x", pady=(8, 0))
+        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(
+            scroll,
+            text="例: 13:00, 17:00",
+            text_color=("gray40", "gray60"),
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        ctk.CTkCheckBox(
+            scroll,
+            text="平日のみ (土日は鳴らさない)",
+            variable=self._task_remind_weekdays_var,
+        ).pack(anchor="w")
+        ctk.CTkButton(
+            scroll,
+            text="今日はタスクリマインドを止める",
+            command=self._on_pause_task_remind_today,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray20", "gray80"),
+        ).pack(anchor="w", pady=(4, 0))
+
+        ctk.CTkLabel(
+            scroll,
+            text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
+            anchor="w",
+        ).pack(fill="x", pady=(12, 0))
+        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(
+            scroll,
+            text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
+            text_color=("gray40", "gray60"),
+            wraplength=self.WIDTH - 80,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 8))
+
+    # --- ハンドラ ----------------------------------------------------------
+    def _on_open_face_registry_admin(self) -> None:
+        try:
+            from face_registry_admin_dialog import open_face_registry_admin_dialog
+
+            draft = dict(self._cfg)
+            draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
+            features = dict(draft.get("features") or {})
+            if "face_registry_manage" in self._feature_vars:
+                features["face_registry_manage"] = bool(self._feature_vars["face_registry_manage"].get())
+            draft["features"] = features
+            open_face_registry_admin_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("社員・顔の管理", str(e), parent=self)
+            except Exception:
+                print(f"face registry admin open failed: {e}", flush=True)
+
+    def _on_open_face_self_register(self) -> None:
+        try:
+            from face_registry_self_dialog import open_face_self_register_dialog
+
+            draft = dict(self._cfg)
+            features = dict(draft.get("features") or {})
+            if "face_registry_self" in self._feature_vars:
+                features["face_registry_self"] = bool(self._feature_vars["face_registry_self"].get())
+            draft["features"] = features
+            open_face_self_register_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("自分の顔を登録", str(e), parent=self)
+            except Exception:
+                print(f"face self register open failed: {e}", flush=True)
+
+    def _on_open_voice_self_register(self) -> None:
+        try:
+            from voice_registry_self_dialog import open_voice_self_register_dialog
+
+            draft = dict(self._cfg)
+            features = dict(draft.get("features") or {})
+            if "voice_registry_self" in self._feature_vars:
+                features["voice_registry_self"] = bool(self._feature_vars["voice_registry_self"].get())
+            draft["features"] = features
+            open_voice_self_register_dialog(master=self, cfg=draft)
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("自分の声を登録", str(e), parent=self)
+            except Exception:
+                print(f"voice self register open failed: {e}", flush=True)
+
+    def _on_pause_task_remind_today(self) -> None:
+        try:
+            from tkinter import messagebox
+            from task_remind_client import pause_reminders_today
+
+            cfg = load_config()
+            pause_reminders_today(cfg)
+            messagebox.showinfo(
+                "タスクリマインド",
+                "今日はタスクリマインドを停止しました。明日から再開します。",
+            )
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("タスクリマインド", f"設定の保存に失敗しました: {e}")
+            except Exception:
+                print(f"task remind pause failed: {e}", flush=True)
+
+    def _on_save(self) -> None:
+        # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
+        self._cfg["display_name"] = self._display_name_var.get().strip()
+        self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
+        tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
+        self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
+        # features を辞書ごと書き出し (未知キーは保つ)
+        features = dict(self._cfg.get("features") or {})
+        for key, var in self._feature_vars.items():
+            features[key] = bool(var.get())
+        prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
+        self._cfg["features"] = features
+        parsed_times = []
+        from config_loader import parse_task_remind_times_from_text
+
+        parsed_times = parse_task_remind_times_from_text(self._task_remind_times_var.get())
+        if parsed_times:
+            self._cfg["task_remind_times"] = parsed_times
+        self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
+        from config_loader import parse_calendar_remind_minutes_from_text
+
+        cal_mins = parse_calendar_remind_minutes_from_text(self._calendar_remind_minutes_var.get())
+        self._cfg["calendar_remind_minutes_before_list"] = cal_mins
+        self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
+        import sys
+
+        if sys.platform == "win32":
+            try:
+                import startup
+
+                desired_startup = bool(self._startup_var.get())
+                if desired_startup != startup.is_startup_enabled():
+                    startup.set_startup_enabled(desired_startup)
+            except Exception as e:
+                print(f"startup toggle failed: {e}", flush=True)
+        try:
+            save_config(self._cfg)
+            self._cfg = load_config()
+            try:
+                import sys
+                main = sys.modules.get("__main__")
+                if main is not None and hasattr(main, "_config"):
+                    main._config = self._cfg
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+                messagebox.showerror("保存エラー", f"設定の保存に失敗しました: {e}")
+            except Exception:
+                print("config save failed:", e, flush=True)
+            return
+        # 来客通知の ON/OFF が変わったら接続を切替
+        new_visitor_notify = bool(features.get("visitor_notify"))
+        if new_visitor_notify != prev_visitor_notify:
+            try:
+                from visitor_notify_client import start_visitor_notify, stop_visitor_notify
+                if new_visitor_notify:
+                    start_visitor_notify()
+                else:
+                    stop_visitor_notify()
+            except Exception as e:
+                print(f"visitor_notify toggle failed: {e}", flush=True)
+        self._on_close()
+
+    def _on_update_clicked(self) -> None:
+        """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
+        from tkinter import messagebox
+        try:
+            from update_checker import check_for_update, download_and_install
+            from version import __version__
+            from config_loader import load_config
+        except Exception as e:
+            messagebox.showerror("アップデート", f"更新モジュールの読み込みに失敗: {e}")
+            return
+        url = (load_config().get("update_check_url") or "").strip()
+        if not url:
+            messagebox.showinfo("アップデート", "更新チェック URL が設定されていません。")
+            return
+        has_update, latest, download_url = check_for_update(__version__, url)
+        if not has_update:
+            messagebox.showinfo("アップデート", f"最新版です (v{__version__})。")
+            return
+        if not messagebox.askyesno(
+            "アップデート",
+            f"新しいバージョン {latest} があります。\n"
+            "更新を開始するとアプリは一度終了し、完了後に自動で起動します。\n\n今すぐ更新しますか？",
+        ):
+            return
+        # download_and_install は成功時 sys.exit する (バッチ経由で更新)
+        ok, err = download_and_install(download_url)
+        if not ok:
+            messagebox.showerror("アップデート", f"更新に失敗しました:\n{err}")
+
+    def _on_close(self) -> None:
+        global _dialog_instance
+        _dialog_instance = None
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
+def open_settings_dialog(master=None) -> SettingsDialog:
+    """設定ダイアログを開く (シングルトン)。
+    既に開いているなら前面化して既存インスタンスを返す。
+    Tk のメインスレッド上から呼ぶこと。
+    """
+    global _dialog_instance
+    if _dialog_instance is not None:
+        try:
+            _dialog_instance.lift()
+            _dialog_instance.focus_force()
+            return _dialog_instance
+        except Exception:
+            _dialog_instance = None
+    _dialog_instance = SettingsDialog(master=master)
+    return _dialog_instance
+
+
+# 単体起動 (動作確認用)
+if __name__ == "__main__":
+    ctk.set_appearance_mode("System")
+    root = ctk.CTk()
+    root.withdraw()
+    open_settings_dialog(root)
+    root.mainloop()
+</file>
+
 <file path="wl_desktop_app/mini_port.py">
 # -*- coding: utf-8 -*-
 """
@@ -35429,496 +35921,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-</file>
-
-<file path="wl_desktop_app/settings_dialog.py">
-# -*- coding: utf-8 -*-
-"""設定ダイアログ。
-
-v2 機能フラグ (features.*) の ON/OFF と、表示名・主要 URL の確認/編集を 1 画面で行う。
-
-トレイメニューまたはミニポートから ``open_settings_dialog()`` を呼ぶ。
-別スレッドから呼んでも安全なように、Tk のメインスレッドで実行されるよう
-``after`` でディスパッチするのは呼び出し側の責任とする (Tk の制約)。
-"""
-from __future__ import annotations
-
-import os
-import sys
-from typing import Optional
-
-try:
-    import customtkinter as ctk
-    import tkinter as tk
-except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
-    print("customtkinter が見つかりません。pip install -r requirements.txt を実行してください。", e)
-    raise
-
-from config_loader import load_config, save_config
-from version import __version__
-
-
-# --- features の表示メタデータ -------------------------------------------------
-# (キー, 表示ラベル, 説明文)。features 追加時はここに 1 行足すだけで UI に反映される。
-_TRAY_CLICK_OPTIONS = [
-    ("postit", "付箋ボード"),
-    ("personal", "パーソナル"),
-    ("last_notification", "最後のお知らせ"),
-]
-
-_FEATURE_ROWS = [
-    (
-        "taskbar_mode",
-        "タスクバーに常駐",
-        "フローティングのミニポートではなく、通常 Window としてタスクバーに常駐します。",
-    ),
-    (
-        "linko_avatar",
-        "リン子アバター表示",
-        "ミニポート / Window にリン子の 2D アバター (表情切替) を表示します。",
-    ),
-    (
-        "visitor_notify",
-        "来客通知 (トーストでお知らせ)",
-        "受付 (入口) で来客が検知されたとき、トースト通知でお知らせします。Chatwork 通知とは併用されます。",
-    ),
-    (
-        "visitor_notify_sound",
-        "来客通知に音声も鳴らす (visitor_notify が ON の場合)",
-        "上記がONのとき、リン子の音声 (受付で再生されたものと同じ) もデスクトップで鳴らします。会議中などは OFF 推奨。",
-    ),
-    (
-        "brainstorm",
-        "ブレスト機能 (チャット・音声)",
-        "業務サポート的なブレスト相手 (社内情報を踏まえた回答)。CATO 経由で社内 LAN 到達できることが前提。",
-    ),
-    (
-        "task_remind",
-        "個人タスクをリマインド (Today)",
-        "Today のタスクを一覧で確認します（既定 13:00 / 17:00）。各タスクに [継続][完了][相談] で応答。要: パーソナルログイン。",
-    ),
-    (
-        "calendar_notify",
-        "カレンダー予定をリマインド",
-        "Personal ボードで Google 連携済みのとき、開始の N 分前に通知（下で複数指定可、各 1〜15 分）。未連携時は何もしません。",
-    ),
-    (
-        "calendar_create",
-        "カレンダーに予定を登録 (リン子に依頼)",
-        "ブレストで「明日14時に会議入れて」などと話しかけ、確認後に Google カレンダーへ登録。要: パーソナルログイン・Google 連携。",
-    ),
-    (
-        "remind_voice",
-        "リマインドをリン子の声で読み上げる",
-        "タスク/カレンダーリマインド時に TTS 音声を再生 (要: linko_server_url)。会議中は OFF 推奨。",
-    ),
-    (
-        "face_registry_manage",
-        "社員・顔・音声の管理 (管理者)",
-        "linko-system の社員名簿・顔・音声サンプルを管理（要: linko_admin_token）。管理者 PC のみ ON にしてください。",
-    ),
-    (
-        "face_registry_self",
-        "自分の顔を登録",
-        "社内メールで本人確認後、自分の顔を登録（連写3枚）。要: linko 名簿にメール登録済み・社内ネットワーク。",
-    ),
-    (
-        "voice_registry_self",
-        "自分の声を登録",
-        "同一 OTP で声紋を登録（チャレンジ付きライブ録音3回）。要: linko 音声セルフ登録 ON・社内ネットワーク。",
-    ),
-]
-
-
-_dialog_instance: Optional["SettingsDialog"] = None
-
-
-class SettingsDialog(ctk.CTkToplevel):
-    """設定ダイアログ Window。シングルトンで運用する想定。"""
-
-    WIDTH = 520
-    HEIGHT = 660
-
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.title("Wonder Linko 設定")
-        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
-        self.resizable(False, False)
-        try:
-            # ウィンドウアイコンを assets/linko.ico に
-            base = os.path.dirname(os.path.abspath(__file__))
-            ico = os.path.join(base, "assets", "linko.ico")
-            if os.path.isfile(ico) and sys.platform.startswith("win"):
-                self.iconbitmap(ico)
-        except Exception:
-            pass
-
-        self._cfg = load_config()
-        self._feature_vars: dict[str, tk.BooleanVar] = {}
-        self._display_name_var = tk.StringVar(value=self._cfg.get("display_name", "") or "")
-        times = self._cfg.get("task_remind_times") or ["13:00", "17:00"]
-        if isinstance(times, list):
-            times_str = ", ".join(str(t) for t in times)
-        else:
-            times_str = "13:00, 17:00"
-        self._task_remind_times_var = tk.StringVar(value=times_str)
-        self._task_remind_weekdays_var = tk.BooleanVar(
-            value=bool(self._cfg.get("task_remind_weekdays_only", True))
-        )
-        from config_loader import parse_calendar_remind_minutes_list
-
-        cal_mins = parse_calendar_remind_minutes_list(self._cfg)
-        self._calendar_remind_minutes_var = tk.StringVar(
-            value=", ".join(str(m) for m in cal_mins)
-        )
-        tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
-        tray_action = self._cfg.get("tray_click_action", "postit")
-        self._tray_click_var = tk.StringVar(value=tray_labels.get(tray_action, "付箋ボード"))
-        try:
-            import startup
-
-            startup_on = startup.is_startup_enabled()
-        except Exception:
-            startup_on = False
-        self._startup_var = tk.BooleanVar(value=startup_on)
-        self._linko_admin_token_var = tk.StringVar(value=self._cfg.get("linko_admin_token", "") or "")
-
-        self._build_ui()
-
-        # 閉じた後に再オープン可能にする
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.lift()
-        self.focus_force()
-
-    # --- UI 構築 -----------------------------------------------------------
-    def _build_ui(self) -> None:
-        pad = 12
-
-        # 下部ボタンを先に bottom に確保
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=pad, pady=(6, pad), side="bottom")
-        ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
-        ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
-            side="right", padx=(0, 8)
-        )
-        ctk.CTkButton(
-            btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
-            text_color=("#1b5e20", "#e8f5e9"),
-        ).pack(side="left")
-
-        # 設定全体をスクロール（機能 ON/OFF だけでなく表示名・管理者操作も含む）
-        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
-
-        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(anchor="w", pady=(0, 2))
-        ctk.CTkLabel(
-            scroll,
-            text=f"バージョン v{__version__}",
-            text_color=("gray40", "gray60"),
-            anchor="w",
-        ).pack(anchor="w", pady=(0, 8))
-
-        ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(fill="x", pady=(2, 12))
-
-        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
-        ctk.CTkOptionMenu(
-            scroll,
-            values=[label for _, label in _TRAY_CLICK_OPTIONS],
-            variable=self._tray_click_var,
-            width=160,
-        ).pack(anchor="w", pady=(2, 4))
-        ctk.CTkCheckBox(
-            scroll,
-            text="PC起動時に自動で起動 (Windows)",
-            variable=self._startup_var,
-        ).pack(anchor="w", pady=(0, 12))
-
-        ctk.CTkLabel(scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 8))
-        ctk.CTkButton(
-            scroll,
-            text="社員・顔・音声の管理を開く…",
-            command=self._on_open_face_registry_admin,
-        ).pack(anchor="w", fill="x")
-        ctk.CTkButton(
-            scroll,
-            text="自分の顔を登録…",
-            command=self._on_open_face_self_register,
-        ).pack(anchor="w", fill="x", pady=(6, 0))
-        ctk.CTkButton(
-            scroll,
-            text="自分の声を登録…",
-            command=self._on_open_voice_self_register,
-        ).pack(anchor="w", fill="x", pady=(6, 12))
-
-        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
-        ctk.CTkLabel(
-            scroll,
-            text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
-            text_color=("gray40", "gray60"),
-            anchor="w",
-        ).pack(anchor="w", pady=(0, 8))
-
-        features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
-        for key, label, desc in _FEATURE_ROWS:
-            var = tk.BooleanVar(value=bool(features.get(key, False)))
-            self._feature_vars[key] = var
-            row = ctk.CTkFrame(scroll, fg_color="transparent")
-            row.pack(fill="x", pady=(0, 6))
-            ctk.CTkCheckBox(row, text=label, variable=var).pack(anchor="w")
-            ctk.CTkLabel(
-                row,
-                text=desc,
-                text_color=("gray40", "gray60"),
-                wraplength=self.WIDTH - 80,
-                justify="left",
-                anchor="w",
-            ).pack(fill="x", padx=(28, 0))
-
-        ctk.CTkLabel(
-            scroll,
-            text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
-            anchor="w",
-        ).pack(fill="x", pady=(8, 0))
-        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
-        ctk.CTkLabel(
-            scroll,
-            text="例: 13:00, 17:00",
-            text_color=("gray40", "gray60"),
-            anchor="w",
-        ).pack(fill="x", pady=(0, 4))
-        ctk.CTkCheckBox(
-            scroll,
-            text="平日のみ (土日は鳴らさない)",
-            variable=self._task_remind_weekdays_var,
-        ).pack(anchor="w")
-        ctk.CTkButton(
-            scroll,
-            text="今日はタスクリマインドを止める",
-            command=self._on_pause_task_remind_today,
-            fg_color="transparent",
-            border_width=1,
-            text_color=("gray20", "gray80"),
-        ).pack(anchor="w", pady=(4, 0))
-
-        ctk.CTkLabel(
-            scroll,
-            text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
-            anchor="w",
-        ).pack(fill="x", pady=(12, 0))
-        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(fill="x", pady=(2, 4))
-        ctk.CTkLabel(
-            scroll,
-            text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
-            text_color=("gray40", "gray60"),
-            wraplength=self.WIDTH - 80,
-            justify="left",
-            anchor="w",
-        ).pack(fill="x", pady=(0, 8))
-
-    # --- ハンドラ ----------------------------------------------------------
-    def _on_open_face_registry_admin(self) -> None:
-        try:
-            from face_registry_admin_dialog import open_face_registry_admin_dialog
-
-            draft = dict(self._cfg)
-            draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
-            features = dict(draft.get("features") or {})
-            if "face_registry_manage" in self._feature_vars:
-                features["face_registry_manage"] = bool(self._feature_vars["face_registry_manage"].get())
-            draft["features"] = features
-            open_face_registry_admin_dialog(master=self, cfg=draft)
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-
-                messagebox.showerror("社員・顔の管理", str(e), parent=self)
-            except Exception:
-                print(f"face registry admin open failed: {e}", flush=True)
-
-    def _on_open_face_self_register(self) -> None:
-        try:
-            from face_registry_self_dialog import open_face_self_register_dialog
-
-            draft = dict(self._cfg)
-            features = dict(draft.get("features") or {})
-            if "face_registry_self" in self._feature_vars:
-                features["face_registry_self"] = bool(self._feature_vars["face_registry_self"].get())
-            draft["features"] = features
-            open_face_self_register_dialog(master=self, cfg=draft)
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-
-                messagebox.showerror("自分の顔を登録", str(e), parent=self)
-            except Exception:
-                print(f"face self register open failed: {e}", flush=True)
-
-    def _on_open_voice_self_register(self) -> None:
-        try:
-            from voice_registry_self_dialog import open_voice_self_register_dialog
-
-            draft = dict(self._cfg)
-            features = dict(draft.get("features") or {})
-            if "voice_registry_self" in self._feature_vars:
-                features["voice_registry_self"] = bool(self._feature_vars["voice_registry_self"].get())
-            draft["features"] = features
-            open_voice_self_register_dialog(master=self, cfg=draft)
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-
-                messagebox.showerror("自分の声を登録", str(e), parent=self)
-            except Exception:
-                print(f"voice self register open failed: {e}", flush=True)
-
-    def _on_pause_task_remind_today(self) -> None:
-        try:
-            from tkinter import messagebox
-            from task_remind_client import pause_reminders_today
-
-            cfg = load_config()
-            pause_reminders_today(cfg)
-            messagebox.showinfo(
-                "タスクリマインド",
-                "今日はタスクリマインドを停止しました。明日から再開します。",
-            )
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-                messagebox.showerror("タスクリマインド", f"設定の保存に失敗しました: {e}")
-            except Exception:
-                print(f"task remind pause failed: {e}", flush=True)
-
-    def _on_save(self) -> None:
-        # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
-        self._cfg["display_name"] = self._display_name_var.get().strip()
-        self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
-        tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
-        self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
-        # features を辞書ごと書き出し (未知キーは保つ)
-        features = dict(self._cfg.get("features") or {})
-        for key, var in self._feature_vars.items():
-            features[key] = bool(var.get())
-        prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
-        self._cfg["features"] = features
-        parsed_times = []
-        from config_loader import parse_task_remind_times_from_text
-
-        parsed_times = parse_task_remind_times_from_text(self._task_remind_times_var.get())
-        if parsed_times:
-            self._cfg["task_remind_times"] = parsed_times
-        self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
-        from config_loader import parse_calendar_remind_minutes_from_text
-
-        cal_mins = parse_calendar_remind_minutes_from_text(self._calendar_remind_minutes_var.get())
-        self._cfg["calendar_remind_minutes_before_list"] = cal_mins
-        self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
-        import sys
-
-        if sys.platform == "win32":
-            try:
-                import startup
-
-                desired_startup = bool(self._startup_var.get())
-                if desired_startup != startup.is_startup_enabled():
-                    startup.set_startup_enabled(desired_startup)
-            except Exception as e:
-                print(f"startup toggle failed: {e}", flush=True)
-        try:
-            save_config(self._cfg)
-            self._cfg = load_config()
-            try:
-                import sys
-                main = sys.modules.get("__main__")
-                if main is not None and hasattr(main, "_config"):
-                    main._config = self._cfg
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                from tkinter import messagebox
-                messagebox.showerror("保存エラー", f"設定の保存に失敗しました: {e}")
-            except Exception:
-                print("config save failed:", e, flush=True)
-            return
-        # 来客通知の ON/OFF が変わったら接続を切替
-        new_visitor_notify = bool(features.get("visitor_notify"))
-        if new_visitor_notify != prev_visitor_notify:
-            try:
-                from visitor_notify_client import start_visitor_notify, stop_visitor_notify
-                if new_visitor_notify:
-                    start_visitor_notify()
-                else:
-                    stop_visitor_notify()
-            except Exception as e:
-                print(f"visitor_notify toggle failed: {e}", flush=True)
-        self._on_close()
-
-    def _on_update_clicked(self) -> None:
-        """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
-        from tkinter import messagebox
-        try:
-            from update_checker import check_for_update, download_and_install
-            from version import __version__
-            from config_loader import load_config
-        except Exception as e:
-            messagebox.showerror("アップデート", f"更新モジュールの読み込みに失敗: {e}")
-            return
-        url = (load_config().get("update_check_url") or "").strip()
-        if not url:
-            messagebox.showinfo("アップデート", "更新チェック URL が設定されていません。")
-            return
-        has_update, latest, download_url = check_for_update(__version__, url)
-        if not has_update:
-            messagebox.showinfo("アップデート", f"最新版です (v{__version__})。")
-            return
-        if not messagebox.askyesno(
-            "アップデート",
-            f"新しいバージョン {latest} があります。\n"
-            "更新を開始するとアプリは一度終了し、完了後に自動で起動します。\n\n今すぐ更新しますか？",
-        ):
-            return
-        # download_and_install は成功時 sys.exit する (バッチ経由で更新)
-        ok, err = download_and_install(download_url)
-        if not ok:
-            messagebox.showerror("アップデート", f"更新に失敗しました:\n{err}")
-
-    def _on_close(self) -> None:
-        global _dialog_instance
-        _dialog_instance = None
-        try:
-            self.destroy()
-        except Exception:
-            pass
-
-
-def open_settings_dialog(master=None) -> SettingsDialog:
-    """設定ダイアログを開く (シングルトン)。
-    既に開いているなら前面化して既存インスタンスを返す。
-    Tk のメインスレッド上から呼ぶこと。
-    """
-    global _dialog_instance
-    if _dialog_instance is not None:
-        try:
-            _dialog_instance.lift()
-            _dialog_instance.focus_force()
-            return _dialog_instance
-        except Exception:
-            _dialog_instance = None
-    _dialog_instance = SettingsDialog(master=master)
-    return _dialog_instance
-
-
-# 単体起動 (動作確認用)
-if __name__ == "__main__":
-    ctk.set_appearance_mode("System")
-    root = ctk.CTk()
-    root.withdraw()
-    open_settings_dialog(root)
-    root.mainloop()
 </file>
 
 <file path="wl_desktop_app/app.py">
