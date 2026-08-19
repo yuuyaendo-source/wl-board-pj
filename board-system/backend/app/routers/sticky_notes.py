@@ -178,7 +178,7 @@ async def import_from_postit(
         import_count += 1
 
     await db.commit()
-    return ImportFromPostitResponse(imported=import_count, skipped=skip_count)
+    return ImportFromPostitResponse(created=import_count, skipped=skip_count)
 
 
 @router.post("", response_model=StickyNoteResponse, status_code=201)
@@ -575,11 +575,13 @@ async def copy_to_team(
     members = list(result.scalars().all())
     if not members:
         return CopyToTeamResponse(
-            copied_count=0,
+            created=0,
+            user_ids=[],
             message="このチームには所属メンバーがいません",
         )
 
     copied_count = 0
+    user_ids = []
     for member in members:
         res = await db.execute(
             select(BoardPlacement).where(
@@ -599,6 +601,7 @@ async def copy_to_team(
             )
             db.add(placement)
             copied_count += 1
+            user_ids.append(member.id)
 
     await db.flush()
 
@@ -622,7 +625,8 @@ async def copy_to_team(
 
     await db.commit()
     return CopyToTeamResponse(
-        copied_count=copied_count,
+        created=copied_count,
+        user_ids=user_ids,
         message=f"チームメンバー {copied_count} 名の Personal ボードへ追加しました",
     )
 
