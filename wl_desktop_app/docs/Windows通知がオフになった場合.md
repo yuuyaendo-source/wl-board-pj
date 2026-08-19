@@ -42,9 +42,11 @@ Wonder Linko のトースト通知を Windows の設定で一度オフにする�
 
 1. **レジストリエディター** を開く（スタートメニューで「regedit」と入力して実行。管理者権限の確認が出たら「はい」）
 2. 次のキーに移動する：
+
    ```
    HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings
    ```
+
 3. その下の **サブキー** を確認する。次のような名前のキーがあれば、それが Wonder Linko の通知設定の可能性があります：
    - `Wonder Rinko`
    - `WonderLinko`

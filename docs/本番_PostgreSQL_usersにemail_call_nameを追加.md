@@ -32,6 +32,7 @@ docker exec -it linko-backend-green alembic stamp e5f6a7b8c9d0
 ```
 
 - マージ用マイグレーション（f6a7b8c9d0e1）がイメージに入っている場合は、次で head まで stamp してもよい:
+
   ```bash
   docker exec -it linko-backend-green alembic stamp f6a7b8c9d0e1
   ```

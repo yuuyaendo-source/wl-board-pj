@@ -10,7 +10,7 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 
-// 開発: localhost / 本番: wl-ai-board.internal.wonder-link.com または 172.16.1.84（同一オリジンなら空でOK）
+// 開発: localhost / 本番: wl-ai-board.internal.wonder-link.com または 172.16.1.203（同一オリジンなら空でOK）
 const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";

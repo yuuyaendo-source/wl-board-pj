@@ -1,6 +1,6 @@
 # AI-Board・Desktopアプリの開発の進め方
 
-wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する **AI-Board** と **Desktopアプリ** の開発・配布の進め方を整理したドキュメントです。
+wl-sticky-note（本番: <http://wl-sticky-note.local/board/wl）と連携する> **AI-Board** と **Desktopアプリ** の開発・配布の進め方を整理したドキュメントです。
 
 ---
 
@@ -17,7 +17,7 @@ wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する 
 
 ### 2.1 本番 sticky-note 連携の確認
 
-本番の付箋ボード（http://wl-sticky-note.local/board/wl）と連携できることを確認してから配布する。
+本番の付箋ボード（<http://wl-sticky-note.local/board/wl）と連携できることを確認してから配布する。>
 
 1. **設定を本番向けにする**
    - `config.json` の `postit_board_url`: `http://wl-sticky-note.local/`
@@ -26,7 +26,7 @@ wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する 
 
 2. **動作確認**
    - Desktopアプリを起動（`.\start_app.ps1` など）
-   - トレイの「アイコンクリックで開く」で **http://wl-sticky-note.local/board/wl** が開くこと
+   - トレイの「アイコンクリックで開く」で **<http://wl-sticky-note.local/board/wl>** が開くこと
    - 本番の付箋ボードに新付箋を追加し、一定時間後に「新しい付箋が投稿されました」トーストが出ること（ポーリング連携）
    - トーストをクリックして該当ボードが開くこと
 
@@ -66,7 +66,7 @@ wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する 
 
 ### 3.1 本番 sticky-note との連携を確認しながら開発
 
-本番の付箋ボード（http://wl-sticky-note.local/board/wl）に付箋を送り、AIコメント連携まで確認できるようにする。
+本番の付箋ボード（<http://wl-sticky-note.local/board/wl）に付箋を送り、AIコメント連携まで確認できるようにする。>
 
 1. **本番向けの設定**
    - `src/config.json` の `board_id`: `wl`
@@ -74,7 +74,7 @@ wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する 
    - これで付箋検知・Webアプリからの送信先が本番の sticky-note になる
 
 2. **連携確認の手順**
-   - 本番の付箋ボードをブラウザで開く: http://wl-sticky-note.local/board/wl
+   - 本番の付箋ボードをブラウザで開く: <http://wl-sticky-note.local/board/wl>
    - AI-Board（Flask）と付箋検知（sticky_note_detector.py）を、上記設定で起動
    - 付箋検知で検出した付箋が本番ボード「wl」に追加されること、AI-Board 経由でコメントが返ることなどを確認
 
@@ -87,14 +87,14 @@ wl-sticky-note（本番: http://wl-sticky-note.local/board/wl）と連携する 
 
 | 確認したい相手 | board_id | POSTIT_BOARD_URL |
 |----------------|----------|------------------|
-| ローカルの sticky-note | wl（または開発用ID） | 未設定 or http://localhost:3000 |
-| 本番の sticky-note | wl | http://wl-sticky-note.local |
+| ローカルの sticky-note | wl（または開発用ID） | 未設定 or <http://localhost:3000> |
+| 本番の sticky-note | wl | <http://wl-sticky-note.local> |
 
 ---
 
 ## 4. 共通：本番連携の確認チェックリスト
 
-- [ ] **付箋ボード本番**が http://wl-sticky-note.local/board/wl で開ける
+- [ ] **付箋ボード本番**が <http://wl-sticky-note.local/board/wl> で開ける
 - [ ] **Desktopアプリ**: `postit_board_url` 本番、`postit_board_id`: wl で、トレイからボードが開ける／新付箋でトーストが出る
 - [ ] **AI-Board**: `POSTIT_BOARD_URL=http://wl-sticky-note.local`、`board_id`: wl で、本番ボードに付箋が送られる／AIコメントが連携する
 

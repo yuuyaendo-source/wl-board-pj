@@ -55,7 +55,7 @@ sequenceDiagram
 ## 設計原則
 
 | 原則 | 内容 |
-|------|------|
+| ------ | ------ |
 | オプトイン | サーバ `self_face_registration.enabled` + クライアント `face_registry_self`、いずれも既定 **OFF** |
 | admin トークン不要 | 社員 PC の `config.json` に `linko_admin_token` は置かない |
 | 最小権限 | トークンは **当該 person の顔 PUT のみ**。他者・DELETE・PATCH・POST は不可 |
@@ -92,7 +92,7 @@ sequenceDiagram
 ```
 
 | キー | 既定 | 説明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `enabled` | `false` | 機能マスタースイッチ |
 | `otp_required` | `true` | `false` のときは start 直後にトークン発行（開発用。本番は true 推奨） |
 | `otp_ttl_seconds` | `600` | OTP 有効期限（10分） |
@@ -219,7 +219,7 @@ OTP を検証し、`self_register_token` を発行する。
 **認証（いずれか1つ — 既存維持 + 新規）**
 
 | 経路 | 条件 |
-|------|------|
+| ------ | ------ |
 | 管理者 | `_ip_allowed` + `_token_check_passes()`（現状どおり） |
 | エントランス再登録 | `?entrance_register=1` + PIN + `verification_token` + **hasFace 必須**（現状どおり） |
 | **セルフ登録（新規）** | `?self_register=1` + 有効な `self_register_token` + URL の `person_id` がトークンと一致 |
@@ -298,7 +298,7 @@ ts, person_id, email_hash, client_ip, action, embedding_count_after, user_agent
 ### 既存ファイルの変更
 
 | ファイル | 変更内容 |
-|----------|----------|
+| ---------- | ---------- |
 | `settings_dialog.py` | フラグ +「自分の顔を登録…」ボタン |
 | `face_registry_admin_dialog.py` | （任意）`FaceCaptureDialog` を import 可能なまま維持。アップロード完了・眼鏡プロンプトを共通関数化して self からも呼ぶ |
 | `face_registry_client.py` | 変更なし（admin 専用のまま）。self 用は別クライアント |
@@ -475,7 +475,7 @@ def upload_faces_self_serial(cfg, person_id, token, urls) -> tuple[int, int, Opt
 ### linko-system
 
 | # | タスク |
-|---|--------|
+| --- | -------- |
 | L1 | `business_settings` に `self_face_registration` 追加 + 正規化 |
 | L2 | `/admin` 業務設定 UI（有効化・同意文・OTP 設定） |
 | L3 | OTP チャレンジストア（メモリ or Redis。単一インスタンスならメモリで可） |
@@ -490,7 +490,7 @@ def upload_faces_self_serial(cfg, person_id, token, urls) -> tuple[int, int, Opt
 ### wl_desktop_app
 
 | # | タスク |
-|---|--------|
+| --- | -------- |
 | D1 | `features.face_registry_self` + 設定 UI |
 | D2 | `face_registry_self_client.py` |
 | D3 | `face_registry_self_dialog.py`（画面 1〜3, 6） |
@@ -529,7 +529,7 @@ def upload_faces_self_serial(cfg, person_id, token, urls) -> tuple[int, int, Opt
 ## テスト観点（手動）
 
 | # | 手順 | 期待結果 |
-|---|------|----------|
+| --- | ------ | ---------- |
 | T1 | フラグ OFF でボタン | 案内メッセージで終了 |
 | T2 | 名簿未登録メールで start | 200 同形、OTP は届かない |
 | T3 | 正しいメール + OTP | verify 成功、撮影へ |
