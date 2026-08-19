@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 
 try:
     import customtkinter as ctk
@@ -14,9 +16,38 @@ except ImportError as e:
 
 from config_loader import is_feature_enabled, load_config
 
+try:
+    JST = ZoneInfo("Asia/Tokyo")
+except Exception:
+    from datetime import timedelta, timezone
+
+    JST = timezone(timedelta(hours=9))
+
 LIST_SUMMARY_MESSAGE = "本日のタスクの進捗はいかがですか？"
 
 _dialog_instance: Optional["TaskRemindListDialog"] = None
+
+
+def format_due_date_info(due_date_str: Optional[str]) -> tuple[str, str]:
+    """due_date 文字列 (YYYY-MM-DD) から表示テキストとカラーコードを取得する。"""
+    if not due_date_str:
+        return "", ""
+    try:
+        due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return f"📅 期限: {due_date_str}", "#4b5563"
+
+    today = datetime.now(JST).date()
+    days = (due_date - today).days
+
+    if days < 0:
+        return f"⚠️ 期限切れ（{abs(days)}日経過）", "#ef4444"
+    elif days == 0:
+        return "🔥 本期日が期限！", "#ea580c"
+    elif 0 < days <= 3:
+        return f"⏰ 期限まであと{days}日", "#d97706"
+    else:
+        return f"📅 期限: {due_date_str}", "#2563eb"
 
 
 def _ensure_master_visible(master) -> None:
@@ -39,9 +70,9 @@ def _ensure_master_visible(master) -> None:
 
 
 class TaskRemindListDialog(ctk.CTkToplevel):
-    WIDTH = 400
-    MAX_HEIGHT = 520
-    ROW_HEIGHT = 72
+    WIDTH = 420
+    MAX_HEIGHT = 540
+    ROW_HEIGHT = 90
     _GAP = 8
 
     @staticmethod
@@ -134,13 +165,13 @@ class TaskRemindListDialog(ctk.CTkToplevel):
                 )
 
             candidates = [
-                (mx + mw - pw, my - ph - gap),   # 上・右端揃え（ミニポート直上）
-                (mx, my - ph - gap),              # 上・左端揃え
-                (mx - pw - gap, my + mh - ph),    # 左・下揃え
-                (mx - pw - gap, my),              # 左・上揃え
-                (mx + mw - pw, my + mh + gap),    # 下・右端揃え
-                (mx, my + mh + gap),              # 下・左端揃え
-                (mx + mw + gap, my),              # 右（画面右端ならスキップされやすい）
+                (mx + mw - pw, my - ph - gap),  # 上・右端揃え（ミニポート直上）
+                (mx, my - ph - gap),  # 上・左端揃え
+                (mx - pw - gap, my + mh - ph),  # 左・下揃え
+                (mx - pw - gap, my),  # 左・上揃え
+                (mx + mw - pw, my + mh + gap),  # 下・右端揃え
+                (mx, my + mh + gap),  # 下・左端揃え
+                (mx + mw + gap, my),  # 右（画面右端ならスキップされやすい）
             ]
 
             x, y = candidates[0]
@@ -207,7 +238,19 @@ class TaskRemindListDialog(ctk.CTkToplevel):
             justify="left",
             anchor="w",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).pack(fill="x", padx=10, pady=(8, 4))
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        # 期限情報の表示を追加
+        due_date_str = item.get("due_date")
+        due_text, due_color = format_due_date_info(due_date_str)
+        if due_text:
+            ctk.CTkLabel(
+                row,
+                text=due_text,
+                text_color=due_color,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                anchor="w",
+            ).pack(fill="x", padx=10, pady=(0, 4))
 
         btn_row = ctk.CTkFrame(row, fg_color="transparent")
         btn_row.pack(fill="x", padx=8, pady=(0, 8))
@@ -259,6 +302,7 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         self._on_action(item, "continue")
         try:
             from chat_panel import open_chat_panel_with_task
+
             open_chat_panel_with_task(
                 master=self.master,
                 task_title=title,
@@ -291,11 +335,13 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         _dialog_instance = None
         try:
             from task_remind_client import notify_dialog_closed
+
             notify_dialog_closed()
         except Exception:
             pass
         try:
             import linko_avatar
+
             linko_avatar.dismiss_ui()
         except Exception:
             pass
@@ -328,7 +374,12 @@ def show_task_remind_dialog(
             _dialog_instance = None
 
     cfg = load_config()
-    from task_remind_client import mark_slot_shown_today, notify_dialog_closed, post_shown_slot
+    from task_remind_client import (
+        mark_slot_shown_today,
+        notify_dialog_closed,
+        post_shown_slot,
+    )
+
     if not post_shown_slot(cfg, slot):
         notify_dialog_closed()
         print("[task_remind] shown_slot API 失敗 — リマインドをスキップ", flush=True)

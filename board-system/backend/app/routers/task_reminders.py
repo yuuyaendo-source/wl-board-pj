@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, Lane, StickyNote, TaskReminderLog, User
+from app.models import (
+    BoardPlacement,
+    BoardType,
+    Lane,
+    StickyNote,
+    TaskReminderLog,
+    User,
+)
 from app.services.calendar_placement import include_in_task_remind
 
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
@@ -56,6 +64,7 @@ class PendingItem(BaseModel):
     note_id: int
     title: str
     message: str
+    due_date: Optional[str] = None
 
 
 class PendingResponse(BaseModel):
@@ -68,6 +77,7 @@ class PendingResponse(BaseModel):
 
 class ShownSlotBody(BaseModel):
     """スロット単位で Today 全タスクを表示済みにする（一括リマインド用）。"""
+
     slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
 
 
@@ -90,7 +100,9 @@ async def _ensure_user(user_id: int, db: AsyncSession) -> None:
         raise HTTPException(status_code=404, detail="User not found")
 
 
-async def _today_placements(user_id: int, db: AsyncSession) -> list[tuple[BoardPlacement, StickyNote]]:
+async def _today_placements(
+    user_id: int, db: AsyncSession
+) -> list[tuple[BoardPlacement, StickyNote]]:
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -127,7 +139,9 @@ async def _logged_note_ids(
 @router.get("/{user_id}/task_reminders/pending", response_model=PendingResponse)
 async def get_pending_task_reminders(
     user_id: int,
-    slot: str = Query(..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"),
+    slot: str = Query(
+        ..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """指定スロットでまだ表示していない Today タスクをすべて返す（一括リマインド）。"""
@@ -140,12 +154,14 @@ async def get_pending_task_reminders(
         if p.note_id in logged:
             continue
         title = _short_title(n.content)
+        due_date_str = n.due_date.isoformat() if getattr(n, "due_date", None) else None
         items.append(
             PendingItem(
                 placement_id=p.id,
                 note_id=p.note_id,
                 title=title,
                 message=_remind_message(title),
+                due_date=due_date_str,
             )
         )
     summary = LIST_SUMMARY_MESSAGE
@@ -219,7 +235,9 @@ async def mark_task_reminder_shown(
         )
     )
     if r_pl.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Placement not found or not in TODAY")
+        raise HTTPException(
+            status_code=404, detail="Placement not found or not in TODAY"
+        )
     row = TaskReminderLog(
         user_id=user_id,
         note_id=body.note_id,
@@ -293,4 +311,8 @@ async def ack_task_reminder(
             pass  # HELP_REQUEST から DONE は既存 PATCH と同様 task 連動のみ
 
     await db.flush()
-    return {"ok": True, "action": body.action, "lane": placement.lane.value if placement.lane else None}
+    return {
+        "ok": True,
+        "action": body.action,
+        "lane": placement.lane.value if placement.lane else None,
+    }
