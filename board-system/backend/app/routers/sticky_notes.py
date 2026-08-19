@@ -129,7 +129,7 @@ async def import_from_postit(
     import_count = 0
     skip_count = 0
 
-    for item in body.items:
+    for item in body.notes:
         parsed_due_date = None
         if item.due_date:
             try:
