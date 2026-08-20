@@ -2,7 +2,7 @@
 # staging.conf で nginx -t が失敗する場合に使用。
 #   sudo cp .../nginx.conf.production-server-no-staging /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl restart nginx
-# 証明書: Let's Encrypt *.internal.wonder-link.co.jp を /home/devuser01/sv_cert/ に配置
+# 証明書: Let's Encrypt *.internal.wonder-link.com を /home/devuser01/sv_cert/ に配置
 
 worker_processes 1;
 
@@ -20,13 +20,13 @@ http {
 
     server {
         listen 80;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
         return 301 https://$host$request_uri;
     }
 
     server {
         listen 443 ssl;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
 
         ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
         ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;
