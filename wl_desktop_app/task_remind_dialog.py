@@ -87,12 +87,14 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         slot: str,
         summary: str,
         on_ack: Callable[[dict, str], None],
+        on_open_cards: Optional[Callable[[], None]] = None,
     ):
         super().__init__(master)
         self._items = list(items)
         self._slot = slot
         self._summary = summary
         self._on_ack = on_ack
+        self._on_open_cards = on_open_cards
         self._row_frames: dict[int, ctk.CTkFrame] = {}
         self._acked: set[int] = set()
         self.title("タスクリマインド")
@@ -216,13 +218,23 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         for item in self._items:
             self._add_task_row(scroll, item, show_consult)
 
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=pad, pady=(0, pad))
+        if self._on_open_cards is not None:
+            ctk.CTkButton(
+                footer,
+                text="リン子カードを見る",
+                command=self._on_open_cards,
+                fg_color=("#16a34a", "#0e7a37"),
+                hover_color=("#15803d", "#166534"),
+            ).pack(fill="x", pady=(0, 8))
         ctk.CTkButton(
-            self,
+            footer,
             text="閉じる（未操作は継続）",
             command=self._on_dismiss_all_continue,
             fg_color=("gray70", "gray35"),
             hover_color=("gray60", "gray45"),
-        ).pack(fill="x", padx=pad, pady=(0, pad))
+        ).pack(fill="x")
 
     def _add_task_row(self, parent, item: dict, show_consult: bool) -> None:
         note_id = item["note_id"]
@@ -357,6 +369,7 @@ def show_task_remind_dialog(
     slot: str,
     on_ack: Callable[[dict, str], None],
     summary: Optional[str] = None,
+    on_open_cards: Optional[Callable[[], None]] = None,
 ) -> Optional[TaskRemindListDialog]:
     """Today タスク一覧のリマインドダイアログを表示（シングルトン）。"""
     global _dialog_instance
@@ -410,5 +423,6 @@ def show_task_remind_dialog(
         slot=slot,
         summary=summary_text,
         on_ack=on_ack,
+        on_open_cards=on_open_cards,
     )
     return _dialog_instance

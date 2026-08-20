@@ -17,7 +17,10 @@ try:
     import customtkinter as ctk
     import tkinter as tk
 except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
-    print("customtkinter が見つかりません。pip install -r requirements.txt を実行してください。", e)
+    print(
+        "customtkinter が見つかりません。pip install -r requirements.txt を実行してください。",
+        e,
+    )
     raise
 
 from config_loader import load_config, save_config
@@ -121,7 +124,9 @@ class SettingsDialog(ctk.CTkToplevel):
 
         self._cfg = load_config()
         self._feature_vars: dict[str, tk.BooleanVar] = {}
-        self._display_name_var = tk.StringVar(value=self._cfg.get("display_name", "") or "")
+        self._display_name_var = tk.StringVar(
+            value=self._cfg.get("display_name", "") or ""
+        )
         times = self._cfg.get("task_remind_times") or ["13:00", "17:00"]
         if isinstance(times, list):
             times_str = ", ".join(str(t) for t in times)
@@ -139,7 +144,9 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
         tray_action = self._cfg.get("tray_click_action", "postit")
-        self._tray_click_var = tk.StringVar(value=tray_labels.get(tray_action, "付箋ボード"))
+        self._tray_click_var = tk.StringVar(
+            value=tray_labels.get(tray_action, "付箋ボード")
+        )
         try:
             import startup
 
@@ -147,7 +154,9 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception:
             startup_on = False
         self._startup_var = tk.BooleanVar(value=startup_on)
-        self._linko_admin_token_var = tk.StringVar(value=self._cfg.get("linko_admin_token", "") or "")
+        self._linko_admin_token_var = tk.StringVar(
+            value=self._cfg.get("linko_admin_token", "") or ""
+        )
 
         self._build_ui()
 
@@ -168,8 +177,11 @@ class SettingsDialog(ctk.CTkToplevel):
             side="right", padx=(0, 8)
         )
         ctk.CTkButton(
-            btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            btn_frame,
+            text="🔄 アップデート確認",
+            command=self._on_update_clicked,
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         ).pack(side="left")
 
@@ -177,7 +189,9 @@ class SettingsDialog(ctk.CTkToplevel):
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
 
-        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(
+            anchor="w", pady=(0, 2)
+        )
         ctk.CTkLabel(
             scroll,
             text=f"バージョン v{__version__}",
@@ -186,9 +200,13 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", pady=(0, 8))
 
         ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(fill="x", pady=(2, 12))
+        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(
+            fill="x", pady=(2, 12)
+        )
 
-        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
+        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(
+            fill="x"
+        )
         ctk.CTkOptionMenu(
             scroll,
             values=[label for _, label in _TRAY_CLICK_OPTIONS],
@@ -201,8 +219,12 @@ class SettingsDialog(ctk.CTkToplevel):
             variable=self._startup_var,
         ).pack(anchor="w", pady=(0, 12))
 
-        ctk.CTkLabel(scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(
+            scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w"
+        ).pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(
+            fill="x", pady=(2, 8)
+        )
         ctk.CTkButton(
             scroll,
             text="社員・顔・音声の管理を開く…",
@@ -217,9 +239,16 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll,
             text="自分の声を登録…",
             command=self._on_open_voice_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 0))
+        ctk.CTkButton(
+            scroll,
+            text="呼ばれ方を編集（呼び名・敬称）…",
+            command=self._on_open_edit_name,
         ).pack(anchor="w", fill="x", pady=(6, 12))
 
-        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(
+            anchor="w", pady=(0, 2)
+        )
         ctk.CTkLabel(
             scroll,
             text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
@@ -227,7 +256,11 @@ class SettingsDialog(ctk.CTkToplevel):
             anchor="w",
         ).pack(anchor="w", pady=(0, 8))
 
-        features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
+        features = (
+            self._cfg.get("features")
+            if isinstance(self._cfg.get("features"), dict)
+            else {}
+        )
         for key, label, desc in _FEATURE_ROWS:
             var = tk.BooleanVar(value=bool(features.get(key, False)))
             self._feature_vars[key] = var
@@ -248,7 +281,9 @@ class SettingsDialog(ctk.CTkToplevel):
             text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(8, 0))
-        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(
+            fill="x", pady=(2, 4)
+        )
         ctk.CTkLabel(
             scroll,
             text="例: 13:00, 17:00",
@@ -274,7 +309,9 @@ class SettingsDialog(ctk.CTkToplevel):
             text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(12, 0))
-        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(
+            fill="x", pady=(2, 4)
+        )
         ctk.CTkLabel(
             scroll,
             text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
@@ -293,7 +330,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
             features = dict(draft.get("features") or {})
             if "face_registry_manage" in self._feature_vars:
-                features["face_registry_manage"] = bool(self._feature_vars["face_registry_manage"].get())
+                features["face_registry_manage"] = bool(
+                    self._feature_vars["face_registry_manage"].get()
+                )
             draft["features"] = features
             open_face_registry_admin_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -311,7 +350,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
             if "face_registry_self" in self._feature_vars:
-                features["face_registry_self"] = bool(self._feature_vars["face_registry_self"].get())
+                features["face_registry_self"] = bool(
+                    self._feature_vars["face_registry_self"].get()
+                )
             draft["features"] = features
             open_face_self_register_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -329,7 +370,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
             if "voice_registry_self" in self._feature_vars:
-                features["voice_registry_self"] = bool(self._feature_vars["voice_registry_self"].get())
+                features["voice_registry_self"] = bool(
+                    self._feature_vars["voice_registry_self"].get()
+                )
             draft["features"] = features
             open_voice_self_register_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -339,6 +382,19 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("自分の声を登録", str(e), parent=self)
             except Exception:
                 print(f"voice self register open failed: {e}", flush=True)
+
+    def _on_open_edit_name(self) -> None:
+        try:
+            from edit_name_dialog import open_edit_name_dialog
+
+            open_edit_name_dialog(master=self, cfg=dict(self._cfg))
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("呼ばれ方を編集", str(e), parent=self)
+            except Exception:
+                print(f"edit name open failed: {e}", flush=True)
 
     def _on_pause_task_remind_today(self) -> None:
         try:
@@ -354,7 +410,10 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception as e:
             try:
                 from tkinter import messagebox
-                messagebox.showerror("タスクリマインド", f"設定の保存に失敗しました: {e}")
+
+                messagebox.showerror(
+                    "タスクリマインド", f"設定の保存に失敗しました: {e}"
+                )
             except Exception:
                 print(f"task remind pause failed: {e}", flush=True)
 
@@ -363,23 +422,33 @@ class SettingsDialog(ctk.CTkToplevel):
         self._cfg["display_name"] = self._display_name_var.get().strip()
         self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
         tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
-        self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
+        self._cfg["tray_click_action"] = tray_reverse.get(
+            self._tray_click_var.get(), "postit"
+        )
         # features を辞書ごと書き出し (未知キーは保つ)
         features = dict(self._cfg.get("features") or {})
         for key, var in self._feature_vars.items():
             features[key] = bool(var.get())
-        prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
+        prev_visitor_notify = bool(
+            (self._cfg.get("features") or {}).get("visitor_notify")
+        )
         self._cfg["features"] = features
         parsed_times = []
         from config_loader import parse_task_remind_times_from_text
 
-        parsed_times = parse_task_remind_times_from_text(self._task_remind_times_var.get())
+        parsed_times = parse_task_remind_times_from_text(
+            self._task_remind_times_var.get()
+        )
         if parsed_times:
             self._cfg["task_remind_times"] = parsed_times
-        self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
+        self._cfg["task_remind_weekdays_only"] = bool(
+            self._task_remind_weekdays_var.get()
+        )
         from config_loader import parse_calendar_remind_minutes_from_text
 
-        cal_mins = parse_calendar_remind_minutes_from_text(self._calendar_remind_minutes_var.get())
+        cal_mins = parse_calendar_remind_minutes_from_text(
+            self._calendar_remind_minutes_var.get()
+        )
         self._cfg["calendar_remind_minutes_before_list"] = cal_mins
         self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
         import sys
@@ -398,6 +467,7 @@ class SettingsDialog(ctk.CTkToplevel):
             self._cfg = load_config()
             try:
                 import sys
+
                 main = sys.modules.get("__main__")
                 if main is not None and hasattr(main, "_config"):
                     main._config = self._cfg
@@ -406,6 +476,7 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception as e:
             try:
                 from tkinter import messagebox
+
                 messagebox.showerror("保存エラー", f"設定の保存に失敗しました: {e}")
             except Exception:
                 print("config save failed:", e, flush=True)
@@ -414,7 +485,11 @@ class SettingsDialog(ctk.CTkToplevel):
         new_visitor_notify = bool(features.get("visitor_notify"))
         if new_visitor_notify != prev_visitor_notify:
             try:
-                from visitor_notify_client import start_visitor_notify, stop_visitor_notify
+                from visitor_notify_client import (
+                    start_visitor_notify,
+                    stop_visitor_notify,
+                )
+
                 if new_visitor_notify:
                     start_visitor_notify()
                 else:
@@ -426,6 +501,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_update_clicked(self) -> None:
         """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
         from tkinter import messagebox
+
         try:
             from update_checker import check_for_update, download_and_install
             from version import __version__
@@ -435,7 +511,9 @@ class SettingsDialog(ctk.CTkToplevel):
             return
         url = (load_config().get("update_check_url") or "").strip()
         if not url:
-            messagebox.showinfo("アップデート", "更新チェック URL が設定されていません。")
+            messagebox.showinfo(
+                "アップデート", "更新チェック URL が設定されていません。"
+            )
             return
         has_update, latest, download_url = check_for_update(__version__, url)
         if not has_update:

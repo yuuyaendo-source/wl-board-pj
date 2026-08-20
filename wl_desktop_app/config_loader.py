@@ -89,6 +89,7 @@ def _get_defaults():
         "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
+        "face_registry_person_id": "",  # 互換フォールバック（カード URL は board_system_email を正）
         "personal_path": "",  # Board System 利用時は未使用。レガシー AI ボード用パス（例: /asakawa）。空でよい。
         "open_personal_on_start": False,
         # 旧 tray menu「アバターを表示」「音声ON」が読んでいた設定。v3.1.7 で UI 削除済 (dead)。

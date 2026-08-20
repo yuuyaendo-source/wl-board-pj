@@ -22,7 +22,10 @@ include_files = []
 if os.path.isdir("assets"):
     for dirpath, _dirnames, filenames in os.walk("assets"):
         # ランタイムに不要なディレクトリは丸ごとスキップ
-        if any(part in ("source", "old") for part in os.path.normpath(dirpath).split(os.sep)):
+        if any(
+            part in ("source", "old")
+            for part in os.path.normpath(dirpath).split(os.sep)
+        ):
             continue
         for name in filenames:
             # ビルド用スクリプトも除外
@@ -35,9 +38,16 @@ if os.path.isdir("assets"):
 if os.path.exists("toast_icon.png"):
     include_files.append(("toast_icon.png", "toast_icon.png"))
 if os.path.exists("docs/Windows通知がオフになった場合.md"):
-    include_files.append(("docs/Windows通知がオフになった場合.md", "docs/Windows通知がオフになった場合.md"))
+    include_files.append(
+        (
+            "docs/Windows通知がオフになった場合.md",
+            "docs/Windows通知がオフになった場合.md",
+        )
+    )
 if os.path.exists("docs/通知設定をリセットする.ps1"):
-    include_files.append(("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1"))
+    include_files.append(
+        ("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1")
+    )
 
 # PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
 # excludes で PIL を除外し、ここでだけ同梱する。.pyd が無いと MSI インストール後に起動エラーになる
@@ -46,6 +56,7 @@ _pil_imaging_pyd_count = 0
 _expected_suffix = f".cp{sys.version_info.major}{sys.version_info.minor}-"
 try:
     import PIL
+
     pil_root = os.path.abspath(PIL.__file__)
     if os.path.isfile(pil_root):
         pil_root = os.path.dirname(pil_root)
@@ -67,7 +78,11 @@ if _pil_imaging_pyd_count == 0:
         " pip install Pillow で Pillow を入れ直してからビルドしてください。"
     )
 # この Python バージョン用の _imaging が含まれているか確認（cp312/cp314 等の一致）
-_has_matching_pyd = any(_expected_suffix in d[0] for d in include_files if "_imaging" in d[0] and d[0].endswith(".pyd"))
+_has_matching_pyd = any(
+    _expected_suffix in d[0]
+    for d in include_files
+    if "_imaging" in d[0] and d[0].endswith(".pyd")
+)
 if not _has_matching_pyd:
     raise SystemExit(
         f"PIL の _imaging が「この Python ({sys.version_info.major}.{sys.version_info.minor})」用ではありません。"
@@ -78,23 +93,56 @@ build_exe_options = {
     "excludes": ["unittest", "PIL"],
     "include_files": include_files,
     "includes": [
-        "pystray", "winotify", "win10toast", "win10toast_click", "requests",
-        "customtkinter", "pynput",
+        "pystray",
+        "winotify",
+        "win10toast",
+        "win10toast_click",
+        "requests",
+        "customtkinter",
+        "pynput",
         # Phase 3 (来客通知): python-socketio[client] とその依存。
         # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
-        "socketio", "engineio", "websocket",
+        "socketio",
+        "engineio",
+        "websocket",
         "bidict",  # python-socketio の依存
         # Phase 5a 資料添付: PDF/Word テキスト抽出
-        "pypdf", "docx",
+        "pypdf",
+        "docx",
         # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
         # 静的解析が拾い損ねる可能性があるため。
-        "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
-        "theme", "chat_panel", "audio_player", "task_remind_client", "task_remind_dialog",
-        "calendar_notify_client", "remind_notify",
-        "face_registry_client", "face_registry_admin_dialog",         "face_registry_self_client",
-        "face_registry_self_dialog", "voice_registry_self_dialog", "webcam_capture", "voice_capture",
+        "visitor_notify_client",
+        "settings_dialog",
+        "linko_avatar",
+        "speech_bubble",
+        "theme",
+        "chat_panel",
+        "audio_player",
+        "task_remind_client",
+        "task_remind_dialog",
+        "linko_cards",
+        "calendar_notify_client",
+        "remind_notify",
+        "face_registry_client",
+        "face_registry_admin_dialog",
+        "face_registry_self_client",
+        "face_registry_self_dialog",
+        "voice_registry_self_dialog",
+        "webcam_capture",
+        "voice_capture",
+        "edit_name_dialog",
     ],
-    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx", "PIL", "cv2", "numpy", "sounddevice"],
+    "packages": [
+        "customtkinter",
+        "pynput",
+        "socketio",
+        "engineio",
+        "docx",
+        "PIL",
+        "cv2",
+        "numpy",
+        "sounddevice",
+    ],
     "zip_exclude_packages": ["*"],
 }
 

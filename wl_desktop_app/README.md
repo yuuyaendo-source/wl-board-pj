@@ -4,7 +4,7 @@
 
 来客通知・リン子アバター・ブレスト・タスク/カレンダーリマインド・顔/音声セルフ登録などは **`features.*` で任意に ON**（機能フラグは既定すべて OFF。`brainstorm_voice` のみ既定 ON）。
 
-> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.3**）。MSI ビルドと自動更新チェックがこの値を参照する。
+> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.6**）。MSI ビルドと自動更新チェックがこの値を参照する。
 
 ---
 
@@ -378,13 +378,13 @@ cd wl_desktop_app
 1. `version.py` の `__version__` を bump
 2. `board-system/backend/desktop_app_releases/latest.json` を同バージョンに更新
 3. Windows: `.\build_msi.ps1` → MSI 生成
-4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.3.msi`）
+4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.6.msi`）
 5. **v3.2.3 以降:** `desktop_app_releases/` は bind mount のため **git pull + scp で即反映**（通常 deploy 不要）
 
 ```json
 {
-  "version": "3.9.3",
-  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.3.msi"
+  "version": "3.9.6",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.6.msi"
 }
 ```
 

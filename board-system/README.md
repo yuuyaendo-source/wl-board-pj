@@ -115,6 +115,62 @@ docker exec -it linko-backend-blue alembic upgrade head   # マイグレーシ�
 
 デスクトップ MSI / `latest.json` の差し替えのみなら **deploy 不要**（`backend/desktop_app_releases/` の bind mount）。
 
+## Nginx の注意点：`rewrite` + URI 無し `proxy_pass` を使わない
+
+`location /api/bs/` は **URI 付き `proxy_pass`（末尾スラッシュあり）** で書くこと。`rewrite ... break` と URI 無し `proxy_pass` の組み合わせは **Ubuntu の nginx 1.24.0-2ubuntu7.16 以降で壊れる**（後述の障害事例）。
+
+```nginx
+# ✅ 正しい: location 名 /api/bs/ が機械的に除去される
+location /api/bs/ {
+    proxy_pass http://current_backend/;      # 末尾スラッシュ必須
+}
+
+# ❌ 禁止: 7.16 以降で転送先パスが破壊される
+location /api/bs/ {
+    rewrite ^/api/bs/(.*)$ /$1 break;
+    proxy_pass http://current_backend;       # URI 無し
+}
+```
+
+対応済み（2026-08-20 時点で `nginx/` 配下に旧パターンは残っていない）:
+`nginx.conf` / `nginx.conf.production-server` / `nginx.conf.production-server-no-staging` / `staging.conf`
+
+設定を追加・複製する際は `grep -rn 'rewrite .*break' nginx/` で旧パターンが混入していないか確認すること。
+
+### 障害事例: 2026-08-20 「全ページで Not Found」
+
+| 項目 | 内容 |
+|------|------|
+| 症状 | `/boards/taskboard` `/boards/meeting` 等で画面に「エラー: Not Found」。デスクトップアプリの自動更新も停止 |
+| 発生 | 2026-08-20 06:48（`unattended-upgrade` 実行時刻）以降のリクエストから |
+| 原因 | nginx が 1.24.0-2ubuntu7.15 → **7.16** に自動更新。CVE-2026-42533 の修正パッチ（7.15 で ABI 破壊のため一旦無効化 → 7.16 で再投入）が `ngx_http_script.c` / `ngx_http_rewrite_module.c` / `ngx_http_proxy_module.c` を変更し、`rewrite` + URI 無し `proxy_pass` の URI 受け渡しが破壊された |
+| 対処 | `location /api/bs/` を URI 付き `proxy_pass` に書き換え → `nginx -t && systemctl reload nginx` |
+
+補足:
+
+- **設定ファイルは一切変更されていなかった**（5月27日から未更新）。OS の自動更新のみが変化点。
+- Blue/Green の入れ替えでは直らない。nginx 側の色に依存しない共通設定の問題のため。
+- HTML（`/boards/*`）は 200 のまま正常配信されていたため、Next.js の 404 ページではなく、**API の 404 レスポンス `{"detail":"Not Found"}` をフロントがそのまま表示**していた（`frontend/lib/api.ts`）。API 障害が「NotFound」に見える点に注意。
+- 切り分けの決め手はバックエンドのアクセスログ。nginx が転送した実パスが `//api/b`（`/health` と同じ 7 バイト）のように、**長さは rewrite 後・中身は rewrite 前**という破壊のされ方をしていた。
+
+### 切り分け用コマンド
+
+```bash
+# API 経路が生きているか（200 が正常）
+curl -sk -o /dev/null -w '%{http_code}\n' https://wl-ai-board.internal.wonder-link.com/api/bs/health
+
+# nginx が実際に転送しているパスを見る（バックエンドのアクセスログ）
+docker logs --tail 50 linko-backend-blue     # または -green
+
+# 稼働中の設定と、自動更新の履歴
+sudo nginx -T | grep -B3 -A8 'location /api/bs'
+sudo nginx -T | grep -B3 -A3 'rewrite .* break'    # 他に同型パターンが無いか
+grep -B6 'nginx:amd64' /var/log/apt/history.log
+sudo journalctl -u nginx --since yesterday --no-pager
+```
+
+nginx は `unattended-upgrades` の対象。**本番サーバの nginx がメンテナンス時間帯（早朝）に自動更新・再起動される**ことを前提に運用すること。除外する場合は `/etc/apt/apt.conf.d/50unattended-upgrades` の `Unattended-Upgrade::Package-Blacklist` に `nginx` を追加する（セキュリティ更新が手動運用になるトレードオフあり）。
+
 ## サブディレクトリ
 
 | ディレクトリ | README | 内容 |

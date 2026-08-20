@@ -71,11 +71,18 @@ def _request(
         raise FaceSelfRegisterError(f"通信エラー: {e}") from e
 
     if r.status_code == 403:
-        raise FaceSelfRegisterError("アクセスが拒否されました（社内 LAN / VPN を確認）", 403)
+        raise FaceSelfRegisterError(
+            "アクセスが拒否されました（社内 LAN / VPN を確認）", 403
+        )
     if r.status_code == 401:
-        raise FaceSelfRegisterError("認証の有効期限が切れました。最初からやり直してください。", 401)
+        raise FaceSelfRegisterError(
+            "認証の有効期限が切れました。最初からやり直してください。", 401
+        )
     if r.status_code == 429:
-        raise FaceSelfRegisterError("確認コードの試行回数が上限に達しました。しばらく待って再試行してください。", 429)
+        raise FaceSelfRegisterError(
+            "確認コードの試行回数が上限に達しました。しばらく待って再試行してください。",
+            429,
+        )
     if r.status_code == 503:
         try:
             detail = (r.json() or {}).get("error") or r.text[:200]
@@ -104,7 +111,9 @@ def get_self_register_status(cfg: dict) -> dict:
 
 
 def start_self_register(cfg: dict, email: str) -> dict:
-    data = _request(cfg, "POST", "/self_register/start", json_body={"email": email.strip()})
+    data = _request(
+        cfg, "POST", "/self_register/start", json_body={"email": email.strip()}
+    )
     return data if isinstance(data, dict) else {}
 
 
@@ -114,6 +123,45 @@ def verify_self_register(cfg: dict, challenge_id: str, otp: str) -> dict:
         "POST",
         "/self_register/verify",
         json_body={"challenge_id": challenge_id, "otp": otp.strip()},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def get_self_profile(cfg: dict, person_id: str, token: str) -> dict:
+    """本人の現在プロフィール（呼び名・敬称・読み）を取得。編集フォームのプリフィル用。"""
+    data = _request(
+        cfg,
+        "GET",
+        "/self_register/profile",
+        token=token,
+        params={"person_id": str(person_id)},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def update_self_profile(
+    cfg: dict,
+    person_id: str,
+    token: str,
+    *,
+    call_name: Optional[str] = None,
+    honorific: Optional[str] = None,
+    call_name_kana: Optional[str] = None,
+) -> dict:
+    """本人の呼び名・敬称・読みを更新。渡した項目だけ更新される。"""
+    body: dict[str, str] = {"person_id": str(person_id)}
+    if call_name is not None:
+        body["call_name"] = call_name
+    if honorific is not None:
+        body["honorific"] = honorific
+    if call_name_kana is not None:
+        body["call_name_kana"] = call_name_kana
+    data = _request(
+        cfg,
+        "POST",
+        "/self_register/profile",
+        json_body=body,
+        token=token,
     )
     return data if isinstance(data, dict) else {}
 
@@ -198,7 +246,9 @@ def upload_voices_self_serial(
             continue
         for attempt in range(2):
             try:
-                update_voice_self(cfg, person_id, token, enroll_session_id, challenge_id, data_url)
+                update_voice_self(
+                    cfg, person_id, token, enroll_session_id, challenge_id, data_url
+                )
                 ok += 1
                 last_err = None
                 break

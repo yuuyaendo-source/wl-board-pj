@@ -6868,8 +6868,8 @@ def shutdown_scheduler() -> None:
 
 <file path="backend/desktop_app_releases/latest.json">
 {
-  "version": "3.9.3",
-  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.3.msi"
+  "version": "3.9.6",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.6.msi"
 }
 </file>
 

@@ -8,8 +8,13 @@ import os
 import sys
 
 # 凍結（cx_Freeze/MSI）時: lib を先に sys.path に追加し、PIL を lib/PIL から確実に読む
-_exe_dir = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, "frozen", False) else None
+_exe_dir = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else None
+)
 _lib_dir = os.path.join(_exe_dir, "lib") if _exe_dir else None
+
 
 def _write_diagnostic(line: str):
     """凍結時のみ、診断ログを exe と同じフォルダに追記する。"""
@@ -22,6 +27,7 @@ def _write_diagnostic(line: str):
     except Exception:
         pass
 
+
 def _diagnostic_frozen_env():
     """凍結時: lib/PIL の有無と _imaging*.pyd を診断ログに書き、デバイス側の切り分けに使う。"""
     if not _exe_dir or not _lib_dir:
@@ -29,7 +35,9 @@ def _diagnostic_frozen_env():
     try:
         log_path = os.path.join(_exe_dir, "WonderLinko_diagnostic.txt")
         with open(log_path, "w", encoding="utf-8") as f:
-            f.write(f"[{__import__('datetime').datetime.now().isoformat()}] 起動時診断\n")
+            f.write(
+                f"[{__import__('datetime').datetime.now().isoformat()}] 起動時診断\n"
+            )
             f.write(f"exe_dir: {_exe_dir}\n")
             f.write(f"lib_dir exists: {os.path.isdir(_lib_dir)}\n")
             pil_dir = os.path.join(_lib_dir, "PIL")
@@ -45,6 +53,7 @@ def _diagnostic_frozen_env():
                 f.write(f"_imaging*.pyd: {imaging}\n")
     except Exception as e:
         _write_diagnostic(f"diagnostic error: {e}")
+
 
 if getattr(sys, "frozen", False):
     if os.path.isdir(_lib_dir) and _lib_dir not in sys.path:
@@ -62,7 +71,9 @@ import webbrowser
 from urllib.parse import quote_plus
 
 # win10toast の pkg_resources 非推奨警告を抑制
-warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+warnings.filterwarnings(
+    "ignore", message="pkg_resources is deprecated", category=UserWarning
+)
 
 import pystray
 
@@ -70,13 +81,17 @@ import pystray
 _PIL_Image = _PIL_ImageDraw = None
 try:
     from PIL import Image, ImageDraw
+
     _PIL_Image, _PIL_ImageDraw = Image, ImageDraw
 except ImportError as e:
     if _exe_dir:
         _write_diagnostic(f"PIL import failed: {e}")
-        _write_diagnostic("デバイス側の確認: (1) lib\\PIL に _imaging*.pyd があるか (2) VC++ Redistributable 導入 (3) ウイルス対策で .pyd がブロックされていないか")
+        _write_diagnostic(
+            "デバイス側の確認: (1) lib\\PIL に _imaging*.pyd があるか (2) VC++ Redistributable 導入 (3) ウイルス対策で .pyd がブロックされていないか"
+        )
     try:
         import ctypes
+
         ctypes.windll.user32.MessageBoxW(  # type: ignore
             None,
             f"PIL（画像処理）の読み込みに失敗しました。\n\n{e}\n\n"
@@ -152,11 +167,16 @@ def _acquire_single_instance_lock() -> bool:
     try:
         import ctypes
         from ctypes import wintypes
+
         kernel32 = ctypes.windll.kernel32
         ERROR_ALREADY_EXISTS = 183
         # Local\ プレフィックス: per-session (RDP 等で別セッションは別 mutex 扱い)
         mutex_name = "Local\\WonderLinkoDesktopAppSingleInstance"
-        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.argtypes = [
+            ctypes.c_void_p,
+            wintypes.BOOL,
+            wintypes.LPCWSTR,
+        ]
         kernel32.CreateMutexW.restype = wintypes.HANDLE
         kernel32.GetLastError.restype = wintypes.DWORD
         h = kernel32.CreateMutexW(None, False, mutex_name)
@@ -213,6 +233,7 @@ def _make_icon_image():
     """
     try:
         from config_loader import get_app_base_dir
+
         base = get_app_base_dir()
     except Exception:
         base = os.path.dirname(os.path.abspath(__file__))
@@ -237,6 +258,7 @@ def _make_icon_image():
 def _personal_url():
     """このユーザー用のパーソナルモードURL。Board System でログイン済みなら Board System のパーソナル（/boards/personal/{id}）、そうでなければ linko のパーソナル。"""
     from config_loader import get_board_system_personal_url
+
     url = get_board_system_personal_url()
     if url:
         return url
@@ -247,6 +269,20 @@ def _personal_url():
     user_id = _config.get("user_id", "") or ""
     q = "user=" + quote_plus(user_id) if user_id else ""
     return base + "/personal" + ("?" + q if q else "")
+
+
+def _linko_cards_url():
+    """リン子カード・コレクション（PoC）の URL。"""
+    from linko_cards import build_linko_cards_url
+
+    return build_linko_cards_url(_config)
+
+
+def open_linko_cards(*args):
+    """リン子カード・コレクションをブラウザで開く。"""
+    from security import safe_webbrowser_open
+
+    safe_webbrowser_open(_linko_cards_url(), _config)
 
 
 def _postit_board_url():
@@ -282,6 +318,7 @@ def open_tray_click_target(*args):
 def open_personal_mode(*args):
     """このユーザー用のパーソナルモード（個人用）をブラウザで開く。"""
     from security import safe_webbrowser_open
+
     safe_webbrowser_open(_personal_url(), _config)
 
 
@@ -334,6 +371,7 @@ def _on_calendar_remind_ui(items):
     if not items:
         try:
             from calendar_notify_client import notify_delivery_done
+
             notify_delivery_done()
         except Exception:
             pass
@@ -343,6 +381,7 @@ def _on_calendar_remind_ui(items):
         if index >= len(items):
             try:
                 from calendar_notify_client import notify_delivery_done
+
                 notify_delivery_done()
             except Exception:
                 pass
@@ -351,10 +390,12 @@ def _on_calendar_remind_ui(items):
         try:
             from calendar_notify_client import post_shown
             from remind_notify import deliver_remind
+
             cfg = load_config()
             minutes = item.get("minutes_before")
             if minutes is None:
                 from calendar_notify_client import calendar_remind_minutes
+
                 minutes = calendar_remind_minutes(cfg)
             if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
@@ -379,9 +420,11 @@ def _on_calendar_remind_ui(items):
 
 def _on_task_remind_ui(items, slot, summary=""):
     """メインスレッド: Today タスク一覧のリマインドダイアログを表示。"""
+
     def _ack(item, action: str):
         try:
             from task_remind_client import post_ack
+
             cfg = load_config()
             if post_ack(cfg, item, slot, action):
                 if action == "done":
@@ -395,11 +438,20 @@ def _on_task_remind_ui(items, slot, summary=""):
 
     try:
         from task_remind_dialog import show_task_remind_dialog
-        show_task_remind_dialog(_miniport_window, items, slot, _ack, summary=summary or None)
+
+        show_task_remind_dialog(
+            _miniport_window,
+            items,
+            slot,
+            _ack,
+            summary=summary or None,
+            on_open_cards=open_linko_cards,
+        )
     except Exception as e:
         log_info(f"[task_remind] dialog failed: {e}")
         try:
             from task_remind_client import notify_dialog_closed
+
             notify_dialog_closed()
         except Exception:
             pass
@@ -415,10 +467,13 @@ def _toggle_notifications(icon=None, item=None):
     if not _config["notifications_enabled"]:
         try:
             import linko_avatar
+
             linko_avatar.dismiss_ui()
         except Exception:
             pass
-    notifications.show_toast("Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True)
+    notifications.show_toast(
+        "Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True
+    )
     if _miniport_window is not None:
         try:
             _miniport_window.after(0, _miniport_window.refresh_notifications_button)
@@ -432,12 +487,15 @@ def open_settings(icon=None, item=None):
     pystray のコールバックは別スレッドで走るため、Tk ウィジェットの生成は
     ミニポートの Tk メインスレッド上で行う必要がある。``after`` で dispatch する。
     """
+
     def _open():
         try:
             from settings_dialog import open_settings_dialog
+
             open_settings_dialog(master=_miniport_window)
         except Exception as e:
             print("open_settings failed:", e, flush=True)
+
     if _miniport_window is not None:
         try:
             _miniport_window.after(0, _open)
@@ -460,6 +518,7 @@ def quit_app(icon, item):
 
 def _test_postit_connection(*args):
     """付箋ボードへの接続をテストし、結果をトーストで表示。"""
+
     def do_test():
         cfg = load_config()
         url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
@@ -485,6 +544,7 @@ def _test_postit_connection(*args):
                 f"接続できました。付箋 {n} 件（通知は約1分間隔でチェックしています）",
                 duration_sec=5,
             )
+
     threading.Thread(target=do_test, daemon=True).start()
 
 
@@ -501,7 +561,10 @@ def _show_notification_help(*args):
     )
     try:
         import ctypes
-        ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 通知が表示されない場合", 0)
+
+        ctypes.windll.user32.MessageBoxW(
+            None, msg, "Wonder Linko - 通知が表示されない場合", 0
+        )
     except Exception:
         pass
 
@@ -510,6 +573,7 @@ def _show_email_login_dialog() -> str | None:
     """メールログイン用のメールアドレス入力ダイアログ。入力値を返す。キャンセル時は None。"""
     try:
         from dialog_utils import ask_string_large
+
         email = ask_string_large(
             "Wonder Linko - Board System ログイン",
             "Board System のパーソナルボードを開くには、登録済みのメールアドレスを入力してください:",
@@ -535,12 +599,20 @@ def _board_system_login_clicked(*args):
     email = _show_email_login_dialog()
     if not email or "@" not in email:
         if email is not None:
-            notifications.show_toast("Wonder Linko", "メールアドレスを入力してください。", duration_sec=3, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "メールアドレスを入力してください。",
+                duration_sec=3,
+                force_show=True,
+            )
         return
     try:
         import requests
         from security import assert_http_url
-        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
+
+        assert_http_url(
+            f"{board_url}/users/by_email", _config, purpose="users_by_email"
+        )
         r = requests.get(
             f"{board_url}/users/by_email",
             params={"email": email},
@@ -552,7 +624,13 @@ def _board_system_login_clicked(*args):
             if user_id is not None:
                 from config_loader import save_board_system_login
 
-                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
+                save_board_system_login(
+                    _config,
+                    board_url=board_url,
+                    user_id=user_id,
+                    user_data=data,
+                    login_email=email,
+                )
                 notifications.show_toast(
                     "Wonder Linko",
                     f"ログインしました（{data.get('name', '')}）。パーソナルを開くで Board System のパーソナルボードが開きます。",
@@ -561,16 +639,32 @@ def _board_system_login_clicked(*args):
                 )
                 from config_loader import get_board_system_personal_url
                 from security import safe_webbrowser_open
+
                 personal_url = get_board_system_personal_url(_config)
                 if personal_url:
                     safe_webbrowser_open(personal_url, _config)
                 return
         if r.status_code == 404:
-            notifications.show_toast("Wonder Linko", "このメールアドレスは未登録です。Board System でユーザーを登録してください。", duration_sec=5, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "このメールアドレスは未登録です。Board System でユーザーを登録してください。",
+                duration_sec=5,
+                force_show=True,
+            )
         else:
-            notifications.show_toast("Wonder Linko", "ログインに失敗しました。Board System の URL とネットワークを確認してください。", duration_sec=5, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "ログインに失敗しました。Board System の URL とネットワークを確認してください。",
+                duration_sec=5,
+                force_show=True,
+            )
     except Exception as e:
-        notifications.show_toast("Wonder Linko", "ログインに失敗しました: " + str(e)[:80], duration_sec=5, force_show=True)
+        notifications.show_toast(
+            "Wonder Linko",
+            "ログインに失敗しました: " + str(e)[:80],
+            duration_sec=5,
+            force_show=True,
+        )
 
 
 def build_menu(icon):
@@ -598,10 +692,13 @@ def _show_display_name_dialog(current_name: str = "") -> str | None:
     """表示名入力ダイアログを表示し、入力された名前を返す。キャンセル時は None。"""
     try:
         from dialog_utils import ask_string_large
+
         prompt = "ミニポートから投稿したときに付箋に表示する名前を入力してください:"
         if current_name:
             prompt += "\n（現在: " + current_name + "）"
-        return ask_string_large("Wonder Linko - 表示名", prompt, initial_value=current_name)
+        return ask_string_large(
+            "Wonder Linko - 表示名", prompt, initial_value=current_name
+        )
     except Exception:
         return None
 
@@ -633,16 +730,31 @@ def _prompt_board_system_login_if_needed():
     try:
         import requests
         from security import assert_http_url
-        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
-        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+
+        assert_http_url(
+            f"{board_url}/users/by_email", _config, purpose="users_by_email"
+        )
+        r = requests.get(
+            f"{board_url}/users/by_email", params={"email": email}, timeout=10
+        )
         if r.status_code == 200 and r.json():
             data = r.json()
             user_id = data.get("id")
             if user_id is not None:
                 from config_loader import save_board_system_login
 
-                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
-                notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
+                save_board_system_login(
+                    _config,
+                    board_url=board_url,
+                    user_id=user_id,
+                    user_data=data,
+                    login_email=email,
+                )
+                notifications.show_toast(
+                    "Wonder Linko",
+                    "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。",
+                    duration_sec=4,
+                )
     except Exception:
         pass
 
@@ -652,6 +764,7 @@ def _wait_for_process_exit(pid: int):
     if sys.platform == "win32":
         try:
             import ctypes
+
             kernel32 = ctypes.windll.kernel32  # type: ignore
             SYNCHRONIZE = 0x00100000
             INFINITE = 0xFFFFFFFF
@@ -663,6 +776,7 @@ def _wait_for_process_exit(pid: int):
                     kernel32.CloseHandle(handle)
         except Exception:
             import time
+
             while True:
                 try:
                     os.kill(pid, 0)
@@ -671,6 +785,7 @@ def _wait_for_process_exit(pid: int):
                 time.sleep(0.5)
     else:
         import time
+
         while True:
             try:
                 os.kill(pid, 0)
@@ -718,7 +833,9 @@ def main():
     # 単一インスタンス制御: 既に他プロセスが起動中なら、先発に前面化を依頼して自プロセスは終了
     if not _acquire_single_instance_lock():
         _signal_existing_instance_to_show()
-        log_info("既に Wonder Linko が起動中のため、ミニポートの前面化のみ依頼して終了します。")
+        log_info(
+            "既に Wonder Linko が起動中のため、ミニポートの前面化のみ依頼して終了します。"
+        )
         return
 
     _config = load_config()
@@ -743,7 +860,11 @@ def main():
         start_postit_poll(lambda: _config, on_new_postit_notes)
 
     # MSI 等でインストールした exe の初回起動時のみ、Windows 再起動後もミニポートを自動表示するためスタートアップに登録
-    if sys.platform == "win32" and getattr(sys, "frozen", False) and not startup.is_startup_enabled():
+    if (
+        sys.platform == "win32"
+        and getattr(sys, "frozen", False)
+        and not startup.is_startup_enabled()
+    ):
         if startup.set_startup_enabled(True):
             notifications.show_toast(
                 "Wonder Rinko",
@@ -755,6 +876,7 @@ def main():
     try:
         import customtkinter as ctk
         from mini_port import MiniPortWindow
+
         ctk.set_appearance_mode("system")
 
         def _miniport_on_hide():
@@ -791,6 +913,7 @@ def main():
     # タスクリマインド (features.task_remind=ON かつ Board ログイン時)
     try:
         from task_remind_client import start_task_remind_poll
+
         start_task_remind_poll(
             lambda: _config,
             _on_task_remind_ui,
@@ -803,6 +926,7 @@ def main():
     # カレンダーリマインド (features.calendar_notify=ON)
     try:
         from calendar_notify_client import start_calendar_notify_poll
+
         start_calendar_notify_poll(_on_calendar_remind_ui, tk_master=_miniport_window)
         log_info("[calendar_notify] ポーリング開始")
     except Exception as e:
@@ -812,11 +936,13 @@ def main():
     log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")
     try:
         from visitor_notify_client import start_visitor_notify
+
         log_info("[visitor_notify] visitor_notify_client の import 成功")
         result = start_visitor_notify()
         log_info(f"[visitor_notify] start_visitor_notify 完了: result={result}")
     except Exception as e:
         import traceback
+
         log_info(f"[visitor_notify] 起動エラー: {e}")
         log_info(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
@@ -841,9 +967,12 @@ def main():
                 # ユーザー方針: アップデートは任意。起動時に自動でダイアログを出さない。
                 # 更新があってもログに残すだけ。実行は設定画面「アップデート確認」から手動。
                 if has_update:
-                    log_info(f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)")
+                    log_info(
+                        f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)"
+                    )
 
             check_and_notify(__version__, _update_url, _on_startup_update_result)
+
     else:
         _startup_update_check = None
 
