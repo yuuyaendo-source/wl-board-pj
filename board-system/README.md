@@ -2,7 +2,7 @@
 
 付箋ボード（`wl-sticky-note`）と連携する統合ボードシステム。**Main / Task / Personal / Meeting** の 4 ボードを提供し、社内 LLM（Ollama）による自動仕分け・Google カレンダー連携・ニュース要約・デスクトップアプリ向け API を担う。
 
-**本番は Docker（Blue/Green）+ PostgreSQL** が標準。付箋ボードと同一サーバ（`wl-board-pj` / `172.16.1.203`）で `https://wl-ai-board.internal.wonder-link.com/` に配信。
+**本番は Docker（Blue/Green）+ PostgreSQL** が標準。付箋ボードと同一サーバ（`wl-board-pj` / `172.16.1.203`）で `https://wlboardsys.internal.wonder-link.com/` に配信。
 
 ## 構成
 

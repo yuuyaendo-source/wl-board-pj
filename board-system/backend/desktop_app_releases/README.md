@@ -15,7 +15,7 @@
 ```json
 {
   "version": "3.0.1",
-  "url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
 }
 ```
 
@@ -79,9 +79,9 @@ bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込�
 5. **反映確認**
 
    ```bash
-   curl https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json
+   curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
    # → 新 version が返れば成功
-   curl -sI https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi | head -3
+   curl -sI https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi | head -3
    # → 200 OK
    ```
 
@@ -101,7 +101,7 @@ bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込�
 デスクトップアプリの `config.json`:
 
 ```json
-"update_check_url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json"
+"update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json"
 ```
 
 ## 詳細な手順とトラブルシューティング

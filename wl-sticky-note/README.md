@@ -3,8 +3,8 @@
 リアルタイム協調型のブレインストーミング・付箋ボードアプリです。Next.js + Express + Socket.IO で構成され、複数人で同じボード上に付箋を追加・編集・移動できます。AI-Board・デスクトップアプリとの連携APIを提供します。
 
 - **プロジェクト名**: wl-sticky-note
-- **本番サーバ**: IP `172.16.1.203` / ドメイン `wl-ai-board.internal.wonder-link.com`
-- **本番ボード（連携先）**: **<https://wl-ai-board.internal.wonder-link.com/board/wl>** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
+- **本番サーバ**: IP `172.16.1.203` / ドメイン `wlboardsys.internal.wonder-link.com`
+- **本番ボード（連携先）**: **<https://wlboardsys.internal.wonder-link.com/board/wl>** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
 - **Board System との本番同一サーバ運用**: 付箋ボードと Board System（Task / Personal / Meeting）を同一サーバで動かす場合は、**wlinko-pj ルートの [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** に従う（02_1_sticky-note と board-system をまとめて clone・ビルド・Nginx 設定）。単体デプロイの場合は下記「本番デプロイ」を参照。
 - **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは sparse-checkout で 02_1_sticky-note と board-system の両方を取得してデプロイする構成も可。
 
@@ -51,7 +51,7 @@ cd src
 ## 本番デプロイ
 
 - **付箋ボード＋Board System を同一サーバで運用する場合**: リポジトリルートの **[docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** を参照（推奨。clone・付箋ボード deploy・Board System backend/frontend・Nginx の一連手順）。
-- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: <https://wl-ai-board.internal.wonder-link.com>
+- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: <https://wlboardsys.internal.wonder-link.com>
 
 ---
 
@@ -84,9 +84,9 @@ cd src
 | ------ | ------ | ----- |
 | `PORT` | サーバーのポート | `3001` |
 | `NODE_ENV` | 実行環境 | `production` |
-| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wl-ai-board.local` / ローカル: `http://127.0.0.1:5000` |
+| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wlboardsys.local` / ローカル: `http://127.0.0.1:5000` |
 | `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
-| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `https://wl-ai-board.internal.wonder-link.com/boards` |
+| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `https://wlboardsys.internal.wonder-link.com/boards` |
 
 ---
 

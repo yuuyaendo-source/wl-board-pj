@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = (
-        None  # 例: https://wl-ai-board.example.com/auth/google/callback
+        None  # 例: https://wlboardsys.example.com/auth/google/callback
     )
     # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
     calendar_timezone: str = "Asia/Tokyo"

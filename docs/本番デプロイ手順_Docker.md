@@ -13,10 +13,10 @@
 | ホスト（IP） | リポジトリ / サービス | FQDN |
 | -------------- | ------------------------ | ------ |
 | **172.16.1.251** | linko-system（AI-Board） | <https://linko-board.internal.wonder-link.com/> |
-| **172.16.1.83**（または 84） | wl-board-pj（付箋ボード・Board System） | <https://wl-ai-board.internal.wonder-link.com/> |
+| **172.16.1.83**（または 84） | wl-board-pj（付箋ボード・Board System） | <https://wlboardsys.internal.wonder-link.com/> |
 
 - 上記の **wl-board-pj 用サーバ** に本手順で Docker をデプロイする。
-- linko-system は **172.16.1.251** で稼働し、付箋取得時に `POSTIT_BOARD_URL=https://wl-ai-board.internal.wonder-link.com` で本サーバ（wl-ai-board）へアクセスする。
+- linko-system は **172.16.1.251** で稼働し、付箋取得時に `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` で本サーバ（wlboardsys）へアクセスする。
 
 ---
 
@@ -63,8 +63,8 @@
    ```
 
 2. **ステージングで確認**  
-   <https://staging.wl-ai-board.internal.wonder-link.com/> にアクセスし、表示・操作・API が想定どおりか確認する。  
-   （名前解決: DNS または各 PC の hosts に `172.16.1.203 staging.wl-ai-board.internal.wonder-link.com` を追加）
+   <https://staging.wlboardsys.internal.wonder-link.com/> にアクセスし、表示・操作・API が想定どおりか確認する。  
+   （名前解決: DNS または各 PC の hosts に `172.16.1.203 staging.wlboardsys.internal.wonder-link.com` を追加）
 3. **問題なければ本番へ反映**  
 
    ```bash
@@ -102,10 +102,10 @@
 
 | 用途 | URL（例） |
 | ------ | ----------- |
-| トップ | <https://wl-ai-board.internal.wonder-link.com/> → 302 で /boards/taskboard |
-| Board System フロント | <https://wl-ai-board.internal.wonder-link.com/boards/（例>: /boards/taskboard） |
-| 付箋ボード | <https://wl-ai-board.internal.wonder-link.com/board/（例>: /board/wl） |
-| Board System API | <https://wl-ai-board.internal.wonder-link.com/api/bs/> |
+| トップ | <https://wlboardsys.internal.wonder-link.com/> → 302 で /boards/taskboard |
+| Board System フロント | <https://wlboardsys.internal.wonder-link.com/boards/（例>: /boards/taskboard） |
+| 付箋ボード | <https://wlboardsys.internal.wonder-link.com/board/（例>: /board/wl） |
+| Board System API | <https://wlboardsys.internal.wonder-link.com/api/bs/> |
 
 Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント、`/board/` → 付箋ボード、`/api/bs/` → Board System API。
 
@@ -116,7 +116,7 @@ Nginx: `/` → 302 /boards/taskboard、`/boards/` → Board System フロント�
 - **サーバ**: Ubuntu 24.04 LTS。SSH と sudo が使えること。
 - **Docker**: Docker Engine と Docker Compose（v2 の `docker compose`）がインストール済み。
 - **Nginx**: ホストに Nginx がインストール済み（設定は 3.4 で行う）。
-- **ドメイン・アクセス**: `wl-ai-board.internal.wonder-link.com`（または IP `172.16.1.203`）で Nginx にアクセスできること（DNS でサーバ IP を指す）。
+- **ドメイン・アクセス**: `wlboardsys.internal.wonder-link.com`（または IP `172.16.1.203`）で Nginx にアクセスできること（DNS でサーバ IP を指す）。
 
 ---
 
@@ -146,7 +146,7 @@ cp .env.example .env
 nano .env
 ```
 
-少なくとも `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wl-ai-board.internal.wonder-link.com/api/bs`）。**SSL 化時は必ず `https://` にすること**。
+少なくとも `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wlboardsys.internal.wonder-link.com/api/bs`）。**SSL 化時は必ず `https://` にすること**。
 
 **CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`wl-sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
 
@@ -173,7 +173,7 @@ PostgreSQL は `postgres_data` ボリュームに永続化される。
   sudo nginx -t && sudo systemctl restart nginx
   ```
 
-  - FQDN: 本番 `wl-ai-board.internal.wonder-link.com` / ステージング `staging.wl-ai-board.internal.wonder-link.com`、証明書: `/home/devuser01/sv_cert/`。
+  - FQDN: 本番 `wlboardsys.internal.wonder-link.com` / ステージング `staging.wlboardsys.internal.wonder-link.com`、証明書: `/home/devuser01/sv_cert/`。
 - **別ユーザ・別パスの場合**: 上記ファイルの `ssl_certificate` / `ssl_certificate_key` をサーバ上の実際のパスに書き換える。
 - **active_env.conf** を初回用に作成する。
 
@@ -217,9 +217,9 @@ docker exec -it linko-backend-blue alembic upgrade head
 
 | 用途 | URL（例） |
 | ------ | ----------- |
-| Board System フロント | <https://wl-ai-board.internal.wonder-link.com/> または <https://172.16.1.203/> |
-| 付箋ボード | <https://wl-ai-board.internal.wonder-link.com/board/> または <https://172.16.1.203/board/> |
-| Board System API（ヘルス） | <https://wl-ai-board.internal.wonder-link.com/api/bs/health> または <https://172.16.1.203/api/bs/health> |
+| Board System フロント | <https://wlboardsys.internal.wonder-link.com/> または <https://172.16.1.203/> |
+| 付箋ボード | <https://wlboardsys.internal.wonder-link.com/board/> または <https://172.16.1.203/board/> |
+| Board System API（ヘルス） | <https://wlboardsys.internal.wonder-link.com/api/bs/health> または <https://172.16.1.203/api/bs/health> |
 
 ### 3.9 パーソナルボードで投稿できない場合
 
@@ -333,8 +333,8 @@ ping は通るが HTTPS で画面が開かない場合は、**サーバ上で**�
    `deploy.sh` は **active_env.conf だけ**を更新する。**80/443 の server ブロック**（FQDN・SSL・`current_frontend` 等への proxy）は、リポジトリの **`board-system/nginx/nginx.conf`** をサーバの Nginx から読み込む必要がある。
 
    ```bash
-   # 設定の内容確認（wl-ai-board や current_frontend が出るか）
-   sudo nginx -T 2>/dev/null | grep -E "wl-ai-board|current_frontend|3010|8010|3011"
+   # 設定の内容確認（wlboardsys や current_frontend が出るか）
+   sudo nginx -T 2>/dev/null | grep -E "wlboardsys|current_frontend|3010|8010|3011"
    ```
 
    何も出ない場合は、**`/etc/nginx/nginx.conf` を board-system の nginx.conf で置き換える**か、`http { }` 内で `include /var/www/wlinko-pj/board-system/nginx/nginx.conf;` のように読み込む。  
@@ -392,7 +392,7 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 ### 7.3 「API の URL が誤っているか…」エラー
 
 1. **Nginx**: `board-system/nginx/nginx.conf` が本番に反映されているか確認。`include /etc/nginx/conf.d/active_env.conf;` と `location /api/bs/` が含まれるようにする。
-2. **アクセスする URL と一致させる**: ブラウザで IP（例: <https://172.16.1.203/）で開いている場合は、`.env`> の `NEXT_PUBLIC_API_URL` も同じ IP（例: `https://172.16.1.203/api/bs`）にし、**再ビルド・再デプロイ**する。ドメインで開く場合は `https://wl-ai-board.internal.wonder-link.com` が DNS でサーバ IP（172.16.1.203）を指しているか確認する。
+2. **アクセスする URL と一致させる**: ブラウザで IP（例: <https://172.16.1.203/）で開いている場合は、`.env`> の `NEXT_PUBLIC_API_URL` も同じ IP（例: `https://172.16.1.203/api/bs`）にし、**再ビルド・再デプロイ**する。ドメインで開く場合は `https://wlboardsys.internal.wonder-link.com` が DNS でサーバ IP（172.16.1.203）を指しているか確認する。
 
 ### 7.4 パーソナルボードで投稿できない
 
@@ -416,15 +416,15 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
 ### B.1 構成
 
 - **ステージング**: 本番と同じサーバ（例: 172.16.1.203）上で、別ポート（3030/8030/3031）・**別 DB**（`linko_board_system_staging`）で起動。
-- **アクセス**: <https://staging.wl-ai-board.internal.wonder-link.com/>  
-  **名前解決**: DNS で `staging.wl-ai-board.internal.wonder-link.com` を**本番サーバの IP**（172.16.1.203）に向けるか、各 PC の hosts に `172.16.1.203 staging.wl-ai-board.internal.wonder-link.com` を追加する。
+- **アクセス**: <https://staging.wlboardsys.internal.wonder-link.com/>  
+  **名前解決**: DNS で `staging.wlboardsys.internal.wonder-link.com` を**本番サーバの IP**（172.16.1.203）に向けるか、各 PC の hosts に `172.16.1.203 staging.wlboardsys.internal.wonder-link.com` を追加する。
 - ステージングは **本番と別のデータベース** を使用。本番データに影響しない。
 
 ### B.2 手順（初回・本番サーバで実施）
 
 1. **本番サーバにリポジトリがある前提**  
    `/var/www/wlinko-pj` に wlinko-pj があり、`board-system/.env` が用意されていること。  
-   ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wl-ai-board.internal.wonder-link.com`）に合わせて **https** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
+   ステージング用の `NEXT_PUBLIC_API_URL` は deploy-staging.sh のデフォルト（`staging.wlboardsys.internal.wonder-link.com`）に合わせて **https** でビルドされる（環境変数 `STAGING_HOST` で変更可）。
 
 2. **本番サーバの Nginx にステージング用設定を追加**  
    - **`nginx.conf.production-server`** を `/etc/nginx/nginx.conf` にコピーしていること（staging.conf を include する）。  
@@ -439,7 +439,7 @@ docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache
    ./deploy-staging.sh
    ```
 
-   初回はビルドに数分かかる。完了後、**staging.wl-ai-board.internal.wonder-link.com** が本番サーバ IP に解決する状態で、ブラウザから <https://staging.wl-ai-board.internal.wonder-link.com/> にアクセスして動作確認。
+   初回はビルドに数分かかる。完了後、**staging.wlboardsys.internal.wonder-link.com** が本番サーバ IP に解決する状態で、ブラウザから <https://staging.wlboardsys.internal.wonder-link.com/> にアクセスして動作確認。
 
 4. **マイグレーション**  
    `deploy-staging.sh` 内でステージング DB に対して `alembic upgrade head` を実行する。失敗する場合は本番サーバで手動:  
@@ -474,7 +474,7 @@ cd /var/www/wlinko-pj/board-system/deploy
 
 ステージングと本番は**同じリポジトリのコード**を使う。ステージングで確認した内容は、**同じサーバ**で通常デプロイすると本番に反映される。
 
-1. ステージング（<https://staging.wl-ai-board.internal.wonder-link.com/）で動作・表示を確認する。>
+1. ステージング（<https://staging.wlboardsys.internal.wonder-link.com/）で動作・表示を確認する。>
 2. 問題なければ、**本番サーバ**で通常の本番デプロイを行う（[4. 通常のデプロイ](#4-通常のデプロイ) と同じ手順）。
 
 ```bash
@@ -505,21 +505,21 @@ PC の名前解決はできているがブラウザで開けない場合、**サ
 1. **Nginx がステージング設定を読み込んでいるか**  
 
    ```bash
-   sudo nginx -T 2>/dev/null | grep -E "staging.wl-ai-board|3030|8030|3031"
+   sudo nginx -T 2>/dev/null | grep -E "staging.wlboardsys|3030|8030|3031"
    ```  
 
-   `staging.wl-ai-board.internal.wonder-link.com` や 3030/8030/3031 の記述が出れば読み込み済み。何も出ない場合は `nginx.conf.production-server` を `/etc/nginx/nginx.conf` にコピーし、`staging.conf` を `/etc/nginx/conf.d/` にコピーしたうえで `sudo systemctl restart nginx` する。
+   `staging.wlboardsys.internal.wonder-link.com` や 3030/8030/3031 の記述が出れば読み込み済み。何も出ない場合は `nginx.conf.production-server` を `/etc/nginx/nginx.conf` にコピーし、`staging.conf` を `/etc/nginx/conf.d/` にコピーしたうえで `sudo systemctl restart nginx` する。
 
 2. **サーバー自身からステージングに届くか**  
 
    ```bash
-   curl -s -o /dev/null -w "%{http_code}\n" -k -H "Host: staging.wl-ai-board.internal.wonder-link.com" https://127.0.0.1/
+   curl -s -o /dev/null -w "%{http_code}\n" -k -H "Host: staging.wlboardsys.internal.wonder-link.com" https://127.0.0.1/
    ```  
 
    `302` や `200` が返れば、Nginx の振り分けとステージングコンテナは動いている。
 
 3. **ファイアウォール**  
-   同じ PC で本番（例: <https://wl-ai-board.internal.wonder-link.com/）にはアクセスできるなら、ポート> 443 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 443 が許可されているか確認する。  
+   同じ PC で本番（例: <https://wlboardsys.internal.wonder-link.com/）にはアクセスできるなら、ポート> 443 は開いているので、上記 1 を再確認。本番にもアクセスできない場合は、サーバーのファイアウォール（`ufw` や iptables）で 443 が許可されているか確認する。  
    （ping が通らないだけの場合は、ICMP を止めているだけのことが多く、HTTP には影響しない。）
 
 4. **ステージング用ポートが listen しているか**  

@@ -11,7 +11,7 @@ const next = require('next');
 const fs = require('fs');
 const path = require('path');
 
-// AI-Board 連携先（本番: .env に AI_BOARD_URL を設定。例: http://wl-ai-board.local）
+// AI-Board 連携先（本番: .env に AI_BOARD_URL を設定。例: http://wlboardsys.local）
 const AI_BOARD_BASE = (process.env.AI_BOARD_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
 // Board System API（付箋削除連携: 付箋ボードで削除したら Task/Personal からも削除）
 const BOARD_SYSTEM_API_BASE = (process.env.BOARD_SYSTEM_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');

@@ -34,8 +34,8 @@ npm run dev
 
 | 変数 | 説明 | 例 |
 | ------ | ------ | ----- |
-| `NEXT_PUBLIC_API_URL` | バックエンド API の URL | 開発: `http://localhost:8000`、本番: `https://wl-ai-board.internal.wonder-link.com/api/bs` |
-| `NEXT_PUBLIC_LEGACY_BOARD_URL` | 付箋ボード（02_1）の URL（Task の付箋取り込み用） | 本番: `https://wl-ai-board.internal.wonder-link.com` |
+| `NEXT_PUBLIC_API_URL` | バックエンド API の URL | 開発: `http://localhost:8000`、本番: `https://wlboardsys.internal.wonder-link.com/api/bs` |
+| `NEXT_PUBLIC_LEGACY_BOARD_URL` | 付箋ボード（02_1）の URL（Task の付箋取り込み用） | 本番: `https://wlboardsys.internal.wonder-link.com` |
 
 本番ビルド時は `NEXT_PUBLIC_API_URL` を本番の API ベース URL に設定すること。`next.config.ts` で `NODE_ENV=production` 時に basePath `/boards` が自動付与される。
 

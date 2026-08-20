@@ -22,7 +22,13 @@ except ImportError as e:
     print("エラー:", e)
     sys.exit(1)
 
-from config_loader import load_config, save_config, get_board_system_personal_url, get_effective_board_system_url, get_app_base_dir
+from config_loader import (
+    load_config,
+    save_config,
+    get_board_system_personal_url,
+    get_effective_board_system_url,
+    get_app_base_dir,
+)
 from theme import Theme, apply_window_transparency
 
 # 画像表示用（PIL が無い環境ではリン子はテキストボタンのみ）
@@ -30,6 +36,7 @@ from theme import Theme, apply_window_transparency
 try:
     import PIL.Image  # noqa: F401
     import PIL.ImageTk  # noqa: F401
+
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
@@ -37,6 +44,7 @@ except ImportError:
 # ホットキー用（別スレッドで動作）
 try:
     from pynput import keyboard
+
     HAS_PYNPUT = True
 except ImportError:
     HAS_PYNPUT = False
@@ -45,8 +53,11 @@ except ImportError:
 def _sticky_note_api_url():
     """付箋ボードの REST API URL（POST /api/sticky_notes）。board URL から導出。"""
     cfg = load_config()
-    board_url = (cfg.get("mini_port_api_url") or "https://wl-ai-board.internal.wonder-link.com/board/wl").rstrip("/")
-    # https://wl-ai-board.../board/wl → https://wl-ai-board.../api/sticky_notes
+    board_url = (
+        cfg.get("mini_port_api_url")
+        or "https://wlboardsys.internal.wonder-link.com/board/wl"
+    ).rstrip("/")
+    # https://wlboardsys.../board/wl → https://wlboardsys.../api/sticky_notes
     base = re.sub(r"/board/.*$", "", board_url).rstrip("/")
     return f"{base}/api/sticky_notes"
 
@@ -60,13 +71,17 @@ def _board_id():
 def _taskboard_url():
     """ミニウィンドウのリン子クリックで開く Task ボードの URL。"""
     cfg = load_config()
-    return (cfg.get("mini_port_taskboard_url") or "https://wl-ai-board.internal.wonder-link.com/boards/taskboard").strip()
+    return (
+        cfg.get("mini_port_taskboard_url")
+        or "https://wlboardsys.internal.wonder-link.com/boards/taskboard"
+    ).strip()
 
 
 def _prompt_email_and_resolve_personal(parent=None):
     """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。
     parent: ダイアログの親ウィンドウ（MiniPortWindow 等）。None のときは新規 Tk() を作成。"""
     from dialog_utils import ask_string_large
+
     cfg = load_config()
     board_url = get_effective_board_system_url(cfg)
     if not board_url:
@@ -81,12 +96,15 @@ def _prompt_email_and_resolve_personal(parent=None):
     email = email.strip()
     try:
         from security import assert_http_url
+
         assert_http_url(f"{board_url}/users/by_email", cfg, purpose="users_by_email")
     except ValueError as e:
         print(f"[mini_port] users/by_email blocked: {e}", flush=True)
         return None
     try:
-        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+        r = requests.get(
+            f"{board_url}/users/by_email", params={"email": email}, timeout=10
+        )
         if r.status_code != 200:
             return None
         data = r.json()
@@ -95,7 +113,9 @@ def _prompt_email_and_resolve_personal(parent=None):
             return None
         from config_loader import save_board_system_login
 
-        save_board_system_login(cfg, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
+        save_board_system_login(
+            cfg, board_url=board_url, user_id=user_id, user_data=data, login_email=email
+        )
         return get_board_system_personal_url(cfg)
     except Exception:
         return None
@@ -123,6 +143,7 @@ def _send_content(text: str) -> Tuple[bool, str]:
     }
     try:
         from security import assert_http_url
+
         assert_http_url(url, cfg, purpose="sticky_notes")
     except ValueError as e:
         return False, f"送信先が許可されていません: {str(e)[:80]}"
@@ -148,7 +169,9 @@ def _rinko_icon_path() -> str:
     ):
         if os.path.isfile(candidate):
             return os.path.normpath(os.path.abspath(candidate))
-    return os.path.normpath(os.path.abspath(os.path.join(base, "assets", "toast_icon.png")))
+    return os.path.normpath(
+        os.path.abspath(os.path.join(base, "assets", "toast_icon.png"))
+    )
 
 
 class MiniPortWindow(ctk.CTk):
@@ -160,11 +183,19 @@ class MiniPortWindow(ctk.CTk):
     EXPANDED_W = 360
     EXPANDED_H = 200
 
-    def __init__(self, on_hide=None, on_notifications_toggle=None, get_notifications_enabled=None):
+    def __init__(
+        self, on_hide=None, on_notifications_toggle=None, get_notifications_enabled=None
+    ):
         super().__init__()
         self._on_hide = on_hide if callable(on_hide) else None
-        self._on_notifications_toggle = on_notifications_toggle if callable(on_notifications_toggle) else None
-        self._get_notifications_enabled = get_notifications_enabled if callable(get_notifications_enabled) else (lambda: True)
+        self._on_notifications_toggle = (
+            on_notifications_toggle if callable(on_notifications_toggle) else None
+        )
+        self._get_notifications_enabled = (
+            get_notifications_enabled
+            if callable(get_notifications_enabled)
+            else (lambda: True)
+        )
         self._feedback_job = None
         self._input_visible = False
         self._placeholder_visible = False
@@ -179,7 +210,9 @@ class MiniPortWindow(ctk.CTk):
         if HAS_PYNPUT:
             self._start_hotkey_listener()
         else:
-            print("Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。")
+            print(
+                "Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
+            )
 
     # プレースホルダー用（CTkTextbox は placeholder 非対応のため自前で表示）
     PLACEHOLDER_TEXT = "付箋を投稿するコメントを入力"
@@ -193,7 +226,9 @@ class MiniPortWindow(ctk.CTk):
         # 見せる。非 Windows は transparentcolor 非対応 (黒い四角が残る) のため、
         # ウィンドウ背景をサーフェス色にして角丸の外を馴染ませる。
         # いずれも -alpha で枠ごと軽く透過し、作業の邪魔になりにくくする。
-        self._transparent_key = apply_window_transparency(self, fg_fallback=Theme.SURFACE)
+        self._transparent_key = apply_window_transparency(
+            self, fg_fallback=Theme.SURFACE
+        )
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
@@ -209,6 +244,7 @@ class MiniPortWindow(ctk.CTk):
         # features.linko_avatar の値でレイアウトを分岐
         try:
             from config_loader import is_feature_enabled
+
             avatar_on = is_feature_enabled("linko_avatar")
         except Exception:
             avatar_on = False
@@ -232,7 +268,8 @@ class MiniPortWindow(ctk.CTk):
             if use_icon:
                 try:
                     self._rinko_image = ctk.CTkImage(
-                        light_image=icon_path, dark_image=icon_path,
+                        light_image=icon_path,
+                        dark_image=icon_path,
                         size=(avatar_size, avatar_size),
                     )
                 except Exception:
@@ -250,22 +287,35 @@ class MiniPortWindow(ctk.CTk):
             self._bind_avatar_click_drag(self.btn_rinko)
 
             # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
-            self._button_frame = ctk.CTkFrame(self.compact_frame, fg_color="transparent")
+            self._button_frame = ctk.CTkFrame(
+                self.compact_frame, fg_color="transparent"
+            )
             self._button_frame.pack(side="top", fill="x")
             self.btn_post = ctk.CTkButton(
-                self._button_frame, text="📝 投稿", width=116, height=40,
-                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14, weight="bold"),
-                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                self._button_frame,
+                text="📝 投稿",
+                width=116,
+                height=40,
+                corner_radius=Theme.RADIUS_PILL,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY,
+                hover_color=Theme.PRIMARY_HOVER,
                 text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
             self.btn_post.pack(side="left", expand=True, fill="x", padx=(0, 5))
             self.btn_board = ctk.CTkButton(
-                self._button_frame, text="📋 ボード", width=116, height=40,
-                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14),
-                fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                self._button_frame,
+                text="📋 ボード",
+                width=116,
+                height=40,
+                corner_radius=Theme.RADIUS_PILL,
+                font=ctk.CTkFont(size=14),
+                fg_color=Theme.SECONDARY,
+                hover_color=Theme.SECONDARY_HOVER,
                 text_color=Theme.SECONDARY_TEXT,
-                border_width=1, border_color=Theme.SECONDARY_BORDER,
+                border_width=1,
+                border_color=Theme.SECONDARY_BORDER,
                 command=self._open_taskboard,
             )
             self.btn_board.pack(side="left", expand=True, fill="x", padx=(5, 0))
@@ -276,29 +326,46 @@ class MiniPortWindow(ctk.CTk):
             if use_icon:
                 try:
                     self._rinko_image = ctk.CTkImage(
-                        light_image=icon_path, dark_image=icon_path, size=(36, 36),
+                        light_image=icon_path,
+                        dark_image=icon_path,
+                        size=(36, 36),
                     )
                     self.btn_rinko = ctk.CTkButton(
-                        self.compact_frame, image=self._rinko_image, text="",
-                        width=44, height=40, corner_radius=22,
-                        fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                        self.compact_frame,
+                        image=self._rinko_image,
+                        text="",
+                        width=44,
+                        height=40,
+                        corner_radius=22,
+                        fg_color=Theme.SECONDARY,
+                        hover_color=Theme.SECONDARY_HOVER,
                         command=self._open_taskboard,
                     )
                 except Exception:
                     use_icon = False
             if not use_icon:
                 self.btn_rinko = ctk.CTkButton(
-                    self.compact_frame, text="ボード", width=56, height=40,
-                    corner_radius=20, font=ctk.CTkFont(size=13),
-                    fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                    self.compact_frame,
+                    text="ボード",
+                    width=56,
+                    height=40,
+                    corner_radius=20,
+                    font=ctk.CTkFont(size=13),
+                    fg_color=Theme.SECONDARY,
+                    hover_color=Theme.SECONDARY_HOVER,
                     text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
             self.btn_rinko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
-                self.compact_frame, text="投稿", width=70, height=40,
-                corner_radius=20, font=ctk.CTkFont(size=14, weight="bold"),
-                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                self.compact_frame,
+                text="投稿",
+                width=70,
+                height=40,
+                corner_radius=20,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY,
+                hover_color=Theme.PRIMARY_HOVER,
                 text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
@@ -391,14 +458,23 @@ class MiniPortWindow(ctk.CTk):
             if not os.path.isfile(light_path):
                 return
             import PIL.Image
+
             light_src = PIL.Image.open(light_path).convert("RGBA")
-            dark_src = PIL.Image.open(dark_path).convert("RGBA") if os.path.isfile(dark_path) else light_src
+            dark_src = (
+                PIL.Image.open(dark_path).convert("RGBA")
+                if os.path.isfile(dark_path)
+                else light_src
+            )
             w, h = int(self.COMPACT_W), int(self.COMPACT_H)
-            self._card_bg_image = ctk.CTkImage(light_image=light_src, dark_image=dark_src, size=(w, h))
+            self._card_bg_image = ctk.CTkImage(
+                light_image=light_src, dark_image=dark_src, size=(w, h)
+            )
             # 角丸グラデ PNG をカード上部 (マスコット表示領域) に最背面で敷く。
             # PNG の角丸半径はフレームの border 半径と揃えてあるので、縁は二重にならず
             # きれいに重なる。コンテンツ (compact_frame / input_frame) は上に描かれる。
-            self._card_bg_label = ctk.CTkLabel(self.frame, text="", image=self._card_bg_image)
+            self._card_bg_label = ctk.CTkLabel(
+                self.frame, text="", image=self._card_bg_image
+            )
             self._card_bg_label.place(x=0, y=0, anchor="nw")
             self._card_bg_label.lower()
         except Exception as e:
@@ -462,6 +538,7 @@ class MiniPortWindow(ctk.CTk):
             if not getattr(self, "_avatar_on", False):
                 return
             import linko_avatar
+
             # アバターのソース画像は 160px を優先して読む (140px 表示でも鮮明)。
             # 160px セットが無い環境では従来の 128px にフォールバック。
             if not linko_avatar.is_ready():
@@ -477,6 +554,7 @@ class MiniPortWindow(ctk.CTk):
             # 吹き出し
             try:
                 from speech_bubble import SpeechBubble
+
                 self._speech_bubble = SpeechBubble(parent_window=self)
                 linko_avatar.register_speech_bubble(self._speech_bubble)
             except Exception as e:
@@ -490,23 +568,35 @@ class MiniPortWindow(ctk.CTk):
             # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
-                    self.frame, text="✕", width=22, height=22, corner_radius=11,
+                    self.frame,
+                    text="✕",
+                    width=22,
+                    height=22,
+                    corner_radius=11,
                     font=ctk.CTkFont(size=12, weight="bold"),
-                    fg_color=Theme.CLOSE_FG, hover_color=Theme.CLOSE_HOVER,
+                    fg_color=Theme.CLOSE_FG,
+                    hover_color=Theme.CLOSE_HOVER,
                     text_color=Theme.CLOSE_TEXT,
                     command=self._on_close_clicked,
                 )
                 self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
 
                 self.btn_settings_mini = ctk.CTkButton(
-                    self.frame, text="⚙", width=22, height=22, corner_radius=11,
+                    self.frame,
+                    text="⚙",
+                    width=22,
+                    height=22,
+                    corner_radius=11,
                     font=ctk.CTkFont(size=13),
-                    fg_color=Theme.CLOSE_FG, hover_color=Theme.SECONDARY_HOVER,
+                    fg_color=Theme.CLOSE_FG,
+                    hover_color=Theme.SECONDARY_HOVER,
                     text_color=Theme.CLOSE_TEXT,
                     command=self._ctx_open_settings,
                 )
                 # ✕ の左隣 (22px + 余白 6px ぶん内側)
-                self.btn_settings_mini.place(relx=1.0, rely=0.0, x=-36, y=8, anchor="ne")
+                self.btn_settings_mini.place(
+                    relx=1.0, rely=0.0, x=-36, y=8, anchor="ne"
+                )
             except Exception as e:
                 print(f"[linko_avatar] close/settings button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
@@ -551,7 +641,10 @@ class MiniPortWindow(ctk.CTk):
     def _on_avatar_drag(self, event):
         dx = event.x_root - self._drag_start_x
         dy = event.y_root - self._drag_start_y
-        if abs(event.x_root - self._avatar_press_x) > 5 or abs(event.y_root - self._avatar_press_y) > 5:
+        if (
+            abs(event.x_root - self._avatar_press_x) > 5
+            or abs(event.y_root - self._avatar_press_y) > 5
+        ):
             self._avatar_moved = True
         self._drag_start_x = event.x_root
         self._drag_start_y = event.y_root
@@ -576,18 +669,22 @@ class MiniPortWindow(ctk.CTk):
             # features.brainstorm が ON ならアバタークリックでチャットパネルを開く
             try:
                 from config_loader import is_feature_enabled
+
                 if is_feature_enabled("brainstorm"):
                     from chat_panel import open_chat_panel
+
                     open_chat_panel(master=self)
                     return
             except Exception as e:
                 print(f"[chat_panel] open failed: {e}", flush=True)
             if self._avatar_enabled:
                 import linko_avatar
+
                 # brainstorm OFF のときは挨拶を吹き出し + 口パク
                 linko_avatar.say(
                     "こんにちは、リン子です。何かあったら呼んでくださいね。",
-                    duration_sec=None, lipsync=True,
+                    duration_sec=None,
+                    lipsync=True,
                 )
                 return
         except Exception:
@@ -606,6 +703,7 @@ class MiniPortWindow(ctk.CTk):
             return
         try:
             import linko_avatar
+
             img = linko_avatar.get_image(pose)
         except Exception as e:
             self._avatar_log(f"_set_avatar_pose get_image error: {e}")
@@ -616,7 +714,9 @@ class MiniPortWindow(ctk.CTk):
         if pose not in self._avatar_ctk_images:
             try:
                 self._avatar_ctk_images[pose] = ctk.CTkImage(
-                    light_image=img, dark_image=img, size=self._avatar_size,
+                    light_image=img,
+                    dark_image=img,
+                    size=self._avatar_size,
                 )
             except Exception as e:
                 self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
@@ -625,7 +725,9 @@ class MiniPortWindow(ctk.CTk):
             self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
             self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
             if not getattr(self, "_pose_logged_once", False):
-                self._avatar_log(f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}")
+                self._avatar_log(
+                    f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}"
+                )
                 self._pose_logged_once = True
         except Exception as e:
             self._avatar_log(f"_set_avatar_pose configure error: {e}")
@@ -633,6 +735,7 @@ class MiniPortWindow(ctk.CTk):
     def _avatar_log(self, msg: str) -> None:
         try:
             from app_log import log_info
+
             log_info("[mini_port] " + msg)
         except Exception:
             print("[mini_port] " + msg, flush=True)
@@ -640,10 +743,13 @@ class MiniPortWindow(ctk.CTk):
     def _setup_context_menu(self):
         """右クリックで通知オン/オフ・設定・ミニポート非表示のメニューを表示。"""
         import tkinter as tk
+
         self._ctx_menu = tk.Menu(self, tearoff=0)
         self._ctx_menu.add_command(label="", command=self._ctx_toggle_notifications)
         self._ctx_menu.add_command(label="設定...", command=self._ctx_open_settings)
-        self._ctx_menu.add_command(label="ミニポートを非表示にする", command=self._ctx_hide_miniport)
+        self._ctx_menu.add_command(
+            label="ミニポートを非表示にする", command=self._ctx_hide_miniport
+        )
         for widget in (self.frame, self.compact_frame):
             widget.bind("<Button-3>", self._on_right_click)
         if hasattr(self, "input_frame"):
@@ -652,7 +758,9 @@ class MiniPortWindow(ctk.CTk):
     def _on_right_click(self, event):
         """右クリックでコンテキストメニューを表示。"""
         enabled = self._get_notifications_enabled()
-        self._ctx_menu.entryconfig(0, label="通知をオフにする" if enabled else "通知をオンにする")
+        self._ctx_menu.entryconfig(
+            0, label="通知をオフにする" if enabled else "通知をオンにする"
+        )
         try:
             self._ctx_menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -669,6 +777,7 @@ class MiniPortWindow(ctk.CTk):
         """
         try:
             from settings_dialog import open_settings_dialog
+
             open_settings_dialog(master=self)
         except Exception as e:
             print("settings open failed:", e, flush=True)
@@ -694,7 +803,11 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
         block = (
-            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+            self.btn_rinko,
+            self.btn_post,
+            self.btn_send,
+            self.btn_close,
+            self.textbox,
         )
         if hasattr(self, "btn_board"):
             block = block + (self.btn_board,)
@@ -713,7 +826,11 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
         block = (
-            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+            self.btn_rinko,
+            self.btn_post,
+            self.btn_send,
+            self.btn_close,
+            self.textbox,
         )
         if hasattr(self, "btn_board"):
             block = block + (self.btn_board,)
@@ -834,6 +951,7 @@ class MiniPortWindow(ctk.CTk):
             return
         self.label_feedback.configure(text="送信中…", text_color=Theme.FEEDBACK_INFO)
         self.btn_send.configure(state="disabled")
+
         # 送信は別スレッドで実行し、結果を after で UI に反映（フリーズ防止・確実に完了）
         def do_send():
             result = _send_content(text)
@@ -855,7 +973,9 @@ class MiniPortWindow(ctk.CTk):
             # 1.5秒後にフィードバックを消して元のサイズ（リン子+投稿のみ）に戻す
             self._feedback_job = self.after(1500, self._clear_feedback_and_hide)
         else:
-            self.label_feedback.configure(text=msg[:60], text_color=Theme.FEEDBACK_ERROR)
+            self.label_feedback.configure(
+                text=msg[:60], text_color=Theme.FEEDBACK_ERROR
+            )
             if self._feedback_job:
                 self.after_cancel(self._feedback_job)
             self._feedback_job = self.after(3000, self._clear_feedback)

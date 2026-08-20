@@ -17,13 +17,11 @@ from typing import Optional
 
 # 絵文字・絵記号 (音声合成に渡すと無音スタブ→リトライで時間を浪費するため除去)
 _EMOJI_RE = re.compile(
-    "[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF"
-    "\U00002600-\U000027BF\U00002B00-\U00002BFF\U0000FE00-\U0000FE0F]+"
+    "[\U0001f300-\U0001faff\U0001f1e6-\U0001f1ff"
+    "\U00002600-\U000027bf\U00002b00-\U00002bff\U0000fe00-\U0000fe0f]+"
 )
 # 発話可能な文字 (英数・ひらがな・カタカナ・漢字・半角カナ)。1つも無ければ読み上げない。
-_SPEAKABLE_RE = re.compile(
-    "[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]"
-)
+_SPEAKABLE_RE = re.compile("[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]")
 
 
 def _clean_for_tts(text: str) -> str:
@@ -32,6 +30,7 @@ def _clean_for_tts(text: str) -> str:
     if not _SPEAKABLE_RE.search(cleaned):
         return ""
     return cleaned
+
 
 try:
     import customtkinter as ctk
@@ -49,6 +48,7 @@ from config_loader import load_config
 try:
     from app_log import log_info as _log
 except Exception:
+
     def _log(msg: str) -> None:
         print(msg, flush=True)
 
@@ -60,7 +60,7 @@ def _board_api_base() -> str:
     cfg = load_config()
     base = (cfg.get("board_system_url") or "").strip().rstrip("/")
     if not base:
-        base = "https://wl-ai-board.internal.wonder-link.com/api/bs"
+        base = "https://wlboardsys.internal.wonder-link.com/api/bs"
     return base
 
 
@@ -107,7 +107,9 @@ class ChatPanel(ctk.CTkToplevel):
         self._streaming = False
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
-        self._pending_attachment = None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        self._pending_attachment = (
+            None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        )
         self._pending_proposal_id: Optional[str] = None
         self._pending_draft: Optional[dict] = None
         # 文単位ストリーミング TTS のパイプライン (voice 有効時のみ遅延起動)
@@ -121,7 +123,10 @@ class ChatPanel(ctk.CTkToplevel):
         self.lift()
         self.focus_force()
         # 開いた直後にあいさつ (LLM を使わず固定文)
-        self._append_line("リン子", "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。")
+        self._append_line(
+            "リン子",
+            "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。",
+        )
 
     def _position_near(self, master) -> None:
         """ミニポートと重ならない位置にパネルを置く。
@@ -150,18 +155,21 @@ class ChatPanel(ctk.CTkToplevel):
 
             def fits(x: int, y: int) -> bool:
                 return (
-                    x >= 0 and y >= 0 and x + pw <= sw and y + ph <= sh
+                    x >= 0
+                    and y >= 0
+                    and x + pw <= sw
+                    and y + ph <= sh
                     and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
                 )
 
             candidates = [
-                (mx + mw - pw, my - ph - gap),          # 上・右端揃え
-                (mx, my - ph - gap),                     # 上・左端揃え
-                (mx + mw - pw, my + mh + gap),           # 下・右端揃え
-                (mx, my + mh + gap),                     # 下・左端揃え
-                (mx - pw - gap, my),                     # 左・上揃え
-                (mx - pw - gap, my + mh - ph),           # 左・下揃え
-                (mx + mw + gap, my),                     # 右・上揃え
+                (mx + mw - pw, my - ph - gap),  # 上・右端揃え
+                (mx, my - ph - gap),  # 上・左端揃え
+                (mx + mw - pw, my + mh + gap),  # 下・右端揃え
+                (mx, my + mh + gap),  # 下・左端揃え
+                (mx - pw - gap, my),  # 左・上揃え
+                (mx - pw - gap, my + mh - ph),  # 左・下揃え
+                (mx + mw + gap, my),  # 右・上揃え
             ]
 
             x, y = candidates[0]
@@ -184,7 +192,9 @@ class ChatPanel(ctk.CTkToplevel):
         self._chat.pack(fill="both", expand=True, padx=10, pady=(10, 6))
         self._chat.configure(state="disabled")
 
-        self._proposal_frame = ctk.CTkFrame(self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8)
+        self._proposal_frame = ctk.CTkFrame(
+            self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8
+        )
         self._proposal_title = ctk.CTkLabel(
             self._proposal_frame,
             text="📅 予定の確認",
@@ -230,9 +240,13 @@ class ChatPanel(ctk.CTkToplevel):
 
         # 直前のリン子回答を付箋ボードへ投稿するボタン
         self._note_btn = ctk.CTkButton(
-            self, text="📝 リン子の回答を付箋にする", height=32,
-            command=self._on_make_note, state="disabled",
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            self,
+            text="📝 リン子の回答を付箋にする",
+            height=32,
+            command=self._on_make_note,
+            state="disabled",
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         )
         self._note_btn.pack(fill="x", padx=10, pady=(0, 6))
@@ -241,26 +255,39 @@ class ChatPanel(ctk.CTkToplevel):
         attach_row = ctk.CTkFrame(self, fg_color="transparent")
         attach_row.pack(fill="x", padx=10, pady=(0, 6))
         self._attach_label = ctk.CTkLabel(
-            attach_row, text="📎 添付なし", anchor="w",
-            text_color=("gray40", "gray60"), font=ctk.CTkFont(size=12),
+            attach_row,
+            text="📎 添付なし",
+            anchor="w",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=12),
         )
         self._attach_label.pack(side="left", fill="x", expand=True)
         self._attach_btn = ctk.CTkButton(
-            attach_row, text="📎 資料を添付", width=110, height=28,
+            attach_row,
+            text="📎 資料を添付",
+            width=110,
+            height=28,
             command=self._on_attach,
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         )
         self._attach_btn.pack(side="right")
 
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(fill="x", padx=10, pady=(0, 10))
-        self._entry = ctk.CTkTextbox(bottom, height=60, wrap="word", font=ctk.CTkFont(size=13))
+        self._entry = ctk.CTkTextbox(
+            bottom, height=60, wrap="word", font=ctk.CTkFont(size=13)
+        )
         self._entry.pack(side="left", fill="both", expand=True, padx=(0, 8))
         self._entry.bind("<Control-Return>", self._on_send_shortcut)
         self._send_btn = ctk.CTkButton(
-            bottom, text="送信", width=64, command=self._on_send,
-            fg_color=("#3d8b40", "#1b5e20"), hover_color=("#2f7a33", "#145214"),
+            bottom,
+            text="送信",
+            width=64,
+            command=self._on_send,
+            fg_color=("#3d8b40", "#1b5e20"),
+            hover_color=("#2f7a33", "#145214"),
         )
         self._send_btn.pack(side="right")
         self._mic_btn = ctk.CTkButton(
@@ -293,9 +320,13 @@ class ChatPanel(ctk.CTkToplevel):
     def _show_proposal_card(self) -> None:
         if not self._pending_draft:
             return
-        self._proposal_detail.configure(text=self._format_proposal_detail(self._pending_draft))
+        self._proposal_detail.configure(
+            text=self._format_proposal_detail(self._pending_draft)
+        )
         if not self._proposal_frame.winfo_ismapped():
-            self._proposal_frame.pack(fill="x", padx=10, pady=(0, 6), before=self._note_btn)
+            self._proposal_frame.pack(
+                fill="x", padx=10, pady=(0, 6), before=self._note_btn
+            )
 
     def _clear_proposal_card(self) -> None:
         self._pending_proposal_id = None
@@ -325,13 +356,17 @@ class ChatPanel(ctk.CTkToplevel):
         if not self._pending_proposal_id:
             return
         self._proposal_confirm_btn.configure(state="disabled")
-        threading.Thread(target=self._proposal_action_work, args=("confirm",), daemon=True).start()
+        threading.Thread(
+            target=self._proposal_action_work, args=("confirm",), daemon=True
+        ).start()
 
     def _on_proposal_cancel(self) -> None:
         if not self._pending_proposal_id:
             self._clear_proposal_card()
             return
-        threading.Thread(target=self._proposal_action_work, args=("cancel",), daemon=True).start()
+        threading.Thread(
+            target=self._proposal_action_work, args=("cancel",), daemon=True
+        ).start()
 
     def _proposal_action_work(self, action: str) -> None:
         if requests is None:
@@ -340,7 +375,10 @@ class ChatPanel(ctk.CTkToplevel):
         uid = _board_user_id()
         pid = self._pending_proposal_id
         if uid is None or not pid:
-            self.after(0, lambda: self._append_line("システム", "パーソナルログインが必要です。"))
+            self.after(
+                0,
+                lambda: self._append_line("システム", "パーソナルログインが必要です。"),
+            )
             return
         url = _board_api_base() + f"/brainstorm/calendar/{action}"
         try:
@@ -351,7 +389,9 @@ class ChatPanel(ctk.CTkToplevel):
             self.after(0, lambda: self._append_line("システム", str(e)[:80]))
             return
         try:
-            r = requests.post(url, json={"proposal_id": pid, "user_id": uid}, timeout=30)
+            r = requests.post(
+                url, json={"proposal_id": pid, "user_id": uid}, timeout=30
+            )
             if r.status_code >= 400:
                 detail = ""
                 try:
@@ -359,13 +399,19 @@ class ChatPanel(ctk.CTkToplevel):
                 except Exception:
                     detail = r.text[:120]
                 self.after(0, lambda: self._append_line("システム", f"失敗: {detail}"))
-                self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
+                self.after(
+                    0, lambda: self._proposal_confirm_btn.configure(state="normal")
+                )
                 return
-            msg = (r.json() or {}).get("message") or ("登録しました。" if action == "confirm" else "キャンセルしました。")
+            msg = (r.json() or {}).get("message") or (
+                "登録しました。" if action == "confirm" else "キャンセルしました。"
+            )
             self.after(0, self._clear_proposal_card)
             self.after(0, lambda: self._append_line("リン子", msg))
         except Exception as e:
-            self.after(0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}"))
+            self.after(
+                0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}")
+            )
             self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
 
     def _on_action_proposal(self, obj: dict) -> None:
@@ -390,6 +436,7 @@ class ChatPanel(ctk.CTkToplevel):
         抽出は端末内で行い、テキストは社内 LLM (board-system→Ollama) にのみ渡る。外部送信なし。
         """
         from tkinter import filedialog
+
         path = filedialog.askopenfilename(
             title="リン子に読ませる資料を選択",
             filetypes=[
@@ -400,13 +447,16 @@ class ChatPanel(ctk.CTkToplevel):
         if not path:
             return
         import os
+
         name = os.path.basename(path)
         text, err = _extract_text(path)
         if err:
             self._append_line("システム", f"資料の読み込みに失敗: {err}")
             return
         if not (text or "").strip():
-            self._append_line("システム", "資料からテキストを抽出できませんでした (画像 PDF など)。")
+            self._append_line(
+                "システム", "資料からテキストを抽出できませんでした (画像 PDF など)。"
+            )
             return
         truncated = False
         if len(text) > self.MAX_ATTACH_CHARS:
@@ -415,7 +465,10 @@ class ChatPanel(ctk.CTkToplevel):
         self._pending_attachment = {"name": name, "text": text}
         label = f"📎 {name} ({len(text)}字{'・以降省略' if truncated else ''})"
         self._attach_label.configure(text=label)
-        self._append_line("システム", f"資料「{name}」を添付しました。質問を入力して送信してください。")
+        self._append_line(
+            "システム",
+            f"資料「{name}」を添付しました。質問を入力して送信してください。",
+        )
 
     def _on_send(self) -> None:
         if self._streaming:
@@ -454,7 +507,10 @@ class ChatPanel(ctk.CTkToplevel):
         #   False なら従来どおり最初のトークンでテキスト中の口パクを開始する (無音時の見栄え)。
         try:
             from config_loader import is_feature_enabled
-            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(_tts_url())
+
+            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(
+                _tts_url()
+            )
         except Exception:
             voice_planned = False
         if voice_planned:
@@ -467,6 +523,7 @@ class ChatPanel(ctk.CTkToplevel):
         def _start_lipsync_once():
             try:
                 import linko_avatar
+
                 if linko_avatar.is_ready():
                     linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
             except Exception:
@@ -475,9 +532,12 @@ class ChatPanel(ctk.CTkToplevel):
         acc = ""
         try:
             from security import assert_http_url
+
             assert_http_url(url, load_config(), purpose="brainstorm")
         except ValueError as e:
-            self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
             self._messages.append({"role": "assistant", "content": ""})
             self._streaming = False
             self.after(0, self._end_assistant)
@@ -487,12 +547,17 @@ class ChatPanel(ctk.CTkToplevel):
                 url, json=self._brainstorm_payload(), stream=True, timeout=(10, 120)
             ) as r:
                 if r.status_code != 200:
-                    self.after(0, lambda: self._append_assistant_token(f"[エラー: HTTP {r.status_code}]"))
+                    self.after(
+                        0,
+                        lambda: self._append_assistant_token(
+                            f"[エラー: HTTP {r.status_code}]"
+                        ),
+                    )
                 else:
                     for line in r.iter_lines(decode_unicode=True):
                         if not line or not line.startswith("data:"):
                             continue
-                        data = line[len("data:"):].strip()
+                        data = line[len("data:") :].strip()
                         if data == "[DONE]":
                             break
                         try:
@@ -500,7 +565,12 @@ class ChatPanel(ctk.CTkToplevel):
                         except Exception:
                             continue
                         if obj.get("error"):
-                            self.after(0, lambda m=obj["error"]: self._append_assistant_token(f"[エラー: {m}]"))
+                            self.after(
+                                0,
+                                lambda m=obj["error"]: self._append_assistant_token(
+                                    f"[エラー: {m}]"
+                                ),
+                            )
                             continue
                         if obj.get("type") == "action_proposal":
                             self.after(0, lambda o=obj: self._on_action_proposal(o))
@@ -518,18 +588,25 @@ class ChatPanel(ctk.CTkToplevel):
                                 sentence_buf = self._flush_sentences(sentence_buf + tok)
         except Exception as e:
             _log(f"[chat_panel] streaming エラー: {e}")
-            self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
         finally:
             self._messages.append({"role": "assistant", "content": acc})
             self._last_assistant_text = acc
             self._streaming = False
             self.after(0, self._end_assistant)
-            if self._pending_proposal_id and acc and ("入れました" in acc or "登録" in acc and "しません" not in acc):
+            if (
+                self._pending_proposal_id
+                and acc
+                and ("入れました" in acc or "登録" in acc and "しません" not in acc)
+            ):
                 self.after(0, self._clear_proposal_card)
             if not voice_planned:
                 # テキスト中に動かした口パクを停止 (音声予定時は say() 側が制御)
                 try:
                     import linko_avatar
+
                     if linko_avatar.is_ready():
                         linko_avatar.stop_lipsync(base_pose="normal")
                 except Exception:
@@ -549,7 +626,7 @@ class ChatPanel(ctk.CTkToplevel):
         start = 0
         for i, ch in enumerate(buf):
             if ch in self._SENTENCE_ENDERS:
-                seg = _clean_for_tts(buf[start:i + 1])
+                seg = _clean_for_tts(buf[start : i + 1])
                 if seg:
                     self._sentence_q.put(seg)
                 start = i + 1
@@ -577,14 +654,20 @@ class ChatPanel(ctk.CTkToplevel):
     def _tts_play_worker(self) -> None:
         """audio_q の WAV を順番にブロッキング再生 (文同士が重ならない)。"""
         from audio_player import play_wav
+
         while True:
             item = self._audio_q.get()
             if item is None or self._tts_cancel.is_set():
                 break
             path, text, duration = item
             try:
-                play_wav(path, text=text, duration_sec=duration, blocking=True,
-                         log_prefix="[chat_panel]")
+                play_wav(
+                    path,
+                    text=text,
+                    duration_sec=duration,
+                    blocking=True,
+                    log_prefix="[chat_panel]",
+                )
             except Exception as e:
                 _log(f"[chat_panel] 文音声 再生失敗: {e}")
 
@@ -597,6 +680,7 @@ class ChatPanel(ctk.CTkToplevel):
             return None
         try:
             from security import assert_http_url
+
             assert_http_url(url, load_config(), purpose="brainstorm_tts")
         except ValueError as e:
             _log(f"[chat_panel] TTS URL 拒否: {e}")
@@ -618,6 +702,7 @@ class ChatPanel(ctk.CTkToplevel):
             return None
         try:
             from audio_player import download_linko_wav
+
             res = download_linko_wav(audio_url, log_prefix="[chat_panel]")
         except Exception as e:
             _log(f"[chat_panel] 音声DL失敗: {e}")
@@ -669,6 +754,7 @@ class ChatPanel(ctk.CTkToplevel):
             ok, msg = (False, "送信処理が見つかりません")
             try:
                 from mini_port import _send_content  # 遅延 import (循環回避)
+
                 ok, msg = _send_content(text)
             except Exception as e:
                 ok, msg = False, str(e)[:80]
@@ -677,11 +763,11 @@ class ChatPanel(ctk.CTkToplevel):
         threading.Thread(target=do_post, daemon=True).start()
 
     def _on_note_done(self, ok: bool, msg: str) -> None:
-        self._append_line("システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}")
+        self._append_line(
+            "システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}"
+        )
         try:
-            self._note_btn.configure(
-                state="normal", text="📝 リン子の回答を付箋にする"
-            )
+            self._note_btn.configure(state="normal", text="📝 リン子の回答を付箋にする")
         except Exception:
             pass
 
@@ -700,6 +786,7 @@ class ChatPanel(ctk.CTkToplevel):
             pass
         try:
             import linko_avatar
+
             linko_avatar.stop_lipsync(base_pose="normal")
         except Exception:
             pass
@@ -715,8 +802,21 @@ def _extract_text(path: str):
     すべて端末内処理 (外部送信なし)。
     """
     import os
+
     ext = os.path.splitext(path)[1].lower()
-    text_exts = (".txt", ".md", ".csv", ".json", ".log", ".py", ".ini", ".yaml", ".yml", ".html", ".xml")
+    text_exts = (
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".log",
+        ".py",
+        ".ini",
+        ".yaml",
+        ".yml",
+        ".html",
+        ".xml",
+    )
     try:
         if ext in text_exts or ext == "":
             for enc in ("utf-8", "utf-8-sig", "cp932"):

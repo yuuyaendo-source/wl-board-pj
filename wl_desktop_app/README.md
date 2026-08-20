@@ -11,7 +11,7 @@
 ## 開発環境と利用環境
 
 | 区分 | 環境 |
-|------|------|
+| ------ | ------ |
 | **開発** | Linux または Windows。`pip install -r requirements.txt` は Linux でそのまま実行可能（Windows 専用パッケージは自動スキップ）。**MSI ビルドは Windows のみ**。 |
 | **配布先** | **Windows 10/11** 推奨（トースト・MSI・スタートアップ登録・音声再生は Windows のみ）。 |
 | **Mac / Linux** | トレイ・ミニポート・API 連携は動作するが、トースト・音声・自動更新・スタートアップは無効またはフォールバック。 |
@@ -47,7 +47,7 @@
 ### 主要モジュール
 
 | モジュール | 役割 |
-|-----------|------|
+| ----------- | ------ |
 | `app.py` | 起動シーケンス、単一インスタンス、トレイ、各ポーリング起動 |
 | `config_loader.py` | `config.json` 読み書き、環境変数マージ、`features` ヘルパ |
 | `mini_port.py` | ミニポート UI、付箋 POST、パーソナルボードを開く |
@@ -88,7 +88,7 @@ flowchart TD
 ## 常時動作（設定不要・既定 ON）
 
 | 機能 | 操作 / トリガー | 処理 | 連携先 |
-|------|----------------|------|--------|
+| ------ | ---------------- | ------ | -------- |
 | **ミニポート** | 起動時に表示。✕ / 右クリックで非表示 | 付箋テキスト入力・投稿 | `POST …/api/sticky_notes` |
 | **付箋投稿** | 「投稿」または Ctrl+Enter | `display_name` 付きで POST | `mini_port_api_url` から base 導出 |
 | **パーソナルボード** | 「ボード」クリック | ブラウザで `/boards/personal/{id}` を開く | 未ログイン時 `GET …/users/by_email` |
@@ -105,7 +105,7 @@ flowchart TD
 ### トレイメニュー（最小構成）
 
 | メニュー | 動作 |
-|----------|------|
+| ---------- | ------ |
 | **開く**（デフォルト） | `tray_click_action`: 付箋ボード / パーソナル / 最後のお知らせ |
 | **設定…** | 設定ダイアログ |
 | **ミニポートを表示** | 非表示中のミニポートを再表示 |
@@ -124,7 +124,7 @@ flowchart TD
 すべて設定ダイアログで ON/OFF。**既定は OFF**（`brainstorm_voice` のみ **ON**）。
 
 | キー | 既定 | 有効時の動作 | 前提 |
-|------|------|-------------|------|
+| ------ | ------ | ------------- | ------ |
 | `linko_avatar` | OFF | ミニポートをマスコットレイアウト（264×224）。アバター・吹き出し・口パク | — |
 | `visitor_notify` | OFF | linko-system へ Socket.IO 接続、`visitor_arrived` → トースト | `linko_server_url`、社内 LAN |
 | `visitor_notify_sound` | OFF | 来客時に受付と同じ WAV を再生 | `visitor_notify` ON、Windows |
@@ -241,7 +241,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 ## バックグラウンド処理一覧
 
 | 処理 | 間隔 / 条件 | モジュール | 有効条件 |
-|------|-------------|------------|----------|
+| ------ | ------------- | ------------ | ---------- |
 | 付箋ポーリング | `max(10, postit_poll_interval_sec)` 秒 | `postit_poll` | 間隔 > 0 |
 | タスクリマインド | 30 秒 | `task_remind_client` | `task_remind` + personal_id + 通知 ON + スロット内 |
 | カレンダーリマインド | 60 秒 | `calendar_notify_client` | `calendar_notify` + personal_id + 通知 ON |
@@ -257,9 +257,9 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 ### 連携先 URL（本番の目安）
 
 | サービス | URL（例） | 用途 |
-|----------|-----------|------|
-| 付箋ボード | `https://wl-ai-board.internal.wonder-link.com/board/wl` | ミニポート投稿・トレイ「付箋」 |
-| Board System API | `https://wl-ai-board.internal.wonder-link.com/api/bs` | パーソナル・ブレスト・リマインド |
+| ---------- | ----------- | ------ |
+| 付箋ボード | `https://wlboardsys.internal.wonder-link.com/board/wl` | ミニポート投稿・トレイ「付箋」 |
+| Board System API | `https://wlboardsys.internal.wonder-link.com/api/bs` | パーソナル・ブレスト・リマインド |
 | Board System フロント | `…/boards/personal/{id}` | パーソナルボード表示 |
 | linko-system | `https://linko-board.internal.wonder-link.com` | 来客 Socket.IO・TTS・顔/音声 API |
 | デスクトップ更新 | `…/api/bs/desktop-app/latest.json` | MSI 自動更新 |
@@ -269,7 +269,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 ### Board System API（主要）
 
 | エンドポイント | 用途 |
-|----------------|------|
+| ---------------- | ------ |
 | `GET /users/by_email` | メールログイン |
 | `GET /users/{id}` | メール取得（顔/音声登録プリフィル） |
 | `GET /api/personal/{owner}/task_reminders/pending` | タスクリマインド |
@@ -282,7 +282,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 ### linko-system API（主要）
 
 | 連携 | 用途 |
-|------|------|
+| ------ | ------ |
 | Socket.IO `visitor_arrived` | 来客通知 |
 | `POST /api/v2/tts` | GPT-SoVITS 音声合成 |
 | `/api/face_registry/*` | 顔・音声登録（管理/セルフ） |
@@ -296,7 +296,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 ### 主要キー
 
 | キー | 説明 |
-|------|------|
+| ------ | ------ |
 | `board_system_url` | Board System API ベース |
 | `board_system_personal_id` / `board_system_email` | メールログイン後に自動保存 |
 | `mini_port_api_url` | ミニポート投稿先（付箋ボードと同一ホスト） |
@@ -384,7 +384,7 @@ cd wl_desktop_app
 ```json
 {
   "version": "3.9.3",
-  "url": "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.3.msi"
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.3.msi"
 }
 ```
 
@@ -397,7 +397,7 @@ cd wl_desktop_app
 ## プラットフォーム差分
 
 | 機能 | Windows | Linux / Mac（開発） |
-|------|---------|---------------------|
+| ------ | --------- | --------------------- |
 | 配布 | MSI 本番 | 開発・検証のみ |
 | 単一インスタンス mutex | ○ | スキップ |
 | トースト | winotify 等 | コンソール出力 |
@@ -428,7 +428,7 @@ Board System の `users` テーブルと linko-system が共用。新規ユー�
 ## 関連ドキュメント
 
 | ファイル | 内容 |
-|----------|------|
+| ---------- | ------ |
 | `docs/v3_リリース手順.md` | MSI ビルド〜本番配信 |
 | `docs/v2_拡張計画.md` | `features.*` 拡張の経緯 |
 | `docs/指示書_顔セルフ登録_Phase1.md` | 顔セルフ登録 |

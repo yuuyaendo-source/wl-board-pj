@@ -17,7 +17,7 @@ from security import (  # noqa: E402
 
 class TestSecurity(unittest.TestCase):
     def test_internal_host_allowed(self):
-        self.assertTrue(is_host_allowed("wl-ai-board.internal.wonder-link.com"))
+        self.assertTrue(is_host_allowed("wlboardsys.internal.wonder-link.com"))
 
     def test_external_host_denied(self):
         self.assertFalse(is_host_allowed("evil.example.com"))
@@ -33,7 +33,7 @@ class TestSecurity(unittest.TestCase):
 
     def test_update_json_path(self):
         ok, _ = validate_update_check_url(
-            "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/latest.json"
+            "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json"
         )
         self.assertTrue(ok)
         ok2, _ = validate_update_check_url("https://evil.example.com/latest.json")
@@ -41,16 +41,18 @@ class TestSecurity(unittest.TestCase):
 
     def test_msi_path(self):
         ok, _ = validate_msi_download_url(
-            "https://wl-ai-board.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
+            "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
         )
         self.assertTrue(ok)
-        ok2, err = validate_msi_download_url("https://wl-ai-board.internal.wonder-link.com/x.exe")
+        ok2, err = validate_msi_download_url(
+            "https://wlboardsys.internal.wonder-link.com/x.exe"
+        )
         self.assertFalse(ok2)
         self.assertIn(".msi", err)
 
     def test_sanitize_reverts_evil_config(self):
         defaults = {
-            "mini_port_api_url": "https://wl-ai-board.internal.wonder-link.com/board/wl",
+            "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",
         }
         cfg = {"mini_port_api_url": "https://evil.example.com/steal"}
         sanitize_config_urls(cfg, defaults)
