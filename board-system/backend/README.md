@@ -28,8 +28,8 @@ cp .env.example .env     # 必要に応じて編集
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API: http://localhost:8000
-- ヘルス: http://localhost:8000/health
+- API: <http://localhost:8000>
+- ヘルス: <http://localhost:8000/health>
 
 ## ディレクトリ構成
 
@@ -63,7 +63,7 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 ## API（フェーズ2・3 実装済み）
 
 | 種別 | メソッド | パス | 説明 |
-|------|----------|------|------|
+| ------ | ---------- | ------ | ------ |
 | 死活 | GET | `/health` | ヘルスチェック |
 | admin | GET | `/admin/llm` | 実効 LLM スロット・解決 URL・モデルモード（DB 上書きと env を表示） |
 | admin | PUT | `/admin/llm` | body `{"llm_target":1}` など 1〜3 で DB に保存即反映、`{"llm_target":null}` で DB 上書き解除（env の `LLM_TARGET` に従う） |
@@ -120,9 +120,9 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
    - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存し、**要約を P 付箋として Personal の Today レーンに配置**。  
    - **毎日 8:00**: `POST /daily_reset/run_8am` を cron で呼ぶと、(1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に表示＆要約を P 付箋で Today レーンに配置。  
    - **毎日 10:15**: `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー（Meeting ボードに反映）。  
-   - **日次スケジュール（日本時間）**: バックエンドに組み込みの APScheduler が **Asia/Tokyo** で動作。`SCHEDULER_ENABLED=true`（既定）のとき、**毎日 8:00 JST** に `run_8am`、**毎日 10:15 JST** に `sync_to_morning` を自サーバへ POST する。無効にする場合は `SCHEDULER_ENABLED=false`。`SCHEDULER_BASE_URL` で自サーバ URL を指定（既定: http://127.0.0.1:8000）。
+   - **日次スケジュール（日本時間）**: バックエンドに組み込みの APScheduler が **Asia/Tokyo** で動作。`SCHEDULER_ENABLED=true`（既定）のとき、**毎日 8:00 JST** に `run_8am`、**毎日 10:15 JST** に `sync_to_morning` を自サーバへ POST する。無効にする場合は `SCHEDULER_ENABLED=false`。`SCHEDULER_BASE_URL` で自サーバ URL を指定（既定: <http://127.0.0.1:8000）。>
 
-- 環境変数: `OLLAMA_URL`（必須・例: http://172.16.1.251:11434/v1）、`OLLAMA_MODEL`（**省略可**・未設定時は Ollama の `/api/tags` で **modified_at が最も新しいモデル**を採用し、失敗時は `/v1/models` を参照）。固定モデルにしたいときだけ指定。`OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS`（既定 600）で自動解決結果のキャッシュ時間を変更可能。社内 LLM Docker が複数ある場合は `LLM_TARGET=1|2|3` と `OLLAMA_URL_1..3` / 任意で `OLLAMA_MODEL_1..3`（番号別モデル固定時のみ）。詳細は `.env.example`。
+- 環境変数: `OLLAMA_URL`（必須・例: <http://172.16.1.242:11435/v1）、`OLLAMA_MODEL`（**省略可**・未設定時は> Ollama の `/api/tags` で **modified_at が最も新しいモデル**を採用し、失敗時は `/v1/models` を参照）。固定モデルにしたいときだけ指定。`OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS`（既定 600）で自動解決結果のキャッシュ時間を変更可能。社内 LLM Docker が複数ある場合は `LLM_TARGET=1|2|3` と `OLLAMA_URL_1..3` / 任意で `OLLAMA_MODEL_1..3`（番号別モデル固定時のみ）。詳細は `.env.example`。
 - **スケジューラ**: 日次 8:00 / 10:15 JST は **内蔵 APScheduler** で実行されるため、**外部 cron は不要**。Docker やリバースプロキシでアプリの URL が `http://127.0.0.1:8000` でない場合は、`.env` で `SCHEDULER_BASE_URL` をアプリから見た自サーバの URL に設定すること（例: `http://backend:8000`）。
 
 ## 本番（Docker）

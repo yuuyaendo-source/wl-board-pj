@@ -12,11 +12,11 @@
 
 | ホスト（IP） | リポジトリ / サービス | FQDN |
 | -------------- | ------------------------ | ------ |
-| **172.16.1.251** | linko-system（AI-Board） | <https://linko-board.internal.wonder-link.com/> |
+| **172.16.1.242** | linko-system（AI-Board） | <https://linko-board.internal.wonder-link.com/> |
 | **172.16.1.83**（または 84） | wl-board-pj（付箋ボード・Board System） | <https://wlboardsys.internal.wonder-link.com/> |
 
 - 上記の **wl-board-pj 用サーバ** に本手順で Docker をデプロイする。
-- linko-system は **172.16.1.251** で稼働し、付箋取得時に `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` で本サーバ（wlboardsys）へアクセスする。
+- linko-system は **172.16.1.242** で稼働し、付箋取得時に `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` で本サーバ（wlboardsys）へアクセスする。
 
 ---
 
@@ -146,7 +146,7 @@ cp .env.example .env
 nano .env
 ```
 
-少なくとも `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wlboardsys.internal.wonder-link.com/api/bs`）。**SSL 化時は必ず `https://` にすること**。
+少なくとも `OLLAMA_URL`（例: `http://172.16.1.242:11435/v1`）を設定。`NEXT_PUBLIC_API_URL` は本番の API ベース URL（例: `https://wlboardsys.internal.wonder-link.com/api/bs`）。**SSL 化時は必ず `https://` にすること**。
 
 **CATO 証明書**（社内ネットワークでビルドする場合）: 必要なら `board-system/backend/cato-ca.crt`、`board-system/frontend/cato-ca.crt`、`wl-sticky-note/src/cato-ca.crt` を配置。不要な環境では Dockerfile の証明書行をコメントアウトするか空ファイルを置く。
 
@@ -536,7 +536,7 @@ PC の名前解決はできているがブラウザで開けない場合、**サ
 
 本番デプロイの前に、手元の PC で Docker 構成を動かして確認できる。**Nginx は不要**。`board-system/docker-compose.yml`（ローカル用）を使う。
 
-1. `board-system/.env` に必要なら `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）を設定。
+1. `board-system/.env` に必要なら `OLLAMA_URL`（例: `http://172.16.1.242:11435/v1`）を設定。
 2. `cd board-system` → `docker compose up -d --build`
 3. 初回のみ `docker exec -it linko-backend alembic upgrade head`
 4. アクセス: Board System <http://localhost:3010、付箋ボード> <http://localhost:3011、API> <http://localhost:8010/health>

@@ -10,7 +10,7 @@ services:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
       # ローカル LLM（Ollama）。未設定時は自動振り分けはスキップ
-      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       # 未設定で自動（Ollama のローカルモデル一覧から解決）。固定したいときだけ指定
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}

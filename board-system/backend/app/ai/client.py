@@ -36,7 +36,7 @@ def _get_session() -> requests.Session:
 
 
 def _split_root_and_v1(ollama_url: str) -> tuple[str, str]:
-    """http://host:11434[/v1] -> (root, v1_base)。"""
+    """http://host:11435[/v1] -> (root, v1_base)。"""
     u = ollama_url.strip().rstrip("/")
     if u.endswith("/v1"):
         root = u[:-3].rstrip("/")

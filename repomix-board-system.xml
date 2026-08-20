@@ -865,7 +865,7 @@ def _get_session() -> requests.Session:
 
 
 def _split_root_and_v1(ollama_url: str) -> tuple[str, str]:
-    """http://host:11434[/v1] -> (root, v1_base)。"""
+    """http://host:11435[/v1] -> (root, v1_base)。"""
     u = ollama_url.strip().rstrip("/")
     if u.endswith("/v1"):
         root = u[:-3].rstrip("/")
@@ -7042,11 +7042,11 @@ OLLAMA_URL=http://172.16.1.242:11435/v1
 # 社内 LLM Docker を3台まで切替: LLM_TARGET=1|2|3（未設定なら上記のみ使用）
 # OLLAMA_URL_n が空のときは OLLAMA_URL に、OLLAMA_MODEL_n が空のときは OLLAMA_MODEL にフォールバック
 # LLM_TARGET=1
-# OLLAMA_URL_1=http://172.16.1.251:11434/v1
+# OLLAMA_URL_1=http://172.16.1.242:11435/v1
 # OLLAMA_MODEL_1=pakachan/elyza-llama3-8b:latest
-# OLLAMA_URL_2=http://172.16.1.252:11434/v1
+# OLLAMA_URL_2=http://172.16.1.252:11435/v1
 # OLLAMA_MODEL_2=
-# OLLAMA_URL_3=http://172.16.1.253:11434/v1
+# OLLAMA_URL_3=http://172.16.1.253:11435/v1
 # OLLAMA_MODEL_3=
 
 # ※ Gemini は使用しない（ローカル LLM 利用のためコメントアウト）
@@ -7093,7 +7093,7 @@ POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com
 # POSTIT_BOARD_URL=http://127.0.0.1:3000
 
 # ローカル LLM（Ollama）。自動仕分け・マトリクス・日次リセットに使用
-OLLAMA_URL=http://172.16.1.251:11434/v1
+OLLAMA_URL=http://172.16.1.242:11435/v1
 # OLLAMA_MODEL は省略可（自動解決）
 #
 # 社内 LLM Docker を3台切替: LLM_TARGET=1|2|3 と OLLAMA_URL_1..3 / OLLAMA_MODEL_1..3（詳細は backend/.env.example）
@@ -12069,7 +12069,7 @@ server {
 # 本番: cp .env.example .env のうえで値を設定し、deploy.sh 実行時に読み込まれる
 
 # ローカル LLM（Ollama）。自動仕分け・マトリクススコア・日次リセットに使用。未設定時は AI はスキップ
-OLLAMA_URL=http://172.16.1.251:11434/v1
+OLLAMA_URL=http://172.16.1.242:11435/v1
 # OLLAMA_MODEL は省略可（自動解決）。固定したいときだけ指定
 # OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS=600
 #
@@ -12078,11 +12078,11 @@ OLLAMA_URL=http://172.16.1.251:11434/v1
 # 各番号の URL が空のときは OLLAMA_URL にフォールバック。モデルが空のときは OLLAMA_MODEL にフォールバック。
 # LLM_TARGET=2
 # DB の system_settings で上書き可能（API PUT /admin/llm）。未マイグレーション時は env のみ有効。
-# OLLAMA_URL_1=http://172.16.1.251:11434/v1
+# OLLAMA_URL_1=http://172.16.1.242:11435/v1
 # OLLAMA_MODEL_1=pakachan/elyza-llama3-8b:latest
-# OLLAMA_URL_2=http://172.16.1.252:11434/v1
+# OLLAMA_URL_2=http://172.16.1.252:11435/v1
 # OLLAMA_MODEL_2=other/model:latest
-# OLLAMA_URL_3=http://172.16.1.253:11434/v1
+# OLLAMA_URL_3=http://172.16.1.253:11435/v1
 # OLLAMA_MODEL_3=...
 
 # フロントビルド時に埋め込む API・付箋ボード URL（本番では https にすること）
@@ -12157,7 +12157,7 @@ services:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
       # ローカル LLM（Ollama）。未設定時は自動振り分けはスキップ
-      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       # 未設定で自動（Ollama のローカルモデル一覧から解決）。固定したいときだけ指定
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
@@ -12300,7 +12300,7 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
-      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
       LLM_TARGET: ${LLM_TARGET:-}

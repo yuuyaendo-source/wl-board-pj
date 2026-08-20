@@ -10,7 +10,7 @@
 | **配置場所** | 開発: `/home/hisashi/dev/sv_cert/` / 本番: `/home/devuser01/sv_cert/` |
 | **ファイル** | `fullchain.pem`（証明書）、`privkey.pem`（秘密鍵） |
 | **FQDN** | `https://wlboardsys.internal.wonder-link.com/` |
-| **IP（例）** | 172.16.1.83 または 172.16.1.203（CATO 内で linko-system は別ホスト 172.16.1.251） |
+| **IP（例）** | 172.16.1.83 または 172.16.1.203（CATO 内で linko-system は別ホスト 172.16.1.242） |
 
 `board-system/nginx/nginx.conf`（開発）・`nginx.conf.production-server`（本番）・`staging.conf`・`wl-sticky-note/src/nginx.conf` はいずれも上記パスを参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
 

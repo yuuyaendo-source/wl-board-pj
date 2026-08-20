@@ -2847,7 +2847,7 @@ AI-Board サーバーのターミナルに、**初回のみ** 次のような行
 <file path="開発ドキュメント/開発環境_CATO.md">
 # 開発環境（CATO ネットワーク）
 
-CATO でネットワークを組んでいるため、**CATO クライアントが起動している PC から**、この開発環境の localhost に **172.16.1.251** でアクセスできます。
+CATO でネットワークを組んでいるため、**CATO クライアントが起動している PC から**、この開発環境の localhost に **172.16.1.242** でアクセスできます。
 
 ---
 
@@ -2855,10 +2855,10 @@ CATO でネットワークを組んでいるため、**CATO クライアント�
 
 | サービス | 開発PC上のURL | CATO 経由でのURL（他PCから） |
 | ---------- | ---------------- | ------------------------------ |
-| **付箋ボード（wl-sticky-note）** | <http://localhost:3000> | **<http://172.16.1.251:3000>** |
-| **AI-Board** | <http://localhost:5000> | **<http://172.16.1.251:5000>** |
+| **付箋ボード（wl-sticky-note）** | <http://localhost:3000> | **<http://172.16.1.242:3000>** |
+| **AI-Board** | <http://localhost:5000> | **<http://172.16.1.242:5000>** |
 
-- **開発PC**: 172.16.1.251 でサーバを起動している想定
+- **開発PC**: 172.16.1.242 でサーバを起動している想定
 - **他PC**: CATO クライアント起動中であれば、上記 URL でアクセス可能
 
 ---
@@ -2867,7 +2867,7 @@ CATO でネットワークを組んでいるため、**CATO クライアント�
 
 1. **サーバの起動**  
    - ルートの `.\start_all_servers.ps1` で付箋ボード（3000）と AI-Board（5000）を起動
-   - 両方とも **0.0.0.0**（全インターフェース）で待ち受けるため、172.16.1.251 からアクセス可能
+   - 両方とも **0.0.0.0**（全インターフェース）で待ち受けるため、172.16.1.242 からアクセス可能
 
 2. **ファイアウォール**  
    - 他PCから接続できない場合は、開発PCの Windows ファイアウォールで **3000** と **5000** の受信を許可する  
@@ -2881,34 +2881,34 @@ CATO でネットワークを組んでいるため、**CATO クライアント�
 
 ### 付箋ボード（wl-sticky-note）
 
-- ブラウザで **<http://172.16.1.251:3000>** を開く
-- ボード例: <http://172.16.1.251:3000/board/wl>
+- ブラウザで **<http://172.16.1.242:3000>** を開く
+- ボード例: <http://172.16.1.242:3000/board/wl>
 
 ### AI-Board
 
-- ブラウザで **<http://172.16.1.251:5000>** を開く
-- 受付オペレーター: <http://172.16.1.251:5000/operator>
-- 名前・顔管理: <http://172.16.1.251:5000/manager>
+- ブラウザで **<http://172.16.1.242:5000>** を開く
+- 受付オペレーター: <http://172.16.1.242:5000/operator>
+- 名前・顔管理: <http://172.16.1.242:5000/manager>
 
 ### Desktopアプリ（他PCで起動する場合）
 
 - 開発環境の付箋ボードに繋ぐには、`config.json` で以下を指定する:
-  - `postit_board_url`: `http://172.16.1.251:3000/`
+  - `postit_board_url`: `http://172.16.1.242:3000/`
   - `postit_board_id`: `wl`（または利用するボードID）
-- または環境変数: `POSTIT_BOARD_URL=http://172.16.1.251:3000`
+- または環境変数: `POSTIT_BOARD_URL=http://172.16.1.242:3000`
 
 ### AI-Board の付箋検知（他PCではなく開発PCで実行する場合）
 
 - 開発環境の付箋ボード（localhost:3000）に送る場合は、環境変数未設定で OK（デフォルト localhost:3000）
-- **他PCで付箋検知を動かし、開発PCの付箋ボードに送る**場合は、そのPCで `POSTIT_BOARD_URL=http://172.16.1.251:3000` を設定する
+- **他PCで付箋検知を動かし、開発PCの付箋ボードに送る**場合は、そのPCで `POSTIT_BOARD_URL=http://172.16.1.242:3000` を設定する
 
 ---
 
 ## 4. まとめ
 
-- **開発PC (172.16.1.251)** で `start_all_servers.ps1` を実行し、付箋ボード・AI-Board を起動する
-- **CATO 接続済みの他PC** からは **<http://172.16.1.251:3000>** / **<http://172.16.1.251:5000>** でアクセスする
-- Desktopアプリや付箋検知を「開発環境の付箋ボード」に繋ぐときは、URL に **<http://172.16.1.251:3000>** を指定する
+- **開発PC (172.16.1.242)** で `start_all_servers.ps1` を実行し、付箋ボード・AI-Board を起動する
+- **CATO 接続済みの他PC** からは **<http://172.16.1.242:3000>** / **<http://172.16.1.242:5000>** でアクセスする
+- Desktopアプリや付箋検知を「開発環境の付箋ボード」に繋ぐときは、URL に **<http://172.16.1.242:3000>** を指定する
 </file>
 
 <file path="開発ドキュメント/開発全体像_20260205.md">
@@ -3416,7 +3416,7 @@ server {
 | **配置場所** | 開発: `/home/hisashi/dev/sv_cert/` / 本番: `/home/devuser01/sv_cert/` |
 | **ファイル** | `fullchain.pem`（証明書）、`privkey.pem`（秘密鍵） |
 | **FQDN** | `https://wlboardsys.internal.wonder-link.com/` |
-| **IP（例）** | 172.16.1.83 または 172.16.1.203（CATO 内で linko-system は別ホスト 172.16.1.251） |
+| **IP（例）** | 172.16.1.83 または 172.16.1.203（CATO 内で linko-system は別ホスト 172.16.1.242） |
 
 `board-system/nginx/nginx.conf`（開発）・`nginx.conf.production-server`（本番）・`staging.conf`・`wl-sticky-note/src/nginx.conf` はいずれも上記パスを参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
 
@@ -4087,7 +4087,7 @@ nano .env
 # 本番例:
 # DATABASE_URL=sqlite+aiosqlite:///./board.db
 # POSTIT_BOARD_URL=http://127.0.0.1:3000  または http://wl-sticky-note.local
-# （任意）OLLAMA_URL=http://172.16.1.251:11434/v1
+# （任意）OLLAMA_URL=http://172.16.1.242:11435/v1
 ```
 
 ```bash
@@ -4598,7 +4598,7 @@ docker exec -it linko-backend-green alembic current
 | 項目 | 内容 |
 | ------ | ------ |
 | **設定例** | `02_2_AI-Board/.env.production.example` をコピーして `.env` にリネーム |
-| **必須** | `OLLAMA_URL`（例: `http://172.16.1.251:11434/v1`）、`POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` |
+| **必須** | `OLLAMA_URL`（例: `http://172.16.1.242:11435/v1`）、`POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` |
 | **任意** | `RTSP_URL`（カメラ）、`MIN_AREA`、`VOICEVOX_*` |
 | **config.json** | `src/config.json` の `board_id` を **`wl`** に（本番連携先） |
 

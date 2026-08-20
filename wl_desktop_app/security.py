@@ -5,7 +5,7 @@ config.json の改ざんや Socket.IO 由来の click_url により、社外へ�
 ブラウザを誘導されないよう、HTTP(S) 先をホワイトリストで制限する。
 
 無効化 (開発のみ): 環境変数 ``WLINKO_DISABLE_URL_ALLOWLIST=1``
-追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.251,dev.example.com``
+追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.242,dev.example.com``
 または config.json の ``security.allowed_hosts`` / ``security.allowed_host_suffixes``
 """
 from __future__ import annotations
@@ -18,14 +18,14 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 # 本番デフォルト: 社内 FQDN サフィックス + ローカル開発
-_DEFAULT_HOST_SUFFIXES = (
-    ".internal.wonder-link.com",
+_DEFAULT_HOST_SUFFIXES = (".internal.wonder-link.com",)
+_DEFAULT_EXACT_HOSTS = frozenset(
+    {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
 )
-_DEFAULT_EXACT_HOSTS = frozenset({
-    "localhost",
-    "127.0.0.1",
-    "::1",
-})
 
 # load_config / save_config で検証する URL 系キー
 URL_CONFIG_KEYS = (
@@ -38,8 +38,12 @@ URL_CONFIG_KEYS = (
     "linko_server_url",
 )
 
-_ALLOWLIST_DISABLED = os.environ.get("WLINKO_DISABLE_URL_ALLOWLIST", "").strip().lower() in (
-    "1", "true", "yes",
+_ALLOWLIST_DISABLED = os.environ.get(
+    "WLINKO_DISABLE_URL_ALLOWLIST", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
 )
 
 
@@ -86,7 +90,9 @@ def allow_private_ips(cfg: Optional[dict] = None) -> bool:
     if sec.get("allow_private_ips") is True:
         return True
     return os.environ.get("WLINKO_ALLOW_PRIVATE_IPS", "").strip().lower() in (
-        "1", "true", "yes",
+        "1",
+        "true",
+        "yes",
     )
 
 
@@ -162,15 +168,21 @@ def validate_http_url(
     if require_https and parsed.scheme != "https" and not _is_loopback(hostname):
         return False, "HTTPS が必要です"
 
-    if parsed.scheme == "http" and not _is_loopback(hostname) and not allow_private_ips(cfg):
+    if (
+        parsed.scheme == "http"
+        and not _is_loopback(hostname)
+        and not allow_private_ips(cfg)
+    ):
         # 社外・社内ホスト名への平文 HTTP は禁止 (ループバックと明示的 private 許可時のみ http 可)
         if not _is_private_ip(hostname):
-            return False, "HTTP は localhost のみ許可されています (HTTPS を使用してください)"
+            return (
+                False,
+                "HTTP は localhost のみ許可されています (HTTPS を使用してください)",
+            )
 
     if not is_host_allowed(hostname, cfg):
         return False, (
-            f"許可されていないホストです: {hostname!r} "
-            f"(purpose={purpose})"
+            f"許可されていないホストです: {hostname!r} " f"(purpose={purpose})"
         )
 
     return True, ""
@@ -222,6 +234,7 @@ def sanitize_config_urls(cfg: dict, defaults: dict) -> dict:
             fallback = defaults.get(key, "")
             try:
                 from app_log import log_warn
+
                 log_warn(f"[security] config {key} を拒否: {err} → デフォルトに復元")
             except Exception:
                 print(f"[security] config {key} rejected: {err}", flush=True)
@@ -244,6 +257,7 @@ def safe_webbrowser_open(url: str, cfg: Optional[dict] = None) -> bool:
     if not ok:
         try:
             from app_log import log_warn
+
             log_warn(f"[security] ブラウザ起動を拒否: {err} url={url[:120]!r}")
         except Exception:
             print(f"[security] browser blocked: {err}", flush=True)
@@ -252,7 +266,9 @@ def safe_webbrowser_open(url: str, cfg: Optional[dict] = None) -> bool:
     return True
 
 
-def filter_allowed_url(url: Optional[str], cfg: Optional[dict] = None, **kwargs) -> Optional[str]:
+def filter_allowed_url(
+    url: Optional[str], cfg: Optional[dict] = None, **kwargs
+) -> Optional[str]:
     """許可された URL ならそのまま返し、否则 None。"""
     if not url:
         return None

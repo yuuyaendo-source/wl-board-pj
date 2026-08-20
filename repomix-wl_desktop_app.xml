@@ -780,12 +780,12 @@ if __name__ == "__main__":
 # AI_BOARD_URL=http://127.0.0.1:5000/
 # 付箋ボードのURL（新付箋お知らせ用）
 # 開発（このPC）: http://127.0.0.1:3000/
-# 開発（CATO経由・他PCから開発PCへ）: http://172.16.1.251:3000/
+# 開発（CATO経由・他PCから開発PCへ）: http://172.16.1.242:3000/
 # 本番: https://wlboardsys.internal.wonder-link.com/
 # POSTIT_BOARD_URL=http://127.0.0.1:3000/
 #
 # セキュリティ (security.py): 外向き URL は社内ホストのみ許可。開発で LAN IP を使う場合:
-# WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.251
+# WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.242
 # WLINKO_ALLOW_PRIVATE_IPS=1
 # 緊急時のみ許可リスト無効化: WLINKO_DISABLE_URL_ALLOWLIST=1
 # 付箋ボードのボードIDは config.json の postit_board_id（本番: wl）
@@ -7577,7 +7577,7 @@ config.json の改ざんや Socket.IO 由来の click_url により、社外へ�
 ブラウザを誘導されないよう、HTTP(S) 先をホワイトリストで制限する。
 
 無効化 (開発のみ): 環境変数 ``WLINKO_DISABLE_URL_ALLOWLIST=1``
-追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.251,dev.example.com``
+追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.242,dev.example.com``
 または config.json の ``security.allowed_hosts`` / ``security.allowed_host_suffixes``
 """
 from __future__ import annotations

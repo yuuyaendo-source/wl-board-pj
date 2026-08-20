@@ -22,4 +22,4 @@ New-NetFirewallRule -DisplayName $ruleName `
     -Action Allow `
     -Profile Any
 
-Write-Host "OK: Port $port allowed. CATO PCs can access http://172.16.1.251:3000" -ForegroundColor Green
+Write-Host "OK: Port $port allowed. CATO PCs can access http://172.16.1.242:3000" -ForegroundColor Green

@@ -35,7 +35,7 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
-      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.251:11434/v1}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
       LLM_TARGET: ${LLM_TARGET:-}
