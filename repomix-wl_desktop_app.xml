@@ -127,9 +127,12 @@ docs/
 tests/
   test_calendar_remind.py
   test_chat_panel_layout.py
+  test_linko_cards_url.py
   test_network_readiness.py
   test_security.py
+  test_self_profile_client.py
   test_task_remind.py
+  test_visitor_notify_security.py
 .env.example
 .gitignore
 app_log.py
@@ -144,12 +147,14 @@ config_loader.py
 config.json
 config.production.example.json
 dialog_utils.py
+edit_name_dialog.py
 face_registry_admin_dialog.py
 face_registry_client.py
 face_registry_self_client.py
 face_registry_self_dialog.py
 health_check.py
 linko_avatar.py
+linko_cards.py
 mini_port.py
 network_readiness.py
 notifications.py
@@ -606,6 +611,71 @@ if __name__ == "__main__":
     unittest.main()
 </file>
 
+<file path="tests/test_linko_cards_url.py">
+# -*- coding: utf-8 -*-
+"""リン子カード深いリンクの単体テスト。"""
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from linko_cards import build_linko_cards_url
+
+
+class TestLinkoCardsUrl(unittest.TestCase):
+    def test_prefers_board_system_email(self):
+        url = build_linko_cards_url(
+            {
+                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "board_system_email": "asakawa@example.com",
+                "face_registry_person_id": "浅川久司",
+                "display_name": "浅川",
+            }
+        )
+        self.assertEqual(
+            url,
+            "https://linko-board.internal.wonder-link.com/entrance/me/cards"
+            "?email=asakawa%40example.com",
+        )
+
+    def test_falls_back_to_face_registry_person_id(self):
+        url = build_linko_cards_url(
+            {
+                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "board_system_email": "",
+                "face_registry_person_id": "浅川久司",
+                "display_name": "浅川",
+            }
+        )
+        self.assertTrue(
+            url.startswith(
+                "https://linko-board.internal.wonder-link.com/entrance/me/cards?"
+            )
+        )
+        self.assertIn("employee_id=", url)
+
+    def test_falls_back_to_display_name(self):
+        url = build_linko_cards_url(
+            {
+                "linko_server_url": "http://127.0.0.1:5000",
+                "board_system_email": "",
+                "face_registry_person_id": "",
+                "display_name": "小林",
+            }
+        )
+        self.assertEqual(
+            url,
+            "http://127.0.0.1:5000/entrance/me/cards?employee_id=%E5%B0%8F%E6%9E%97",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+</file>
+
 <file path="tests/test_network_readiness.py">
 # -*- coding: utf-8 -*-
 from __future__ import annotations
@@ -697,7 +767,9 @@ class TestSecurity(unittest.TestCase):
             "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
         )
         self.assertTrue(ok)
-        ok2, err = validate_msi_download_url("https://wlboardsys.internal.wonder-link.com/x.exe")
+        ok2, err = validate_msi_download_url(
+            "https://wlboardsys.internal.wonder-link.com/x.exe"
+        )
         self.assertFalse(ok2)
         self.assertIn(".msi", err)
 
@@ -708,6 +780,70 @@ class TestSecurity(unittest.TestCase):
         cfg = {"mini_port_api_url": "https://evil.example.com/steal"}
         sanitize_config_urls(cfg, defaults)
         self.assertEqual(cfg["mini_port_api_url"], defaults["mini_port_api_url"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+</file>
+
+<file path="tests/test_self_profile_client.py">
+"""呼ばれ方編集クライアント（get_self_profile / update_self_profile）のテスト。
+
+HTTP レイヤ（_request）はモックし、正しいメソッド・パス・ボディ・トークンで
+linko の /self_register/profile を叩くことを確認する。
+"""
+
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import face_registry_self_client as c
+
+
+class TestSelfProfileClient(unittest.TestCase):
+    def test_get_uses_get_with_person_id_and_token(self):
+        with mock.patch.object(
+            c, "_request", return_value={"call_name": "浅川", "honorific": "さん"}
+        ) as req:
+            out = c.get_self_profile({"linko_server_url": "http://x"}, "42", "tok")
+        self.assertEqual(out["call_name"], "浅川")
+        args, kwargs = req.call_args
+        self.assertEqual(args[1], "GET")
+        self.assertEqual(args[2], "/self_register/profile")
+        self.assertEqual(kwargs.get("token"), "tok")
+        self.assertEqual(kwargs.get("params"), {"person_id": "42"})
+
+    def test_update_sends_only_provided_fields(self):
+        with mock.patch.object(c, "_request", return_value={}) as req:
+            c.update_self_profile(
+                {"linko_server_url": "http://x"},
+                "42",
+                "tok",
+                call_name="浅やん",
+                honorific="",
+            )
+        args, kwargs = req.call_args
+        self.assertEqual(args[1], "POST")
+        self.assertEqual(args[2], "/self_register/profile")
+        body = kwargs.get("json_body")
+        self.assertEqual(body.get("person_id"), "42")
+        self.assertEqual(body.get("call_name"), "浅やん")
+        self.assertEqual(body.get("honorific"), "")  # 空文字＝敬称なしも送る
+        self.assertNotIn("call_name_kana", body)  # 未指定は送らない
+        self.assertEqual(kwargs.get("token"), "tok")
+
+    def test_update_can_send_empty_honorific(self):
+        """★空文字の敬称（敬称なし）を明示的に送れること。"""
+        with mock.patch.object(c, "_request", return_value={}) as req:
+            c.update_self_profile(
+                {"linko_server_url": "http://x"}, "42", "tok", honorific=""
+            )
+        body = req.call_args.kwargs.get("json_body")
+        self.assertIn("honorific", body)
+        self.assertEqual(body["honorific"], "")
 
 
 if __name__ == "__main__":
@@ -771,6 +907,146 @@ if __name__ == "__main__":
     test_weekend_skipped()
     test_remind_message_format()
     print("test_task_remind: OK")
+</file>
+
+<file path="tests/test_visitor_notify_security.py">
+"""開錠失敗（なりすまし疑い）のセキュリティ警報テスト。
+
+背景（2026-07-15 実機）:
+  写真/動画のなりすましを anti-spoof が弾き、対応パネルへエスカレーションしたが、
+  デスクトップアプリが**音を鳴らさなかった**。原因は音再生が opt-in 設定
+  (visitor_notify_sound・既定 False) と TTS(audio_url) の両方に依存していたため。
+
+対策:
+  action == "unlock_failed" は**セキュリティ警報**として、opt-in 設定にも TTS 成否にも
+  依存せず必ず警報音を鳴らす（通常の来客通知は従来どおり opt-in のまま）。
+"""
+
+import os
+import sys
+import types
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import visitor_notify_client as vnc  # noqa: E402
+
+
+def _install_fake_deps():
+    """_handle_visitor_arrived が関数内で import する依存をフェイクに差し替える。"""
+    fakes = {}
+
+    notifications = types.ModuleType("notifications")
+    notifications.are_enabled = lambda: True
+    notifications.show_toast = lambda *a, **k: None
+    fakes["notifications"] = notifications
+
+    config_loader = types.ModuleType("config_loader")
+    config_loader.load_config = lambda: {"linko_server_url": "http://x"}
+    # 通常来客の音は既定 OFF（opt-in）。セキュリティ警報がこれに依存しないことを確かめる。
+    config_loader.is_feature_enabled = lambda name, cfg=None: False
+    fakes["config_loader"] = config_loader
+
+    security = types.ModuleType("security")
+    security.filter_allowed_url = lambda url, cfg, purpose=None: url
+    fakes["security"] = security
+
+    return fakes
+
+
+class TestSecurityAlert(unittest.TestCase):
+    def setUp(self):
+        self._saved = {
+            k: sys.modules.get(k)
+            for k in ("notifications", "config_loader", "security")
+        }
+        sys.modules.update(_install_fake_deps())
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+
+    def test_unlock_failed_plays_guaranteed_alert(self):
+        """★開錠失敗は、音設定 OFF・TTS 無しでも必ず警報音を鳴らす。"""
+        with mock.patch.object(vnc, "_play_security_alert") as alert, mock.patch.object(
+            vnc, "_play_visitor_audio"
+        ) as tts:
+            vnc._handle_visitor_arrived(
+                {
+                    "name": "浅川",
+                    "location": "entrance",
+                    "action": "unlock_failed",
+                    "audio_url": "",  # TTS 無し
+                }
+            )
+            alert.assert_called_once()  # 警報は必ず鳴る
+            tts.assert_not_called()  # TTS が無いので読み上げは無い（警報だけ）
+
+    def test_unlock_failed_overlays_tts_when_present(self):
+        """TTS 音声があれば警報音のあとに重ねて読み上げる。"""
+        with mock.patch.object(vnc, "_play_security_alert") as alert, mock.patch.object(
+            vnc, "_play_visitor_audio"
+        ) as tts:
+            vnc._handle_visitor_arrived(
+                {
+                    "name": "浅川",
+                    "location": "entrance",
+                    "action": "unlock_failed",
+                    "audio_url": "/static/voices/x.wav",
+                }
+            )
+            alert.assert_called_once()
+            tts.assert_called_once()
+
+    def test_normal_visitor_stays_opt_in(self):
+        """★通常の来客通知は従来どおり: 音設定 OFF なら鳴らさない（うるさくしない）。"""
+        with mock.patch.object(vnc, "_play_security_alert") as alert, mock.patch.object(
+            vnc, "_play_visitor_audio"
+        ) as tts:
+            vnc._handle_visitor_arrived(
+                {
+                    "name": "坂井",
+                    "location": "entrance",
+                    "action": "call_human",
+                    "audio_url": "/static/voices/y.wav",
+                }
+            )
+            alert.assert_not_called()  # セキュリティ警報ではない
+            tts.assert_not_called()  # visitor_notify_sound=False なので鳴らさない
+
+
+class TestBeep(unittest.TestCase):
+    def test_security_alert_beeps_via_winsound(self):
+        """_play_security_alert は winsound.Beep を鳴らす（TTS 非依存の確実な音）。"""
+        fake_winsound = types.ModuleType("winsound")
+        fake_winsound.Beep = mock.MagicMock()
+        saved = sys.modules.get("winsound")
+        sys.modules["winsound"] = fake_winsound
+        try:
+            threads_before = None
+            vnc._play_security_alert()
+            # バックグラウンドスレッドで鳴らすので、少し待って join する。
+            import threading
+
+            for t in threading.enumerate():
+                if t is not threading.current_thread() and t.daemon:
+                    t.join(timeout=2.0)
+            self.assertTrue(
+                fake_winsound.Beep.called, "警報は winsound.Beep を呼ぶこと"
+            )
+        finally:
+            if saved is None:
+                sys.modules.pop("winsound", None)
+            else:
+                sys.modules["winsound"] = saved
+
+
+if __name__ == "__main__":
+    unittest.main()
 </file>
 
 <file path=".env.example">
@@ -933,8 +1209,13 @@ import os
 import sys
 
 # 凍結（cx_Freeze/MSI）時: lib を先に sys.path に追加し、PIL を lib/PIL から確実に読む
-_exe_dir = os.path.dirname(os.path.abspath(sys.executable)) if getattr(sys, "frozen", False) else None
+_exe_dir = (
+    os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False)
+    else None
+)
 _lib_dir = os.path.join(_exe_dir, "lib") if _exe_dir else None
+
 
 def _write_diagnostic(line: str):
     """凍結時のみ、診断ログを exe と同じフォルダに追記する。"""
@@ -947,6 +1228,7 @@ def _write_diagnostic(line: str):
     except Exception:
         pass
 
+
 def _diagnostic_frozen_env():
     """凍結時: lib/PIL の有無と _imaging*.pyd を診断ログに書き、デバイス側の切り分けに使う。"""
     if not _exe_dir or not _lib_dir:
@@ -954,7 +1236,9 @@ def _diagnostic_frozen_env():
     try:
         log_path = os.path.join(_exe_dir, "WonderLinko_diagnostic.txt")
         with open(log_path, "w", encoding="utf-8") as f:
-            f.write(f"[{__import__('datetime').datetime.now().isoformat()}] 起動時診断\n")
+            f.write(
+                f"[{__import__('datetime').datetime.now().isoformat()}] 起動時診断\n"
+            )
             f.write(f"exe_dir: {_exe_dir}\n")
             f.write(f"lib_dir exists: {os.path.isdir(_lib_dir)}\n")
             pil_dir = os.path.join(_lib_dir, "PIL")
@@ -970,6 +1254,7 @@ def _diagnostic_frozen_env():
                 f.write(f"_imaging*.pyd: {imaging}\n")
     except Exception as e:
         _write_diagnostic(f"diagnostic error: {e}")
+
 
 if getattr(sys, "frozen", False):
     if os.path.isdir(_lib_dir) and _lib_dir not in sys.path:
@@ -987,7 +1272,9 @@ import webbrowser
 from urllib.parse import quote_plus
 
 # win10toast の pkg_resources 非推奨警告を抑制
-warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+warnings.filterwarnings(
+    "ignore", message="pkg_resources is deprecated", category=UserWarning
+)
 
 import pystray
 
@@ -995,13 +1282,17 @@ import pystray
 _PIL_Image = _PIL_ImageDraw = None
 try:
     from PIL import Image, ImageDraw
+
     _PIL_Image, _PIL_ImageDraw = Image, ImageDraw
 except ImportError as e:
     if _exe_dir:
         _write_diagnostic(f"PIL import failed: {e}")
-        _write_diagnostic("デバイス側の確認: (1) lib\\PIL に _imaging*.pyd があるか (2) VC++ Redistributable 導入 (3) ウイルス対策で .pyd がブロックされていないか")
+        _write_diagnostic(
+            "デバイス側の確認: (1) lib\\PIL に _imaging*.pyd があるか (2) VC++ Redistributable 導入 (3) ウイルス対策で .pyd がブロックされていないか"
+        )
     try:
         import ctypes
+
         ctypes.windll.user32.MessageBoxW(  # type: ignore
             None,
             f"PIL（画像処理）の読み込みに失敗しました。\n\n{e}\n\n"
@@ -1077,11 +1368,16 @@ def _acquire_single_instance_lock() -> bool:
     try:
         import ctypes
         from ctypes import wintypes
+
         kernel32 = ctypes.windll.kernel32
         ERROR_ALREADY_EXISTS = 183
         # Local\ プレフィックス: per-session (RDP 等で別セッションは別 mutex 扱い)
         mutex_name = "Local\\WonderLinkoDesktopAppSingleInstance"
-        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.argtypes = [
+            ctypes.c_void_p,
+            wintypes.BOOL,
+            wintypes.LPCWSTR,
+        ]
         kernel32.CreateMutexW.restype = wintypes.HANDLE
         kernel32.GetLastError.restype = wintypes.DWORD
         h = kernel32.CreateMutexW(None, False, mutex_name)
@@ -1138,6 +1434,7 @@ def _make_icon_image():
     """
     try:
         from config_loader import get_app_base_dir
+
         base = get_app_base_dir()
     except Exception:
         base = os.path.dirname(os.path.abspath(__file__))
@@ -1162,6 +1459,7 @@ def _make_icon_image():
 def _personal_url():
     """このユーザー用のパーソナルモードURL。Board System でログイン済みなら Board System のパーソナル（/boards/personal/{id}）、そうでなければ linko のパーソナル。"""
     from config_loader import get_board_system_personal_url
+
     url = get_board_system_personal_url()
     if url:
         return url
@@ -1172,6 +1470,20 @@ def _personal_url():
     user_id = _config.get("user_id", "") or ""
     q = "user=" + quote_plus(user_id) if user_id else ""
     return base + "/personal" + ("?" + q if q else "")
+
+
+def _linko_cards_url():
+    """リン子カード・コレクション（PoC）の URL。"""
+    from linko_cards import build_linko_cards_url
+
+    return build_linko_cards_url(_config)
+
+
+def open_linko_cards(*args):
+    """リン子カード・コレクションをブラウザで開く。"""
+    from security import safe_webbrowser_open
+
+    safe_webbrowser_open(_linko_cards_url(), _config)
 
 
 def _postit_board_url():
@@ -1207,6 +1519,7 @@ def open_tray_click_target(*args):
 def open_personal_mode(*args):
     """このユーザー用のパーソナルモード（個人用）をブラウザで開く。"""
     from security import safe_webbrowser_open
+
     safe_webbrowser_open(_personal_url(), _config)
 
 
@@ -1259,6 +1572,7 @@ def _on_calendar_remind_ui(items):
     if not items:
         try:
             from calendar_notify_client import notify_delivery_done
+
             notify_delivery_done()
         except Exception:
             pass
@@ -1268,6 +1582,7 @@ def _on_calendar_remind_ui(items):
         if index >= len(items):
             try:
                 from calendar_notify_client import notify_delivery_done
+
                 notify_delivery_done()
             except Exception:
                 pass
@@ -1276,10 +1591,12 @@ def _on_calendar_remind_ui(items):
         try:
             from calendar_notify_client import post_shown
             from remind_notify import deliver_remind
+
             cfg = load_config()
             minutes = item.get("minutes_before")
             if minutes is None:
                 from calendar_notify_client import calendar_remind_minutes
+
                 minutes = calendar_remind_minutes(cfg)
             if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
@@ -1304,9 +1621,11 @@ def _on_calendar_remind_ui(items):
 
 def _on_task_remind_ui(items, slot, summary=""):
     """メインスレッド: Today タスク一覧のリマインドダイアログを表示。"""
+
     def _ack(item, action: str):
         try:
             from task_remind_client import post_ack
+
             cfg = load_config()
             if post_ack(cfg, item, slot, action):
                 if action == "done":
@@ -1320,11 +1639,20 @@ def _on_task_remind_ui(items, slot, summary=""):
 
     try:
         from task_remind_dialog import show_task_remind_dialog
-        show_task_remind_dialog(_miniport_window, items, slot, _ack, summary=summary or None)
+
+        show_task_remind_dialog(
+            _miniport_window,
+            items,
+            slot,
+            _ack,
+            summary=summary or None,
+            on_open_cards=open_linko_cards,
+        )
     except Exception as e:
         log_info(f"[task_remind] dialog failed: {e}")
         try:
             from task_remind_client import notify_dialog_closed
+
             notify_dialog_closed()
         except Exception:
             pass
@@ -1340,10 +1668,13 @@ def _toggle_notifications(icon=None, item=None):
     if not _config["notifications_enabled"]:
         try:
             import linko_avatar
+
             linko_avatar.dismiss_ui()
         except Exception:
             pass
-    notifications.show_toast("Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True)
+    notifications.show_toast(
+        "Wonder Linko", f"通知を{on_off}にしました。", duration_sec=2, force_show=True
+    )
     if _miniport_window is not None:
         try:
             _miniport_window.after(0, _miniport_window.refresh_notifications_button)
@@ -1357,12 +1688,15 @@ def open_settings(icon=None, item=None):
     pystray のコールバックは別スレッドで走るため、Tk ウィジェットの生成は
     ミニポートの Tk メインスレッド上で行う必要がある。``after`` で dispatch する。
     """
+
     def _open():
         try:
             from settings_dialog import open_settings_dialog
+
             open_settings_dialog(master=_miniport_window)
         except Exception as e:
             print("open_settings failed:", e, flush=True)
+
     if _miniport_window is not None:
         try:
             _miniport_window.after(0, _open)
@@ -1385,6 +1719,7 @@ def quit_app(icon, item):
 
 def _test_postit_connection(*args):
     """付箋ボードへの接続をテストし、結果をトーストで表示。"""
+
     def do_test():
         cfg = load_config()
         url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
@@ -1410,6 +1745,7 @@ def _test_postit_connection(*args):
                 f"接続できました。付箋 {n} 件（通知は約1分間隔でチェックしています）",
                 duration_sec=5,
             )
+
     threading.Thread(target=do_test, daemon=True).start()
 
 
@@ -1426,7 +1762,10 @@ def _show_notification_help(*args):
     )
     try:
         import ctypes
-        ctypes.windll.user32.MessageBoxW(None, msg, "Wonder Linko - 通知が表示されない場合", 0)
+
+        ctypes.windll.user32.MessageBoxW(
+            None, msg, "Wonder Linko - 通知が表示されない場合", 0
+        )
     except Exception:
         pass
 
@@ -1435,6 +1774,7 @@ def _show_email_login_dialog() -> str | None:
     """メールログイン用のメールアドレス入力ダイアログ。入力値を返す。キャンセル時は None。"""
     try:
         from dialog_utils import ask_string_large
+
         email = ask_string_large(
             "Wonder Linko - Board System ログイン",
             "Board System のパーソナルボードを開くには、登録済みのメールアドレスを入力してください:",
@@ -1460,12 +1800,20 @@ def _board_system_login_clicked(*args):
     email = _show_email_login_dialog()
     if not email or "@" not in email:
         if email is not None:
-            notifications.show_toast("Wonder Linko", "メールアドレスを入力してください。", duration_sec=3, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "メールアドレスを入力してください。",
+                duration_sec=3,
+                force_show=True,
+            )
         return
     try:
         import requests
         from security import assert_http_url
-        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
+
+        assert_http_url(
+            f"{board_url}/users/by_email", _config, purpose="users_by_email"
+        )
         r = requests.get(
             f"{board_url}/users/by_email",
             params={"email": email},
@@ -1477,7 +1825,13 @@ def _board_system_login_clicked(*args):
             if user_id is not None:
                 from config_loader import save_board_system_login
 
-                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
+                save_board_system_login(
+                    _config,
+                    board_url=board_url,
+                    user_id=user_id,
+                    user_data=data,
+                    login_email=email,
+                )
                 notifications.show_toast(
                     "Wonder Linko",
                     f"ログインしました（{data.get('name', '')}）。パーソナルを開くで Board System のパーソナルボードが開きます。",
@@ -1486,16 +1840,32 @@ def _board_system_login_clicked(*args):
                 )
                 from config_loader import get_board_system_personal_url
                 from security import safe_webbrowser_open
+
                 personal_url = get_board_system_personal_url(_config)
                 if personal_url:
                     safe_webbrowser_open(personal_url, _config)
                 return
         if r.status_code == 404:
-            notifications.show_toast("Wonder Linko", "このメールアドレスは未登録です。Board System でユーザーを登録してください。", duration_sec=5, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "このメールアドレスは未登録です。Board System でユーザーを登録してください。",
+                duration_sec=5,
+                force_show=True,
+            )
         else:
-            notifications.show_toast("Wonder Linko", "ログインに失敗しました。Board System の URL とネットワークを確認してください。", duration_sec=5, force_show=True)
+            notifications.show_toast(
+                "Wonder Linko",
+                "ログインに失敗しました。Board System の URL とネットワークを確認してください。",
+                duration_sec=5,
+                force_show=True,
+            )
     except Exception as e:
-        notifications.show_toast("Wonder Linko", "ログインに失敗しました: " + str(e)[:80], duration_sec=5, force_show=True)
+        notifications.show_toast(
+            "Wonder Linko",
+            "ログインに失敗しました: " + str(e)[:80],
+            duration_sec=5,
+            force_show=True,
+        )
 
 
 def build_menu(icon):
@@ -1523,10 +1893,13 @@ def _show_display_name_dialog(current_name: str = "") -> str | None:
     """表示名入力ダイアログを表示し、入力された名前を返す。キャンセル時は None。"""
     try:
         from dialog_utils import ask_string_large
+
         prompt = "ミニポートから投稿したときに付箋に表示する名前を入力してください:"
         if current_name:
             prompt += "\n（現在: " + current_name + "）"
-        return ask_string_large("Wonder Linko - 表示名", prompt, initial_value=current_name)
+        return ask_string_large(
+            "Wonder Linko - 表示名", prompt, initial_value=current_name
+        )
     except Exception:
         return None
 
@@ -1558,16 +1931,31 @@ def _prompt_board_system_login_if_needed():
     try:
         import requests
         from security import assert_http_url
-        assert_http_url(f"{board_url}/users/by_email", _config, purpose="users_by_email")
-        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+
+        assert_http_url(
+            f"{board_url}/users/by_email", _config, purpose="users_by_email"
+        )
+        r = requests.get(
+            f"{board_url}/users/by_email", params={"email": email}, timeout=10
+        )
         if r.status_code == 200 and r.json():
             data = r.json()
             user_id = data.get("id")
             if user_id is not None:
                 from config_loader import save_board_system_login
 
-                save_board_system_login(_config, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
-                notifications.show_toast("Wonder Linko", "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。", duration_sec=4)
+                save_board_system_login(
+                    _config,
+                    board_url=board_url,
+                    user_id=user_id,
+                    user_data=data,
+                    login_email=email,
+                )
+                notifications.show_toast(
+                    "Wonder Linko",
+                    "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。",
+                    duration_sec=4,
+                )
     except Exception:
         pass
 
@@ -1577,6 +1965,7 @@ def _wait_for_process_exit(pid: int):
     if sys.platform == "win32":
         try:
             import ctypes
+
             kernel32 = ctypes.windll.kernel32  # type: ignore
             SYNCHRONIZE = 0x00100000
             INFINITE = 0xFFFFFFFF
@@ -1588,6 +1977,7 @@ def _wait_for_process_exit(pid: int):
                     kernel32.CloseHandle(handle)
         except Exception:
             import time
+
             while True:
                 try:
                     os.kill(pid, 0)
@@ -1596,6 +1986,7 @@ def _wait_for_process_exit(pid: int):
                 time.sleep(0.5)
     else:
         import time
+
         while True:
             try:
                 os.kill(pid, 0)
@@ -1643,7 +2034,9 @@ def main():
     # 単一インスタンス制御: 既に他プロセスが起動中なら、先発に前面化を依頼して自プロセスは終了
     if not _acquire_single_instance_lock():
         _signal_existing_instance_to_show()
-        log_info("既に Wonder Linko が起動中のため、ミニポートの前面化のみ依頼して終了します。")
+        log_info(
+            "既に Wonder Linko が起動中のため、ミニポートの前面化のみ依頼して終了します。"
+        )
         return
 
     _config = load_config()
@@ -1668,7 +2061,11 @@ def main():
         start_postit_poll(lambda: _config, on_new_postit_notes)
 
     # MSI 等でインストールした exe の初回起動時のみ、Windows 再起動後もミニポートを自動表示するためスタートアップに登録
-    if sys.platform == "win32" and getattr(sys, "frozen", False) and not startup.is_startup_enabled():
+    if (
+        sys.platform == "win32"
+        and getattr(sys, "frozen", False)
+        and not startup.is_startup_enabled()
+    ):
         if startup.set_startup_enabled(True):
             notifications.show_toast(
                 "Wonder Rinko",
@@ -1680,6 +2077,7 @@ def main():
     try:
         import customtkinter as ctk
         from mini_port import MiniPortWindow
+
         ctk.set_appearance_mode("system")
 
         def _miniport_on_hide():
@@ -1716,6 +2114,7 @@ def main():
     # タスクリマインド (features.task_remind=ON かつ Board ログイン時)
     try:
         from task_remind_client import start_task_remind_poll
+
         start_task_remind_poll(
             lambda: _config,
             _on_task_remind_ui,
@@ -1728,6 +2127,7 @@ def main():
     # カレンダーリマインド (features.calendar_notify=ON)
     try:
         from calendar_notify_client import start_calendar_notify_poll
+
         start_calendar_notify_poll(_on_calendar_remind_ui, tk_master=_miniport_window)
         log_info("[calendar_notify] ポーリング開始")
     except Exception as e:
@@ -1737,11 +2137,13 @@ def main():
     log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")
     try:
         from visitor_notify_client import start_visitor_notify
+
         log_info("[visitor_notify] visitor_notify_client の import 成功")
         result = start_visitor_notify()
         log_info(f"[visitor_notify] start_visitor_notify 完了: result={result}")
     except Exception as e:
         import traceback
+
         log_info(f"[visitor_notify] 起動エラー: {e}")
         log_info(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
@@ -1766,9 +2168,12 @@ def main():
                 # ユーザー方針: アップデートは任意。起動時に自動でダイアログを出さない。
                 # 更新があってもログに残すだけ。実行は設定画面「アップデート確認」から手動。
                 if has_update:
-                    log_info(f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)")
+                    log_info(
+                        f"起動時更新チェック: 更新あり {latest_version} (手動更新待ち・ダイアログは出さない)"
+                    )
 
             check_and_notify(__version__, _update_url, _on_startup_update_result)
+
     else:
         _startup_update_check = None
 
@@ -2397,13 +2802,11 @@ from typing import Optional
 
 # 絵文字・絵記号 (音声合成に渡すと無音スタブ→リトライで時間を浪費するため除去)
 _EMOJI_RE = re.compile(
-    "[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF"
-    "\U00002600-\U000027BF\U00002B00-\U00002BFF\U0000FE00-\U0000FE0F]+"
+    "[\U0001f300-\U0001faff\U0001f1e6-\U0001f1ff"
+    "\U00002600-\U000027bf\U00002b00-\U00002bff\U0000fe00-\U0000fe0f]+"
 )
 # 発話可能な文字 (英数・ひらがな・カタカナ・漢字・半角カナ)。1つも無ければ読み上げない。
-_SPEAKABLE_RE = re.compile(
-    "[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]"
-)
+_SPEAKABLE_RE = re.compile("[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]")
 
 
 def _clean_for_tts(text: str) -> str:
@@ -2412,6 +2815,7 @@ def _clean_for_tts(text: str) -> str:
     if not _SPEAKABLE_RE.search(cleaned):
         return ""
     return cleaned
+
 
 try:
     import customtkinter as ctk
@@ -2429,6 +2833,7 @@ from config_loader import load_config
 try:
     from app_log import log_info as _log
 except Exception:
+
     def _log(msg: str) -> None:
         print(msg, flush=True)
 
@@ -2487,7 +2892,9 @@ class ChatPanel(ctk.CTkToplevel):
         self._streaming = False
         self._assistant_start_index = None  # streaming 中のリン子発言の挿入位置
         self._last_assistant_text = ""  # 直近のリン子回答 (付箋投稿用)
-        self._pending_attachment = None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        self._pending_attachment = (
+            None  # {"name": str, "text": str} 添付資料 (次の送信に同梱)
+        )
         self._pending_proposal_id: Optional[str] = None
         self._pending_draft: Optional[dict] = None
         # 文単位ストリーミング TTS のパイプライン (voice 有効時のみ遅延起動)
@@ -2501,7 +2908,10 @@ class ChatPanel(ctk.CTkToplevel):
         self.lift()
         self.focus_force()
         # 開いた直後にあいさつ (LLM を使わず固定文)
-        self._append_line("リン子", "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。")
+        self._append_line(
+            "リン子",
+            "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。",
+        )
 
     def _position_near(self, master) -> None:
         """ミニポートと重ならない位置にパネルを置く。
@@ -2530,18 +2940,21 @@ class ChatPanel(ctk.CTkToplevel):
 
             def fits(x: int, y: int) -> bool:
                 return (
-                    x >= 0 and y >= 0 and x + pw <= sw and y + ph <= sh
+                    x >= 0
+                    and y >= 0
+                    and x + pw <= sw
+                    and y + ph <= sh
                     and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
                 )
 
             candidates = [
-                (mx + mw - pw, my - ph - gap),          # 上・右端揃え
-                (mx, my - ph - gap),                     # 上・左端揃え
-                (mx + mw - pw, my + mh + gap),           # 下・右端揃え
-                (mx, my + mh + gap),                     # 下・左端揃え
-                (mx - pw - gap, my),                     # 左・上揃え
-                (mx - pw - gap, my + mh - ph),           # 左・下揃え
-                (mx + mw + gap, my),                     # 右・上揃え
+                (mx + mw - pw, my - ph - gap),  # 上・右端揃え
+                (mx, my - ph - gap),  # 上・左端揃え
+                (mx + mw - pw, my + mh + gap),  # 下・右端揃え
+                (mx, my + mh + gap),  # 下・左端揃え
+                (mx - pw - gap, my),  # 左・上揃え
+                (mx - pw - gap, my + mh - ph),  # 左・下揃え
+                (mx + mw + gap, my),  # 右・上揃え
             ]
 
             x, y = candidates[0]
@@ -2564,7 +2977,9 @@ class ChatPanel(ctk.CTkToplevel):
         self._chat.pack(fill="both", expand=True, padx=10, pady=(10, 6))
         self._chat.configure(state="disabled")
 
-        self._proposal_frame = ctk.CTkFrame(self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8)
+        self._proposal_frame = ctk.CTkFrame(
+            self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8
+        )
         self._proposal_title = ctk.CTkLabel(
             self._proposal_frame,
             text="📅 予定の確認",
@@ -2610,9 +3025,13 @@ class ChatPanel(ctk.CTkToplevel):
 
         # 直前のリン子回答を付箋ボードへ投稿するボタン
         self._note_btn = ctk.CTkButton(
-            self, text="📝 リン子の回答を付箋にする", height=32,
-            command=self._on_make_note, state="disabled",
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            self,
+            text="📝 リン子の回答を付箋にする",
+            height=32,
+            command=self._on_make_note,
+            state="disabled",
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         )
         self._note_btn.pack(fill="x", padx=10, pady=(0, 6))
@@ -2621,26 +3040,39 @@ class ChatPanel(ctk.CTkToplevel):
         attach_row = ctk.CTkFrame(self, fg_color="transparent")
         attach_row.pack(fill="x", padx=10, pady=(0, 6))
         self._attach_label = ctk.CTkLabel(
-            attach_row, text="📎 添付なし", anchor="w",
-            text_color=("gray40", "gray60"), font=ctk.CTkFont(size=12),
+            attach_row,
+            text="📎 添付なし",
+            anchor="w",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=12),
         )
         self._attach_label.pack(side="left", fill="x", expand=True)
         self._attach_btn = ctk.CTkButton(
-            attach_row, text="📎 資料を添付", width=110, height=28,
+            attach_row,
+            text="📎 資料を添付",
+            width=110,
+            height=28,
             command=self._on_attach,
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         )
         self._attach_btn.pack(side="right")
 
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(fill="x", padx=10, pady=(0, 10))
-        self._entry = ctk.CTkTextbox(bottom, height=60, wrap="word", font=ctk.CTkFont(size=13))
+        self._entry = ctk.CTkTextbox(
+            bottom, height=60, wrap="word", font=ctk.CTkFont(size=13)
+        )
         self._entry.pack(side="left", fill="both", expand=True, padx=(0, 8))
         self._entry.bind("<Control-Return>", self._on_send_shortcut)
         self._send_btn = ctk.CTkButton(
-            bottom, text="送信", width=64, command=self._on_send,
-            fg_color=("#3d8b40", "#1b5e20"), hover_color=("#2f7a33", "#145214"),
+            bottom,
+            text="送信",
+            width=64,
+            command=self._on_send,
+            fg_color=("#3d8b40", "#1b5e20"),
+            hover_color=("#2f7a33", "#145214"),
         )
         self._send_btn.pack(side="right")
         self._mic_btn = ctk.CTkButton(
@@ -2673,9 +3105,13 @@ class ChatPanel(ctk.CTkToplevel):
     def _show_proposal_card(self) -> None:
         if not self._pending_draft:
             return
-        self._proposal_detail.configure(text=self._format_proposal_detail(self._pending_draft))
+        self._proposal_detail.configure(
+            text=self._format_proposal_detail(self._pending_draft)
+        )
         if not self._proposal_frame.winfo_ismapped():
-            self._proposal_frame.pack(fill="x", padx=10, pady=(0, 6), before=self._note_btn)
+            self._proposal_frame.pack(
+                fill="x", padx=10, pady=(0, 6), before=self._note_btn
+            )
 
     def _clear_proposal_card(self) -> None:
         self._pending_proposal_id = None
@@ -2705,13 +3141,17 @@ class ChatPanel(ctk.CTkToplevel):
         if not self._pending_proposal_id:
             return
         self._proposal_confirm_btn.configure(state="disabled")
-        threading.Thread(target=self._proposal_action_work, args=("confirm",), daemon=True).start()
+        threading.Thread(
+            target=self._proposal_action_work, args=("confirm",), daemon=True
+        ).start()
 
     def _on_proposal_cancel(self) -> None:
         if not self._pending_proposal_id:
             self._clear_proposal_card()
             return
-        threading.Thread(target=self._proposal_action_work, args=("cancel",), daemon=True).start()
+        threading.Thread(
+            target=self._proposal_action_work, args=("cancel",), daemon=True
+        ).start()
 
     def _proposal_action_work(self, action: str) -> None:
         if requests is None:
@@ -2720,7 +3160,10 @@ class ChatPanel(ctk.CTkToplevel):
         uid = _board_user_id()
         pid = self._pending_proposal_id
         if uid is None or not pid:
-            self.after(0, lambda: self._append_line("システム", "パーソナルログインが必要です。"))
+            self.after(
+                0,
+                lambda: self._append_line("システム", "パーソナルログインが必要です。"),
+            )
             return
         url = _board_api_base() + f"/brainstorm/calendar/{action}"
         try:
@@ -2731,7 +3174,9 @@ class ChatPanel(ctk.CTkToplevel):
             self.after(0, lambda: self._append_line("システム", str(e)[:80]))
             return
         try:
-            r = requests.post(url, json={"proposal_id": pid, "user_id": uid}, timeout=30)
+            r = requests.post(
+                url, json={"proposal_id": pid, "user_id": uid}, timeout=30
+            )
             if r.status_code >= 400:
                 detail = ""
                 try:
@@ -2739,13 +3184,19 @@ class ChatPanel(ctk.CTkToplevel):
                 except Exception:
                     detail = r.text[:120]
                 self.after(0, lambda: self._append_line("システム", f"失敗: {detail}"))
-                self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
+                self.after(
+                    0, lambda: self._proposal_confirm_btn.configure(state="normal")
+                )
                 return
-            msg = (r.json() or {}).get("message") or ("登録しました。" if action == "confirm" else "キャンセルしました。")
+            msg = (r.json() or {}).get("message") or (
+                "登録しました。" if action == "confirm" else "キャンセルしました。"
+            )
             self.after(0, self._clear_proposal_card)
             self.after(0, lambda: self._append_line("リン子", msg))
         except Exception as e:
-            self.after(0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}"))
+            self.after(
+                0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}")
+            )
             self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
 
     def _on_action_proposal(self, obj: dict) -> None:
@@ -2770,6 +3221,7 @@ class ChatPanel(ctk.CTkToplevel):
         抽出は端末内で行い、テキストは社内 LLM (board-system→Ollama) にのみ渡る。外部送信なし。
         """
         from tkinter import filedialog
+
         path = filedialog.askopenfilename(
             title="リン子に読ませる資料を選択",
             filetypes=[
@@ -2780,13 +3232,16 @@ class ChatPanel(ctk.CTkToplevel):
         if not path:
             return
         import os
+
         name = os.path.basename(path)
         text, err = _extract_text(path)
         if err:
             self._append_line("システム", f"資料の読み込みに失敗: {err}")
             return
         if not (text or "").strip():
-            self._append_line("システム", "資料からテキストを抽出できませんでした (画像 PDF など)。")
+            self._append_line(
+                "システム", "資料からテキストを抽出できませんでした (画像 PDF など)。"
+            )
             return
         truncated = False
         if len(text) > self.MAX_ATTACH_CHARS:
@@ -2795,7 +3250,10 @@ class ChatPanel(ctk.CTkToplevel):
         self._pending_attachment = {"name": name, "text": text}
         label = f"📎 {name} ({len(text)}字{'・以降省略' if truncated else ''})"
         self._attach_label.configure(text=label)
-        self._append_line("システム", f"資料「{name}」を添付しました。質問を入力して送信してください。")
+        self._append_line(
+            "システム",
+            f"資料「{name}」を添付しました。質問を入力して送信してください。",
+        )
 
     def _on_send(self) -> None:
         if self._streaming:
@@ -2834,7 +3292,10 @@ class ChatPanel(ctk.CTkToplevel):
         #   False なら従来どおり最初のトークンでテキスト中の口パクを開始する (無音時の見栄え)。
         try:
             from config_loader import is_feature_enabled
-            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(_tts_url())
+
+            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(
+                _tts_url()
+            )
         except Exception:
             voice_planned = False
         if voice_planned:
@@ -2847,6 +3308,7 @@ class ChatPanel(ctk.CTkToplevel):
         def _start_lipsync_once():
             try:
                 import linko_avatar
+
                 if linko_avatar.is_ready():
                     linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
             except Exception:
@@ -2855,9 +3317,12 @@ class ChatPanel(ctk.CTkToplevel):
         acc = ""
         try:
             from security import assert_http_url
+
             assert_http_url(url, load_config(), purpose="brainstorm")
         except ValueError as e:
-            self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
             self._messages.append({"role": "assistant", "content": ""})
             self._streaming = False
             self.after(0, self._end_assistant)
@@ -2867,12 +3332,17 @@ class ChatPanel(ctk.CTkToplevel):
                 url, json=self._brainstorm_payload(), stream=True, timeout=(10, 120)
             ) as r:
                 if r.status_code != 200:
-                    self.after(0, lambda: self._append_assistant_token(f"[エラー: HTTP {r.status_code}]"))
+                    self.after(
+                        0,
+                        lambda: self._append_assistant_token(
+                            f"[エラー: HTTP {r.status_code}]"
+                        ),
+                    )
                 else:
                     for line in r.iter_lines(decode_unicode=True):
                         if not line or not line.startswith("data:"):
                             continue
-                        data = line[len("data:"):].strip()
+                        data = line[len("data:") :].strip()
                         if data == "[DONE]":
                             break
                         try:
@@ -2880,7 +3350,12 @@ class ChatPanel(ctk.CTkToplevel):
                         except Exception:
                             continue
                         if obj.get("error"):
-                            self.after(0, lambda m=obj["error"]: self._append_assistant_token(f"[エラー: {m}]"))
+                            self.after(
+                                0,
+                                lambda m=obj["error"]: self._append_assistant_token(
+                                    f"[エラー: {m}]"
+                                ),
+                            )
                             continue
                         if obj.get("type") == "action_proposal":
                             self.after(0, lambda o=obj: self._on_action_proposal(o))
@@ -2898,18 +3373,25 @@ class ChatPanel(ctk.CTkToplevel):
                                 sentence_buf = self._flush_sentences(sentence_buf + tok)
         except Exception as e:
             _log(f"[chat_panel] streaming エラー: {e}")
-            self.after(0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]"))
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
         finally:
             self._messages.append({"role": "assistant", "content": acc})
             self._last_assistant_text = acc
             self._streaming = False
             self.after(0, self._end_assistant)
-            if self._pending_proposal_id and acc and ("入れました" in acc or "登録" in acc and "しません" not in acc):
+            if (
+                self._pending_proposal_id
+                and acc
+                and ("入れました" in acc or "登録" in acc and "しません" not in acc)
+            ):
                 self.after(0, self._clear_proposal_card)
             if not voice_planned:
                 # テキスト中に動かした口パクを停止 (音声予定時は say() 側が制御)
                 try:
                     import linko_avatar
+
                     if linko_avatar.is_ready():
                         linko_avatar.stop_lipsync(base_pose="normal")
                 except Exception:
@@ -2929,7 +3411,7 @@ class ChatPanel(ctk.CTkToplevel):
         start = 0
         for i, ch in enumerate(buf):
             if ch in self._SENTENCE_ENDERS:
-                seg = _clean_for_tts(buf[start:i + 1])
+                seg = _clean_for_tts(buf[start : i + 1])
                 if seg:
                     self._sentence_q.put(seg)
                 start = i + 1
@@ -2957,14 +3439,20 @@ class ChatPanel(ctk.CTkToplevel):
     def _tts_play_worker(self) -> None:
         """audio_q の WAV を順番にブロッキング再生 (文同士が重ならない)。"""
         from audio_player import play_wav
+
         while True:
             item = self._audio_q.get()
             if item is None or self._tts_cancel.is_set():
                 break
             path, text, duration = item
             try:
-                play_wav(path, text=text, duration_sec=duration, blocking=True,
-                         log_prefix="[chat_panel]")
+                play_wav(
+                    path,
+                    text=text,
+                    duration_sec=duration,
+                    blocking=True,
+                    log_prefix="[chat_panel]",
+                )
             except Exception as e:
                 _log(f"[chat_panel] 文音声 再生失敗: {e}")
 
@@ -2977,6 +3465,7 @@ class ChatPanel(ctk.CTkToplevel):
             return None
         try:
             from security import assert_http_url
+
             assert_http_url(url, load_config(), purpose="brainstorm_tts")
         except ValueError as e:
             _log(f"[chat_panel] TTS URL 拒否: {e}")
@@ -2998,6 +3487,7 @@ class ChatPanel(ctk.CTkToplevel):
             return None
         try:
             from audio_player import download_linko_wav
+
             res = download_linko_wav(audio_url, log_prefix="[chat_panel]")
         except Exception as e:
             _log(f"[chat_panel] 音声DL失敗: {e}")
@@ -3049,6 +3539,7 @@ class ChatPanel(ctk.CTkToplevel):
             ok, msg = (False, "送信処理が見つかりません")
             try:
                 from mini_port import _send_content  # 遅延 import (循環回避)
+
                 ok, msg = _send_content(text)
             except Exception as e:
                 ok, msg = False, str(e)[:80]
@@ -3057,11 +3548,11 @@ class ChatPanel(ctk.CTkToplevel):
         threading.Thread(target=do_post, daemon=True).start()
 
     def _on_note_done(self, ok: bool, msg: str) -> None:
-        self._append_line("システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}")
+        self._append_line(
+            "システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}"
+        )
         try:
-            self._note_btn.configure(
-                state="normal", text="📝 リン子の回答を付箋にする"
-            )
+            self._note_btn.configure(state="normal", text="📝 リン子の回答を付箋にする")
         except Exception:
             pass
 
@@ -3080,6 +3571,7 @@ class ChatPanel(ctk.CTkToplevel):
             pass
         try:
             import linko_avatar
+
             linko_avatar.stop_lipsync(base_pose="normal")
         except Exception:
             pass
@@ -3095,8 +3587,21 @@ def _extract_text(path: str):
     すべて端末内処理 (外部送信なし)。
     """
     import os
+
     ext = os.path.splitext(path)[1].lower()
-    text_exts = (".txt", ".md", ".csv", ".json", ".log", ".py", ".ini", ".yaml", ".yml", ".html", ".xml")
+    text_exts = (
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".log",
+        ".py",
+        ".ini",
+        ".yaml",
+        ".yml",
+        ".html",
+        ".xml",
+    )
     try:
         if ext in text_exts or ext == "":
             for enc in ("utf-8", "utf-8-sig", "cp932"):
@@ -3262,6 +3767,7 @@ def _get_defaults():
         "postit_board_ids": None,  # 新付箋を監視するボードIDのリスト。未設定時は postit_board_id のみ。例: ["wl", "board_2"]
         "user_id": _default_user_id(),
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
+        "face_registry_person_id": "",  # 互換フォールバック（カード URL は board_system_email を正）
         "personal_path": "",  # Board System 利用時は未使用。レガシー AI ボード用パス（例: /asakawa）。空でよい。
         "open_personal_on_start": False,
         # 旧 tray menu「アバターを表示」「音声ON」が読んでいた設定。v3.1.7 で UI 削除済 (dead)。
@@ -3776,6 +4282,317 @@ def ask_string_large(title: str, prompt: str, parent=None, initial_value: str = 
     win.wait_window()
 
     return result[0]
+</file>
+
+<file path="edit_name_dialog.py">
+# -*- coding: utf-8 -*-
+"""社員向け『呼ばれ方（呼び名・敬称・読み）を編集』ダイアログ。
+
+本人確認はセルフ顔登録と同じ メール→OTP（self_register_token）。
+編集できるのは自分の 呼び名(call_name) / 敬称(honorific) / 呼び名の読み(call_name_kana)。
+"""
+from __future__ import annotations
+
+import threading
+from typing import Optional
+
+try:
+    import customtkinter as ctk
+except ImportError as e:
+    print("customtkinter が見つかりません。", e)
+    raise
+
+from config_loader import load_config
+
+_dialog_instance: Optional["EditNameDialog"] = None
+
+
+class EditNameDialog(ctk.CTkToplevel):
+    WIDTH = 500
+    HEIGHT = 420
+
+    def __init__(self, master=None, cfg: Optional[dict] = None):
+        super().__init__(master)
+        self.title("呼ばれ方を編集")
+        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        self.minsize(440, 360)
+        self.resizable(True, True)
+        self.attributes("-topmost", True)
+
+        self._cfg = dict(cfg) if cfg is not None else load_config()
+        self._challenge_id = ""
+        self._token = ""
+        self._person_id = ""
+        self._person_name = ""
+        self._step = ""
+
+        self._body = ctk.CTkFrame(self, fg_color="transparent")
+        self._body.pack(fill="both", expand=True, padx=12, pady=12)
+        self._status = ctk.CTkLabel(
+            self._body, text="", anchor="w", wraplength=self.WIDTH - 40
+        )
+        self._status.pack(fill="x", pady=(0, 8))
+        self._content = ctk.CTkFrame(self._body, fg_color="transparent")
+        self._content.pack(fill="both", expand=True)
+
+        footer = ctk.CTkFrame(self._body, fg_color="transparent")
+        footer.pack(fill="x", pady=(8, 0))
+        self._btn_back = ctk.CTkButton(
+            footer,
+            text="戻る",
+            command=self._on_back,
+            fg_color="transparent",
+            border_width=1,
+            width=90,
+        )
+        self._btn_back.pack(side="left")
+        self._btn_next = ctk.CTkButton(
+            footer, text="次へ", command=self._on_next, width=110
+        )
+        self._btn_next.pack(side="right")
+        ctk.CTkButton(
+            footer,
+            text="閉じる",
+            command=self._on_close,
+            fg_color="transparent",
+            border_width=1,
+            width=90,
+        ).pack(side="right", padx=(0, 8))
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.lift()
+        self.focus_force()
+        self.after(50, self._show_email_step)
+
+    # --- 共通 --------------------------------------------------------------
+    def _clear_content(self) -> None:
+        for w in self._content.winfo_children():
+            w.destroy()
+
+    def _err(self, title: str, msg: str) -> None:
+        from tkinter import messagebox
+
+        messagebox.showerror(title, msg, parent=self)
+
+    def _info(self, title: str, msg: str) -> None:
+        from tkinter import messagebox
+
+        messagebox.showinfo(title, msg, parent=self)
+
+    def _on_close(self) -> None:
+        global _dialog_instance
+        _dialog_instance = None
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+    def _on_back(self) -> None:
+        if self._step == "otp":
+            self._show_email_step()
+        elif self._step == "edit":
+            self._show_email_step()
+
+    def _on_next(self) -> None:
+        if self._step == "email":
+            self._submit_email()
+        elif self._step == "otp":
+            self._submit_otp()
+        elif self._step == "edit":
+            self._submit_profile()
+
+    # --- ステップ: メール ---------------------------------------------------
+    def _show_email_step(self) -> None:
+        self._step = "email"
+        self._clear_content()
+        from config_loader import get_board_system_login_email
+
+        prefill = get_board_system_login_email(self._cfg)
+        self._status.configure(
+            text="本人確認のため、社内名簿のメールに確認コードを送ります。"
+            + ("（ログイン中のメールをセットしました）" if prefill else "")
+        )
+        ctk.CTkLabel(self._content, text="メールアドレス", anchor="w").pack(
+            fill="x", pady=(0, 4)
+        )
+        self._email_entry = ctk.CTkEntry(
+            self._content, placeholder_text="name@example.com"
+        )
+        self._email_entry.pack(fill="x")
+        if prefill:
+            self._email_entry.insert(0, prefill)
+        self._btn_back.configure(state="disabled")
+        self._btn_next.configure(text="コードを送信", state="normal")
+
+    def _submit_email(self) -> None:
+        from face_registry_self_client import FaceSelfRegisterError, start_self_register
+
+        email = (self._email_entry.get() or "").strip()
+        if not email or "@" not in email:
+            self._err("メール", "有効なメールアドレスを入力してください。")
+            return
+        self._btn_next.configure(state="disabled")
+        self._status.configure(text="送信中…")
+
+        def work():
+            try:
+                self._cfg = load_config()
+                data = start_self_register(self._cfg, email)
+            except FaceSelfRegisterError as e:
+                self.after(0, lambda: self._fail(str(e)))
+                return
+            self.after(0, lambda: self._email_done(data))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _email_done(self, data: dict) -> None:
+        self._btn_next.configure(state="normal")
+        self._challenge_id = str(data.get("challenge_id") or "")
+        masked = str(data.get("email_masked") or "")
+        if not self._challenge_id:
+            self._err(
+                "送信", "確認コードを送信できませんでした。メールをご確認ください。"
+            )
+            return
+        self._show_otp_step(masked)
+
+    # --- ステップ: OTP ------------------------------------------------------
+    def _show_otp_step(self, email_masked: str) -> None:
+        self._step = "otp"
+        self._clear_content()
+        self._status.configure(
+            text=f"{email_masked} に送信した確認コードを入力してください。"
+        )
+        ctk.CTkLabel(self._content, text="確認コード（6桁）", anchor="w").pack(
+            fill="x", pady=(0, 4)
+        )
+        self._otp_entry = ctk.CTkEntry(self._content, placeholder_text="123456")
+        self._otp_entry.pack(fill="x")
+        self._btn_back.configure(state="normal")
+        self._btn_next.configure(text="確認", state="normal")
+
+    def _submit_otp(self) -> None:
+        from face_registry_self_client import (
+            FaceSelfRegisterError,
+            get_self_profile,
+            verify_self_register,
+        )
+
+        otp = (self._otp_entry.get() or "").strip()
+        if not otp:
+            self._err("確認コード", "確認コードを入力してください。")
+            return
+        self._btn_next.configure(state="disabled")
+        self._status.configure(text="確認中…")
+
+        def work():
+            try:
+                data = verify_self_register(self._cfg, self._challenge_id, otp)
+                token = str(data.get("self_register_token") or "")
+                pid = str(data.get("person_id") or "")
+                if not token or not pid:
+                    self.after(
+                        0,
+                        lambda: self._fail("確認コードが正しくないか、期限切れです。"),
+                    )
+                    return
+                profile = get_self_profile(self._cfg, pid, token)
+            except FaceSelfRegisterError as e:
+                self.after(0, lambda: self._fail(str(e)))
+                return
+            self.after(0, lambda: self._otp_done(token, pid, profile))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _otp_done(self, token: str, pid: str, profile: dict) -> None:
+        self._btn_next.configure(state="normal")
+        self._token = token
+        self._person_id = pid
+        self._person_name = str(profile.get("name") or "")
+        self._show_edit_step(profile)
+
+    # --- ステップ: 編集 -----------------------------------------------------
+    def _show_edit_step(self, profile: dict) -> None:
+        self._step = "edit"
+        self._clear_content()
+        self._status.configure(
+            text=f"{self._person_name or '本人'} さんの呼ばれ方を編集できます。"
+            "（敬称を空欄にすると敬称なしで呼ばれます）"
+        )
+
+        def _row(label, value):
+            ctk.CTkLabel(self._content, text=label, anchor="w").pack(
+                fill="x", pady=(6, 2)
+            )
+            e = ctk.CTkEntry(self._content)
+            e.pack(fill="x")
+            if value:
+                e.insert(0, value)
+            return e
+
+        self._call_name_entry = _row(
+            "呼び名（リン子が呼ぶ名前）", profile.get("call_name") or ""
+        )
+        self._kana_entry = _row(
+            "呼び名の読み（発話の読み）", profile.get("call_name_kana") or ""
+        )
+        # 敬称は「未設定＝さん」なので既定値を入れておく
+        hon = profile.get("honorific")
+        self._honorific_entry = _row(
+            "敬称（さん / 様 / ちゃん / 空欄＝なし）", "さん" if hon is None else hon
+        )
+
+        self._btn_back.configure(state="normal")
+        self._btn_next.configure(text="保存", state="normal")
+
+    def _submit_profile(self) -> None:
+        from face_registry_self_client import FaceSelfRegisterError, update_self_profile
+
+        call_name = (self._call_name_entry.get() or "").strip()
+        kana = (self._kana_entry.get() or "").strip()
+        honorific = (self._honorific_entry.get() or "").strip()
+        self._btn_next.configure(state="disabled")
+        self._status.configure(text="保存中…")
+
+        def work():
+            try:
+                update_self_profile(
+                    self._cfg,
+                    self._person_id,
+                    self._token,
+                    call_name=call_name,
+                    honorific=honorific,
+                    call_name_kana=kana,
+                )
+            except FaceSelfRegisterError as e:
+                self.after(0, lambda: self._fail(str(e)))
+                return
+            self.after(0, self._profile_saved)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _profile_saved(self) -> None:
+        self._info(
+            "保存しました", "呼ばれ方を更新しました。次回からリン子が反映します。"
+        )
+        self._on_close()
+
+    # --- 失敗共通 -----------------------------------------------------------
+    def _fail(self, msg: str) -> None:
+        self._btn_next.configure(state="normal")
+        self._status.configure(text="")
+        self._err("エラー", msg)
+
+
+def open_edit_name_dialog(master=None, cfg: Optional[dict] = None) -> "EditNameDialog":
+    """呼ばれ方編集ダイアログを開く（多重起動は既存を前面へ）。"""
+    global _dialog_instance
+    if _dialog_instance is not None and _dialog_instance.winfo_exists():
+        _dialog_instance.lift()
+        _dialog_instance.focus_force()
+        return _dialog_instance
+    _dialog_instance = EditNameDialog(master=master, cfg=cfg)
+    return _dialog_instance
 </file>
 
 <file path="face_registry_admin_dialog.py">
@@ -5319,11 +6136,18 @@ def _request(
         raise FaceSelfRegisterError(f"通信エラー: {e}") from e
 
     if r.status_code == 403:
-        raise FaceSelfRegisterError("アクセスが拒否されました（社内 LAN / VPN を確認）", 403)
+        raise FaceSelfRegisterError(
+            "アクセスが拒否されました（社内 LAN / VPN を確認）", 403
+        )
     if r.status_code == 401:
-        raise FaceSelfRegisterError("認証の有効期限が切れました。最初からやり直してください。", 401)
+        raise FaceSelfRegisterError(
+            "認証の有効期限が切れました。最初からやり直してください。", 401
+        )
     if r.status_code == 429:
-        raise FaceSelfRegisterError("確認コードの試行回数が上限に達しました。しばらく待って再試行してください。", 429)
+        raise FaceSelfRegisterError(
+            "確認コードの試行回数が上限に達しました。しばらく待って再試行してください。",
+            429,
+        )
     if r.status_code == 503:
         try:
             detail = (r.json() or {}).get("error") or r.text[:200]
@@ -5352,7 +6176,9 @@ def get_self_register_status(cfg: dict) -> dict:
 
 
 def start_self_register(cfg: dict, email: str) -> dict:
-    data = _request(cfg, "POST", "/self_register/start", json_body={"email": email.strip()})
+    data = _request(
+        cfg, "POST", "/self_register/start", json_body={"email": email.strip()}
+    )
     return data if isinstance(data, dict) else {}
 
 
@@ -5362,6 +6188,45 @@ def verify_self_register(cfg: dict, challenge_id: str, otp: str) -> dict:
         "POST",
         "/self_register/verify",
         json_body={"challenge_id": challenge_id, "otp": otp.strip()},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def get_self_profile(cfg: dict, person_id: str, token: str) -> dict:
+    """本人の現在プロフィール（呼び名・敬称・読み）を取得。編集フォームのプリフィル用。"""
+    data = _request(
+        cfg,
+        "GET",
+        "/self_register/profile",
+        token=token,
+        params={"person_id": str(person_id)},
+    )
+    return data if isinstance(data, dict) else {}
+
+
+def update_self_profile(
+    cfg: dict,
+    person_id: str,
+    token: str,
+    *,
+    call_name: Optional[str] = None,
+    honorific: Optional[str] = None,
+    call_name_kana: Optional[str] = None,
+) -> dict:
+    """本人の呼び名・敬称・読みを更新。渡した項目だけ更新される。"""
+    body: dict[str, str] = {"person_id": str(person_id)}
+    if call_name is not None:
+        body["call_name"] = call_name
+    if honorific is not None:
+        body["honorific"] = honorific
+    if call_name_kana is not None:
+        body["call_name_kana"] = call_name_kana
+    data = _request(
+        cfg,
+        "POST",
+        "/self_register/profile",
+        json_body=body,
+        token=token,
     )
     return data if isinstance(data, dict) else {}
 
@@ -5446,7 +6311,9 @@ def upload_voices_self_serial(
             continue
         for attempt in range(2):
             try:
-                update_voice_self(cfg, person_id, token, enroll_session_id, challenge_id, data_url)
+                update_voice_self(
+                    cfg, person_id, token, enroll_session_id, challenge_id, data_url
+                )
                 ok += 1
                 last_err = None
                 break
@@ -6169,6 +7036,36 @@ def is_speaking() -> bool:
     return _singleton is not None and _singleton._is_speaking
 </file>
 
+<file path="linko_cards.py">
+# -*- coding: utf-8 -*-
+"""リン子カード・コレクション（PoC）への深いリンク。"""
+from __future__ import annotations
+
+from urllib.parse import quote_plus
+
+
+def build_linko_cards_url(cfg: dict | None) -> str:
+    """``{linko_server_url}/entrance/me/cards?email=...`` を組み立てる。
+
+    個人キーは Board ログインのメール（``board_system_email``）を正とする。
+    メールが無いときだけ互換で face_registry_person_id / display_name を使う。
+    """
+    cfg = cfg or {}
+    base = (cfg.get("linko_server_url") or "").strip().rstrip("/")
+    if not base:
+        base = (cfg.get("ai_board_url") or "http://127.0.0.1:5000").rstrip("/")
+    path = "/entrance/me/cards"
+    email = (cfg.get("board_system_email") or "").strip()
+    if email and "@" in email and " " not in email:
+        return f"{base}{path}?email={quote_plus(email)}"
+    emp = (cfg.get("face_registry_person_id") or "").strip() or (
+        cfg.get("display_name") or ""
+    ).strip()
+    if emp:
+        return f"{base}{path}?employee_id={quote_plus(emp)}"
+    return f"{base}{path}"
+</file>
+
 <file path="mini_port.py">
 # -*- coding: utf-8 -*-
 """
@@ -6194,7 +7091,13 @@ except ImportError as e:
     print("エラー:", e)
     sys.exit(1)
 
-from config_loader import load_config, save_config, get_board_system_personal_url, get_effective_board_system_url, get_app_base_dir
+from config_loader import (
+    load_config,
+    save_config,
+    get_board_system_personal_url,
+    get_effective_board_system_url,
+    get_app_base_dir,
+)
 from theme import Theme, apply_window_transparency
 
 # 画像表示用（PIL が無い環境ではリン子はテキストボタンのみ）
@@ -6202,6 +7105,7 @@ from theme import Theme, apply_window_transparency
 try:
     import PIL.Image  # noqa: F401
     import PIL.ImageTk  # noqa: F401
+
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
@@ -6209,6 +7113,7 @@ except ImportError:
 # ホットキー用（別スレッドで動作）
 try:
     from pynput import keyboard
+
     HAS_PYNPUT = True
 except ImportError:
     HAS_PYNPUT = False
@@ -6217,7 +7122,10 @@ except ImportError:
 def _sticky_note_api_url():
     """付箋ボードの REST API URL（POST /api/sticky_notes）。board URL から導出。"""
     cfg = load_config()
-    board_url = (cfg.get("mini_port_api_url") or "https://wlboardsys.internal.wonder-link.com/board/wl").rstrip("/")
+    board_url = (
+        cfg.get("mini_port_api_url")
+        or "https://wlboardsys.internal.wonder-link.com/board/wl"
+    ).rstrip("/")
     # https://wlboardsys.../board/wl → https://wlboardsys.../api/sticky_notes
     base = re.sub(r"/board/.*$", "", board_url).rstrip("/")
     return f"{base}/api/sticky_notes"
@@ -6232,13 +7140,17 @@ def _board_id():
 def _taskboard_url():
     """ミニウィンドウのリン子クリックで開く Task ボードの URL。"""
     cfg = load_config()
-    return (cfg.get("mini_port_taskboard_url") or "https://wlboardsys.internal.wonder-link.com/boards/taskboard").strip()
+    return (
+        cfg.get("mini_port_taskboard_url")
+        or "https://wlboardsys.internal.wonder-link.com/boards/taskboard"
+    ).strip()
 
 
 def _prompt_email_and_resolve_personal(parent=None):
     """メール入力ダイアログを表示し、Board System API で user_id を解決して config に保存。成功時はパーソナルURLを返す。
     parent: ダイアログの親ウィンドウ（MiniPortWindow 等）。None のときは新規 Tk() を作成。"""
     from dialog_utils import ask_string_large
+
     cfg = load_config()
     board_url = get_effective_board_system_url(cfg)
     if not board_url:
@@ -6253,12 +7165,15 @@ def _prompt_email_and_resolve_personal(parent=None):
     email = email.strip()
     try:
         from security import assert_http_url
+
         assert_http_url(f"{board_url}/users/by_email", cfg, purpose="users_by_email")
     except ValueError as e:
         print(f"[mini_port] users/by_email blocked: {e}", flush=True)
         return None
     try:
-        r = requests.get(f"{board_url}/users/by_email", params={"email": email}, timeout=10)
+        r = requests.get(
+            f"{board_url}/users/by_email", params={"email": email}, timeout=10
+        )
         if r.status_code != 200:
             return None
         data = r.json()
@@ -6267,7 +7182,9 @@ def _prompt_email_and_resolve_personal(parent=None):
             return None
         from config_loader import save_board_system_login
 
-        save_board_system_login(cfg, board_url=board_url, user_id=user_id, user_data=data, login_email=email)
+        save_board_system_login(
+            cfg, board_url=board_url, user_id=user_id, user_data=data, login_email=email
+        )
         return get_board_system_personal_url(cfg)
     except Exception:
         return None
@@ -6295,6 +7212,7 @@ def _send_content(text: str) -> Tuple[bool, str]:
     }
     try:
         from security import assert_http_url
+
         assert_http_url(url, cfg, purpose="sticky_notes")
     except ValueError as e:
         return False, f"送信先が許可されていません: {str(e)[:80]}"
@@ -6320,7 +7238,9 @@ def _rinko_icon_path() -> str:
     ):
         if os.path.isfile(candidate):
             return os.path.normpath(os.path.abspath(candidate))
-    return os.path.normpath(os.path.abspath(os.path.join(base, "assets", "toast_icon.png")))
+    return os.path.normpath(
+        os.path.abspath(os.path.join(base, "assets", "toast_icon.png"))
+    )
 
 
 class MiniPortWindow(ctk.CTk):
@@ -6332,11 +7252,19 @@ class MiniPortWindow(ctk.CTk):
     EXPANDED_W = 360
     EXPANDED_H = 200
 
-    def __init__(self, on_hide=None, on_notifications_toggle=None, get_notifications_enabled=None):
+    def __init__(
+        self, on_hide=None, on_notifications_toggle=None, get_notifications_enabled=None
+    ):
         super().__init__()
         self._on_hide = on_hide if callable(on_hide) else None
-        self._on_notifications_toggle = on_notifications_toggle if callable(on_notifications_toggle) else None
-        self._get_notifications_enabled = get_notifications_enabled if callable(get_notifications_enabled) else (lambda: True)
+        self._on_notifications_toggle = (
+            on_notifications_toggle if callable(on_notifications_toggle) else None
+        )
+        self._get_notifications_enabled = (
+            get_notifications_enabled
+            if callable(get_notifications_enabled)
+            else (lambda: True)
+        )
         self._feedback_job = None
         self._input_visible = False
         self._placeholder_visible = False
@@ -6351,7 +7279,9 @@ class MiniPortWindow(ctk.CTk):
         if HAS_PYNPUT:
             self._start_hotkey_listener()
         else:
-            print("Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。")
+            print(
+                "Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
+            )
 
     # プレースホルダー用（CTkTextbox は placeholder 非対応のため自前で表示）
     PLACEHOLDER_TEXT = "付箋を投稿するコメントを入力"
@@ -6365,7 +7295,9 @@ class MiniPortWindow(ctk.CTk):
         # 見せる。非 Windows は transparentcolor 非対応 (黒い四角が残る) のため、
         # ウィンドウ背景をサーフェス色にして角丸の外を馴染ませる。
         # いずれも -alpha で枠ごと軽く透過し、作業の邪魔になりにくくする。
-        self._transparent_key = apply_window_transparency(self, fg_fallback=Theme.SURFACE)
+        self._transparent_key = apply_window_transparency(
+            self, fg_fallback=Theme.SURFACE
+        )
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
@@ -6381,6 +7313,7 @@ class MiniPortWindow(ctk.CTk):
         # features.linko_avatar の値でレイアウトを分岐
         try:
             from config_loader import is_feature_enabled
+
             avatar_on = is_feature_enabled("linko_avatar")
         except Exception:
             avatar_on = False
@@ -6404,7 +7337,8 @@ class MiniPortWindow(ctk.CTk):
             if use_icon:
                 try:
                     self._rinko_image = ctk.CTkImage(
-                        light_image=icon_path, dark_image=icon_path,
+                        light_image=icon_path,
+                        dark_image=icon_path,
                         size=(avatar_size, avatar_size),
                     )
                 except Exception:
@@ -6422,22 +7356,35 @@ class MiniPortWindow(ctk.CTk):
             self._bind_avatar_click_drag(self.btn_rinko)
 
             # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
-            self._button_frame = ctk.CTkFrame(self.compact_frame, fg_color="transparent")
+            self._button_frame = ctk.CTkFrame(
+                self.compact_frame, fg_color="transparent"
+            )
             self._button_frame.pack(side="top", fill="x")
             self.btn_post = ctk.CTkButton(
-                self._button_frame, text="📝 投稿", width=116, height=40,
-                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14, weight="bold"),
-                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                self._button_frame,
+                text="📝 投稿",
+                width=116,
+                height=40,
+                corner_radius=Theme.RADIUS_PILL,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY,
+                hover_color=Theme.PRIMARY_HOVER,
                 text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
             self.btn_post.pack(side="left", expand=True, fill="x", padx=(0, 5))
             self.btn_board = ctk.CTkButton(
-                self._button_frame, text="📋 ボード", width=116, height=40,
-                corner_radius=Theme.RADIUS_PILL, font=ctk.CTkFont(size=14),
-                fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                self._button_frame,
+                text="📋 ボード",
+                width=116,
+                height=40,
+                corner_radius=Theme.RADIUS_PILL,
+                font=ctk.CTkFont(size=14),
+                fg_color=Theme.SECONDARY,
+                hover_color=Theme.SECONDARY_HOVER,
                 text_color=Theme.SECONDARY_TEXT,
-                border_width=1, border_color=Theme.SECONDARY_BORDER,
+                border_width=1,
+                border_color=Theme.SECONDARY_BORDER,
                 command=self._open_taskboard,
             )
             self.btn_board.pack(side="left", expand=True, fill="x", padx=(5, 0))
@@ -6448,29 +7395,46 @@ class MiniPortWindow(ctk.CTk):
             if use_icon:
                 try:
                     self._rinko_image = ctk.CTkImage(
-                        light_image=icon_path, dark_image=icon_path, size=(36, 36),
+                        light_image=icon_path,
+                        dark_image=icon_path,
+                        size=(36, 36),
                     )
                     self.btn_rinko = ctk.CTkButton(
-                        self.compact_frame, image=self._rinko_image, text="",
-                        width=44, height=40, corner_radius=22,
-                        fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                        self.compact_frame,
+                        image=self._rinko_image,
+                        text="",
+                        width=44,
+                        height=40,
+                        corner_radius=22,
+                        fg_color=Theme.SECONDARY,
+                        hover_color=Theme.SECONDARY_HOVER,
                         command=self._open_taskboard,
                     )
                 except Exception:
                     use_icon = False
             if not use_icon:
                 self.btn_rinko = ctk.CTkButton(
-                    self.compact_frame, text="ボード", width=56, height=40,
-                    corner_radius=20, font=ctk.CTkFont(size=13),
-                    fg_color=Theme.SECONDARY, hover_color=Theme.SECONDARY_HOVER,
+                    self.compact_frame,
+                    text="ボード",
+                    width=56,
+                    height=40,
+                    corner_radius=20,
+                    font=ctk.CTkFont(size=13),
+                    fg_color=Theme.SECONDARY,
+                    hover_color=Theme.SECONDARY_HOVER,
                     text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
             self.btn_rinko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
-                self.compact_frame, text="投稿", width=70, height=40,
-                corner_radius=20, font=ctk.CTkFont(size=14, weight="bold"),
-                fg_color=Theme.PRIMARY, hover_color=Theme.PRIMARY_HOVER,
+                self.compact_frame,
+                text="投稿",
+                width=70,
+                height=40,
+                corner_radius=20,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                fg_color=Theme.PRIMARY,
+                hover_color=Theme.PRIMARY_HOVER,
                 text_color=Theme.PRIMARY_TEXT,
                 command=self._show_input,
             )
@@ -6563,14 +7527,23 @@ class MiniPortWindow(ctk.CTk):
             if not os.path.isfile(light_path):
                 return
             import PIL.Image
+
             light_src = PIL.Image.open(light_path).convert("RGBA")
-            dark_src = PIL.Image.open(dark_path).convert("RGBA") if os.path.isfile(dark_path) else light_src
+            dark_src = (
+                PIL.Image.open(dark_path).convert("RGBA")
+                if os.path.isfile(dark_path)
+                else light_src
+            )
             w, h = int(self.COMPACT_W), int(self.COMPACT_H)
-            self._card_bg_image = ctk.CTkImage(light_image=light_src, dark_image=dark_src, size=(w, h))
+            self._card_bg_image = ctk.CTkImage(
+                light_image=light_src, dark_image=dark_src, size=(w, h)
+            )
             # 角丸グラデ PNG をカード上部 (マスコット表示領域) に最背面で敷く。
             # PNG の角丸半径はフレームの border 半径と揃えてあるので、縁は二重にならず
             # きれいに重なる。コンテンツ (compact_frame / input_frame) は上に描かれる。
-            self._card_bg_label = ctk.CTkLabel(self.frame, text="", image=self._card_bg_image)
+            self._card_bg_label = ctk.CTkLabel(
+                self.frame, text="", image=self._card_bg_image
+            )
             self._card_bg_label.place(x=0, y=0, anchor="nw")
             self._card_bg_label.lower()
         except Exception as e:
@@ -6634,6 +7607,7 @@ class MiniPortWindow(ctk.CTk):
             if not getattr(self, "_avatar_on", False):
                 return
             import linko_avatar
+
             # アバターのソース画像は 160px を優先して読む (140px 表示でも鮮明)。
             # 160px セットが無い環境では従来の 128px にフォールバック。
             if not linko_avatar.is_ready():
@@ -6649,6 +7623,7 @@ class MiniPortWindow(ctk.CTk):
             # 吹き出し
             try:
                 from speech_bubble import SpeechBubble
+
                 self._speech_bubble = SpeechBubble(parent_window=self)
                 linko_avatar.register_speech_bubble(self._speech_bubble)
             except Exception as e:
@@ -6662,23 +7637,35 @@ class MiniPortWindow(ctk.CTk):
             # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
-                    self.frame, text="✕", width=22, height=22, corner_radius=11,
+                    self.frame,
+                    text="✕",
+                    width=22,
+                    height=22,
+                    corner_radius=11,
                     font=ctk.CTkFont(size=12, weight="bold"),
-                    fg_color=Theme.CLOSE_FG, hover_color=Theme.CLOSE_HOVER,
+                    fg_color=Theme.CLOSE_FG,
+                    hover_color=Theme.CLOSE_HOVER,
                     text_color=Theme.CLOSE_TEXT,
                     command=self._on_close_clicked,
                 )
                 self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
 
                 self.btn_settings_mini = ctk.CTkButton(
-                    self.frame, text="⚙", width=22, height=22, corner_radius=11,
+                    self.frame,
+                    text="⚙",
+                    width=22,
+                    height=22,
+                    corner_radius=11,
                     font=ctk.CTkFont(size=13),
-                    fg_color=Theme.CLOSE_FG, hover_color=Theme.SECONDARY_HOVER,
+                    fg_color=Theme.CLOSE_FG,
+                    hover_color=Theme.SECONDARY_HOVER,
                     text_color=Theme.CLOSE_TEXT,
                     command=self._ctx_open_settings,
                 )
                 # ✕ の左隣 (22px + 余白 6px ぶん内側)
-                self.btn_settings_mini.place(relx=1.0, rely=0.0, x=-36, y=8, anchor="ne")
+                self.btn_settings_mini.place(
+                    relx=1.0, rely=0.0, x=-36, y=8, anchor="ne"
+                )
             except Exception as e:
                 print(f"[linko_avatar] close/settings button failed: {e}", flush=True)
             # window 位置を更新サイズで取り直す
@@ -6723,7 +7710,10 @@ class MiniPortWindow(ctk.CTk):
     def _on_avatar_drag(self, event):
         dx = event.x_root - self._drag_start_x
         dy = event.y_root - self._drag_start_y
-        if abs(event.x_root - self._avatar_press_x) > 5 or abs(event.y_root - self._avatar_press_y) > 5:
+        if (
+            abs(event.x_root - self._avatar_press_x) > 5
+            or abs(event.y_root - self._avatar_press_y) > 5
+        ):
             self._avatar_moved = True
         self._drag_start_x = event.x_root
         self._drag_start_y = event.y_root
@@ -6748,18 +7738,22 @@ class MiniPortWindow(ctk.CTk):
             # features.brainstorm が ON ならアバタークリックでチャットパネルを開く
             try:
                 from config_loader import is_feature_enabled
+
                 if is_feature_enabled("brainstorm"):
                     from chat_panel import open_chat_panel
+
                     open_chat_panel(master=self)
                     return
             except Exception as e:
                 print(f"[chat_panel] open failed: {e}", flush=True)
             if self._avatar_enabled:
                 import linko_avatar
+
                 # brainstorm OFF のときは挨拶を吹き出し + 口パク
                 linko_avatar.say(
                     "こんにちは、リン子です。何かあったら呼んでくださいね。",
-                    duration_sec=None, lipsync=True,
+                    duration_sec=None,
+                    lipsync=True,
                 )
                 return
         except Exception:
@@ -6778,6 +7772,7 @@ class MiniPortWindow(ctk.CTk):
             return
         try:
             import linko_avatar
+
             img = linko_avatar.get_image(pose)
         except Exception as e:
             self._avatar_log(f"_set_avatar_pose get_image error: {e}")
@@ -6788,7 +7783,9 @@ class MiniPortWindow(ctk.CTk):
         if pose not in self._avatar_ctk_images:
             try:
                 self._avatar_ctk_images[pose] = ctk.CTkImage(
-                    light_image=img, dark_image=img, size=self._avatar_size,
+                    light_image=img,
+                    dark_image=img,
+                    size=self._avatar_size,
                 )
             except Exception as e:
                 self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
@@ -6797,7 +7794,9 @@ class MiniPortWindow(ctk.CTk):
             self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
             self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
             if not getattr(self, "_pose_logged_once", False):
-                self._avatar_log(f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}")
+                self._avatar_log(
+                    f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}"
+                )
                 self._pose_logged_once = True
         except Exception as e:
             self._avatar_log(f"_set_avatar_pose configure error: {e}")
@@ -6805,6 +7804,7 @@ class MiniPortWindow(ctk.CTk):
     def _avatar_log(self, msg: str) -> None:
         try:
             from app_log import log_info
+
             log_info("[mini_port] " + msg)
         except Exception:
             print("[mini_port] " + msg, flush=True)
@@ -6812,10 +7812,13 @@ class MiniPortWindow(ctk.CTk):
     def _setup_context_menu(self):
         """右クリックで通知オン/オフ・設定・ミニポート非表示のメニューを表示。"""
         import tkinter as tk
+
         self._ctx_menu = tk.Menu(self, tearoff=0)
         self._ctx_menu.add_command(label="", command=self._ctx_toggle_notifications)
         self._ctx_menu.add_command(label="設定...", command=self._ctx_open_settings)
-        self._ctx_menu.add_command(label="ミニポートを非表示にする", command=self._ctx_hide_miniport)
+        self._ctx_menu.add_command(
+            label="ミニポートを非表示にする", command=self._ctx_hide_miniport
+        )
         for widget in (self.frame, self.compact_frame):
             widget.bind("<Button-3>", self._on_right_click)
         if hasattr(self, "input_frame"):
@@ -6824,7 +7827,9 @@ class MiniPortWindow(ctk.CTk):
     def _on_right_click(self, event):
         """右クリックでコンテキストメニューを表示。"""
         enabled = self._get_notifications_enabled()
-        self._ctx_menu.entryconfig(0, label="通知をオフにする" if enabled else "通知をオンにする")
+        self._ctx_menu.entryconfig(
+            0, label="通知をオフにする" if enabled else "通知をオンにする"
+        )
         try:
             self._ctx_menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -6841,6 +7846,7 @@ class MiniPortWindow(ctk.CTk):
         """
         try:
             from settings_dialog import open_settings_dialog
+
             open_settings_dialog(master=self)
         except Exception as e:
             print("settings open failed:", e, flush=True)
@@ -6866,7 +7872,11 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
         block = (
-            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+            self.btn_rinko,
+            self.btn_post,
+            self.btn_send,
+            self.btn_close,
+            self.textbox,
         )
         if hasattr(self, "btn_board"):
             block = block + (self.btn_board,)
@@ -6885,7 +7895,11 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
         block = (
-            self.btn_rinko, self.btn_post, self.btn_send, self.btn_close, self.textbox,
+            self.btn_rinko,
+            self.btn_post,
+            self.btn_send,
+            self.btn_close,
+            self.textbox,
         )
         if hasattr(self, "btn_board"):
             block = block + (self.btn_board,)
@@ -7006,6 +8020,7 @@ class MiniPortWindow(ctk.CTk):
             return
         self.label_feedback.configure(text="送信中…", text_color=Theme.FEEDBACK_INFO)
         self.btn_send.configure(state="disabled")
+
         # 送信は別スレッドで実行し、結果を after で UI に反映（フリーズ防止・確実に完了）
         def do_send():
             result = _send_content(text)
@@ -7027,7 +8042,9 @@ class MiniPortWindow(ctk.CTk):
             # 1.5秒後にフィードバックを消して元のサイズ（リン子+投稿のみ）に戻す
             self._feedback_job = self.after(1500, self._clear_feedback_and_hide)
         else:
-            self.label_feedback.configure(text=msg[:60], text_color=Theme.FEEDBACK_ERROR)
+            self.label_feedback.configure(
+                text=msg[:60], text_color=Theme.FEEDBACK_ERROR
+            )
             if self._feedback_job:
                 self.after_cancel(self._feedback_job)
             self._feedback_job = self.after(3000, self._clear_feedback)
@@ -7590,14 +8607,14 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 # 本番デフォルト: 社内 FQDN サフィックス + ローカル開発
-_DEFAULT_HOST_SUFFIXES = (
-    ".internal.wonder-link.com",
+_DEFAULT_HOST_SUFFIXES = (".internal.wonder-link.com",)
+_DEFAULT_EXACT_HOSTS = frozenset(
+    {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
 )
-_DEFAULT_EXACT_HOSTS = frozenset({
-    "localhost",
-    "127.0.0.1",
-    "::1",
-})
 
 # load_config / save_config で検証する URL 系キー
 URL_CONFIG_KEYS = (
@@ -7610,8 +8627,12 @@ URL_CONFIG_KEYS = (
     "linko_server_url",
 )
 
-_ALLOWLIST_DISABLED = os.environ.get("WLINKO_DISABLE_URL_ALLOWLIST", "").strip().lower() in (
-    "1", "true", "yes",
+_ALLOWLIST_DISABLED = os.environ.get(
+    "WLINKO_DISABLE_URL_ALLOWLIST", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
 )
 
 
@@ -7658,7 +8679,9 @@ def allow_private_ips(cfg: Optional[dict] = None) -> bool:
     if sec.get("allow_private_ips") is True:
         return True
     return os.environ.get("WLINKO_ALLOW_PRIVATE_IPS", "").strip().lower() in (
-        "1", "true", "yes",
+        "1",
+        "true",
+        "yes",
     )
 
 
@@ -7734,15 +8757,21 @@ def validate_http_url(
     if require_https and parsed.scheme != "https" and not _is_loopback(hostname):
         return False, "HTTPS が必要です"
 
-    if parsed.scheme == "http" and not _is_loopback(hostname) and not allow_private_ips(cfg):
+    if (
+        parsed.scheme == "http"
+        and not _is_loopback(hostname)
+        and not allow_private_ips(cfg)
+    ):
         # 社外・社内ホスト名への平文 HTTP は禁止 (ループバックと明示的 private 許可時のみ http 可)
         if not _is_private_ip(hostname):
-            return False, "HTTP は localhost のみ許可されています (HTTPS を使用してください)"
+            return (
+                False,
+                "HTTP は localhost のみ許可されています (HTTPS を使用してください)",
+            )
 
     if not is_host_allowed(hostname, cfg):
         return False, (
-            f"許可されていないホストです: {hostname!r} "
-            f"(purpose={purpose})"
+            f"許可されていないホストです: {hostname!r} " f"(purpose={purpose})"
         )
 
     return True, ""
@@ -7794,6 +8823,7 @@ def sanitize_config_urls(cfg: dict, defaults: dict) -> dict:
             fallback = defaults.get(key, "")
             try:
                 from app_log import log_warn
+
                 log_warn(f"[security] config {key} を拒否: {err} → デフォルトに復元")
             except Exception:
                 print(f"[security] config {key} rejected: {err}", flush=True)
@@ -7816,6 +8846,7 @@ def safe_webbrowser_open(url: str, cfg: Optional[dict] = None) -> bool:
     if not ok:
         try:
             from app_log import log_warn
+
             log_warn(f"[security] ブラウザ起動を拒否: {err} url={url[:120]!r}")
         except Exception:
             print(f"[security] browser blocked: {err}", flush=True)
@@ -7824,7 +8855,9 @@ def safe_webbrowser_open(url: str, cfg: Optional[dict] = None) -> bool:
     return True
 
 
-def filter_allowed_url(url: Optional[str], cfg: Optional[dict] = None, **kwargs) -> Optional[str]:
+def filter_allowed_url(
+    url: Optional[str], cfg: Optional[dict] = None, **kwargs
+) -> Optional[str]:
     """許可された URL ならそのまま返し、否则 None。"""
     if not url:
         return None
@@ -7852,7 +8885,10 @@ try:
     import customtkinter as ctk
     import tkinter as tk
 except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
-    print("customtkinter が見つかりません。pip install -r requirements.txt を実行してください。", e)
+    print(
+        "customtkinter が見つかりません。pip install -r requirements.txt を実行してください。",
+        e,
+    )
     raise
 
 from config_loader import load_config, save_config
@@ -7956,7 +8992,9 @@ class SettingsDialog(ctk.CTkToplevel):
 
         self._cfg = load_config()
         self._feature_vars: dict[str, tk.BooleanVar] = {}
-        self._display_name_var = tk.StringVar(value=self._cfg.get("display_name", "") or "")
+        self._display_name_var = tk.StringVar(
+            value=self._cfg.get("display_name", "") or ""
+        )
         times = self._cfg.get("task_remind_times") or ["13:00", "17:00"]
         if isinstance(times, list):
             times_str = ", ".join(str(t) for t in times)
@@ -7974,7 +9012,9 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         tray_labels = {k: v for k, v in _TRAY_CLICK_OPTIONS}
         tray_action = self._cfg.get("tray_click_action", "postit")
-        self._tray_click_var = tk.StringVar(value=tray_labels.get(tray_action, "付箋ボード"))
+        self._tray_click_var = tk.StringVar(
+            value=tray_labels.get(tray_action, "付箋ボード")
+        )
         try:
             import startup
 
@@ -7982,7 +9022,9 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception:
             startup_on = False
         self._startup_var = tk.BooleanVar(value=startup_on)
-        self._linko_admin_token_var = tk.StringVar(value=self._cfg.get("linko_admin_token", "") or "")
+        self._linko_admin_token_var = tk.StringVar(
+            value=self._cfg.get("linko_admin_token", "") or ""
+        )
 
         self._build_ui()
 
@@ -8003,8 +9045,11 @@ class SettingsDialog(ctk.CTkToplevel):
             side="right", padx=(0, 8)
         )
         ctk.CTkButton(
-            btn_frame, text="🔄 アップデート確認", command=self._on_update_clicked,
-            fg_color=("#dcefdd", "#22692a"), hover_color=("#c8e6c9", "#2e7d32"),
+            btn_frame,
+            text="🔄 アップデート確認",
+            command=self._on_update_clicked,
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
             text_color=("#1b5e20", "#e8f5e9"),
         ).pack(side="left")
 
@@ -8012,7 +9057,9 @@ class SettingsDialog(ctk.CTkToplevel):
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=pad, pady=(pad, 0))
 
-        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(scroll, text="Wonder Linko 設定", font=("", 16, "bold")).pack(
+            anchor="w", pady=(0, 2)
+        )
         ctk.CTkLabel(
             scroll,
             text=f"バージョン v{__version__}",
@@ -8021,9 +9068,13 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", pady=(0, 8))
 
         ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(fill="x", pady=(2, 12))
+        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(
+            fill="x", pady=(2, 12)
+        )
 
-        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(fill="x")
+        ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(
+            fill="x"
+        )
         ctk.CTkOptionMenu(
             scroll,
             values=[label for _, label in _TRAY_CLICK_OPTIONS],
@@ -8036,8 +9087,12 @@ class SettingsDialog(ctk.CTkToplevel):
             variable=self._startup_var,
         ).pack(anchor="w", pady=(0, 12))
 
-        ctk.CTkLabel(scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(
+            scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w"
+        ).pack(fill="x")
+        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(
+            fill="x", pady=(2, 8)
+        )
         ctk.CTkButton(
             scroll,
             text="社員・顔・音声の管理を開く…",
@@ -8052,9 +9107,16 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll,
             text="自分の声を登録…",
             command=self._on_open_voice_self_register,
+        ).pack(anchor="w", fill="x", pady=(6, 0))
+        ctk.CTkButton(
+            scroll,
+            text="呼ばれ方を編集（呼び名・敬称）…",
+            command=self._on_open_edit_name,
         ).pack(anchor="w", fill="x", pady=(6, 12))
 
-        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(scroll, text="機能 (任意でON)", font=("", 14, "bold")).pack(
+            anchor="w", pady=(0, 2)
+        )
         ctk.CTkLabel(
             scroll,
             text="基本 OFF。ONにした機能だけがバックグラウンドで動作します。",
@@ -8062,7 +9124,11 @@ class SettingsDialog(ctk.CTkToplevel):
             anchor="w",
         ).pack(anchor="w", pady=(0, 8))
 
-        features = self._cfg.get("features") if isinstance(self._cfg.get("features"), dict) else {}
+        features = (
+            self._cfg.get("features")
+            if isinstance(self._cfg.get("features"), dict)
+            else {}
+        )
         for key, label, desc in _FEATURE_ROWS:
             var = tk.BooleanVar(value=bool(features.get(key, False)))
             self._feature_vars[key] = var
@@ -8083,7 +9149,9 @@ class SettingsDialog(ctk.CTkToplevel):
             text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(8, 0))
-        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(
+            fill="x", pady=(2, 4)
+        )
         ctk.CTkLabel(
             scroll,
             text="例: 13:00, 17:00",
@@ -8109,7 +9177,9 @@ class SettingsDialog(ctk.CTkToplevel):
             text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(12, 0))
-        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(fill="x", pady=(2, 4))
+        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(
+            fill="x", pady=(2, 4)
+        )
         ctk.CTkLabel(
             scroll,
             text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
@@ -8128,7 +9198,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
             features = dict(draft.get("features") or {})
             if "face_registry_manage" in self._feature_vars:
-                features["face_registry_manage"] = bool(self._feature_vars["face_registry_manage"].get())
+                features["face_registry_manage"] = bool(
+                    self._feature_vars["face_registry_manage"].get()
+                )
             draft["features"] = features
             open_face_registry_admin_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -8146,7 +9218,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
             if "face_registry_self" in self._feature_vars:
-                features["face_registry_self"] = bool(self._feature_vars["face_registry_self"].get())
+                features["face_registry_self"] = bool(
+                    self._feature_vars["face_registry_self"].get()
+                )
             draft["features"] = features
             open_face_self_register_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -8164,7 +9238,9 @@ class SettingsDialog(ctk.CTkToplevel):
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
             if "voice_registry_self" in self._feature_vars:
-                features["voice_registry_self"] = bool(self._feature_vars["voice_registry_self"].get())
+                features["voice_registry_self"] = bool(
+                    self._feature_vars["voice_registry_self"].get()
+                )
             draft["features"] = features
             open_voice_self_register_dialog(master=self, cfg=draft)
         except Exception as e:
@@ -8174,6 +9250,19 @@ class SettingsDialog(ctk.CTkToplevel):
                 messagebox.showerror("自分の声を登録", str(e), parent=self)
             except Exception:
                 print(f"voice self register open failed: {e}", flush=True)
+
+    def _on_open_edit_name(self) -> None:
+        try:
+            from edit_name_dialog import open_edit_name_dialog
+
+            open_edit_name_dialog(master=self, cfg=dict(self._cfg))
+        except Exception as e:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showerror("呼ばれ方を編集", str(e), parent=self)
+            except Exception:
+                print(f"edit name open failed: {e}", flush=True)
 
     def _on_pause_task_remind_today(self) -> None:
         try:
@@ -8189,7 +9278,10 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception as e:
             try:
                 from tkinter import messagebox
-                messagebox.showerror("タスクリマインド", f"設定の保存に失敗しました: {e}")
+
+                messagebox.showerror(
+                    "タスクリマインド", f"設定の保存に失敗しました: {e}"
+                )
             except Exception:
                 print(f"task remind pause failed: {e}", flush=True)
 
@@ -8198,23 +9290,33 @@ class SettingsDialog(ctk.CTkToplevel):
         self._cfg["display_name"] = self._display_name_var.get().strip()
         self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
         tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
-        self._cfg["tray_click_action"] = tray_reverse.get(self._tray_click_var.get(), "postit")
+        self._cfg["tray_click_action"] = tray_reverse.get(
+            self._tray_click_var.get(), "postit"
+        )
         # features を辞書ごと書き出し (未知キーは保つ)
         features = dict(self._cfg.get("features") or {})
         for key, var in self._feature_vars.items():
             features[key] = bool(var.get())
-        prev_visitor_notify = bool((self._cfg.get("features") or {}).get("visitor_notify"))
+        prev_visitor_notify = bool(
+            (self._cfg.get("features") or {}).get("visitor_notify")
+        )
         self._cfg["features"] = features
         parsed_times = []
         from config_loader import parse_task_remind_times_from_text
 
-        parsed_times = parse_task_remind_times_from_text(self._task_remind_times_var.get())
+        parsed_times = parse_task_remind_times_from_text(
+            self._task_remind_times_var.get()
+        )
         if parsed_times:
             self._cfg["task_remind_times"] = parsed_times
-        self._cfg["task_remind_weekdays_only"] = bool(self._task_remind_weekdays_var.get())
+        self._cfg["task_remind_weekdays_only"] = bool(
+            self._task_remind_weekdays_var.get()
+        )
         from config_loader import parse_calendar_remind_minutes_from_text
 
-        cal_mins = parse_calendar_remind_minutes_from_text(self._calendar_remind_minutes_var.get())
+        cal_mins = parse_calendar_remind_minutes_from_text(
+            self._calendar_remind_minutes_var.get()
+        )
         self._cfg["calendar_remind_minutes_before_list"] = cal_mins
         self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
         import sys
@@ -8233,6 +9335,7 @@ class SettingsDialog(ctk.CTkToplevel):
             self._cfg = load_config()
             try:
                 import sys
+
                 main = sys.modules.get("__main__")
                 if main is not None and hasattr(main, "_config"):
                     main._config = self._cfg
@@ -8241,6 +9344,7 @@ class SettingsDialog(ctk.CTkToplevel):
         except Exception as e:
             try:
                 from tkinter import messagebox
+
                 messagebox.showerror("保存エラー", f"設定の保存に失敗しました: {e}")
             except Exception:
                 print("config save failed:", e, flush=True)
@@ -8249,7 +9353,11 @@ class SettingsDialog(ctk.CTkToplevel):
         new_visitor_notify = bool(features.get("visitor_notify"))
         if new_visitor_notify != prev_visitor_notify:
             try:
-                from visitor_notify_client import start_visitor_notify, stop_visitor_notify
+                from visitor_notify_client import (
+                    start_visitor_notify,
+                    stop_visitor_notify,
+                )
+
                 if new_visitor_notify:
                     start_visitor_notify()
                 else:
@@ -8261,6 +9369,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_update_clicked(self) -> None:
         """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
         from tkinter import messagebox
+
         try:
             from update_checker import check_for_update, download_and_install
             from version import __version__
@@ -8270,7 +9379,9 @@ class SettingsDialog(ctk.CTkToplevel):
             return
         url = (load_config().get("update_check_url") or "").strip()
         if not url:
-            messagebox.showinfo("アップデート", "更新チェック URL が設定されていません。")
+            messagebox.showinfo(
+                "アップデート", "更新チェック URL が設定されていません。"
+            )
             return
         has_update, latest, download_url = check_for_update(__version__, url)
         if not has_update:
@@ -8347,7 +9458,10 @@ include_files = []
 if os.path.isdir("assets"):
     for dirpath, _dirnames, filenames in os.walk("assets"):
         # ランタイムに不要なディレクトリは丸ごとスキップ
-        if any(part in ("source", "old") for part in os.path.normpath(dirpath).split(os.sep)):
+        if any(
+            part in ("source", "old")
+            for part in os.path.normpath(dirpath).split(os.sep)
+        ):
             continue
         for name in filenames:
             # ビルド用スクリプトも除外
@@ -8360,9 +9474,16 @@ if os.path.isdir("assets"):
 if os.path.exists("toast_icon.png"):
     include_files.append(("toast_icon.png", "toast_icon.png"))
 if os.path.exists("docs/Windows通知がオフになった場合.md"):
-    include_files.append(("docs/Windows通知がオフになった場合.md", "docs/Windows通知がオフになった場合.md"))
+    include_files.append(
+        (
+            "docs/Windows通知がオフになった場合.md",
+            "docs/Windows通知がオフになった場合.md",
+        )
+    )
 if os.path.exists("docs/通知設定をリセットする.ps1"):
-    include_files.append(("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1"))
+    include_files.append(
+        ("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1")
+    )
 
 # PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
 # excludes で PIL を除外し、ここでだけ同梱する。.pyd が無いと MSI インストール後に起動エラーになる
@@ -8371,6 +9492,7 @@ _pil_imaging_pyd_count = 0
 _expected_suffix = f".cp{sys.version_info.major}{sys.version_info.minor}-"
 try:
     import PIL
+
     pil_root = os.path.abspath(PIL.__file__)
     if os.path.isfile(pil_root):
         pil_root = os.path.dirname(pil_root)
@@ -8392,7 +9514,11 @@ if _pil_imaging_pyd_count == 0:
         " pip install Pillow で Pillow を入れ直してからビルドしてください。"
     )
 # この Python バージョン用の _imaging が含まれているか確認（cp312/cp314 等の一致）
-_has_matching_pyd = any(_expected_suffix in d[0] for d in include_files if "_imaging" in d[0] and d[0].endswith(".pyd"))
+_has_matching_pyd = any(
+    _expected_suffix in d[0]
+    for d in include_files
+    if "_imaging" in d[0] and d[0].endswith(".pyd")
+)
 if not _has_matching_pyd:
     raise SystemExit(
         f"PIL の _imaging が「この Python ({sys.version_info.major}.{sys.version_info.minor})」用ではありません。"
@@ -8403,23 +9529,56 @@ build_exe_options = {
     "excludes": ["unittest", "PIL"],
     "include_files": include_files,
     "includes": [
-        "pystray", "winotify", "win10toast", "win10toast_click", "requests",
-        "customtkinter", "pynput",
+        "pystray",
+        "winotify",
+        "win10toast",
+        "win10toast_click",
+        "requests",
+        "customtkinter",
+        "pynput",
         # Phase 3 (来客通知): python-socketio[client] とその依存。
         # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
-        "socketio", "engineio", "websocket",
+        "socketio",
+        "engineio",
+        "websocket",
         "bidict",  # python-socketio の依存
         # Phase 5a 資料添付: PDF/Word テキスト抽出
-        "pypdf", "docx",
+        "pypdf",
+        "docx",
         # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
         # 静的解析が拾い損ねる可能性があるため。
-        "visitor_notify_client", "settings_dialog", "linko_avatar", "speech_bubble",
-        "theme", "chat_panel", "audio_player", "task_remind_client", "task_remind_dialog",
-        "calendar_notify_client", "remind_notify",
-        "face_registry_client", "face_registry_admin_dialog",         "face_registry_self_client",
-        "face_registry_self_dialog", "voice_registry_self_dialog", "webcam_capture", "voice_capture",
+        "visitor_notify_client",
+        "settings_dialog",
+        "linko_avatar",
+        "speech_bubble",
+        "theme",
+        "chat_panel",
+        "audio_player",
+        "task_remind_client",
+        "task_remind_dialog",
+        "linko_cards",
+        "calendar_notify_client",
+        "remind_notify",
+        "face_registry_client",
+        "face_registry_admin_dialog",
+        "face_registry_self_client",
+        "face_registry_self_dialog",
+        "voice_registry_self_dialog",
+        "webcam_capture",
+        "voice_capture",
+        "edit_name_dialog",
     ],
-    "packages": ["customtkinter", "pynput", "socketio", "engineio", "docx", "PIL", "cv2", "numpy", "sounddevice"],
+    "packages": [
+        "customtkinter",
+        "pynput",
+        "socketio",
+        "engineio",
+        "docx",
+        "PIL",
+        "cv2",
+        "numpy",
+        "sounddevice",
+    ],
     "zip_exclude_packages": ["*"],
 }
 
@@ -9266,12 +10425,14 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         slot: str,
         summary: str,
         on_ack: Callable[[dict, str], None],
+        on_open_cards: Optional[Callable[[], None]] = None,
     ):
         super().__init__(master)
         self._items = list(items)
         self._slot = slot
         self._summary = summary
         self._on_ack = on_ack
+        self._on_open_cards = on_open_cards
         self._row_frames: dict[int, ctk.CTkFrame] = {}
         self._acked: set[int] = set()
         self.title("タスクリマインド")
@@ -9395,13 +10556,23 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         for item in self._items:
             self._add_task_row(scroll, item, show_consult)
 
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.pack(fill="x", padx=pad, pady=(0, pad))
+        if self._on_open_cards is not None:
+            ctk.CTkButton(
+                footer,
+                text="リン子カードを見る",
+                command=self._on_open_cards,
+                fg_color=("#16a34a", "#0e7a37"),
+                hover_color=("#15803d", "#166534"),
+            ).pack(fill="x", pady=(0, 8))
         ctk.CTkButton(
-            self,
+            footer,
             text="閉じる（未操作は継続）",
             command=self._on_dismiss_all_continue,
             fg_color=("gray70", "gray35"),
             hover_color=("gray60", "gray45"),
-        ).pack(fill="x", padx=pad, pady=(0, pad))
+        ).pack(fill="x")
 
     def _add_task_row(self, parent, item: dict, show_consult: bool) -> None:
         note_id = item["note_id"]
@@ -9536,6 +10707,7 @@ def show_task_remind_dialog(
     slot: str,
     on_ack: Callable[[dict, str], None],
     summary: Optional[str] = None,
+    on_open_cards: Optional[Callable[[], None]] = None,
 ) -> Optional[TaskRemindListDialog]:
     """Today タスク一覧のリマインドダイアログを表示（シングルトン）。"""
     global _dialog_instance
@@ -9589,6 +10761,7 @@ def show_task_remind_dialog(
         slot=slot,
         summary=summary_text,
         on_ack=on_ack,
+        on_open_cards=on_open_cards,
     )
     return _dialog_instance
 </file>
@@ -10043,6 +11216,7 @@ except ImportError:
 try:
     from app_log import log_info, log_warn
 except Exception:  # pragma: no cover
+
     def log_info(msg: str) -> None:
         print(msg, flush=True)
 
@@ -10068,9 +11242,13 @@ def start_visitor_notify() -> bool:
     log_info("[visitor_notify] start_visitor_notify() entered")
 
     if _sio is None:
-        log_warn("[visitor_notify] python-socketio がインストールされていないため起動できません。")
+        log_warn(
+            "[visitor_notify] python-socketio がインストールされていないため起動できません。"
+        )
         return False
-    log_info(f"[visitor_notify] socketio loaded ok (version={getattr(_sio, '__version__', '?')})")
+    log_info(
+        f"[visitor_notify] socketio loaded ok (version={getattr(_sio, '__version__', '?')})"
+    )
 
     try:
         from config_loader import load_config, is_feature_enabled
@@ -10088,10 +11266,13 @@ def start_visitor_notify() -> bool:
     url = (cfg.get("linko_server_url") or "").strip()
     log_info(f"[visitor_notify] linko_server_url={url!r}")
     if not url:
-        log_warn("[visitor_notify] linko_server_url が空のため接続をスキップ。設定で URL を指定してください。")
+        log_warn(
+            "[visitor_notify] linko_server_url が空のため接続をスキップ。設定で URL を指定してください。"
+        )
         return False
     try:
         from security import validate_http_url
+
         ok, err = validate_http_url(url, cfg, purpose="socketio_connect")
         if not ok:
             log_warn(f"[visitor_notify] linko_server_url を拒否: {err}")
@@ -10123,6 +11304,7 @@ def start_visitor_notify() -> bool:
         import time as _time
         from network_readiness import is_network_ready, unreachable_backoff_sec
         from config_loader import load_config
+
         # backoff: 5s, 10s, 20s, 30s, 30s, ...
         backoff_schedule = [5, 10, 20, 30]
         attempt = 0
@@ -10131,7 +11313,9 @@ def start_visitor_notify() -> bool:
             if not is_network_ready(cfg):
                 wait_sec = unreachable_backoff_sec(cfg)
                 if attempt == 0 or attempt % 5 == 0:
-                    log_info(f"[visitor_notify] 社内ネットワーク未到達のため接続待機 ({wait_sec}秒)")
+                    log_info(
+                        f"[visitor_notify] 社内ネットワーク未到達のため接続待機 ({wait_sec}秒)"
+                    )
                 for _ in range(wait_sec):
                     if _stop_event.is_set():
                         return
@@ -10139,7 +11323,9 @@ def start_visitor_notify() -> bool:
                 continue
             attempt += 1
             try:
-                log_info(f"[visitor_notify] {url} へ接続を試みます… (attempt={attempt})")
+                log_info(
+                    f"[visitor_notify] {url} へ接続を試みます… (attempt={attempt})"
+                )
                 _client.connect(url, transports=["websocket", "polling"])
                 log_info("[visitor_notify] connect() returned, waiting for events")
                 _client.wait()
@@ -10152,6 +11338,7 @@ def start_visitor_notify() -> bool:
                 attempt = 0  # 一度成功したのでカウンタリセット
             except Exception as e:
                 import traceback
+
                 log_warn(f"[visitor_notify] 接続エラー (attempt={attempt}): {e}")
                 if attempt == 1:
                     # 初回失敗時だけ traceback を出す (以降の retry は短く)
@@ -10214,8 +11401,11 @@ def _handle_visitor_arrived(data: dict) -> None:
     """visitor_arrived payload を処理してトースト + (opt-in なら) 音声再生。"""
     try:
         from notifications import are_enabled
+
         if not are_enabled():
-            log_info("[visitor_notify] notifications_enabled=False のため来客通知をスキップ")
+            log_info(
+                "[visitor_notify] notifications_enabled=False のため来客通知をスキップ"
+            )
             return
     except Exception:
         pass
@@ -10226,9 +11416,17 @@ def _handle_visitor_arrived(data: dict) -> None:
     audio_text = (data.get("audio_text") or message or "").strip()
     audio_url = (data.get("audio_url") or "").strip()
     server_click_url = (data.get("click_url") or "").strip()
+    action = (data.get("action") or "").strip()
+
+    # セキュリティ警報（なりすまし疑いで開錠を止め、人間の確認を要求するイベント）。
+    # 通常の来客通知とは重みが違うため、opt-in の音設定にも TTS 成否にも依存せず必ず鳴らし、
+    # トーストも強制表示する（見逃すと不審者の入館を許しかねない）。
+    is_security_alert = action == "unlock_failed"
 
     title_map = {"entrance": "入口", "office_lobby": "ロビー", "meeting_room": "会議室"}
-    title = title_map.get(location, "来客")
+    title = (
+        "⚠️ 開錠失敗（要確認）" if is_security_alert else title_map.get(location, "来客")
+    )
 
     log_info(
         f"[visitor_notify] visitor_arrived 受信: name={name} location={location} "
@@ -10245,25 +11443,56 @@ def _handle_visitor_arrived(data: dict) -> None:
         from security import filter_allowed_url
 
         cfg_notify = load_config()
-        click_url = filter_allowed_url(server_click_url, cfg_notify, purpose="visitor_click") if server_click_url else None
+        click_url = (
+            filter_allowed_url(server_click_url, cfg_notify, purpose="visitor_click")
+            if server_click_url
+            else None
+        )
         if not click_url:
-            fallback = (cfg_notify.get("linko_server_url") or "").rstrip("/") + "/entrance"
-            click_url = filter_allowed_url(fallback, cfg_notify, purpose="visitor_click") or ""
+            fallback = (cfg_notify.get("linko_server_url") or "").rstrip(
+                "/"
+            ) + "/entrance"
+            click_url = (
+                filter_allowed_url(fallback, cfg_notify, purpose="visitor_click") or ""
+            )
     except Exception:
         click_url = ""
 
     # トースト
     try:
         from notifications import show_toast
-        log_info(f"[visitor_notify] show_toast 呼び出し: title={title!r} click_url={click_url!r}")
-        show_toast(title, message, url=click_url or None, duration_sec=8, force_show=False)
+
+        log_info(
+            f"[visitor_notify] show_toast 呼び出し: title={title!r} click_url={click_url!r}"
+        )
+        show_toast(
+            title,
+            message,
+            url=click_url or None,
+            duration_sec=8,
+            force_show=is_security_alert,
+        )
         log_info("[visitor_notify] show_toast 完了")
     except Exception as e:
         import traceback
+
         log_warn(f"[visitor_notify] トースト表示失敗: {e}")
         log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
 
-    # 音声 (opt-in) + アバター連動 (Phase 2.1: 吹き出し + 口パク)
+    # セキュリティ警報は最優先で「必ず鳴る」音を出す（opt-in 設定にも TTS にも依存しない）。
+    # TTS 音声が来ていれば、警報音のあとに重ねて読み上げる（無くても警報は既に鳴っている）。
+    if is_security_alert:
+        _play_security_alert()
+        try:
+            if audio_url:
+                _play_visitor_audio(audio_url, audio_text=audio_text)
+        except Exception as e:
+            log_warn(
+                f"[visitor_notify] セキュリティ警報の読み上げ失敗（警報音は再生済み）: {e}"
+            )
+        return
+
+    # 通常の来客通知の音声 (opt-in) + アバター連動 (Phase 2.1: 吹き出し + 口パク)
     try:
         from config_loader import is_feature_enabled
 
@@ -10271,9 +11500,36 @@ def _handle_visitor_arrived(data: dict) -> None:
             log_info("[visitor_notify] 音声再生を開始 (visitor_notify_sound=True)")
             _play_visitor_audio(audio_url, audio_text=audio_text)
         else:
-            log_info(f"[visitor_notify] 音声再生スキップ (sound_enabled={is_feature_enabled('visitor_notify_sound')}, audio_url={'有り' if audio_url else '無し'})")
+            log_info(
+                f"[visitor_notify] 音声再生スキップ (sound_enabled={is_feature_enabled('visitor_notify_sound')}, audio_url={'有り' if audio_url else '無し'})"
+            )
     except Exception as e:
         log_warn(f"[visitor_notify] 音声再生失敗: {e}")
+
+
+def _play_security_alert() -> None:
+    """なりすまし疑い等のセキュリティ警報音。
+
+    通常の来客通知（opt-in・TTS 依存）とは別に、**必ず鳴る**確実な警報を出す。
+    winsound.Beep をアラームパターンで鳴らすため音源ファイル同梱は不要。TTS(VOICEVOX/
+    GPT-SoVITS)が落ちていても、音設定が OFF でも鳴る。Beep はブロッキングなので
+    バックグラウンドスレッドで実行し、socket ハンドラを止めない。Windows 以外は no-op。
+    """
+    import threading
+
+    def _beep():
+        try:
+            import winsound
+
+            # 高低を繰り返す明確なアラーム音（通常の通知と区別できるパターン）。
+            for _ in range(3):
+                winsound.Beep(880, 250)
+                winsound.Beep(660, 200)
+            log_info("[visitor_notify] セキュリティ警報音を再生（unlock_failed）")
+        except Exception as e:
+            log_warn(f"[visitor_notify] セキュリティ警報音の再生に失敗: {e}")
+
+    threading.Thread(target=_beep, daemon=True).start()
 
 
 def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:

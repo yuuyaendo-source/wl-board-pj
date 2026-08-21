@@ -8,7 +8,6 @@ COPY package.json ./
 # npm install
 RUN npm install
 
-
 # ソースコードのコピー
 COPY . .
 
@@ -25,7 +24,9 @@ RUN npm run build
 
 # データ永続化ディレクトリ（docker-compose でボリュームマウント）
 ENV DATA_DIR=/app/data
-RUN mkdir -p /app/data && echo "{}" > /app/data/boards.json
+RUN mkdir -p /app/data && \
+    if [ ! -f /app/data/boards.json ]; then echo "{}" > /app/data/boards.json; fi && \
+    chown -R node:node /app/data
 
 EXPOSE 3000
 

@@ -22,7 +22,7 @@ if "sqlite" in db_url:
 # 非同期エンジン作成
 engine = create_async_engine(
     db_url,
-    connect_args=connect_args, # ここで動的に引数を渡す
+    connect_args=connect_args,  # ここで動的に引数を渡す
     echo=False,  # 開発時は True で SQL ログ出力
 )
 
@@ -38,6 +38,7 @@ async_session_maker = async_sessionmaker(
 
 class Base(DeclarativeBase):
     """全モデルの基底。models ではこれを継承する。"""
+
     pass
 
 
@@ -67,6 +68,7 @@ PERSONAL_USER_NAMES = [
     "浅川 久司",
     "遠藤 悠矢",
     "林田 康佑",
+    "高瀬 宙",
 ]
 
 # 初期チーム名。起動時に存在しなければ作成する
@@ -77,11 +79,12 @@ SEED_TEAMS = ["ネットワーク", "構築"]
 SEED_USER_TEAM_MAP: dict[int, str] = {
     1: "ネットワーク",
     2: "構築",
-    3: "ネットワーク",
-    4: "構築",
+    3: "構築",
+    4: "ネットワーク",
     5: "ネットワーク",
-    6: "構築",
-    7: "ネットワーク",
+    6: "ネットワーク",
+    7: "構築",
+    8: "構築",
 }
 
 
@@ -89,8 +92,10 @@ async def seed_personal_users() -> None:
     """パーソナルボード用ユーザー（id 1-7）がなければ作成する。"""
     # 循環参照を防ぐため関数内でインポート
     from sqlalchemy import select
-    from app.models.user import User # ※パスに注意: app.models 直下か app.models.user か確認してください
-    
+    from app.models.user import (
+        User,
+    )  # ※パスに注意: app.models 直下か app.models.user か確認してください
+
     async with async_session_maker() as session:
         for i, name in enumerate(PERSONAL_USER_NAMES, 1):
             r = await session.execute(select(User).where(User.id == i))

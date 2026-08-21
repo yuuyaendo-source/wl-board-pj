@@ -6525,7 +6525,7 @@ if "sqlite" in db_url:
 # 非同期エンジン作成
 engine = create_async_engine(
     db_url,
-    connect_args=connect_args, # ここで動的に引数を渡す
+    connect_args=connect_args,  # ここで動的に引数を渡す
     echo=False,  # 開発時は True で SQL ログ出力
 )
 
@@ -6541,6 +6541,7 @@ async_session_maker = async_sessionmaker(
 
 class Base(DeclarativeBase):
     """全モデルの基底。models ではこれを継承する。"""
+
     pass
 
 
@@ -6570,6 +6571,7 @@ PERSONAL_USER_NAMES = [
     "浅川 久司",
     "遠藤 悠矢",
     "林田 康佑",
+    "高瀬 宙",
 ]
 
 # 初期チーム名。起動時に存在しなければ作成する
@@ -6580,11 +6582,12 @@ SEED_TEAMS = ["ネットワーク", "構築"]
 SEED_USER_TEAM_MAP: dict[int, str] = {
     1: "ネットワーク",
     2: "構築",
-    3: "ネットワーク",
-    4: "構築",
+    3: "構築",
+    4: "ネットワーク",
     5: "ネットワーク",
-    6: "構築",
-    7: "ネットワーク",
+    6: "ネットワーク",
+    7: "構築",
+    8: "構築",
 }
 
 
@@ -6592,8 +6595,10 @@ async def seed_personal_users() -> None:
     """パーソナルボード用ユーザー（id 1-7）がなければ作成する。"""
     # 循環参照を防ぐため関数内でインポート
     from sqlalchemy import select
-    from app.models.user import User # ※パスに注意: app.models 直下か app.models.user か確認してください
-    
+    from app.models.user import (
+        User,
+    )  # ※パスに注意: app.models 直下か app.models.user か確認してください
+
     async with async_session_maker() as session:
         for i, name in enumerate(PERSONAL_USER_NAMES, 1):
             r = await session.execute(select(User).where(User.id == i))
@@ -11612,8 +11617,7 @@ http {
 
         # Frontend から呼び出す際は /api/bs/ プレフィックスを付けるルールとする
         location /api/bs/ {
-            rewrite ^/api/bs/(.*)$ /$1 break;
-            proxy_pass http://current_backend;
+            proxy_pass http://current_backend/;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -11755,8 +11759,8 @@ http {
 #   sudo cp /var/www/wlinko-pj/board-system/nginx/nginx.conf.production-server /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl reload nginx
 #
-# FQDN: wlboardsys.internal.wonder-link.co.jp / IP: 172.16.1.203
-# 証明書: Let's Encrypt 発行の *.internal.wonder-link.co.jp を /home/devuser01/sv_cert/ に fullchain.pem / privkey.pem で配置
+# FQDN: wlboardsys.internal.wonder-link.com / IP: 172.16.1.203
+# 証明書: Let's Encrypt 発行の *.internal.wonder-link.com を /home/devuser01/sv_cert/ に fullchain.pem / privkey.pem で配置
 # staging.conf も include する（ステージング環境を使う場合）
 
 worker_processes 1;
@@ -11778,14 +11782,14 @@ http {
     # HTTP → HTTPS リダイレクト
     server {
         listen 80;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
         return 301 https://$host$request_uri;
     }
 
-    # HTTPS（Let's Encrypt *.internal.wonder-link.co.jp を sv_cert に配置して使用）
+    # HTTPS（Let's Encrypt *.internal.wonder-link.com を sv_cert に配置して使用）
     server {
         listen 443 ssl;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
 
         ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
         ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;
@@ -11837,8 +11841,7 @@ http {
         # 2. Board System Backend (FastAPI) へのルーティング
         # ----------------------------------------------------
         location /api/bs/ {
-            rewrite ^/api/bs/(.*)$ /$1 break;
-            proxy_pass http://current_backend;
+            proxy_pass http://current_backend/;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -11873,7 +11876,7 @@ http {
 # staging.conf で nginx -t が失敗する場合に使用。
 #   sudo cp .../nginx.conf.production-server-no-staging /etc/nginx/nginx.conf
 #   sudo nginx -t && sudo systemctl restart nginx
-# 証明書: Let's Encrypt *.internal.wonder-link.co.jp を /home/devuser01/sv_cert/ に配置
+# 証明書: Let's Encrypt *.internal.wonder-link.com を /home/devuser01/sv_cert/ に配置
 
 worker_processes 1;
 
@@ -11891,13 +11894,13 @@ http {
 
     server {
         listen 80;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
         return 301 https://$host$request_uri;
     }
 
     server {
         listen 443 ssl;
-        server_name wlboardsys.internal.wonder-link.co.jp 172.16.1.203;
+        server_name wlboardsys.internal.wonder-link.com 172.16.1.203;
 
         ssl_certificate     /home/devuser01/sv_cert/fullchain.pem;
         ssl_certificate_key /home/devuser01/sv_cert/privkey.pem;
@@ -11943,8 +11946,7 @@ http {
         }
 
         location /api/bs/ {
-            rewrite ^/api/bs/(.*)$ /$1 break;
-            proxy_pass http://current_backend;
+            proxy_pass http://current_backend/;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
@@ -12037,8 +12039,7 @@ server {
     }
 
     location /api/bs/ {
-        rewrite ^/api/bs/(.*)$ /$1 break;
-        proxy_pass http://staging_backend;
+        proxy_pass http://staging_backend/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -12119,7 +12120,7 @@ services:
     image: postgres:15-alpine
     container_name: linko-db
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: linko_user
       POSTGRES_PASSWORD: linko_password
@@ -12152,7 +12153,7 @@ services:
     build: ./backend
     container_name: linko-backend-${COLOR}
     ports:
-      - "${PORT_BACKEND}:8000"
+      - "127.0.0.1:${PORT_BACKEND}:8000"
     environment:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
@@ -12204,7 +12205,7 @@ services:
         NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
     container_name: linko-frontend-${COLOR}
     ports:
-      - "${PORT_FRONTEND}:3000"
+      - "127.0.0.1:${PORT_FRONTEND}:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wlboardsys.internal.wonder-link.com/api/bs}
       NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
@@ -12219,11 +12220,10 @@ services:
         NEXT_PUBLIC_BASE_PATH: "/board"
     container_name: linko-sticky-note-${COLOR}
     ports:
-      - "${PORT_STICKY}:3000"
+      - "127.0.0.1:${PORT_STICKY}:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
-
       BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
       NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wlboardsys.internal.wonder-link.com/boards
       DATA_DIR: /app/data

@@ -30,6 +30,7 @@ PERSONAL_MEMBERS = [
     (5, "浅川 久司"),
     (6, "遠藤 悠矢"),
     (7, "林田 康佑"),
+    (8, "高瀬 宙"),
 ]
 
 
@@ -39,7 +40,9 @@ def main() -> None:
         print("DATABASE_URL を設定してください", file=sys.stderr)
         sys.exit(1)
     # psycopg2 用に postgresql:// に統一（+asyncpg / +psycopg2 は外す）
-    pg_url = pg_url.replace("postgresql+asyncpg", "postgresql", 1).replace("postgresql+psycopg2", "postgresql", 1)
+    pg_url = pg_url.replace("postgresql+asyncpg", "postgresql", 1).replace(
+        "postgresql+psycopg2", "postgresql", 1
+    )
 
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import Session, sessionmaker
@@ -59,11 +62,17 @@ def main() -> None:
             print(f"  追加: id={user_id}, name={name}")
         db.commit()
         if added > 0:
-            db.execute(text(
-                "SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT COALESCE(MAX(id), 1) FROM users))"
-            ))
+            db.execute(
+                text(
+                    "SELECT setval(pg_get_serial_sequence('users', 'id'), (SELECT COALESCE(MAX(id), 1) FROM users))"
+                )
+            )
             db.commit()
-        print(f"users: {added} 件追加しました。" if added else "users: 変更なし（既に 1〜7 が存在します）。")
+        print(
+            f"users: {added} 件追加しました。"
+            if added
+            else "users: 変更なし（既に 1〜7 が存在します）。"
+        )
 
 
 if __name__ == "__main__":

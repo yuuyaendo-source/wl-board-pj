@@ -82,7 +82,7 @@ app.prepare().then(() => {
         }
     }
 
-    // データ保存処理（デバウンス付き）
+    // データ保存処理（デバウンス付き ＋ エラーハンドリング強化）
     // 頻繁なディスク書き込みを防ぐため、最後の更新から500ms待ってから保存する
     let saveTimeout = null;
     const saveBoards = () => {
@@ -91,9 +91,14 @@ app.prepare().then(() => {
         }
 
         saveTimeout = setTimeout(() => {
-            fs.writeFile(DATA_FILE, JSON.stringify(boards, null, 2), (err) => {
-                if (err) console.error('Error saving boards:', err);
-                else console.log('Boards saved to disk');
+            const dataStr = JSON.stringify(boards, null, 2);
+            fs.writeFile(DATA_FILE, dataStr, (err) => {
+                if (err) {
+                    console.error('❌ [CRITICAL ERROR] Failed to save boards.json to disk:', err.message);
+                    console.error('Check file permissions for directory:', DATA_DIR);
+                } else {
+                    console.log(`✅ Boards saved to disk (${Buffer.byteLength(dataStr)} bytes)`);
+                }
             });
         }, 500);
     };
