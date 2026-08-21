@@ -5,7 +5,7 @@ services:
     build: ./backend
     container_name: linko-backend-${COLOR}
     ports:
-      - "${PORT_BACKEND}:8000"
+      - "127.0.0.1:${PORT_BACKEND}:8000"
     environment:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
@@ -57,7 +57,7 @@ services:
         NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
     container_name: linko-frontend-${COLOR}
     ports:
-      - "${PORT_FRONTEND}:3000"
+      - "127.0.0.1:${PORT_FRONTEND}:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wlboardsys.internal.wonder-link.com/api/bs}
       NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
@@ -72,11 +72,10 @@ services:
         NEXT_PUBLIC_BASE_PATH: "/board"
     container_name: linko-sticky-note-${COLOR}
     ports:
-      - "${PORT_STICKY}:3000"
+      - "127.0.0.1:${PORT_STICKY}:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
-
       BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
       NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wlboardsys.internal.wonder-link.com/boards
       DATA_DIR: /app/data
