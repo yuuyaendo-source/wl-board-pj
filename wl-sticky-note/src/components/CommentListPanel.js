@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "./CommentListPanel.module.css";
 
 export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, onUngroupNotes, onClose }) {
-    const [selectedNotes, setSelectedNotes] = useState([]);
+    const [selectedNotes, useState] = useState([]);
 
     const toggleSelection = (noteId) => {
         if (selectedNotes.includes(noteId)) {
@@ -55,7 +55,7 @@ export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, on
                 </div>
             </div>
 
-            <div className={styles.noteList}>
+            <div className={styles.noteList} data-scrollable="true">
                 {notes.map((note) => (
                     <div
                         key={note.id}

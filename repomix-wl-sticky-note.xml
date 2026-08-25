@@ -335,7 +335,6 @@ export default function BoardPage() {
             y: bottomY + Math.random() * 20 - 10,
             color: color,
             dueDate: dueDate || null,
-            due_date: dueDate || null,
             pinned: false,
             author: username,
             createdAt: Date.now()
@@ -2137,7 +2136,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
-    const dueDateVal = note.dueDate || note.due_date || "";
+    const dueDateVal = note.dueDate ?? "";
     const [tempDueDate, setTempDueDate] = useState(dueDateVal);
 
     const noteRef = useRef(null);
@@ -2147,8 +2146,8 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const daysLeft = calcDaysLeft(dueDateVal);
 
     useEffect(() => {
-        setTempDueDate(note.dueDate || note.due_date || "");
-    }, [note.dueDate, note.due_date]);
+        setTempDueDate(note.dueDate ?? "");
+    }, [note.dueDate]);
 
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e);
@@ -2239,7 +2238,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     };
 
     const saveDueDate = (newDate) => {
-        onUpdate({ ...note, dueDate: newDate, due_date: newDate });
+        onUpdate({ ...note, dueDate: newDate });
         setShowDatePicker(false);
     };
 
@@ -4298,7 +4297,6 @@ COPY package.json ./
 # npm install
 RUN npm install
 
-
 # ソースコードのコピー
 COPY . .
 
@@ -4315,7 +4313,9 @@ RUN npm run build
 
 # データ永続化ディレクトリ（docker-compose でボリュームマウント）
 ENV DATA_DIR=/app/data
-RUN mkdir -p /app/data && echo "{}" > /app/data/boards.json
+RUN mkdir -p /app/data && \
+    if [ ! -f /app/data/boards.json ]; then echo "{}" > /app/data/boards.json; fi && \
+    chown -R node:node /app/data
 
 EXPOSE 3000
 
@@ -4686,7 +4686,7 @@ app.prepare().then(() => {
         }
     }
 
-    // データ保存処理（デバウンス付き）
+    // データ保存処理（デバウンス付き ＋ エラーハンドリング強化）
     // 頻繁なディスク書き込みを防ぐため、最後の更新から500ms待ってから保存する
     let saveTimeout = null;
     const saveBoards = () => {
@@ -4695,9 +4695,14 @@ app.prepare().then(() => {
         }
 
         saveTimeout = setTimeout(() => {
-            fs.writeFile(DATA_FILE, JSON.stringify(boards, null, 2), (err) => {
-                if (err) console.error('Error saving boards:', err);
-                else console.log('Boards saved to disk');
+            const dataStr = JSON.stringify(boards, null, 2);
+            fs.writeFile(DATA_FILE, dataStr, (err) => {
+                if (err) {
+                    console.error('❌ [CRITICAL ERROR] Failed to save boards.json to disk:', err.message);
+                    console.error('Check file permissions for directory:', DATA_DIR);
+                } else {
+                    console.log(`✅ Boards saved to disk (${Buffer.byteLength(dataStr)} bytes)`);
+                }
             });
         }, 500);
     };
@@ -4813,7 +4818,7 @@ app.prepare().then(() => {
                                 board_id: boardId,
                                 note_id: String(note.id),
                                 content: note.text || '',
-                                due_date: note.dueDate || note.due_date || null
+                                due_date: note.dueDate ?? null
                             })
                         }).catch(err => console.error('Board System sync_from_postit:', err.message));
                     } catch (e) {
@@ -4951,7 +4956,7 @@ app.prepare().then(() => {
                 author: n.author || '',
                 createdAt: n.createdAt || 0,
                 gray: !!n.gray,
-                dueDate: n.dueDate || n.due_date || null,
+                dueDate: n.dueDate ?? null,
             }));
             return res.json({ boardId, notes });
         } catch (error) {
@@ -4977,8 +4982,9 @@ app.prepare().then(() => {
             if (text !== undefined) note.text = String(text);
             const targetDueDate = dueDate !== undefined ? dueDate : due_date;
             if (targetDueDate !== undefined) {
+                // 内部データは dueDate（camelCase）に統一
                 note.dueDate = targetDueDate || null;
-                note.due_date = targetDueDate || null;
+                delete note.due_date;
             }
             io.to(boardId).emit('note-updated', note);
             saveBoards();

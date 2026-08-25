@@ -3531,11 +3531,123 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
     return {"today_count": today_count, "inbox_count": inbox_count}
 
 
+async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
+    """
+    タスクレーンに長期間滞留しているタスクを1日おき（2日に1回）に循環させる。
+    - 期限が今日から10日以内のタスク（優先度高）は先頭位置をキープ（除外）。
+    - Task Board: 完了以外の各列で、対象タスクが11件以上ある場合、先頭10件を末尾へ移動。
+    - Personal Board: 各ユーザーの INBOX で、対象タスクが4件以上ある場合、先頭3件を末尾へ移動。
+    - リスト全体の sort_order を 0 から連番で再採番（正規化）。
+    """
+    from datetime import datetime as _dt
+    today_jst = _dt.now(JST).date()
+
+    if not force and today_jst.toordinal() % 2 != 0:
+        return {"skipped": True, "reason": "Not a rotation day (runs every 2 days)"}
+
+    task_rotated_count = 0
+    personal_rotated_count = 0
+
+    # 1. Task Board のローテーション（完了 quadrant=5 以外）
+    task_res = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
+            BoardPlacement.board_type == BoardType.TASK,
+            BoardPlacement.matrix_quadrant.isnot(None),
+            BoardPlacement.matrix_quadrant != 5,
+        )
+        .order_by(BoardPlacement.matrix_quadrant, BoardPlacement.sort_order, BoardPlacement.id)
+    )
+    task_rows = task_res.all()
+
+    # 象限（列）ごとにグループ化
+    task_by_q: dict[int, list[tuple[BoardPlacement, StickyNote]]] = {}
+    for p, n in task_rows:
+        q = p.matrix_quadrant or 1
+        task_by_q.setdefault(q, []).append((p, n))
+
+    for q, items in task_by_q.items():
+        keep_top: list[tuple[BoardPlacement, StickyNote]] = []
+        rotatable: list[tuple[BoardPlacement, StickyNote]] = []
+
+        for p, n in items:
+            if n.due_date is not None and (n.due_date - today_jst).days <= 10:
+                keep_top.append((p, n))
+            else:
+                rotatable.append((p, n))
+
+        # 11件以上ある場合のみ先頭10件を末尾へ
+        if len(rotatable) >= 11:
+            rotate_count = 10
+            rotated_slice = rotatable[:rotate_count]
+            remaining_slice = rotatable[rotate_count:]
+            new_ordered = keep_top + remaining_slice + rotated_slice
+            for idx, (p, _) in enumerate(new_ordered):
+                p.sort_order = idx
+            task_rotated_count += rotate_count
+
+    # 2. Personal Board のローテーション（各ユーザーの INBOX レーン）
+    personal_res = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane == Lane.INBOX,
+        )
+        .order_by(BoardPlacement.owner_id, BoardPlacement.sort_order, BoardPlacement.id)
+    )
+    personal_rows = personal_res.all()
+
+    # ユーザーごとにグループ化
+    personal_by_owner: dict[int, list[tuple[BoardPlacement, StickyNote]]] = {}
+    for p, n in personal_rows:
+        if p.owner_id is not None:
+            personal_by_owner.setdefault(p.owner_id, []).append((p, n))
+
+    for owner_id, items in personal_by_owner.items():
+        keep_top: list[tuple[BoardPlacement, StickyNote]] = []
+        rotatable: list[tuple[BoardPlacement, StickyNote]] = []
+
+        for p, n in items:
+            if n.due_date is not None and (n.due_date - today_jst).days <= 10:
+                keep_top.append((p, n))
+            else:
+                rotatable.append((p, n))
+
+        # 4件以上ある場合のみ先頭3件を末尾へ
+        if len(rotatable) >= 4:
+            rotate_count = 3
+            rotated_slice = rotatable[:rotate_count]
+            remaining_slice = rotatable[rotate_count:]
+            new_ordered = keep_top + remaining_slice + rotated_slice
+            for idx, (p, _) in enumerate(new_ordered):
+                p.sort_order = idx
+            personal_rotated_count += rotate_count
+
+    await db.flush()
+    return {
+        "skipped": False,
+        "task_rotated_count": task_rotated_count,
+        "personal_rotated_count": personal_rotated_count,
+    }
+
+
+@router.post("/rotate_tasks")
+async def manual_rotate_tasks(
+    force: bool = Query(True, description="2日に1回の判定を無視して強制実行するか"),
+    db: AsyncSession = Depends(get_db),
+):
+    """タスクローテーション（停滞タスクの自動並び替え）を手動実行するエンドポイント。"""
+    result = await rotate_stale_tasks(db, force=force)
+    return {"ok": True, "result": result}
+
+
 @router.post("/run_8am")
 async def run_8am(db: AsyncSession = Depends(get_db)):
     """
     毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 期限タスクの自動移動
-    (3) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
+    (3) 停滞タスクの自動ローテーション (4) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
     cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
     """
     from app.config import settings
@@ -3555,9 +3667,19 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
         due_date_result["inbox_count"],
     )
 
+    # 停滞タスクの自動ローテーション（期限間近のタスクが Today に移動した後に実行）
+    rotation_result = await rotate_stale_tasks(db)
+    log.info("run_8am: タスクローテーション実行結果: %s", rotation_result)
+
     if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
         log.info("run_8am: Google Calendar 未設定のためカレンダー取得をスキップ")
-        return {"ok": True, "refreshed": [], "failed": [], "due_date_moved": due_date_result}
+        return {
+            "ok": True,
+            "refreshed": [],
+            "failed": [],
+            "due_date_moved": due_date_result,
+            "task_rotation": rotation_result,
+        }
 
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
     user_ids = [r[0] for r in result.all()]
@@ -3570,7 +3692,13 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
         except Exception as e:
             log.warning("run_8am user_id=%s: %s", uid, e)
             failed.append(uid)
-    return {"ok": True, "refreshed": refreshed, "failed": failed, "due_date_moved": due_date_result}
+    return {
+        "ok": True,
+        "refreshed": refreshed,
+        "failed": failed,
+        "due_date_moved": due_date_result,
+        "task_rotation": rotation_result,
+    }
 </file>
 
 <file path="backend/app/routers/news.py">
@@ -5303,7 +5431,7 @@ class BoardPlacementWithNoteResponse(BaseModel):
 # -*- coding: utf-8 -*-
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices
 
 from app.models.sticky_note import NoteStatus
 
@@ -5316,7 +5444,10 @@ class StickyNoteCreate(BaseModel):
     postit_note_id: str | None = None
     """True のとき AI 振り分けをスキップ（パーソナル投稿のみで Task に載せない）。"""
     personal_only: bool | None = None
-    due_date: str | None = None  # YYYY-MM-DD 形式
+    due_date: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('due_date', 'dueDate'),
+    )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 
 class StickyNoteUpdate(BaseModel):
@@ -5350,7 +5481,10 @@ class ImportFromPostitItem(BaseModel):
 
     id: str
     text: str
-    due_date: str | None = None  # YYYY-MM-DD 形式
+    due_date: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('due_date', 'dueDate'),
+    )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 
 class ImportFromPostitBody(BaseModel):
@@ -7502,33 +7636,53 @@ fi
 echo "Current environment: $CURRENT_COLOR"
 echo "Deploying to: $NEW_COLOR"
 
-# --- 付箋データ: 共有ボリューム準備 + デプロイ前バックアップ ---
+# --- 付箋データ: 共有ボリューム準備 + デプロイ前バックアップ（サイズガード付き） ---
 STICKY_BACKUP_DIR="$APP_DIR/backups/sticky-note"
 KEEP_BACKUPS=30
 mkdir -p "$STICKY_BACKUP_DIR"
 
-# 1) 現在の付箋コンテナから boards.json をバックアップ（取り忘れ防止）
+# 1) 現在の付箋コンテナから boards.json をバックアップ（空ファイル除外ガード）
 CURRENT_STICKY_CONTAINER="linko-sticky-note-${CURRENT_COLOR}"
 if docker inspect "$CURRENT_STICKY_CONTAINER" >/dev/null 2>&1; then
     BACKUP_FILE="$STICKY_BACKUP_DIR/boards_$(date +%Y%m%d_%H%M%S).json"
-    if docker cp "$CURRENT_STICKY_CONTAINER:/app/data/boards.json" "$BACKUP_FILE" 2>/dev/null; then
-        echo "Backed up sticky-note data to $BACKUP_FILE"
+    FILE_SIZE=$(docker exec "$CURRENT_STICKY_CONTAINER" sh -c '[ -f /app/data/boards.json ] && wc -c < /app/data/boards.json || echo 0' 2>/dev/null | tr -cd '0-9')
+    FILE_SIZE=${FILE_SIZE:-0}
+    if [ "$FILE_SIZE" -gt 100 ]; then
+        if docker cp "$CURRENT_STICKY_CONTAINER:/app/data/boards.json" "$BACKUP_FILE" 2>/dev/null; then
+            echo "Backed up sticky-note data ($FILE_SIZE bytes) to $BACKUP_FILE"
+        fi
+    else
+        echo "⚠️  Skipped backup: /app/data/boards.json in $CURRENT_STICKY_CONTAINER is empty or too small ($FILE_SIZE bytes)"
     fi
 fi
+
 # 古いバックアップを残す件数に制限
 if command -v ls >/dev/null 2>&1; then
-    (cd "$STICKY_BACKUP_DIR" && ls -t boards_*.json 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm --)
+    (cd "$STICKY_BACKUP_DIR" && ls -t boards_*.json 2>/dev/null | tail -n +$((KEEP_BACKUPS + 1)) | xargs -r rm -- 2>/dev/null || true)
 fi
 
 # 2) 付箋用共有ボリューム（blue/green 共通）が無ければ作成
 docker volume create sticky_note_data 2>/dev/null || true
-# 3) 現在色のボリュームにデータがあれば共有ボリュームへコピー（初回移行・切り替え時も付箋を維持）
+
+# 3) 初回移行用: 共有ボリューム側にデータがなく、現在色の旧ボリュームに正常なデータがある場合のみコピー（上書き巻き戻し防止）
 CURRENT_VOLUME_NAME="board-system-${CURRENT_COLOR}_sticky_data"
 if docker volume inspect "$CURRENT_VOLUME_NAME" >/dev/null 2>&1; then
     docker run --rm \
         -v "$CURRENT_VOLUME_NAME:/from" \
         -v sticky_note_data:/to \
-        alpine sh -c "cp -f /from/boards.json /to/ 2>/dev/null; exit 0"
+        alpine sh -c '
+            if [ -f /from/boards.json ] && [ ! -s /to/boards.json ]; then
+                SIZE=$(wc -c < /from/boards.json | tr -cd "0-9")
+                if [ "${SIZE:-0}" -gt 100 ]; then
+                    cp -f /from/boards.json /to/boards.json
+                    echo "Initial migration: Synced boards.json ($SIZE bytes) to shared volume"
+                else
+                    echo "⚠️ Skipped syncing: /from/boards.json is too small ($SIZE bytes)"
+                fi
+            elif [ -s /to/boards.json ]; then
+                echo "Shared volume already has boards.json ($(wc -c < /to/boards.json | tr -cd "0-9") bytes), skipping legacy volume sync."
+            fi
+        '
 fi
 
 echo "Starting new containers..."
@@ -7563,7 +7717,6 @@ docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T ba
 
 echo "Running team seeds..."
 docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend python scripts/seed_teams.py
-
 
 # Nginx切り替え
 echo "Switching traffic..."
@@ -10341,7 +10494,6 @@ type PostitNote = {
   createdAt?: number;
   gray?: boolean;
   dueDate?: string;
-  due_date?: string;
 };
 
 export default function TaskBoardPage() {
@@ -10407,7 +10559,7 @@ export default function TaskBoardPage() {
         .map((n) => ({
           id: String(n.id),
           text: n.text || "",
-          due_date: n.dueDate || n.due_date || null,
+          due_date: n.dueDate ?? null,
         }));
       const result = await api.stickyNotes.importFromPostit({
         board_id: POSTIT_BOARD_ID,
@@ -10448,7 +10600,7 @@ export default function TaskBoardPage() {
           .map((n) => ({
             id: String(n.id),
             text: n.text || "",
-            due_date: n.dueDate || n.due_date || null,
+            due_date: n.dueDate ?? null,
           }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });

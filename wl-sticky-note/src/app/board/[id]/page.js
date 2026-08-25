@@ -15,6 +15,11 @@ const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
 
+export const MIN_SCALE = 0.3;
+export const MAX_SCALE = 2.5;
+
+const isGrayNote = (note) => Boolean(note?.gray || note?.is_gray || note?.isGray);
+
 let socket;
 
 export default function BoardPage() {
@@ -27,6 +32,7 @@ export default function BoardPage() {
     const [scale, setScale] = useState(1);
     const [title, setTitle] = useState("");
     const [showCommentPanel, setShowCommentPanel] = useState(false);
+    const [hideGrayNotes, setHideGrayNotes] = useState(false);
     const [username, setUsername] = useState("");
     const [showUserDialog, setShowUserDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
@@ -173,6 +179,50 @@ export default function BoardPage() {
             });
         }
     };
+
+    useEffect(() => {
+        const container = boardContainerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e) => {
+            // テキスト入力エリア・モーダル・スクロール可能エリアでのスクロール時はズームを除外
+            if (e.target.closest('textarea, input, select, [data-scrollable="true"]')) {
+                return;
+            }
+
+            e.preventDefault();
+
+            // deltaY に応じた連続的なスムーズズーム計算（トラックパッド・マウス双方に対応）
+            const zoomFactor = Math.exp(-e.deltaY * 0.0015);
+
+            setScale((prevScale) => {
+                const newScale = Math.min(Math.max(MIN_SCALE, prevScale * zoomFactor), MAX_SCALE);
+                if (Math.abs(newScale - prevScale) < 0.001) return prevScale;
+
+                // マウスカーソルのコンテナ内相対座標
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                // ズーム前のキャンバス内座標
+                const targetX = (container.scrollLeft + mouseX) / prevScale;
+                const targetY = (container.scrollTop + mouseY) / prevScale;
+
+                // 新スケール適用後のスクロール位置を計算・適用
+                requestAnimationFrame(() => {
+                    container.scrollLeft = targetX * newScale - mouseX;
+                    container.scrollTop = targetY * newScale - mouseY;
+                });
+
+                return newScale;
+            });
+        };
+
+        container.addEventListener("wheel", handleWheel, { passive: false });
+        return () => {
+            container.removeEventListener("wheel", handleWheel);
+        };
+    }, []);
 
     const handleUserSubmit = (newUsername) => {
         setUsername(newUsername);
@@ -347,6 +397,9 @@ export default function BoardPage() {
     };
 
     const handleJumpToNote = (note) => {
+        if (isGrayNote(note) && hideGrayNotes) {
+            setHideGrayNotes(false);
+        }
         const container = boardContainerRef.current;
         if (container) {
             // 付箋を中央に表示するためのスクロール位置を計算
@@ -503,6 +556,8 @@ export default function BoardPage() {
         }
     };
 
+    const visibleNotes = hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes;
+
     return (
         <div
             className={styles.boardContainer}
@@ -555,11 +610,13 @@ export default function BoardPage() {
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
                 onCenter={handleCenter}
                 onClearAllNotes={handleClearAllNotes}
+                hideGrayNotes={hideGrayNotes}
+                onToggleHideGrayNotes={() => setHideGrayNotes(!hideGrayNotes)}
             />
 
             <div className={styles.canvasWrapper}>
                 <BoardCanvas
-                    notes={notes}
+                    notes={visibleNotes}
                     lines={lines}
                     onUpdateNote={updateNote}
                     onDeleteNote={deleteNote}
@@ -570,7 +627,7 @@ export default function BoardPage() {
 
             {showCommentPanel && (
                 <CommentListPanel
-                    notes={notes}
+                    notes={visibleNotes}
                     onJumpToNote={handleJumpToNote}
                     onGroupNotes={handleGroupNotes}
                     onUngroupNotes={handleUngroupNotes}

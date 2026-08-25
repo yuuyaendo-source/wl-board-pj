@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import styles from "./Toolbar.module.css";
+import { MIN_SCALE, MAX_SCALE } from "../app/board/[id]/page";
 
 const COLORS = [
     "#ffeb3b", // Yellow
@@ -23,7 +24,9 @@ export default function Toolbar({
     onUpload,
     onToggleCommentPanel,
     onCenter,
-    onClearAllNotes
+    onClearAllNotes,
+    hideGrayNotes,
+    onToggleHideGrayNotes
 }) {
     const fileInputRef = useRef(null);
 
@@ -62,9 +65,9 @@ export default function Toolbar({
 
             <div className={styles.secondaryBlock}>
                 <div className={styles.group}>
-                    <button className={styles.textBtn} onClick={() => setScale(s => Math.max(0.5, s - 0.1))}>−</button>
+                    <button className={styles.textBtn} onClick={() => setScale(s => Math.max(MIN_SCALE, s - 0.1))}>−</button>
                     <span style={{ minWidth: "3ch", fontSize: "0.9rem" }}>{Math.round(scale * 100)}%</span>
-                    <button className={styles.textBtn} onClick={() => setScale(s => Math.min(2, s + 0.1))}>＋</button>
+                    <button className={styles.textBtn} onClick={() => setScale(s => Math.min(MAX_SCALE, s + 0.1))}>＋</button>
                 </div>
 
                 <div className={styles.divider} role="separator" aria-hidden="true" />
@@ -110,6 +113,16 @@ export default function Toolbar({
                 <div className={styles.divider} role="separator" aria-hidden="true" />
 
                 <div className={styles.group}>
+                    <span className={styles.iconBtnWrap} data-tooltip={hideGrayNotes ? "グレー付箋を表示" : "グレー付箋を隠す"}>
+                        <button type="button" className={styles.iconBtn} onClick={onToggleHideGrayNotes} aria-label="グレー付箋の表示切替">
+                            {hideGrayNotes ? "🙈" : "👁️"}
+                        </button>
+                    </span>
+                </div>
+
+                <div className={styles.divider} role="separator" aria-hidden="true" />
+
+                <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="全削除">
                         <button
                             type="button"
@@ -143,4 +156,3 @@ export default function Toolbar({
         </div>
     );
 }
-
