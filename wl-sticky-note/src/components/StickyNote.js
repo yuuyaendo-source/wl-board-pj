@@ -24,7 +24,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
-    const dueDateVal = note.dueDate || note.due_date || "";
+    const dueDateVal = note.dueDate ?? "";
     const [tempDueDate, setTempDueDate] = useState(dueDateVal);
 
     const noteRef = useRef(null);
@@ -34,8 +34,8 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     const daysLeft = calcDaysLeft(dueDateVal);
 
     useEffect(() => {
-        setTempDueDate(note.dueDate || note.due_date || "");
-    }, [note.dueDate, note.due_date]);
+        setTempDueDate(note.dueDate ?? "");
+    }, [note.dueDate]);
 
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e);
@@ -126,7 +126,7 @@ export default function StickyNote({ note, onUpdate, onDelete, scale, onMouseDow
     };
 
     const saveDueDate = (newDate) => {
-        onUpdate({ ...note, dueDate: newDate, due_date: newDate });
+        onUpdate({ ...note, dueDate: newDate });
         setShowDatePicker(false);
     };
 

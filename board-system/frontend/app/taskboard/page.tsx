@@ -40,7 +40,6 @@ type PostitNote = {
   createdAt?: number;
   gray?: boolean;
   dueDate?: string;
-  due_date?: string;
 };
 
 export default function TaskBoardPage() {
@@ -106,7 +105,7 @@ export default function TaskBoardPage() {
         .map((n) => ({
           id: String(n.id),
           text: n.text || "",
-          due_date: n.dueDate || n.due_date || null,
+          due_date: n.dueDate ?? null,
         }));
       const result = await api.stickyNotes.importFromPostit({
         board_id: POSTIT_BOARD_ID,
@@ -147,7 +146,7 @@ export default function TaskBoardPage() {
           .map((n) => ({
             id: String(n.id),
             text: n.text || "",
-            due_date: n.dueDate || n.due_date || null,
+            due_date: n.dueDate ?? null,
           }));
         if (notes.length === 0) return;
         await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });

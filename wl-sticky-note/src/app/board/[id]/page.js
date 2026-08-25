@@ -213,7 +213,6 @@ export default function BoardPage() {
             y: bottomY + Math.random() * 20 - 10,
             color: color,
             dueDate: dueDate || null,
-            due_date: dueDate || null,
             pinned: false,
             author: username,
             createdAt: Date.now()

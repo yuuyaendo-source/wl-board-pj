@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices
 
 from app.models.sticky_note import NoteStatus
 
@@ -14,7 +14,10 @@ class StickyNoteCreate(BaseModel):
     postit_note_id: str | None = None
     """True のとき AI 振り分けをスキップ（パーソナル投稿のみで Task に載せない）。"""
     personal_only: bool | None = None
-    due_date: str | None = None  # YYYY-MM-DD 形式
+    due_date: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('due_date', 'dueDate'),
+    )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 
 class StickyNoteUpdate(BaseModel):
@@ -48,7 +51,10 @@ class ImportFromPostitItem(BaseModel):
 
     id: str
     text: str
-    due_date: str | None = None  # YYYY-MM-DD 形式
+    due_date: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('due_date', 'dueDate'),
+    )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 
 class ImportFromPostitBody(BaseModel):

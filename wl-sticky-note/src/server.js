@@ -214,7 +214,7 @@ app.prepare().then(() => {
                                 board_id: boardId,
                                 note_id: String(note.id),
                                 content: note.text || '',
-                                due_date: note.dueDate || note.due_date || null
+                                due_date: note.dueDate ?? null
                             })
                         }).catch(err => console.error('Board System sync_from_postit:', err.message));
                     } catch (e) {
@@ -352,7 +352,7 @@ app.prepare().then(() => {
                 author: n.author || '',
                 createdAt: n.createdAt || 0,
                 gray: !!n.gray,
-                dueDate: n.dueDate || n.due_date || null,
+                dueDate: n.dueDate ?? null,
             }));
             return res.json({ boardId, notes });
         } catch (error) {
@@ -378,8 +378,9 @@ app.prepare().then(() => {
             if (text !== undefined) note.text = String(text);
             const targetDueDate = dueDate !== undefined ? dueDate : due_date;
             if (targetDueDate !== undefined) {
+                // 内部データは dueDate（camelCase）に統一
                 note.dueDate = targetDueDate || null;
-                note.due_date = targetDueDate || null;
+                delete note.due_date;
             }
             io.to(boardId).emit('note-updated', note);
             saveBoards();
