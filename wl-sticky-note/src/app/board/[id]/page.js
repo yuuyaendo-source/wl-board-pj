@@ -54,7 +54,7 @@ export default function BoardPage() {
     const selectionStartPos = useRef({ x: 0, y: 0 });
     const initialSelectedIds = useRef([]);
 
-    // Spaceキーの押下監視（テキスト入力中は無効化 & ブラウザスクロール防止）
+    // Spaceキーの押下監視（入力フィールドガード & ブラウザ下スクロール防止）
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.code === 'Space') {
@@ -124,7 +124,6 @@ export default function BoardPage() {
                 let placed = note;
                 if (note.author === "AI" && boardContainerRef.current) {
                     const el = boardContainerRef.current;
-                    // ビューポート中心に配置
                     const cx = (el.scrollLeft + el.clientWidth / 2) / scale - 100;
                     const cy = (el.scrollTop + el.clientHeight / 2) / scale - 100;
                     placed = { ...note, x: cx, y: cy };
@@ -179,7 +178,7 @@ export default function BoardPage() {
         };
     }, [boardId, scale]);
 
-    // 初期ロード時にキャンバスの中央（2000, 2000）を画面中心にスクロール設定
+    // 初期ロード時にキャンバス中央（2000, 2000）を画面中心に調整
     useEffect(() => {
         const container = boardContainerRef.current;
         if (container) {
@@ -208,7 +207,7 @@ export default function BoardPage() {
         }
     };
 
-    // 全方位（放射状）ホイールズーム処理
+    // 正確な全方位（全方向）ホイールズーム処理
     useEffect(() => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -226,10 +225,10 @@ export default function BoardPage() {
                 if (Math.abs(newScale - prevScale) < 0.001) return prevScale;
 
                 const rect = container.getBoundingClientRect();
-                // マウス位置を中心に放射状（全方位）に拡大・縮小
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
+                // ズーム前後のマウス座標を中心としたスクロールオフセット計算
                 const targetX = (container.scrollLeft + mouseX) / prevScale;
                 const targetY = (container.scrollTop + mouseY) / prevScale;
 
@@ -258,7 +257,6 @@ export default function BoardPage() {
         }
     };
 
-    // デフォルト位置の生成（画面＝ビューポートの真中央を中心に生成）
     const addNote = (initialText = "", dueDate = null) => {
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
@@ -271,11 +269,10 @@ export default function BoardPage() {
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
 
-        // 現在表示されている画面の中心座標（100%基準）を計算
+        // 現在表示されている画面の中心座標に付箋を生成
         const viewportCenterX = (scrollLeft + viewportWidth / 2) / scale;
         const viewportCenterY = (scrollTop + viewportHeight / 2) / scale;
 
-        // 付箋の中心が画面中央に来るようにオフセット調整（付箋幅200, 高さ200の半分＝100）
         const noteX = viewportCenterX - 100 + (Math.random() * 20 - 10);
         const noteY = viewportCenterY - 100 + (Math.random() * 20 - 10);
 
@@ -410,7 +407,6 @@ export default function BoardPage() {
         reader.readAsText(file);
     };
 
-    // 付箋へジャンプ：最大拡大（MAX_SCALE）にし、付箋の中心座標を画面中心に移動
     const handleJumpToNote = (note) => {
         if (isGrayNote(note) && hideGrayNotes) {
             setHideGrayNotes(false);
@@ -422,19 +418,15 @@ export default function BoardPage() {
             const noteW = isLarge ? 320 : 200;
             const noteH = isLarge ? 320 : 200;
 
-            // 最大拡大率に設定
             const targetScale = MAX_SCALE;
             setScale(targetScale);
 
-            // 付箋の真の中心（キャンバスの100%座標系）
             const noteCenterX = note.x + noteW / 2;
             const noteCenterY = note.y + noteH / 2;
 
-            // 最大拡大後の中心位置
             const scaledCenterX = noteCenterX * targetScale;
             const scaledCenterY = noteCenterY * targetScale;
 
-            // ビューポート（画面）の中心に来るようなスクロール位置
             const targetLeft = scaledCenterX - container.clientWidth / 2;
             const targetTop = scaledCenterY - container.clientHeight / 2;
 

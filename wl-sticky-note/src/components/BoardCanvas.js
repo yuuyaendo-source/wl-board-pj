@@ -13,6 +13,9 @@ export default function BoardCanvas({
     onMoveSelectedNotes,
     selectionBox
 }) {
+    const baseWidth = 4000;
+    const baseHeight = 4000;
+
     // 範囲選択ボックス（正規化計算）
     let boxStyle = null;
     if (selectionBox) {
@@ -30,45 +33,55 @@ export default function BoardCanvas({
     }
 
     return (
+        /* 外側ラッパー：scale倍された正確な幅と高さを確保し、スクロール歪みを防止 */
         <div
-            className={styles.canvas}
+            className={styles.canvasOuter}
             style={{
-                transform: `scale(${scale})`,
-                transformOrigin: "0 0",
-                width: "4000px",
-                height: "4000px"
+                width: `${baseWidth * scale}px`,
+                height: `${baseHeight * scale}px`,
             }}
         >
-            <svg className={styles.svgLayer}>
-                {lines.map((line, i) => (
-                    <line
-                        key={i}
-                        x1={line.x1}
-                        y1={line.y1}
-                        x2={line.x2}
-                        y2={line.y2}
-                        stroke="#333"
-                        strokeWidth="2"
+            {/* 内側キャンバス：元サイズ4000pxでscale変換を実行 */}
+            <div
+                className={styles.canvas}
+                style={{
+                    width: `${baseWidth}px`,
+                    height: `${baseHeight}px`,
+                    transform: `scale(${scale})`,
+                    transformOrigin: "0 0",
+                }}
+            >
+                <svg className={styles.svgLayer}>
+                    {lines.map((line, i) => (
+                        <line
+                            key={i}
+                            x1={line.x1}
+                            y1={line.y1}
+                            x2={line.x2}
+                            y2={line.y2}
+                            stroke="#333"
+                            strokeWidth="2"
+                        />
+                    ))}
+                </svg>
+
+                {selectionBox && boxStyle && (
+                    <div className={styles.selectionBox} style={boxStyle} />
+                )}
+
+                {notes.map((note) => (
+                    <StickyNote
+                        key={note.id}
+                        note={note}
+                        onUpdate={onUpdateNote}
+                        onDelete={onDeleteNote}
+                        scale={scale}
+                        isSelected={selectedNoteIds.includes(note.id)}
+                        onSelect={onSelectNote}
+                        onMoveSelectedNotes={onMoveSelectedNotes}
                     />
                 ))}
-            </svg>
-
-            {selectionBox && boxStyle && (
-                <div className={styles.selectionBox} style={boxStyle} />
-            )}
-
-            {notes.map((note) => (
-                <StickyNote
-                    key={note.id}
-                    note={note}
-                    onUpdate={onUpdateNote}
-                    onDelete={onDeleteNote}
-                    scale={scale}
-                    isSelected={selectedNoteIds.includes(note.id)}
-                    onSelect={onSelectNote}
-                    onMoveSelectedNotes={onMoveSelectedNotes}
-                />
-            ))}
+            </div>
         </div>
     );
 }

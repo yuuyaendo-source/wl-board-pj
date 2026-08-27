@@ -1,9 +1,16 @@
-.canvas {
+.canvasOuter {
     position: relative;
-    width: 10000px;
-    height: 10000px;
+    overflow: hidden;
+    line-height: 0;
+}
+
+.canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
     background-image: radial-gradient(#ddd 1px, transparent 1px);
     background-size: 20px 20px;
+    line-height: normal;
 }
 
 .svgLayer {
@@ -14,4 +21,12 @@
     height: 100%;
     pointer-events: none;
     z-index: 0;
+}
+
+.selectionBox {
+    position: absolute;
+    border: 1px solid #2563eb;
+    background-color: rgba(37, 99, 235, 0.15);
+    pointer-events: none;
+    z-index: 999;
 }

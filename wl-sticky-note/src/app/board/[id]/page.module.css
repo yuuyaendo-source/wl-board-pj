@@ -66,6 +66,7 @@
 
 .canvasWrapper {
     margin-top: 60px;
+    line-height: 0;
 }
 
 @media (max-width: 767px) {
