@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Nav from "./components/Nav";
 import AdminAuthModal from "./components/AdminAuthModal";
 
 const geistSans = Geist({
@@ -31,6 +32,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <Nav />
         {children}
         <AdminAuthModal />
       </body>
