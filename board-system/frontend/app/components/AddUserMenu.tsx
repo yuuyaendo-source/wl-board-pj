@@ -15,6 +15,21 @@ interface AddUserMenuProps {
 
 type Tab = "members" | "teams";
 
+// チームごとのバッジカラー設定
+const TEAM_BADGE_STYLES = [
+  "bg-indigo-100 text-indigo-700 border-indigo-200",
+  "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "bg-amber-100 text-amber-700 border-amber-200",
+  "bg-rose-100 text-rose-700 border-rose-200",
+  "bg-purple-100 text-purple-700 border-purple-200",
+  "bg-sky-100 text-sky-700 border-sky-200",
+];
+
+function getTeamBadgeStyle(teamId: number): string {
+  const index = Math.abs(Number(teamId)) % TEAM_BADGE_STYLES.length;
+  return TEAM_BADGE_STYLES[index];
+}
+
 export default function AddUserMenu({ members, onSuccess, open: controlledOpen, onOpenChange }: AddUserMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const controlled = controlledOpen !== undefined && onOpenChange !== undefined;
@@ -26,10 +41,10 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
 
   const [tab, setTab] = useState<Tab>("members");
 
-  // APIから直接取得する全ユーザー詳細データ（複数チームIDを正しく取得）
+  // APIから直接取得した最新ユーザーリスト
   const [fullUsers, setFullUsers] = useState<User[]>([]);
 
-  // --- メンバー追加フォーム ---
+  // --- メンバー追加・編集フォームステート ---
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [callName, setCallName] = useState("");
@@ -44,7 +59,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // --- チーム管理 ---
+  // --- チーム管理ステート ---
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
@@ -54,6 +69,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
 
+  // ユーザー全件取得
   const fetchUsersData = useCallback(async () => {
     try {
       const data = await api.users.list();
@@ -63,6 +79,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     }
   }, []);
 
+  // チーム一覧取得
   const fetchTeams = useCallback(async () => {
     setTeamsLoading(true);
     try {
@@ -86,8 +103,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setNewTeamName("");
       setTeamError(null);
       setEditingTeamId(null);
-      fetchUsersData();
-      fetchTeams();
+      void fetchUsersData();
+      void fetchTeams();
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open, fetchUsersData, fetchTeams]);
@@ -103,13 +120,14 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setSubmitting(true);
       setError(null);
       try {
-        await api.users.create({
+        const newUser = await api.users.create({
           name: trimmedName,
           email: email.trim(),
           call_name: callName.trim(),
           team_ids: teamIds,
         });
-        await fetchUsersData();
+        // 取得レスポンスを直接ステートに追加して同期ズレを防止
+        setFullUsers((prev) => [...prev, newUser]);
         onSuccess();
         setOpen(false);
       } catch (e) {
@@ -127,7 +145,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setError(null);
       try {
         await api.users.delete(ownerId);
-        await fetchUsersData();
+        setFullUsers((prev) => prev.filter((u) => Number(u.id) !== Number(ownerId)));
         onSuccess();
       } catch (e) {
         setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -138,15 +156,26 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   };
 
   const startEdit = (m: any) => {
-    const id = m.ownerId ?? m.id;
-    const fullUser = fullUsers.find((u) => u.id === id);
-    setEditingId(id);
-    setEditName(m.name);
-    setEditEmail(m.email ?? "");
-    setEditCallName(m.call_name ?? "");
+    const targetId = Number(m.ownerId ?? m.id);
+    // fullUsersの最新データから参照
+    const targetUser = fullUsers.find((u) => Number(u.id) === targetId) ?? m;
 
-    const initialTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-    setEditTeamIds(initialTeamIds);
+    setEditingId(targetId);
+    setEditName(targetUser.name ?? "");
+    setEditEmail(targetUser.email ?? "");
+    setEditCallName(targetUser.call_name ?? "");
+
+    // チームIDリストを確実に数値配列化
+    let extractedTeamIds: number[] = [];
+    if (Array.isArray(targetUser.team_ids)) {
+      extractedTeamIds = targetUser.team_ids.map(Number);
+    } else if (Array.isArray(targetUser.teams)) {
+      extractedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
+    } else if (targetUser.teamId) {
+      extractedTeamIds = [Number(targetUser.teamId)];
+    }
+
+    setEditTeamIds(extractedTeamIds);
     setError(null);
   };
 
@@ -160,13 +189,18 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setSubmitting(true);
       setError(null);
       try {
-        await api.users.update(editingId, {
+        const updatedUser = await api.users.update(editingId, {
           name: trimmedName,
           email: editEmail.trim(),
           call_name: editCallName.trim(),
           team_ids: editTeamIds,
         });
-        await fetchUsersData();
+
+        // サーバーから返ってきた最新データを直接ステートに反映（同期ズレ解消）
+        setFullUsers((prev) =>
+          prev.map((u) => (Number(u.id) === Number(editingId) ? updatedUser : u))
+        );
+
         onSuccess();
         setEditingId(null);
       } catch (e) {
@@ -234,6 +268,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       try {
         await api.teams.delete(teamId);
         await fetchTeams();
+        await fetchUsersData();
       } catch (e) {
         setTeamError(e instanceof Error ? e.message : "チーム削除に失敗しました");
       } finally {
@@ -254,15 +289,16 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       ) : (
         <div className="flex flex-wrap gap-2">
           {teams.map((t) => {
-            const checked = selectedIds.includes(t.id);
+            const checked = selectedIds.map(Number).includes(Number(t.id));
             return (
               <label key={t.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded border border-zinc-200 text-xs hover:bg-zinc-100">
                 <input
                   type="checkbox"
                   checked={checked}
                   onChange={(e) => {
-                    if (e.target.checked) onChange([...selectedIds, t.id]);
-                    else onChange(selectedIds.filter((id) => id !== t.id));
+                    const targetId = Number(t.id);
+                    if (e.target.checked) onChange([...selectedIds.map(Number), targetId]);
+                    else onChange(selectedIds.map(Number).filter((id) => id !== targetId));
                   }}
                   disabled={submitting}
                 />
@@ -274,6 +310,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       )}
     </div>
   );
+
+  // 一覧表示データは fullUsers を最優先
+  const displayList = fullUsers.length > 0 ? fullUsers : members;
 
   return (
     <div className={controlled ? "contents" : "relative"}>
@@ -309,7 +348,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
               </button>
               <button
                 type="button"
-                onClick={() => { setTab("teams"); fetchTeams(); }}
+                onClick={() => { setTab("teams"); void fetchTeams(); }}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "teams"
                   ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
                   : "text-zinc-500 hover:text-zinc-700"
@@ -371,11 +410,21 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 <div className="border-t border-[var(--border)] pt-3">
                   <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
                   <ul className="flex flex-col gap-1">
-                    {members.map((m: any) => {
-                      const memberId = m.ownerId ?? m.id;
-                      const fullUser = fullUsers.find((u) => u.id === memberId);
-                      const userTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                      const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
+                    {displayList.map((m: any) => {
+                      const memberId = Number(m.ownerId ?? m.id);
+                      const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                      // 所属チームの判定
+                      let assignedTeamIds: number[] = [];
+                      if (Array.isArray(targetUser.team_ids)) {
+                        assignedTeamIds = targetUser.team_ids.map(Number);
+                      } else if (Array.isArray(targetUser.teams)) {
+                        assignedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
+                      } else if (targetUser.teamId) {
+                        assignedTeamIds = [Number(targetUser.teamId)];
+                      }
+
+                      const userTeams = teams.filter((t) => assignedTeamIds.includes(Number(t.id)));
 
                       return (
                         <li
@@ -432,10 +481,13 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                           ) : (
                             <>
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="text-zinc-800 font-medium">{m.name}</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-zinc-800 font-medium">{targetUser.name}</span>
                                   {userTeams.map((t) => (
-                                    <span key={t.id} className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
+                                    <span
+                                      key={t.id}
+                                      className={`rounded-full px-2 py-0.5 text-xs font-medium border ${getTeamBadgeStyle(t.id)}`}
+                                    >
                                       {t.name}
                                     </span>
                                   ))}
@@ -446,14 +498,14 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                 <div className="flex shrink-0 gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => startEdit(m)}
+                                    onClick={() => startEdit(targetUser)}
                                     className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
                                   >
                                     編集
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDelete(memberId, m.name)}
+                                    onClick={() => handleDelete(memberId, targetUser.name)}
                                     disabled={deletingId === memberId}
                                     className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                                   >
@@ -461,10 +513,10 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </button>
                                 </div>
                               </div>
-                              {(m.email || m.call_name) && (
+                              {(targetUser.email || targetUser.call_name) && (
                                 <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-zinc-500">
-                                  {m.email && <span>{m.email}</span>}
-                                  {m.call_name && <span>呼び名: {m.call_name}</span>}
+                                  {targetUser.email && <span>{targetUser.email}</span>}
+                                  {targetUser.call_name && <span>呼び名: {targetUser.call_name}</span>}
                                 </div>
                               )}
                             </>
@@ -473,7 +525,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                       );
                     })}
                   </ul>
-                  {members.length === 0 && (
+                  {displayList.length === 0 && (
                     <p className="py-2 text-sm text-zinc-500">メンバーがいません</p>
                   )}
                 </div>
@@ -570,23 +622,41 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                           {/* 所属メンバー一覧 */}
                           {editingTeamId !== team.id && (
                             <div className="flex flex-wrap gap-1">
-                              {members
+                              {displayList
                                 .filter((m: any) => {
-                                  const memberId = m.ownerId ?? m.id;
-                                  const fullUser = fullUsers.find((u) => u.id === memberId);
-                                  const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                                  return ids.includes(team.id);
+                                  const memberId = Number(m.ownerId ?? m.id);
+                                  const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                                  let ids: number[] = [];
+                                  if (Array.isArray(targetUser.team_ids)) {
+                                    ids = targetUser.team_ids.map(Number);
+                                  } else if (Array.isArray(targetUser.teams)) {
+                                    ids = targetUser.teams.map((t: any) => Number(t.id));
+                                  } else if (targetUser.teamId) {
+                                    ids = [Number(targetUser.teamId)];
+                                  }
+
+                                  return ids.includes(Number(team.id));
                                 })
                                 .map((m: any) => (
                                   <span key={m.ownerId ?? m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                                     {m.name}
                                   </span>
                                 ))}
-                              {members.filter((m: any) => {
-                                const memberId = m.ownerId ?? m.id;
-                                const fullUser = fullUsers.find((u) => u.id === memberId);
-                                const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                                return ids.includes(team.id);
+                              {displayList.filter((m: any) => {
+                                const memberId = Number(m.ownerId ?? m.id);
+                                const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                                let ids: number[] = [];
+                                if (Array.isArray(targetUser.team_ids)) {
+                                  ids = targetUser.team_ids.map(Number);
+                                } else if (Array.isArray(targetUser.teams)) {
+                                  ids = targetUser.teams.map((t: any) => Number(t.id));
+                                } else if (targetUser.teamId) {
+                                  ids = [Number(targetUser.teamId)];
+                                }
+
+                                return ids.includes(Number(team.id));
                               }).length === 0 && (
                                   <span className="text-xs text-zinc-400">メンバーなし</span>
                                 )}
