@@ -1,5 +1,6 @@
 .canvasOuter {
     position: relative;
+    margin: auto;
     min-width: 100%;
     min-height: calc(100vh - 60px);
     background-image: radial-gradient(#ddd 1px, transparent 1px);

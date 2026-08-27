@@ -16,6 +16,9 @@ export default function BoardCanvas({
     const baseWidth = 4000;
     const baseHeight = 4000;
 
+    // Handle line drawing logic here if needed, or keep it simple for now
+    // For MVP, we'll just render notes and lines
+
     // 範囲選択ボックス（正規化計算）
     let boxStyle = null;
     if (selectionBox) {
@@ -36,7 +39,7 @@ export default function BoardCanvas({
     const scaledHeight = baseHeight * scale;
 
     return (
-        /* 外側ラッパー：画面全体（100% / 100vh）を最低保証し、縮小時の背景切れを完全防止 */
+        /* 外側ラッパー：margin: auto を指定して、縮小時も全方位（中央）に均等配置 */
         <div
             className={styles.canvasOuter}
             style={{

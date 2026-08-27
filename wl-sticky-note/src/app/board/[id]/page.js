@@ -195,7 +195,7 @@ export default function BoardPage() {
         };
     }, [boardId, scale]);
 
-    // 画面中央（最大縮小時と同じ見た目の中心）にスクロールを合わせる計算処理
+    // ボードの絶対中心（2000, 2000）を画面中央にスクロール配置する処理（縮小率に関わらず常に同一位置）
     const scrollToCenter = useCallback((smooth = false) => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -203,11 +203,10 @@ export default function BoardPage() {
         const scaledWidth = 4000 * scale;
         const scaledHeight = 4000 * scale;
 
-        // 外側コンテナの描画全体サイズ
+        // コンテナのスクロール全体領域における中心計算
         const totalWidth = Math.max(container.clientWidth, scaledWidth);
         const totalHeight = Math.max(container.clientHeight, scaledHeight);
 
-        // 描画領域の中央と画面（ビューポート）の中央を一致させるスクロール量
         const scrollX = (totalWidth - container.clientWidth) / 2;
         const scrollY = (totalHeight - container.clientHeight) / 2;
 
