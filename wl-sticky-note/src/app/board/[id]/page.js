@@ -56,6 +56,9 @@ export default function BoardPage() {
 
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if (e.key === 'Escape' || e.code === 'Escape') {
+                setSelectedNoteIds([]);
+            }
             if (e.code === 'Space') {
                 if (e.target.closest('input, textarea, select, [contenteditable="true"]')) {
                     return;
