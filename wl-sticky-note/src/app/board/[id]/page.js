@@ -228,7 +228,6 @@ export default function BoardPage() {
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
-                // ズーム前後のマウス座標を中心としたスクロールオフセット計算
                 const targetX = (container.scrollLeft + mouseX) / prevScale;
                 const targetY = (container.scrollTop + mouseY) / prevScale;
 
@@ -269,7 +268,6 @@ export default function BoardPage() {
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
 
-        // 現在表示されている画面の中心座標に付箋を生成
         const viewportCenterX = (scrollLeft + viewportWidth / 2) / scale;
         const viewportCenterY = (scrollTop + viewportHeight / 2) / scale;
 

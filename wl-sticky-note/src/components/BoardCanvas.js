@@ -32,16 +32,19 @@ export default function BoardCanvas({
         };
     }
 
+    const scaledWidth = baseWidth * scale;
+    const scaledHeight = baseHeight * scale;
+
     return (
-        /* 外側ラッパー：scale倍された正確な幅と高さを確保し、スクロール歪みを防止 */
+        /* 外側ラッパー：画面全体（min-100%）にドット背景を維持しつつ描画サイズを確保 */
         <div
             className={styles.canvasOuter}
             style={{
-                width: `${baseWidth * scale}px`,
-                height: `${baseHeight * scale}px`,
+                width: `${scaledWidth}px`,
+                height: `${scaledHeight}px`,
             }}
         >
-            {/* 内側キャンバス：元サイズ4000pxでscale変換を実行 */}
+            {/* 内側キャンバス：元の4000pxのスケール変形領域 */}
             <div
                 className={styles.canvas}
                 style={{
