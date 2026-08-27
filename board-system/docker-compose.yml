@@ -26,6 +26,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # --- Board System Backend (FastAPI) ---
   backend:
@@ -35,6 +36,8 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-production-12345}
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
@@ -45,10 +48,17 @@ services:
       OLLAMA_MODEL_1: ${OLLAMA_MODEL_1:-}
       OLLAMA_MODEL_2: ${OLLAMA_MODEL_2:-}
       OLLAMA_MODEL_3: ${OLLAMA_MODEL_3:-}
-      # GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      OAUTH_SUCCESS_REDIRECT_BASE: ${OAUTH_SUCCESS_REDIRECT_BASE:-}
       POSTIT_BOARD_URL: http://sticky-note:3000
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-default-insecure-key-32-bytes-long!}
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ./backend/desktop_app_releases:/app/desktop_app_releases
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -59,24 +69,25 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8010
-        NEXT_PUBLIC_BASE_PATH: ""
-        NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-""}
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://localhost:3011}
     container_name: linko-frontend
     ports:
       - "3010:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8010
-      NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://localhost:3011}
     depends_on:
       - backend
     restart: unless-stopped
 
   # --- 付箋ボード (Next.js + Express + Socket.IO) ---
-  # 起動するには: docker compose --profile sticky up -d --build
-  # 前提: リポジトリ直下に wl-sticky-note があること（例: wlinko-pj/wl-sticky-note）
   sticky-note:
-    build: ../wl-sticky-note/src
+    build:
+      context: ../wl-sticky-note/src
+      args:
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-""}
     container_name: linko-sticky-note
     profiles:
       - sticky
@@ -86,9 +97,12 @@ services:
       NODE_ENV: production
       PORT: "3000"
       BOARD_SYSTEM_API_URL: http://backend:8000
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://localhost:3010
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: ${NEXT_PUBLIC_BOARD_SYSTEM_URL:-http://localhost:3010}
+      DATA_DIR: /app/data
     volumes:
       - sticky_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - backend
     restart: unless-stopped

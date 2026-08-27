@@ -44,7 +44,8 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
   });
 
-  if (res.status === 401) {
+  // ログインエンドポイント以外の 401 エラーのみ「セッション切れ」イベントを発火する
+  if (res.status === 401 && !path.startsWith("/admin/login")) {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("admin_token");
       window.dispatchEvent(new Event("auth-unauthorized"));

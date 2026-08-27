@@ -722,8 +722,10 @@ Create Date: 2026-08-27
 """
 
 from typing import Sequence, Union
+
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.engine.reflection import Inspector
 
 revision: str = "l2m3n4o5p6q7"
 down_revision: Union[str, Sequence[str], None] = "k1l2m3n4o5p6"
@@ -732,64 +734,99 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. user_teams 中間テーブル作成
-    op.create_table(
-        "user_teams",
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("team_id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("user_id", "team_id"),
-    )
-    # チームからユーザーを逆引きするためのインデックス作成
-    op.create_index("ix_user_teams_team_id", "user_teams", ["team_id"], unique=False)
+    conn = op.get_bind()
+    inspector = Inspector.from_engine(conn)
+    tables = inspector.get_table_names()
 
-    # 2. 既存データの移行 (users.team_id -> user_teams)
-    bind = op.get_bind()
-    if bind.dialect.name == "postgresql":
-        op.execute(
-            """
-            INSERT INTO user_teams (user_id, team_id)
-            SELECT id, team_id FROM users WHERE team_id IS NOT NULL
-            ON CONFLICT DO NOTHING
-            """
-        )
-    else:
-        op.execute(
-            """
-            INSERT OR IGNORE INTO user_teams (user_id, team_id)
-            SELECT id, team_id FROM users WHERE team_id IS NOT NULL
-            """
+    # 1. user_teams 中間テーブル作成（存在しない場合のみ）
+    if "user_teams" not in tables:
+        op.create_table(
+            "user_teams",
+            sa.Column("user_id", sa.Integer(), nullable=False),
+            sa.Column("team_id", sa.Integer(), nullable=False),
+            sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("user_id", "team_id"),
         )
 
-    # 3. users から旧 team_id カラム・制約を削除
-    with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.drop_index("ix_users_team_id")
-        batch_op.drop_constraint("fk_users_team_id", type_="foreignkey")
-        batch_op.drop_column("team_id")
+    # インデックス作成（存在しない場合のみ）
+    if "user_teams" in inspector.get_table_names():
+        indexes = [idx["name"] for idx in inspector.get_indexes("user_teams")]
+        if "ix_user_teams_team_id" not in indexes:
+            try:
+                op.create_index(
+                    "ix_user_teams_team_id", "user_teams", ["team_id"], unique=False
+                )
+            except Exception:
+                pass
+
+    # 2. 既存データ移行 (users.team_id -> user_teams)
+    # users テーブルに team_id カラムが存在する場合のみ移行およびドロップ処理を行う
+    user_columns = [col["name"] for col in inspector.get_columns("users")]
+    if "team_id" in user_columns:
+        if conn.dialect.name == "postgresql":
+            op.execute(
+                """
+                INSERT INTO user_teams (user_id, team_id)
+                SELECT id, team_id FROM users WHERE team_id IS NOT NULL
+                ON CONFLICT DO NOTHING
+                """
+            )
+        else:
+            op.execute(
+                """
+                INSERT OR IGNORE INTO user_teams (user_id, team_id)
+                SELECT id, team_id FROM users WHERE team_id IS NOT NULL
+                """
+            )
+
+        # 3. users から team_id カラムと外部キー、インデックスを削除
+        with op.batch_alter_table("users", schema=None) as batch_op:
+            user_indexes = [idx["name"] for idx in inspector.get_indexes("users")]
+            if "ix_users_team_id" in user_indexes:
+                batch_op.drop_index("ix_users_team_id")
+
+            user_fks = inspector.get_foreign_keys("users")
+            for fk in user_fks:
+                if "team_id" in fk.get("constrained_columns", []):
+                    if fk.get("name"):
+                        batch_op.drop_constraint(fk["name"], type_="foreignkey")
+
+            batch_op.drop_column("team_id")
 
 
 def downgrade() -> None:
-    # 1. users に team_id カラム・制約を復元
-    with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("team_id", sa.Integer(), nullable=True))
-        batch_op.create_foreign_key(
-            "fk_users_team_id", "teams", ["team_id"], ["id"], ondelete="SET NULL"
-        )
-        batch_op.create_index("ix_users_team_id", ["team_id"], unique=False)
+    conn = op.get_bind()
+    inspector = Inspector.from_engine(conn)
+    user_columns = [col["name"] for col in inspector.get_columns("users")]
 
-    # 2. データの復旧（1ユーザー1チームの制限に丸める）
-    op.execute(
-        """
-        UPDATE users SET team_id = (
-            SELECT team_id FROM user_teams WHERE user_teams.user_id = users.id LIMIT 1
-        )
-        """
-    )
+    # 1. users に team_id カラムと制約を戻す（存在しない場合のみ）
+    if "team_id" not in user_columns:
+        with op.batch_alter_table("users", schema=None) as batch_op:
+            batch_op.add_column(sa.Column("team_id", sa.Integer(), nullable=True))
+            batch_op.create_foreign_key(
+                "fk_users_team_id", "teams", ["team_id"], ["id"], ondelete="SET NULL"
+            )
+            batch_op.create_index("ix_users_team_id", ["team_id"], unique=False)
 
-    # 3. user_teams テーブルを削除
-    op.drop_index("ix_user_teams_team_id", table_name="user_teams")
-    op.drop_table("user_teams")
+        # 2. データを user_teams から復元 (1ユーザー1チームの制限に丸める)
+        op.execute(
+            """
+            UPDATE users SET team_id = (
+                SELECT team_id FROM user_teams WHERE user_teams.user_id = users.id LIMIT 1
+            )
+            """
+        )
+
+    # 3. user_teams テーブルを削除（存在する場合のみ）
+    tables = inspector.get_table_names()
+    if "user_teams" in tables:
+        user_teams_indexes = [
+            idx["name"] for idx in inspector.get_indexes("user_teams")
+        ]
+        if "ix_user_teams_team_id" in user_teams_indexes:
+            op.drop_index("ix_user_teams_team_id", table_name="user_teams")
+        op.drop_table("user_teams")
 </file>
 
 <file path="backend/alembic/env.py">
@@ -2019,7 +2056,7 @@ def _b64url_encode(data: bytes) -> str:
 
 
 def _b64url_decode(b64: str) -> bytes:
-    pad = b"=" * (4 - len(b64) % 4)
+    pad = "=" * ((4 - len(b64) % 4) % 4)
     return base64.urlsafe_b64decode((b64 + pad).encode("ascii"))
 
 
@@ -7426,6 +7463,68 @@ if __name__ == "__main__":
     main()
 </file>
 
+<file path="backend/scripts/seed_teams.py">
+# -*- coding: utf-8 -*-
+"""
+初期チームデータ投入スクリプト。
+SEED_TEAMS ("ネットワーク", "構築") を作成し、初期ユーザー (1-8) にチームを割り当てる。
+"""
+import asyncio
+import os
+import sys
+
+# app モジュールをインポートできるようにパス追加
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.db import async_session_maker, SEED_TEAMS, SEED_USER_TEAM_MAP
+from app.models.team import Team
+from app.models.user import User
+
+
+async def seed_teams_async() -> None:
+    async with async_session_maker() as session:
+        # チームを作成（存在しない場合のみ）
+        team_map: dict[str, Team] = {}
+        for team_name in SEED_TEAMS:
+            r = await session.execute(select(Team).where(Team.name == team_name))
+            team = r.scalar_one_or_none()
+            if team is None:
+                team = Team(name=team_name)
+                session.add(team)
+                await session.flush()
+                print(f"  チーム作成: {team_name} (id={team.id})")
+            else:
+                print(f"  チーム既存: {team_name} (id={team.id})")
+            team_map[team_name] = team
+        await session.commit()
+
+        # 初期ユーザーの teams リレーションが空の場合のみ割り当て
+        for user_id, team_name in SEED_USER_TEAM_MAP.items():
+            r = await session.execute(
+                select(User).options(selectinload(User.teams)).where(User.id == user_id)
+            )
+            user = r.scalar_one_or_none()
+            if user is not None and not user.teams:
+                target_team = team_map.get(team_name)
+                if target_team:
+                    user.teams.append(target_team)
+                    print(
+                        f"  ユーザー {user.name} (id={user.id}) にチーム '{team_name}' を割り当てました"
+                    )
+        await session.commit()
+
+
+def main() -> None:
+    asyncio.run(seed_teams_async())
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
 <file path="backend/tests/test_calendar_placement.py">
 # -*- coding: utf-8 -*-
 """calendar_placement ユニットテスト。"""
@@ -8408,8 +8507,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     });
   };
 
-  const startEdit = (m: any) => {
-    setEditingId(m.ownerId || m.id);
+  const startEdit = (m: PersonalMember | any) => {
+    const id = m.ownerId ?? m.id;
+    setEditingId(id);
     setEditName(m.name);
     setEditEmail(m.email ?? "");
     setEditCallName(m.call_name ?? "");
@@ -8568,8 +8668,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 type="button"
                 onClick={() => setTab("members")}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "members"
-                    ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
-                    : "text-zinc-500 hover:text-zinc-700"
+                  ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
+                  : "text-zinc-500 hover:text-zinc-700"
                   }`}
               >
                 メンバー管理
@@ -8578,8 +8678,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 type="button"
                 onClick={() => { setTab("teams"); fetchTeams(); }}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "teams"
-                    ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
-                    : "text-zinc-500 hover:text-zinc-700"
+                  ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
+                  : "text-zinc-500 hover:text-zinc-700"
                   }`}
               >
                 チーム管理
@@ -8639,15 +8739,16 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                   <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
                   <ul className="flex flex-col gap-1">
                     {members.map((m: any) => {
+                      const memberId = m.ownerId ?? m.id;
                       const userTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                       const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
 
                       return (
                         <li
-                          key={m.ownerId || m.id}
+                          key={memberId}
                           className="flex flex-col gap-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
                         >
-                          {editingId === (m.ownerId || m.id) ? (
+                          {editingId === memberId ? (
                             <form onSubmit={handleUpdate} className="flex flex-col gap-2">
                               <input
                                 type="text"
@@ -8718,11 +8819,11 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDelete(m.ownerId || m.id, m.name)}
-                                    disabled={deletingId === (m.ownerId || m.id)}
+                                    onClick={() => handleDelete(memberId, m.name)}
+                                    disabled={deletingId === memberId}
                                     className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                                   >
-                                    {deletingId === (m.ownerId || m.id) ? "削除中…" : "削除"}
+                                    {deletingId === memberId ? "削除中…" : "削除"}
                                   </button>
                                 </div>
                               </div>
@@ -8840,8 +8941,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                   return ids.includes(team.id);
                                 })
-                                .map((m) => (
-                                  <span key={m.ownerId || m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                                .map((m: any) => (
+                                  <span key={m.ownerId ?? m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                                     {m.name}
                                   </span>
                                 ))}
@@ -10958,7 +11059,7 @@ const AUTO_IMPORT_STORAGE_KEY = "board-system:taskboard:autoImport";
 function getStoredAutoImport(): boolean {
   if (typeof window === "undefined") return true;
   const stored = window.localStorage.getItem(AUTO_IMPORT_STORAGE_KEY);
-  if (stored === null) return true; // 未設定時はON（バックグラウンドで実行）
+  if (stored === null) return true; // 未設定時はON
   return stored === "true";
 }
 
@@ -10988,7 +11089,7 @@ export default function TaskBoardPage() {
   const { members: personalMembers } = usePersonalMembers();
   const [teams, setTeams] = useState<Team[]>([]);
 
-  // 初回マウント時に localStorage から復元（デフォルトはON）
+  // 初回マウント時に localStorage から復元
   useEffect(() => {
     setAutoImportEnabledState(getStoredAutoImport());
   }, []);
@@ -11069,7 +11170,7 @@ export default function TaskBoardPage() {
     return () => window.removeEventListener("task-import-request", handler);
   }, [handleImportFromPostit]);
 
-  // 自動取り込み（ON 時に1回実行し、以降5分ごと）
+  // 自動取り込み（5分ごと）
   useEffect(() => {
     if (!autoImportEnabled) return;
     const runImport = async () => {
@@ -11089,10 +11190,10 @@ export default function TaskBoardPage() {
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch {
-        // 自動取り込みは失敗しても静かにスキップ
+        // silent
       }
     };
-    runImport(); // 有効化直後に1回
+    runImport();
     const interval = setInterval(runImport, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [autoImportEnabled, fetchTask]);
@@ -11143,7 +11244,6 @@ export default function TaskBoardPage() {
     [fetchTask]
   );
 
-  // 期限変更ハンドラー
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
       await api.stickyNotes.update(noteId, {
@@ -11223,54 +11323,61 @@ export default function TaskBoardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      {/* メニューバー・ゴミ箱・パーソナルへコピーはスクロールについてくる */}
-      <div className="sticky top-[52px] z-10 -mx-4 border-b border-[var(--border)] bg-white px-4 py-3 shadow-sm">
+      {/* メニューバー・ゴミ箱・コピー先（アコーディオンなし・コンパクト全表示） */}
+      <div className="sticky top-[52px] z-10 -mx-4 mb-4 rounded-b-xl border-b border-[var(--border)] bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur-sm">
         {(importing || importMessage) && (
-          <div className="mb-2 text-sm text-zinc-500">
+          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1 rounded-md border border-amber-200">
             {importing ? "取り込み中…" : importMessage}
           </div>
         )}
-        <div className="mb-2 items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => handleImportFromPostit()}
-            disabled={importing}
-            className="shrink-0 rounded-xl px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            style={{ background: "var(--primary)" }}
-          >
-            付箋ボードから取り込む
-          </button>
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
-            <input
-              type="checkbox"
-              checked={autoImportEnabled}
-              onChange={(e) => setAutoImportEnabled(e.target.checked)}
-              className="rounded border-[var(--border)]"
-            />
-            <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）※オフにするときだけチェックを外してください</span>
-          </label>
+        <div className="flex flex-col gap-2 text-xs">
+          {/* 1行目: アクション・設定・ゴミ箱 */}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => handleImportFromPostit()}
+              disabled={importing}
+              className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 shadow-sm"
+              style={{ background: "var(--primary)" }}
+            >
+              付箋ボードから取り込む
+            </button>
 
-        </div>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-zinc-500">ゴミ箱</span>
-          <TrashDropZone onDrop={handleTrashDrop} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <span className="text-sm text-zinc-500">パーソナルボードへコピー（付箋をメンバーにドロップ）</span>
-          <div className="flex flex-wrap gap-2">
-            {personalMembers.map(({ ownerId, name }) => (
-              <MemberDropZone
-                key={ownerId}
-                name={name}
-                onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
+            <label className="flex cursor-pointer items-center gap-1.5 text-zinc-600 select-none">
+              <input
+                type="checkbox"
+                checked={autoImportEnabled}
+                onChange={(e) => setAutoImportEnabled(e.target.checked)}
+                className="rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
               />
-            ))}
+              <span>自動で取り込む（5分ごと・AI判定）</span>
+            </label>
+
+            <div className="h-3.5 w-px bg-zinc-200 mx-1 hidden sm:block" />
+
+            <TrashDropZone onDrop={handleTrashDrop} />
           </div>
+
+          {/* 2行目: パーソナルコピー */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-zinc-500 shrink-0">パーソナルコピー:</span>
+            <div className="flex flex-wrap gap-1">
+              {personalMembers.map(({ ownerId, name }) => (
+                <MemberDropZone
+                  key={ownerId}
+                  name={name}
+                  onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 3行目: チームコピー */}
           {teams.length > 0 && (
-            <>
-              <span className="text-sm text-zinc-500 mt-1">チームへ一括コピー（付箋をチームにドロップ）</span>
-              <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium text-zinc-500 shrink-0">チーム一括コピー:</span>
+              <div className="flex flex-wrap gap-1">
                 {teams.map((team) => (
                   <TeamDropZone
                     key={team.id}
@@ -11279,22 +11386,24 @@ export default function TaskBoardPage() {
                   />
                 ))}
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {COLUMNS.map(({ id, title, targetQ, droppable }) => (
-          <ColumnDropZone
-            key={id}
-            title={title}
-            placements={byColumn[id] ?? []}
-            onDrop={droppable && targetQ !== null ? (placementId) => handleDrop(placementId, targetQ) : undefined}
+      {/* タスクボード4列 */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {COLUMNS.map((col) => (
+          <Column
+            key={col.id}
+            title={col.title}
+            placements={byColumn[col.id] || []}
+            droppable={col.droppable}
+            targetQ={col.targetQ}
+            onDrop={handleDrop}
             onRefresh={fetchTask}
             onAppendContent={handleAppendContent}
             onDueDateChange={handleDueDateChange}
-            droppable={droppable}
           />
         ))}
       </div>
@@ -11314,43 +11423,34 @@ function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setOver(false);
-    const noteId = e.dataTransfer.getData("noteId");
+    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
     if (noteId) onDrop(Number(noteId));
   };
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
+      className={`flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs transition-colors cursor-pointer ${over ? "border-red-500 bg-red-50 text-red-700" : "border-zinc-300 bg-zinc-50 text-zinc-600"
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <span className="text-lg">🗑️</span>
-      <span>ゴミ箱</span>
+      <span>🗑️ ゴミ箱</span>
     </div>
   );
 }
 
-function MemberDropZone({
-  name,
-  onDrop,
-}: {
-  name: string;
-  onDrop: (noteId: number) => void;
-}) {
+function MemberDropZone({ name, onDrop }: { name: string; onDrop: (noteId: number) => void }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = "copy";
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setOver(false);
     const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
     if (noteId) onDrop(Number(noteId));
@@ -11358,7 +11458,7 @@ function MemberDropZone({
 
   return (
     <div
-      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
+      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-[var(--primary)] bg-green-50 text-[var(--primary)]" : "border-zinc-300 bg-zinc-50 text-zinc-700"
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -11369,25 +11469,17 @@ function MemberDropZone({
   );
 }
 
-function TeamDropZone({
-  team,
-  onDrop,
-}: {
-  team: { id: number; name: string; member_count: number };
-  onDrop: (noteId: number) => void;
-}) {
+function TeamDropZone({ team, onDrop }: { team: Team; onDrop: (noteId: number) => void }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = "copy";
     setOver(true);
   };
   const handleDragLeave = () => setOver(false);
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setOver(false);
     const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
     if (noteId) onDrop(Number(noteId));
@@ -11395,58 +11487,58 @@ function TeamDropZone({
 
   return (
     <div
-      className={`min-w-[90px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 ${over
-        ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-        : "border-indigo-200 bg-indigo-50/50 text-indigo-600"
+      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-indigo-200 bg-indigo-50/50 text-indigo-800"
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <span>👥</span>
-      <span className="font-medium">{team.name}</span>
-      <span className="text-xs opacity-60">({team.member_count}名)</span>
+      👥 {team.name} <span className="text-[10px] opacity-75">({team.member_count}名)</span>
     </div>
   );
 }
 
-function ColumnDropZone({
+function Column({
   title,
   placements,
+  droppable,
+  targetQ,
   onDrop,
   onRefresh,
   onAppendContent,
   onDueDateChange,
-  droppable = true,
 }: {
   title: string;
   placements: PlacementWithNote[];
-  onDrop?: (placementId: number) => void;
+  droppable: boolean;
+  targetQ: number | null;
+  onDrop: (placementId: number, targetQ: number) => void;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
   onDueDateChange?: (noteId: number, dueDateStr: string) => void;
-  droppable?: boolean;
 }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!droppable || !onDrop) return;
+    if (!droppable) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
+
   const handleDragLeave = () => setOver(false);
-  const handleDrop = async (e: React.DragEvent) => {
-    if (!droppable || !onDrop) return;
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!droppable || targetQ == null) return;
     e.preventDefault();
     setOver(false);
     const id = e.dataTransfer.getData("placementId");
-    if (id) await Promise.resolve(onDrop(Number(id)));
+    if (id) onDrop(Number(id), targetQ);
   };
 
   return (
     <div
-      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : ""
+      className={`rounded-xl border-2 border-dashed p-4 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : "border-[var(--border)] bg-white"
         }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -11459,7 +11551,6 @@ function ColumnDropZone({
             key={p.id}
             placement={p}
             draggable
-            cardColor={p.task_color}
             takenBy={p.taken_by}
             onAppendContent={onAppendContent}
             onDueDateChange={onDueDateChange}
@@ -11504,6 +11595,7 @@ body {
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Nav from "./components/Nav";
 import AdminAuthModal from "./components/AdminAuthModal";
 
 const geistSans = Geist({
@@ -11534,6 +11626,7 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <Nav />
         {children}
         <AdminAuthModal />
       </body>
@@ -11597,7 +11690,8 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
   });
 
-  if (res.status === 401) {
+  // ログインエンドポイント以外の 401 エラーのみ「セッション切れ」イベントを発火する
+  if (res.status === 401 && !path.startsWith("/admin/login")) {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("admin_token");
       window.dispatchEvent(new Event("auth-unauthorized"));
@@ -11893,7 +11987,7 @@ export interface User {
 export interface Team {
   id: number;
   name: string;
-  member_count?: number;
+  member_count: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -12986,6 +13080,8 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-production-12345}
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS: ${OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS:-600}
@@ -12998,6 +13094,9 @@ services:
       OLLAMA_MODEL_3: ${OLLAMA_MODEL_3:-}
       # GEMINI_API_KEY: ${GEMINI_API_KEY}
       # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
       POSTIT_BOARD_URL: http://sticky-note:3000
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-default-insecure-key-32-bytes-long!}
     depends_on:

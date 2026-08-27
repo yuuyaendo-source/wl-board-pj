@@ -44,6 +44,8 @@ services:
       # Dockerfile の COPY . . でイメージにも焼かれるが、mount が上書きするので
       # ホスト側が常に最新として参照される。
       - ./backend/desktop_app_releases:/app/desktop_app_releases
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - linko-net
     restart: always
@@ -53,7 +55,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wlboardsys.internal.wonder-link.com/api/bs}
-        NEXT_PUBLIC_BASE_PATH: "/boards"
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/boards}
         NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
     container_name: linko-frontend-${COLOR}
     ports:
@@ -69,15 +71,15 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        NEXT_PUBLIC_BASE_PATH: "/board"
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
-      BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wlboardsys.internal.wonder-link.com/boards
+      BOARD_SYSTEM_API_URL: ${BOARD_SYSTEM_API_URL:-https://host.docker.internal/api/bs}
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: ${NEXT_PUBLIC_BOARD_SYSTEM_URL:-https://wlboardsys.internal.wonder-link.com/boards}
       DATA_DIR: /app/data
     volumes:
       # blue/green で同じボリュームを共有し、デプロイ切り替えで付箋が消えないようにする
