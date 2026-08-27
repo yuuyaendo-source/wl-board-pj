@@ -10,7 +10,6 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 
-// 開発: localhost / 本番: wlboardsys.internal.wonder-link.com または 172.16.1.203（同一オリジンなら空でOK）
 const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
@@ -27,9 +26,10 @@ export default function BoardPage() {
     const boardId = params?.id;
     const [notes, setNotes] = useState([]);
     const [lines, setLines] = useState([]);
-    const [color, setColor] = useState("#ffeb3b"); // デフォルト色（黄色）
+    const [color, setColor] = useState("#ffeb3b");
     const [isConnected, setIsConnected] = useState(false);
     const [scale, setScale] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 }); // Transform座標系
     const [title, setTitle] = useState("");
     const [showCommentPanel, setShowCommentPanel] = useState(false);
     const [hideGrayNotes, setHideGrayNotes] = useState(false);
@@ -38,7 +38,6 @@ export default function BoardPage() {
     const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [participants, setParticipants] = useState([]);
 
-    // 複数選択・パン移動関連ステート
     const [selectedNoteIds, setSelectedNoteIds] = useState([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     const [isDraggingBoard, setIsDraggingBoard] = useState(false);
@@ -46,18 +45,15 @@ export default function BoardPage() {
 
     const boardContainerRef = useRef(null);
     const canvasOuterRef = useRef(null);
-    const canvasRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
 
     const dragStart = useRef({ x: 0, y: 0 });
-    const scrollStart = useRef({ left: 0, top: 0 });
     const isBoxSelecting = useRef(false);
     const selectionStartPos = useRef({ x: 0, y: 0 });
     const initialSelectedIds = useRef([]);
 
-    // Spaceキーの押下監視（テキスト入力エリアでのスクロール防止 & 干渉ガード）
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.code === 'Space') {
@@ -86,7 +82,6 @@ export default function BoardPage() {
     useEffect(() => {
         if (!boardId) return;
 
-        // ユーザー名が保存されているか確認
         const savedUsername = localStorage.getItem('wl-sticky-note-username');
         if (savedUsername) {
             setUsername(savedUsername);
@@ -94,7 +89,6 @@ export default function BoardPage() {
             setShowUserDialog(true);
         }
 
-        // Socket.io接続の初期化（再接続オプション付き）
         socket = io({
             reconnection: true,
             reconnectionDelay: 1000,
@@ -107,7 +101,6 @@ export default function BoardPage() {
             setIsConnected(true);
             socket.emit("join-board", boardId);
 
-            // ユーザー名が設定されていれば送信
             const currentUsername = localStorage.getItem('wl-sticky-note-username');
             if (currentUsername) {
                 socket.emit("user-join", { boardId, username: currentUsername });
@@ -127,16 +120,11 @@ export default function BoardPage() {
         socket.on("note-added", (note) => {
             setNotes((prev) => {
                 if (prev.some(n => n.id === note.id)) return prev;
-                // AI生成付箋は現在のビューポート中央付近に配置
                 let placed = note;
-                if (note.author === "AI" && boardContainerRef.current && canvasRef.current) {
+                if (note.author === "AI" && boardContainerRef.current) {
                     const container = boardContainerRef.current;
-                    const canvasRect = canvasRef.current.getBoundingClientRect();
-                    const containerRect = container.getBoundingClientRect();
-                    const screenCenterX = containerRect.left + containerRect.width / 2;
-                    const screenCenterY = containerRect.top + containerRect.height / 2;
-                    const cx = (screenCenterX - canvasRect.left) / scale - 100;
-                    const cy = (screenCenterY - canvasRect.top) / scale - 100;
+                    const cx = (container.clientWidth / 2 - pan.x) / scale - 100;
+                    const cy = (container.clientHeight / 2 - pan.y) / scale - 100;
                     placed = { ...note, x: cx, y: cy };
                     socket.emit("update-note", { boardId, note: placed });
                 }
@@ -159,7 +147,6 @@ export default function BoardPage() {
             setLines((prev) => [...prev, line]);
         });
 
-        // ボード全削除時のイベント（サーバーからの通知）
         socket.on("board-cleared", () => {
             console.log("Board cleared by server.");
             setNotes([]);
@@ -167,7 +154,6 @@ export default function BoardPage() {
             setSelectedNoteIds([]);
         });
 
-        // ユーザーイベント
         socket.on("users-list", (usersList) => {
             setParticipants(usersList);
         });
@@ -199,86 +185,58 @@ export default function BoardPage() {
             socket.off("disconnect");
             socket.disconnect();
         };
-    }, [boardId, scale]);
+    }, [boardId, scale, pan]);
 
-    // ボードの絶対中心 (2000, 2000) を画面中央に正確にスクロール合わせする処理
-    const scrollToCenter = useCallback((smooth = false) => {
+    // ボードの中心 (2000, 2000) をビューポート中央に固定配置
+    const scrollToCenter = useCallback(() => {
         const container = boardContainerRef.current;
-        const canvasOuter = canvasOuterRef.current;
-        if (!container || !canvasOuter) return;
+        if (!container) return;
 
-        const outerWidth = canvasOuter.offsetWidth;
-        const outerHeight = canvasOuter.offsetHeight;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
 
-        const scrollX = outerWidth / 2 - container.clientWidth / 2;
-        const scrollY = outerHeight / 2 - container.clientHeight / 2;
-
-        container.scrollTo({
-            left: Math.max(0, scrollX),
-            top: Math.max(0, scrollY),
-            behavior: smooth ? 'smooth' : 'auto'
+        setPan({
+            x: w / 2 - 2000 * scale,
+            y: h / 2 - 2000 * scale
         });
+    }, [scale]);
+
+    useEffect(() => {
+        scrollToCenter();
     }, []);
 
-    // 初期ロード時に中央へスクロール
-    useEffect(() => {
-        setTimeout(() => {
-            scrollToCenter(false);
-        }, 100);
-    }, [scrollToCenter]);
-
     const handleCenter = () => {
-        scrollToCenter(true);
+        scrollToCenter();
     };
 
+    // マウスカーソルを中心としたスムーズズーム
     useEffect(() => {
         const container = boardContainerRef.current;
         if (!container) return;
 
         const handleWheel = (e) => {
-            // テキスト入力エリア・モーダル・スクロール可能エリアでのスクロール時はズームを除外
             if (e.target.closest('textarea, input, select, [data-scrollable="true"]')) {
                 return;
             }
 
             e.preventDefault();
-
-            // deltaY に応じた連続的なスムーズズーム計算（トラックパッド・マウス双方に対応）
             const zoomFactor = Math.exp(-e.deltaY * 0.0015);
+
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
             setScale((prevScale) => {
                 const newScale = Math.min(Math.max(MIN_SCALE, prevScale * zoomFactor), MAX_SCALE);
                 if (Math.abs(newScale - prevScale) < 0.001) return prevScale;
 
-                const canvas = canvasRef.current;
-                if (!canvas) return newScale;
-
-                const mouseClientX = e.clientX;
-                const mouseClientY = e.clientY;
-                const canvasRect = canvas.getBoundingClientRect();
-
-                // マウス位置のキャンバスローカル座標 (0〜4000)
-                const canvasX = (mouseClientX - canvasRect.left) / prevScale;
-                const canvasY = (mouseClientY - canvasRect.top) / prevScale;
-
-                // 新スケール適用後のスクロール位置を計算・適用
-                requestAnimationFrame(() => {
-                    const newContainer = boardContainerRef.current;
-                    const newCanvasOuter = canvasOuterRef.current;
-                    if (!newContainer || !newCanvasOuter) return;
-
-                    const newOuterW = Math.max(newContainer.clientWidth, 4000 * newScale);
-                    const newOuterH = Math.max(newContainer.clientHeight, 4000 * newScale);
-
-                    const mouseInOuterX = newOuterW / 2 + (canvasX - 2000) * newScale;
-                    const mouseInOuterY = newOuterH / 2 + (canvasY - 2000) * newScale;
-
-                    const containerRect = newContainer.getBoundingClientRect();
-                    const mouseInContainerX = mouseClientX - containerRect.left;
-                    const mouseInContainerY = mouseClientY - containerRect.top;
-
-                    newContainer.scrollLeft = mouseInOuterX - mouseInContainerX;
-                    newContainer.scrollTop = mouseInOuterY - mouseInContainerY;
+                setPan((prevPan) => {
+                    const boardX = (mouseX - prevPan.x) / prevScale;
+                    const boardY = (mouseY - prevPan.y) / prevScale;
+                    return {
+                        x: mouseX - boardX * newScale,
+                        y: mouseY - boardY * newScale
+                    };
                 });
 
                 return newScale;
@@ -291,12 +249,36 @@ export default function BoardPage() {
         };
     }, []);
 
+    // ツールバーのズームボタン変更時（画面中央基準で拡大縮小）
+    const handleSetScale = (newScaleOrFn) => {
+        const container = boardContainerRef.current;
+        if (!container) return;
+
+        const cx = container.clientWidth / 2;
+        const cy = container.clientHeight / 2;
+
+        setScale((prevScale) => {
+            const nextScale = typeof newScaleOrFn === 'function' ? newScaleOrFn(prevScale) : newScaleOrFn;
+            const targetScale = Math.min(Math.max(MIN_SCALE, nextScale), MAX_SCALE);
+
+            setPan((prevPan) => {
+                const boardX = (cx - prevPan.x) / prevScale;
+                const boardY = (cy - prevPan.y) / prevScale;
+                return {
+                    x: cx - boardX * targetScale,
+                    y: cy - boardY * targetScale
+                };
+            });
+
+            return targetScale;
+        });
+    };
+
     const handleUserSubmit = (newUsername) => {
         setUsername(newUsername);
         localStorage.setItem('wl-sticky-note-username', newUsername);
         setShowUserDialog(false);
 
-        // ユーザー参加イベントを送信
         if (socket && socket.connected) {
             socket.emit("user-join", { boardId, username: newUsername });
         }
@@ -307,23 +289,16 @@ export default function BoardPage() {
         const random = Math.random().toString(36).substr(2, 9);
 
         const container = boardContainerRef.current;
-        const canvas = canvasRef.current;
-        if (!container || !canvas) return;
+        if (!container) return;
 
-        const containerRect = container.getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-
-        const screenCenterX = containerRect.left + containerRect.width / 2;
-        const screenCenterY = containerRect.top + containerRect.height / 2;
-
-        const noteX = (screenCenterX - canvasRect.left) / scale - 100 + (Math.random() * 20 - 10);
-        const noteY = (screenCenterY - canvasRect.top) / scale - 100 + (Math.random() * 20 - 10);
+        const cx = (container.clientWidth / 2 - pan.x) / scale - 100 + (Math.random() * 20 - 10);
+        const cy = (container.clientHeight / 2 - pan.y) / scale - 100 + (Math.random() * 20 - 10);
 
         const newNote = {
             id: `${timestamp}-${random}`,
             text: initialText,
-            x: noteX,
-            y: noteY,
+            x: cx,
+            y: cy,
             color: color,
             dueDate: dueDate || null,
             pinned: false,
@@ -371,15 +346,12 @@ export default function BoardPage() {
             }
         }
 
-        // ゴミ箱からの復元ロジック（論理削除からの回復）
         if (originalNote && originalNote.groupId === 'trash') {
             const isMoved = updatedNote.x !== originalNote.x || updatedNote.y !== originalNote.y;
             const isColorChanged = updatedNote.color !== TRASH_COLOR;
 
             if (isMoved || isColorChanged) {
-                // 移動または色変更でゴミ箱から復元
                 updatedNote.groupId = null;
-                // 色が変更された場合は updatedNote.color に反映済み
             }
         }
 
@@ -390,7 +362,6 @@ export default function BoardPage() {
             });
         });
 
-        // デバウンス: 100ms更新がない場合のみサーバーに送信
         if (updateTimeout.current) {
             clearTimeout(updateTimeout.current);
         }
@@ -402,7 +373,6 @@ export default function BoardPage() {
         }, 100);
     }, [boardId]);
 
-    // 複数選択された付箋の一括移動ハンドラー（ピン留め除外・通信スロットル制御）
     const handleMoveSelectedNotes = useCallback((draggedNoteId, dx, dy) => {
         const currentNotes = notesRef.current;
         const isTargetSelected = selectedNoteIds.includes(draggedNoteId);
@@ -449,7 +419,6 @@ export default function BoardPage() {
     };
 
     const deleteNote = (noteId) => {
-        // ボードから付箋を削除（右下への移動ではなく削除）
         setNotes((prev) => prev.filter((n) => n.id !== noteId));
         setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
         socket.emit("delete-note", { boardId, noteId });
@@ -486,7 +455,6 @@ export default function BoardPage() {
                 if (boardData.notes) setNotes(boardData.notes);
                 if (boardData.lines) setLines(boardData.lines);
 
-                // サーバーに送信して他クライアントと同期
                 boardData.notes?.forEach(note => {
                     socket.emit("add-note", { boardId, note });
                 });
@@ -506,60 +474,45 @@ export default function BoardPage() {
         }
         setSelectedNoteIds([note.id]);
         const container = boardContainerRef.current;
-        const canvasOuter = canvasOuterRef.current;
-        if (container && canvasOuter) {
+        if (container) {
             const isLarge = note.ratioW && note.ratioW >= 0.2;
             const noteW = isLarge ? 320 : 200;
             const noteH = isLarge ? 320 : 200;
 
-            // 最大拡大率に設定
             const targetScale = MAX_SCALE;
             setScale(targetScale);
 
-            requestAnimationFrame(() => {
-                const outerW = Math.max(container.clientWidth, 4000 * targetScale);
-                const outerH = Math.max(container.clientHeight, 4000 * targetScale);
+            const noteCenterX = note.x + noteW / 2;
+            const noteCenterY = note.y + noteH / 2;
 
-                const noteCenterX = note.x + noteW / 2;
-                const noteCenterY = note.y + noteH / 2;
+            const cx = container.clientWidth / 2;
+            const cy = container.clientHeight / 2;
 
-                const noteInOuterX = outerW / 2 + (noteCenterX - 2000) * targetScale;
-                const noteInOuterY = outerH / 2 + (noteCenterY - 2000) * targetScale;
-
-                const targetLeft = noteInOuterX - container.clientWidth / 2;
-                const targetTop = noteInOuterY - container.clientHeight / 2;
-
-                container.scrollTo({
-                    left: Math.max(0, targetLeft),
-                    top: Math.max(0, targetTop),
-                    behavior: 'smooth'
-                });
+            setPan({
+                x: cx - noteCenterX * targetScale,
+                y: cy - noteCenterY * targetScale
             });
 
-            // ハイライト効果
             setTimeout(() => {
                 const noteElement = document.querySelector(`[data-note-id="${note.id}"]`);
                 if (noteElement) {
                     noteElement.style.animation = 'highlight 1s';
                     setTimeout(() => noteElement.style.animation = '', 1000);
                 }
-            }, 500);
+            }, 300);
         }
     };
 
     const handleGroupNotes = (noteIds) => {
         const groupId = `group-${Date.now()}`;
 
-        // 選択された付箋の中心位置を計算
         const selectedNotes = notes.filter(n => noteIds.includes(n.id));
         if (selectedNotes.length === 0) return;
 
         const centerX = selectedNotes.reduce((sum, n) => sum + n.x, 0) / selectedNotes.length;
         const centerY = selectedNotes.reduce((sum, n) => sum + n.y, 0) / selectedNotes.length;
 
-        // 山積みに配置（少しずらす）
         const updatedNotes = selectedNotes.map((note, index) => {
-            // 雑多な感じを出すために少しオフセット
             const offset = index * 10;
             const totalOffset = (selectedNotes.length - 1) * 10 / 2;
 
@@ -581,7 +534,6 @@ export default function BoardPage() {
             })
         );
 
-        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -606,7 +558,6 @@ export default function BoardPage() {
             })
         );
 
-        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -614,14 +565,12 @@ export default function BoardPage() {
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
     };
 
-    // ボード全削除処理
     const handleClearAllNotes = async () => {
         if (!boardId) return;
         const confirmed = window.confirm("本当にこのボード上のすべての付箋と線を削除しますか？この操作は取り消せません。");
         if (!confirmed) return;
 
         try {
-            // REST API経由でサーバーに削除を依頼
             const response = await fetch(`/api/boards/${boardId}/clear`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -630,7 +579,6 @@ export default function BoardPage() {
             const data = await response.json();
             if (response.ok && data.success) {
                 console.log(data.message);
-                // 念のためローカル状態も即時クリア
                 setNotes([]);
                 setLines([]);
                 setSelectedNoteIds([]);
@@ -645,31 +593,27 @@ export default function BoardPage() {
     };
 
     const getCanvasCoords = (e) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return { x: 0, y: 0 };
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / scale;
-        const y = (e.clientY - rect.top) / scale;
+        const container = boardContainerRef.current;
+        if (!container) return { x: 0, y: 0 };
+        const rect = container.getBoundingClientRect();
+        const x = (e.clientX - rect.left - pan.x) / scale;
+        const y = (e.clientY - rect.top - pan.y) / scale;
         return { x, y };
     };
 
     const handleMouseDown = (e) => {
-        // コンテナまたはキャンバスを直接クリックした場合のみドラッグ（付箋以外）
-        // data属性を使って付箋内かどうか判定
         const isClickingNote = e.target.closest('[data-sticky-note]');
 
-        // 1. パン移動開始: 中ボタン(button===1) または Spaceキー押下(button===0 && isSpacePressed)
         if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
             e.preventDefault();
             setIsDraggingBoard(true);
             dragStart.current = { x: e.clientX, y: e.clientY };
-            const container = boardContainerRef.current;
-            scrollStart.current = { left: container.scrollLeft, top: container.scrollTop };
-            container.style.cursor = 'grabbing';
+            if (boardContainerRef.current) {
+                boardContainerRef.current.style.cursor = 'grabbing';
+            }
             return;
         }
 
-        // 2. 範囲選択開始: 付箋以外をクリック & 通常左ボタン(button===0) & !isSpacePressed
         if (!isClickingNote && e.button === 0) {
             const coords = getCanvasCoords(e);
             isBoxSelecting.current = true;
@@ -689,11 +633,11 @@ export default function BoardPage() {
     const handleMouseMove = (e) => {
         if (isDraggingBoard) {
             e.preventDefault();
-            const container = boardContainerRef.current;
             const dx = e.clientX - dragStart.current.x;
             const dy = e.clientY - dragStart.current.y;
-            container.scrollLeft = scrollStart.current.left - dx;
-            container.scrollTop = scrollStart.current.top - dy;
+            dragStart.current = { x: e.clientX, y: e.clientY };
+
+            setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
             return;
         }
 
@@ -804,7 +748,7 @@ export default function BoardPage() {
                 color={color}
                 setColor={setColor}
                 scale={scale}
-                setScale={setScale}
+                setScale={handleSetScale}
                 onDownload={handleDownload}
                 onUpload={handleUpload}
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
@@ -817,13 +761,12 @@ export default function BoardPage() {
             <div className={styles.canvasWrapper}>
                 <BoardCanvas
                     canvasOuterRef={canvasOuterRef}
-                    canvasRef={canvasRef}
                     notes={visibleNotes}
                     lines={lines}
                     onUpdateNote={updateNote}
                     onDeleteNote={deleteNote}
-                    onAddLine={addLine}
                     scale={scale}
+                    pan={pan}
                     selectedNoteIds={selectedNoteIds}
                     onSelectNote={handleSelectNote}
                     onMoveSelectedNotes={handleMoveSelectedNotes}

@@ -3,13 +3,12 @@ import StickyNote from "./StickyNote";
 
 export default function BoardCanvas({
     canvasOuterRef,
-    canvasRef,
     notes,
     lines,
     onUpdateNote,
     onDeleteNote,
-    onAddLine,
     scale,
+    pan,
     selectedNoteIds = [],
     onSelectNote,
     onMoveSelectedNotes,
@@ -19,7 +18,6 @@ export default function BoardCanvas({
     const baseWidth = 4000;
     const baseHeight = 4000;
 
-    // 範囲選択ボックス（正規化計算）
     let boxStyle = null;
     if (selectionBox) {
         const left = Math.min(selectionBox.startX, selectionBox.currentX);
@@ -35,31 +33,15 @@ export default function BoardCanvas({
         };
     }
 
-    const scaledWidth = baseWidth * scale;
-    const scaledHeight = baseHeight * scale;
-
     return (
-        /* 外側ラッパー：キャンバスが全方位に拡大してもスクロール域を正しく確保 */
-        <div
-            ref={canvasOuterRef}
-            className={styles.canvasOuter}
-            style={{
-                width: `max(100%, ${scaledWidth}px)`,
-                height: `max(calc(100vh - 60px), ${scaledHeight}px)`,
-                flexShrink: 0,
-            }}
-        >
-            {/* 内側キャンバス：中心(2000, 2000)を基準に全方位へ拡大縮小 */}
+        <div ref={canvasOuterRef} className={styles.canvasOuter}>
             <div
-                ref={canvasRef}
                 className={styles.canvas}
                 style={{
                     width: `${baseWidth}px`,
                     height: `${baseHeight}px`,
-                    left: `calc(50% - ${baseWidth / 2}px)`,
-                    top: `calc(50% - ${baseHeight / 2}px)`,
-                    transform: `scale(${scale})`,
-                    transformOrigin: "center center",
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+                    transformOrigin: "0 0",
                 }}
             >
                 <svg className={styles.svgLayer}>
