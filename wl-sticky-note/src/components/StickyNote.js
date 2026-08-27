@@ -50,6 +50,10 @@ export default function StickyNote({
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e);
         if (e.defaultPrevented || e.altKey) return;
+
+        // 左クリック(e.button === 0)以外（ホイール押し込み等）は付箋の選択・移動を行わず、親のボード移動へ透過させる
+        if (e.button !== 0) return;
+
         if (note.pinned) return;
 
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
