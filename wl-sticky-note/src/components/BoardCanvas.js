@@ -13,7 +13,8 @@ export default function BoardCanvas({
     selectedNoteIds = [],
     onSelectNote,
     onMoveSelectedNotes,
-    selectionBox
+    selectionBox,
+    isSpacePressed
 }) {
     const baseWidth = 4000;
     const baseHeight = 4000;
@@ -38,7 +39,7 @@ export default function BoardCanvas({
     const scaledHeight = baseHeight * scale;
 
     return (
-        /* 外側ラッパー：flexShrink: 0 で横幅の潰れを防止 */
+        /* 外側ラッパー：キャンバスが全方位に拡大してもスクロール域を正しく確保 */
         <div
             ref={canvasOuterRef}
             className={styles.canvasOuter}
@@ -89,6 +90,7 @@ export default function BoardCanvas({
                         isSelected={selectedNoteIds.includes(note.id)}
                         onSelect={onSelectNote}
                         onMoveSelectedNotes={onMoveSelectedNotes}
+                        isSpacePressed={isSpacePressed}
                     />
                 ))}
             </div>

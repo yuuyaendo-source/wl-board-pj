@@ -828,6 +828,7 @@ export default function BoardPage() {
                     onSelectNote={handleSelectNote}
                     onMoveSelectedNotes={handleMoveSelectedNotes}
                     selectionBox={selectionBox}
+                    isSpacePressed={isSpacePressed}
                 />
             </div>
 

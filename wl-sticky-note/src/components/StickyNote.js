@@ -27,7 +27,8 @@ export default function StickyNote({
     onSelect,
     onMoveSelectedNotes,
     onMouseDown,
-    onMouseUp
+    onMouseUp,
+    isSpacePressed
 }) {
     const [isDragging, setIsDragging] = useState(false);
     const [appendText, setAppendText] = useState("");
@@ -51,9 +52,13 @@ export default function StickyNote({
         if (onMouseDown) onMouseDown(e);
         if (e.defaultPrevented || e.altKey) return;
 
-        // 左クリック(e.button === 0)以外（ホイール押し込み等）は付箋の選択・移動を行わず、親のボード移動へ透過させる
-        if (e.button !== 0) return;
+        // 中ボタン(button===1) または Spaceキー押下(button===0 && isSpacePressed) の場合は、
+        // 付箋の選択・移動を行わず親要素（ボード）のパン移動へ透過させる
+        if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
+            return;
+        }
 
+        if (e.button !== 0) return;
         if (note.pinned) return;
 
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
@@ -70,7 +75,7 @@ export default function StickyNote({
     };
 
     const handleTouchStart = (e) => {
-        if (note.pinned) return;
+        if (note.pinned || isSpacePressed) return;
         if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
 
         if (onSelect) {
