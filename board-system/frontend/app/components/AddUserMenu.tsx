@@ -123,8 +123,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     });
   };
 
-  const startEdit = (m: any) => {
-    setEditingId(m.ownerId || m.id);
+  const startEdit = (m: PersonalMember | any) => {
+    const id = m.ownerId ?? m.id;
+    setEditingId(id);
     setEditName(m.name);
     setEditEmail(m.email ?? "");
     setEditCallName(m.call_name ?? "");
@@ -283,8 +284,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 type="button"
                 onClick={() => setTab("members")}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "members"
-                    ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
-                    : "text-zinc-500 hover:text-zinc-700"
+                  ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
+                  : "text-zinc-500 hover:text-zinc-700"
                   }`}
               >
                 メンバー管理
@@ -293,8 +294,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 type="button"
                 onClick={() => { setTab("teams"); fetchTeams(); }}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "teams"
-                    ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
-                    : "text-zinc-500 hover:text-zinc-700"
+                  ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
+                  : "text-zinc-500 hover:text-zinc-700"
                   }`}
               >
                 チーム管理
@@ -354,15 +355,16 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                   <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
                   <ul className="flex flex-col gap-1">
                     {members.map((m: any) => {
+                      const memberId = m.ownerId ?? m.id;
                       const userTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                       const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
 
                       return (
                         <li
-                          key={m.ownerId || m.id}
+                          key={memberId}
                           className="flex flex-col gap-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
                         >
-                          {editingId === (m.ownerId || m.id) ? (
+                          {editingId === memberId ? (
                             <form onSubmit={handleUpdate} className="flex flex-col gap-2">
                               <input
                                 type="text"
@@ -433,11 +435,11 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDelete(m.ownerId || m.id, m.name)}
-                                    disabled={deletingId === (m.ownerId || m.id)}
+                                    onClick={() => handleDelete(memberId, m.name)}
+                                    disabled={deletingId === memberId}
                                     className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                                   >
-                                    {deletingId === (m.ownerId || m.id) ? "削除中…" : "削除"}
+                                    {deletingId === memberId ? "削除中…" : "削除"}
                                   </button>
                                 </div>
                               </div>
@@ -555,8 +557,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                   return ids.includes(team.id);
                                 })
-                                .map((m) => (
-                                  <span key={m.ownerId || m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                                .map((m: any) => (
+                                  <span key={m.ownerId ?? m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                                     {m.name}
                                   </span>
                                 ))}
