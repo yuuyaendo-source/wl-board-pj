@@ -9,6 +9,8 @@ services:
     environment:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-production-12345}
       # ローカル LLM（Ollama）。未設定時は自動振り分けはスキップ
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       # 未設定で自動（Ollama のローカルモデル一覧から解決）。固定したいときだけ指定
@@ -71,7 +73,7 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
+        NEXT_PUBLIC_STICKY_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"
