@@ -12849,6 +12849,10 @@ server {
 # .env ファイルコピー用テンプレート
 # 本番: cp .env.example .env のうえで値を設定し、deploy.sh 実行時に読み込まれる
 
+# 管理者認証用設定（未設定時はデフォルト値が使用されます）
+# ADMIN_PASSWORD=admin123
+# JWT_SECRET=super-secret-key-change-in-production-12345
+
 # ローカル LLM（Ollama）。自動仕分け・マトリクススコア・日次リセットに使用。未設定時は AI はスキップ
 OLLAMA_URL=http://172.16.1.242:11435/v1
 # OLLAMA_MODEL は省略可（自動解決）。固定したいときだけ指定
@@ -12870,6 +12874,9 @@ OLLAMA_URL=http://172.16.1.242:11435/v1
 # 未設定時は docker-compose.prod.yml のデフォルト（wlboardsys.internal.wonder-link.com）が使われる
 # NEXT_PUBLIC_API_URL=https://wlboardsys.internal.wonder-link.com/api/bs
 # NEXT_PUBLIC_LEGACY_BOARD_URL=https://wlboardsys.internal.wonder-link.com
+# NEXT_PUBLIC_BASE_PATH=/boards
+# NEXT_PUBLIC_STICKY_BASE_PATH=/board
+# NEXT_PUBLIC_BOARD_SYSTEM_URL=https://wlboardsys.internal.wonder-link.com/boards
 
 # 任意: ログレベル
 # LOG_LEVEL=INFO
@@ -12879,8 +12886,13 @@ OLLAMA_URL=http://172.16.1.242:11435/v1
 # GOOGLE_CALENDAR_CLIENT_ID=xxx.apps.googleusercontent.com
 # GOOGLE_CALENDAR_CLIENT_SECRET=xxx
 # GOOGLE_CALENDAR_REDIRECT_URI=https://wlboardsys.internal.wonder-link.com/api/bs/auth/google/callback
+# CALENDAR_TIMEZONE=Asia/Tokyo
 # OAuth 成功後にパーソナルボードへ戻すパス。本番で Next basePath が /boards のときは /boards（未設定時は compose で /boards をデフォルト指定）
 # OAUTH_SUCCESS_REDIRECT_BASE=/boards
+
+# 日次スケジュール設定（8:00 run_8am, 10:00 ニュースクリア, 10:15 sync_to_morning + ニュース取得）
+# SCHEDULER_ENABLED=true
+# SCHEDULER_BASE_URL=http://127.0.0.1:8000
 
 # ※ DB は docker-compose.db.yml で定義。DATABASE_URL は backend コンテナ内で compose が指定するためここでは不要。
 # ※ Gemini は使用しない（ローカル LLM 利用のため）。
@@ -12972,6 +12984,8 @@ services:
       # Dockerfile の COPY . . でイメージにも焼かれるが、mount が上書きするので
       # ホスト側が常に最新として参照される。
       - ./backend/desktop_app_releases:/app/desktop_app_releases
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - linko-net
     restart: always
@@ -12981,7 +12995,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wlboardsys.internal.wonder-link.com/api/bs}
-        NEXT_PUBLIC_BASE_PATH: "/boards"
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-/boards}
         NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-https://wlboardsys.internal.wonder-link.com}
     container_name: linko-frontend-${COLOR}
     ports:
@@ -12997,15 +13011,15 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        NEXT_PUBLIC_BASE_PATH: "/board"
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
-      BOARD_SYSTEM_API_URL: https://host.docker.internal/api/bs
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: https://wlboardsys.internal.wonder-link.com/boards
+      BOARD_SYSTEM_API_URL: ${BOARD_SYSTEM_API_URL:-https://host.docker.internal/api/bs}
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: ${NEXT_PUBLIC_BOARD_SYSTEM_URL:-https://wlboardsys.internal.wonder-link.com/boards}
       DATA_DIR: /app/data
     volumes:
       # blue/green で同じボリュームを共有し、デプロイ切り替えで付箋が消えないようにする
@@ -13071,6 +13085,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # --- Board System Backend (FastAPI) ---
   backend:
@@ -13092,13 +13107,17 @@ services:
       OLLAMA_MODEL_1: ${OLLAMA_MODEL_1:-}
       OLLAMA_MODEL_2: ${OLLAMA_MODEL_2:-}
       OLLAMA_MODEL_3: ${OLLAMA_MODEL_3:-}
-      # GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GOOGLE_CALENDAR_CLIENT_ID: ${GOOGLE_CALENDAR_CLIENT_ID:-}
       GOOGLE_CALENDAR_CLIENT_SECRET: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
       GOOGLE_CALENDAR_REDIRECT_URI: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
+      OAUTH_SUCCESS_REDIRECT_BASE: ${OAUTH_SUCCESS_REDIRECT_BASE:-}
       POSTIT_BOARD_URL: http://sticky-note:3000
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-default-insecure-key-32-bytes-long!}
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ./backend/desktop_app_releases:/app/desktop_app_releases
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -13109,24 +13128,25 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8010
-        NEXT_PUBLIC_BASE_PATH: ""
-        NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-""}
+        NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://localhost:3011}
     container_name: linko-frontend
     ports:
       - "3010:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8010
-      NEXT_PUBLIC_LEGACY_BOARD_URL: http://localhost:3011
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      NEXT_PUBLIC_LEGACY_BOARD_URL: ${NEXT_PUBLIC_LEGACY_BOARD_URL:-http://localhost:3011}
     depends_on:
       - backend
     restart: unless-stopped
 
   # --- 付箋ボード (Next.js + Express + Socket.IO) ---
-  # 起動するには: docker compose --profile sticky up -d --build
-  # 前提: リポジトリ直下に wl-sticky-note があること（例: wlinko-pj/wl-sticky-note）
   sticky-note:
-    build: ../wl-sticky-note/src
+    build:
+      context: ../wl-sticky-note/src
+      args:
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-""}
     container_name: linko-sticky-note
     profiles:
       - sticky
@@ -13136,9 +13156,12 @@ services:
       NODE_ENV: production
       PORT: "3000"
       BOARD_SYSTEM_API_URL: http://backend:8000
-      NEXT_PUBLIC_BOARD_SYSTEM_URL: http://localhost:3010
+      NEXT_PUBLIC_BOARD_SYSTEM_URL: ${NEXT_PUBLIC_BOARD_SYSTEM_URL:-http://localhost:3010}
+      DATA_DIR: /app/data
     volumes:
       - sticky_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - backend
     restart: unless-stopped

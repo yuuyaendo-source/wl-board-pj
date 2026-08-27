@@ -93,8 +93,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       try {
         await api.users.create({
           name: trimmedName,
-          email: email.trim() || undefined,
-          call_name: callName.trim() || undefined,
+          email: email.trim(),
+          call_name: callName.trim(),
           team_ids: teamIds,
         });
         onSuccess();
@@ -146,8 +146,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       try {
         await api.users.update(editingId, {
           name: trimmedName,
-          email: editEmail.trim() || undefined,
-          call_name: editCallName.trim() || undefined,
+          email: editEmail.trim(),
+          call_name: editCallName.trim(),
           team_ids: editTeamIds,
         });
         onSuccess();
