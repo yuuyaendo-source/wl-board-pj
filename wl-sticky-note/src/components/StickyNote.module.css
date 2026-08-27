@@ -5,7 +5,7 @@
     padding: 16px;
     padding-top: 36px;
     box-shadow: 2px 4px 8px rgba(0, 0, 0, 0.2);
-    transition: transform 0.1s, border-color 0.2s;
+    transition: transform 0.1s, border-color 0.2s, box-shadow 0.2s;
     cursor: grab;
     display: flex;
     flex-direction: column;
@@ -15,9 +15,19 @@
     cursor: grabbing;
 }
 
+.note.selected {
+    outline: 3px solid #2563eb;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.6), 2px 4px 8px rgba(0, 0, 0, 0.2);
+}
+
 .note.pinned {
     cursor: default;
     box-shadow: 0 0 0 3px var(--primary, #79dc89);
+}
+
+.note.pinned.selected {
+    outline: 3px solid #2563eb;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.6);
 }
 
 /* 期限切れカードの赤枠強調 */
@@ -32,7 +42,6 @@
     box-shadow: 0 0 8px rgba(249, 115, 22, 0.4) !important;
 }
 
-/* 完了済み（Board System ゴミ箱で落とした付箋）。取り込み対象外 */
 .note.gray {
     opacity: 0.85;
     border: 1px solid #bdbdbd;
@@ -116,7 +125,6 @@
     border-color: #333;
 }
 
-/* 期限設定ポップオーバー */
 .datePickerPopover {
     position: absolute;
     top: 32px;
@@ -168,7 +176,6 @@
     background: #d1d5db;
 }
 
-/* 期限バッジ（大きさと強調） */
 .dueDateContainer {
     margin-top: 4px;
     margin-bottom: 4px;

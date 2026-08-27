@@ -10,7 +10,6 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 
-// 開発: localhost / 本番: wlboardsys.internal.wonder-link.com または 172.16.1.203（同一オリジンなら空でOK）
 const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
 const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
@@ -27,7 +26,7 @@ export default function BoardPage() {
     const boardId = params?.id;
     const [notes, setNotes] = useState([]);
     const [lines, setLines] = useState([]);
-    const [color, setColor] = useState("#ffeb3b"); // デフォルト色（黄色）
+    const [color, setColor] = useState("#ffeb3b");
     const [isConnected, setIsConnected] = useState(false);
     const [scale, setScale] = useState(1);
     const [title, setTitle] = useState("");
@@ -37,15 +36,53 @@ export default function BoardPage() {
     const [showUserDialog, setShowUserDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
     const [participants, setParticipants] = useState([]);
+
+    // 複数選択・パン移動関連ステート
+    const [selectedNoteIds, setSelectedNoteIds] = useState([]);
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const [isDraggingBoard, setIsDraggingBoard] = useState(false);
+    const [selectionBox, setSelectionBox] = useState(null); // { startX, startY, currentX, currentY, isShift }
+
     const boardContainerRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
 
+    const dragStart = useRef({ x: 0, y: 0 });
+    const scrollStart = useRef({ left: 0, top: 0 });
+    const isBoxSelecting = useRef(false);
+    const selectionStartPos = useRef({ x: 0, y: 0 });
+    const initialSelectedIds = useRef([]);
+
+    // Spaceキーの押下監視（テキスト入力中は無効化 & ブラウザスクロール防止）
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.code === 'Space') {
+                if (e.target.closest('input, textarea, select, [contenteditable="true"]')) {
+                    return;
+                }
+                e.preventDefault();
+                setIsSpacePressed(true);
+            }
+        };
+
+        const handleKeyUp = (e) => {
+            if (e.code === 'Space') {
+                setIsSpacePressed(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, []);
+
     useEffect(() => {
         if (!boardId) return;
 
-        // ユーザー名が保存されているか確認
         const savedUsername = localStorage.getItem('wl-sticky-note-username');
         if (savedUsername) {
             setUsername(savedUsername);
@@ -53,7 +90,6 @@ export default function BoardPage() {
             setShowUserDialog(true);
         }
 
-        // Socket.io接続の初期化（再接続オプション付き）
         socket = io({
             reconnection: true,
             reconnectionDelay: 1000,
@@ -66,7 +102,6 @@ export default function BoardPage() {
             setIsConnected(true);
             socket.emit("join-board", boardId);
 
-            // ユーザー名が設定されていれば送信
             const currentUsername = localStorage.getItem('wl-sticky-note-username');
             if (currentUsername) {
                 socket.emit("user-join", { boardId, username: currentUsername });
@@ -86,7 +121,6 @@ export default function BoardPage() {
         socket.on("note-added", (note) => {
             setNotes((prev) => {
                 if (prev.some(n => n.id === note.id)) return prev;
-                // AI生成付箋は現在のビューポート中央付近に配置
                 let placed = note;
                 if (note.author === "AI" && boardContainerRef.current) {
                     const el = boardContainerRef.current;
@@ -107,30 +141,22 @@ export default function BoardPage() {
 
         socket.on("note-deleted", (noteId) => {
             setNotes((prev) => prev.filter((n) => n.id !== noteId));
+            setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
         });
 
         socket.on("line-added", (line) => {
             setLines((prev) => [...prev, line]);
         });
 
-        // ボード全削除時のイベント（サーバーからの通知）
         socket.on("board-cleared", () => {
             console.log("Board cleared by server.");
             setNotes([]);
             setLines([]);
+            setSelectedNoteIds([]);
         });
 
-        // ユーザーイベント
         socket.on("users-list", (usersList) => {
             setParticipants(usersList);
-        });
-
-        socket.on("user-joined", ({ username: newUsername }) => {
-            console.log(`${newUsername} joined the board`);
-        });
-
-        socket.on("user-left", ({ username: leftUsername }) => {
-            console.log(`${leftUsername} left the board`);
         });
 
         socket.on("disconnect", () => {
@@ -147,8 +173,6 @@ export default function BoardPage() {
             socket.off("line-added");
             socket.off("board-cleared");
             socket.off("users-list");
-            socket.off("user-joined");
-            socket.off("user-left");
             socket.off("disconnect");
             socket.disconnect();
         };
@@ -158,7 +182,6 @@ export default function BoardPage() {
     useEffect(() => {
         const container = boardContainerRef.current;
         if (container) {
-            // レイアウト安定待ち
             setTimeout(() => {
                 const scrollX = (4000 - container.clientWidth) / 2;
                 const scrollY = (4000 - container.clientHeight) / 2;
@@ -180,35 +203,30 @@ export default function BoardPage() {
         }
     };
 
+    // ホイールズーム（カーソル中心）
     useEffect(() => {
         const container = boardContainerRef.current;
         if (!container) return;
 
         const handleWheel = (e) => {
-            // テキスト入力エリア・モーダル・スクロール可能エリアでのスクロール時はズームを除外
             if (e.target.closest('textarea, input, select, [data-scrollable="true"]')) {
                 return;
             }
 
             e.preventDefault();
-
-            // deltaY に応じた連続的なスムーズズーム計算（トラックパッド・マウス双方に対応）
             const zoomFactor = Math.exp(-e.deltaY * 0.0015);
 
             setScale((prevScale) => {
                 const newScale = Math.min(Math.max(MIN_SCALE, prevScale * zoomFactor), MAX_SCALE);
                 if (Math.abs(newScale - prevScale) < 0.001) return prevScale;
 
-                // マウスカーソルのコンテナ内相対座標
                 const rect = container.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
-                // ズーム前のキャンバス内座標
                 const targetX = (container.scrollLeft + mouseX) / prevScale;
                 const targetY = (container.scrollTop + mouseY) / prevScale;
 
-                // 新スケール適用後のスクロール位置を計算・適用
                 requestAnimationFrame(() => {
                     container.scrollLeft = targetX * newScale - mouseX;
                     container.scrollTop = targetY * newScale - mouseY;
@@ -229,18 +247,15 @@ export default function BoardPage() {
         localStorage.setItem('wl-sticky-note-username', newUsername);
         setShowUserDialog(false);
 
-        // ユーザー参加イベントを送信
         if (socket && socket.connected) {
             socket.emit("user-join", { boardId, username: newUsername });
         }
     };
 
     const addNote = (initialText = "", dueDate = null) => {
-        // タイムスタンプとランダム値でユニークIDを生成
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
 
-        // 現在のビューポートの下部中央付近に新しい付箋を配置
         const container = boardContainerRef.current;
         if (!container) return;
 
@@ -249,10 +264,7 @@ export default function BoardPage() {
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
 
-        // ボード相対の中央X座標
-        const centerX = scrollLeft + (viewportWidth / 2) - 100; // 中央から付箋幅の半分を引く
-
-        // ボード相対の下部Y座標（ツールバー付近）— スマホは高めの UI のため下オフセットを大きくする
+        const centerX = scrollLeft + (viewportWidth / 2) - 100;
         const bottomOffset = viewportWidth < 768 ? 420 : 300;
         const bottomY = scrollTop + viewportHeight - bottomOffset;
 
@@ -267,7 +279,6 @@ export default function BoardPage() {
             author: username,
             createdAt: Date.now()
         };
-        // 楽観的更新
         setNotes((prev) => [...prev, newNote]);
         socket.emit("add-note", { boardId, note: newNote });
     };
@@ -285,60 +296,55 @@ export default function BoardPage() {
     const updateTimeout = useRef(null);
 
     const updateNote = useCallback((updatedNote) => {
+        setNotes((prev) => prev.map((n) => (n.id === updatedNote.id ? updatedNote : n)));
+
+        if (updateTimeout.current) clearTimeout(updateTimeout.current);
+        updateTimeout.current = setTimeout(() => {
+            socket.emit("update-note", { boardId, note: updatedNote });
+        }, 100);
+    }, [boardId]);
+
+    // 複数選択された付箋の一括移動ハンドラー（ピン留め除外・通信スロットル制御）
+    const handleMoveSelectedNotes = useCallback((draggedNoteId, dx, dy) => {
         const currentNotes = notesRef.current;
-        const originalNote = currentNotes.find(n => n.id === updatedNote.id);
+        const isTargetSelected = selectedNoteIds.includes(draggedNoteId);
+        const moveIds = isTargetSelected ? selectedNoteIds : [draggedNoteId];
 
-        let notesToUpdate = [updatedNote];
+        const notesToUpdate = currentNotes
+            .filter(n => moveIds.includes(n.id) && !n.pinned)
+            .map(n => ({
+                ...n,
+                x: n.x + dx,
+                y: n.y + dy
+            }));
 
-        if (originalNote && updatedNote.groupId) {
-            const dx = updatedNote.x - originalNote.x;
-            const dy = updatedNote.y - originalNote.y;
+        if (notesToUpdate.length === 0) return;
 
-            if (dx !== 0 || dy !== 0) {
-                const groupNotes = currentNotes.filter(
-                    n => n.groupId === updatedNote.groupId && n.id !== updatedNote.id
-                );
+        setNotes((prev) => prev.map((n) => {
+            const updated = notesToUpdate.find(un => un.id === n.id);
+            return updated || n;
+        }));
 
-                const additionalUpdates = groupNotes.map(n => ({
-                    ...n,
-                    x: n.x + dx,
-                    y: n.y + dy
-                }));
-
-                notesToUpdate = [...notesToUpdate, ...additionalUpdates];
-            }
-        }
-
-        // ゴミ箱からの復元ロジック（論理削除からの回復）
-        if (originalNote && originalNote.groupId === 'trash') {
-            const isMoved = updatedNote.x !== originalNote.x || updatedNote.y !== originalNote.y;
-            const isColorChanged = updatedNote.color !== TRASH_COLOR;
-
-            if (isMoved || isColorChanged) {
-                // 移動または色変更でゴミ箱から復元
-                updatedNote.groupId = null;
-                // 色が変更された場合は updatedNote.color に反映済み
-            }
-        }
-
-        setNotes((prev) => {
-            return prev.map((n) => {
-                const updated = notesToUpdate.find(un => un.id === n.id);
-                return updated || n;
-            });
-        });
-
-        // デバウンス: 100ms更新がない場合のみサーバーに送信
-        if (updateTimeout.current) {
-            clearTimeout(updateTimeout.current);
-        }
-
+        if (updateTimeout.current) clearTimeout(updateTimeout.current);
         updateTimeout.current = setTimeout(() => {
             notesToUpdate.forEach(note => {
                 socket.emit("update-note", { boardId, note });
             });
         }, 100);
-    }, [boardId]);
+    }, [boardId, selectedNoteIds]);
+
+    // 付箋選択状態のトグル/変更処理
+    const handleSelectNote = useCallback((noteId, isShift) => {
+        setSelectedNoteIds((prev) => {
+            if (isShift) {
+                return prev.includes(noteId)
+                    ? prev.filter(id => id !== noteId)
+                    : [...prev, noteId];
+            } else {
+                return prev.includes(noteId) ? prev : [noteId];
+            }
+        });
+    }, []);
 
     const addLine = (line) => {
         setLines((prev) => [...prev, line]);
@@ -346,8 +352,8 @@ export default function BoardPage() {
     };
 
     const deleteNote = (noteId) => {
-        // ボードから付箋を削除（右下への移動ではなく削除）
         setNotes((prev) => prev.filter((n) => n.id !== noteId));
+        setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
         socket.emit("delete-note", { boardId, noteId });
     };
 
@@ -382,7 +388,6 @@ export default function BoardPage() {
                 if (boardData.notes) setNotes(boardData.notes);
                 if (boardData.lines) setLines(boardData.lines);
 
-                // サーバーに送信して他クライアントと同期
                 boardData.notes?.forEach(note => {
                     socket.emit("add-note", { boardId, note });
                 });
@@ -400,9 +405,9 @@ export default function BoardPage() {
         if (isGrayNote(note) && hideGrayNotes) {
             setHideGrayNotes(false);
         }
+        setSelectedNoteIds([note.id]);
         const container = boardContainerRef.current;
         if (container) {
-            // 付箋を中央に表示するためのスクロール位置を計算
             const noteX = note.x * scale;
             const noteY = note.y * scale;
             const centerX = noteX - (container.clientWidth / 2) + 100;
@@ -414,7 +419,6 @@ export default function BoardPage() {
                 behavior: 'smooth'
             });
 
-            // ハイライト効果
             setTimeout(() => {
                 const noteElement = document.querySelector(`[data-note-id="${note.id}"]`);
                 if (noteElement) {
@@ -427,20 +431,15 @@ export default function BoardPage() {
 
     const handleGroupNotes = (noteIds) => {
         const groupId = `group-${Date.now()}`;
-
-        // 選択された付箋の中心位置を計算
         const selectedNotes = notes.filter(n => noteIds.includes(n.id));
         if (selectedNotes.length === 0) return;
 
         const centerX = selectedNotes.reduce((sum, n) => sum + n.x, 0) / selectedNotes.length;
         const centerY = selectedNotes.reduce((sum, n) => sum + n.y, 0) / selectedNotes.length;
 
-        // 山積みに配置（少しずらす）
         const updatedNotes = selectedNotes.map((note, index) => {
-            // 雑多な感じを出すために少しオフセット
             const offset = index * 10;
             const totalOffset = (selectedNotes.length - 1) * 10 / 2;
-
             const newX = centerX + offset - totalOffset;
             const newY = centerY + offset - totalOffset;
 
@@ -459,7 +458,6 @@ export default function BoardPage() {
             })
         );
 
-        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -470,12 +468,7 @@ export default function BoardPage() {
     const handleUngroupNotes = (noteIds) => {
         const updatedNotes = notes
             .filter(n => noteIds.includes(n.id))
-            .map(n => {
-                return {
-                    ...n,
-                    groupId: null,
-                };
-            });
+            .map(n => ({ ...n, groupId: null }));
 
         setNotes((prev) =>
             prev.map((n) => {
@@ -484,7 +477,6 @@ export default function BoardPage() {
             })
         );
 
-        // サーバー更新
         updatedNotes.forEach(note => {
             socket.emit("update-note", { boardId, note });
         });
@@ -492,14 +484,12 @@ export default function BoardPage() {
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
     };
 
-    // ボード全削除処理
     const handleClearAllNotes = async () => {
         if (!boardId) return;
         const confirmed = window.confirm("本当にこのボード上のすべての付箋と線を削除しますか？この操作は取り消せません。");
         if (!confirmed) return;
 
         try {
-            // REST API経由でサーバーに削除を依頼
             const response = await fetch(`/api/boards/${boardId}/clear`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -507,52 +497,134 @@ export default function BoardPage() {
 
             const data = await response.json();
             if (response.ok && data.success) {
-                console.log(data.message);
-                // 念のためローカル状態も即時クリア
                 setNotes([]);
                 setLines([]);
+                setSelectedNoteIds([]);
             } else {
-                console.error('Failed to clear board:', data.error || response.statusText);
                 alert('ボードのクリアに失敗しました。');
             }
         } catch (error) {
-            console.error('Error clearing board:', error);
             alert('ボードのクリア中にエラーが発生しました。');
         }
     };
 
-    const [isDraggingBoard, setIsDraggingBoard] = useState(false);
-    const dragStart = useRef({ x: 0, y: 0 });
-    const scrollStart = useRef({ left: 0, top: 0 });
+    // キャンバス内座標変換ヘルパー (scale対応)
+    const getCanvasCoords = (e) => {
+        const container = boardContainerRef.current;
+        if (!container) return { x: 0, y: 0 };
+        const rect = container.getBoundingClientRect();
+        const x = (e.clientX - rect.left + container.scrollLeft) / scale;
+        const y = (e.clientY - rect.top + container.scrollTop) / scale;
+        return { x, y };
+    };
 
+    // マウスダウン（パン移動 or 範囲選択開始）
     const handleMouseDown = (e) => {
-        // コンテナまたはキャンバスを直接クリックした場合のみドラッグ（付箋以外）
-        // data属性を使って付箋内かどうか判定
         const isClickingNote = e.target.closest('[data-sticky-note]');
 
-        if (!isClickingNote) {
+        // 1. パン移動開始: 中ボタン(button===1) または Spaceキー押下(button===0 && isSpacePressed)
+        if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
+            e.preventDefault();
             setIsDraggingBoard(true);
             dragStart.current = { x: e.clientX, y: e.clientY };
             const container = boardContainerRef.current;
             scrollStart.current = { left: container.scrollLeft, top: container.scrollTop };
             container.style.cursor = 'grabbing';
+            return;
+        }
+
+        // 2. 範囲選択開始: 付箋以外をクリック & 通常左ボタン(button===0) & !isSpacePressed
+        if (!isClickingNote && e.button === 0) {
+            const coords = getCanvasCoords(e);
+            isBoxSelecting.current = true;
+            selectionStartPos.current = coords;
+            initialSelectedIds.current = e.shiftKey ? [...selectedNoteIds] : [];
+
+            setSelectionBox({
+                startX: coords.x,
+                startY: coords.y,
+                currentX: coords.x,
+                currentY: coords.y,
+                isShift: e.shiftKey
+            });
         }
     };
 
+    // マウス移動（パン移動処理 or 範囲選択ボックス描画・交差判定）
     const handleMouseMove = (e) => {
-        if (!isDraggingBoard) return;
-        e.preventDefault();
-        const container = boardContainerRef.current;
-        const dx = e.clientX - dragStart.current.x;
-        const dy = e.clientY - dragStart.current.y;
-        container.scrollLeft = scrollStart.current.left - dx;
-        container.scrollTop = scrollStart.current.top - dy;
+        // パン移動中
+        if (isDraggingBoard) {
+            e.preventDefault();
+            const container = boardContainerRef.current;
+            const dx = e.clientX - dragStart.current.x;
+            const dy = e.clientY - dragStart.current.y;
+            container.scrollLeft = scrollStart.current.left - dx;
+            container.scrollTop = scrollStart.current.top - dy;
+            return;
+        }
+
+        // 範囲選択中
+        if (isBoxSelecting.current) {
+            e.preventDefault();
+            const coords = getCanvasCoords(e);
+            const startX = selectionStartPos.current.x;
+            const startY = selectionStartPos.current.y;
+            const currentX = coords.x;
+            const currentY = coords.y;
+
+            setSelectionBox(prev => prev ? ({ ...prev, currentX, currentY }) : null);
+
+            // 始点と終点の正規化（Math.min, Math.max）
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            const right = Math.max(startX, currentX);
+            const bottom = Math.max(startY, currentY);
+
+            // 表示中の付箋との交差判定（Intersection Test）
+            const visibleList = hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes;
+            const intersectedIds = visibleList.filter(note => {
+                const isLarge = note.ratioW && note.ratioW >= 0.2;
+                const noteW = isLarge ? 320 : 200;
+                const noteH = isLarge ? 320 : 200;
+                const noteLeft = note.x;
+                const noteTop = note.y;
+                const noteRight = note.x + noteW;
+                const noteBottom = note.y + noteH;
+
+                return !(noteRight < left || noteLeft > right || noteBottom < top || noteTop > bottom);
+            }).map(n => n.id);
+
+            if (selectionBox?.isShift) {
+                // Shiftキー押下時はトグル追加選択
+                const base = initialSelectedIds.current;
+                const combined = Array.from(new Set([...base, ...intersectedIds]));
+                setSelectedNoteIds(combined);
+            } else {
+                setSelectedNoteIds(intersectedIds);
+            }
+        }
     };
 
+    // マウスアップ（パン移動・範囲選択終了）
     const handleMouseUp = () => {
-        setIsDraggingBoard(false);
-        if (boardContainerRef.current) {
-            boardContainerRef.current.style.cursor = 'grab';
+        if (isDraggingBoard) {
+            setIsDraggingBoard(false);
+            if (boardContainerRef.current) {
+                boardContainerRef.current.style.cursor = isSpacePressed ? 'grab' : 'default';
+            }
+        }
+
+        if (isBoxSelecting.current) {
+            // 移動量が極小（クリックのみ）かつ Shift なしの場合は選択解除
+            if (selectionBox) {
+                const dx = Math.abs(selectionBox.currentX - selectionBox.startX);
+                const dy = Math.abs(selectionBox.currentY - selectionBox.startY);
+                if (dx < 5 && dy < 5 && !selectionBox.isShift) {
+                    setSelectedNoteIds([]);
+                }
+            }
+            isBoxSelecting.current = false;
+            setSelectionBox(null);
         }
     };
 
@@ -566,7 +638,7 @@ export default function BoardPage() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            style={{ cursor: 'grab' }}
+            style={{ cursor: isSpacePressed ? 'grab' : 'default' }}
         >
             <div className={styles.header}>
                 <input
@@ -622,6 +694,10 @@ export default function BoardPage() {
                     onDeleteNote={deleteNote}
                     onAddLine={addLine}
                     scale={scale}
+                    selectedNoteIds={selectedNoteIds}
+                    onSelectNote={handleSelectNote}
+                    onMoveSelectedNotes={handleMoveSelectedNotes}
+                    selectionBox={selectionBox}
                 />
             </div>
 

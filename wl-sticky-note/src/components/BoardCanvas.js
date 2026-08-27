@@ -1,12 +1,33 @@
-import { useRef, useState } from "react";
 import styles from "./BoardCanvas.module.css";
 import StickyNote from "./StickyNote";
 
-export default function BoardCanvas({ notes, lines, onUpdateNote, onDeleteNote, onAddLine, scale }) {
-    const [drawingLine, setDrawingLine] = useState(null); // { startNoteId, startX, startY, currentX, currentY }
+export default function BoardCanvas({
+    notes,
+    lines,
+    onUpdateNote,
+    onDeleteNote,
+    onAddLine,
+    scale,
+    selectedNoteIds = [],
+    onSelectNote,
+    onMoveSelectedNotes,
+    selectionBox
+}) {
+    // 範囲選択ボックス（正規化計算）
+    let boxStyle = null;
+    if (selectionBox) {
+        const left = Math.min(selectionBox.startX, selectionBox.currentX);
+        const top = Math.min(selectionBox.startY, selectionBox.currentY);
+        const width = Math.abs(selectionBox.currentX - selectionBox.startX);
+        const height = Math.abs(selectionBox.currentY - selectionBox.startY);
 
-    // Handle line drawing logic here if needed, or keep it simple for now
-    // For MVP, we'll just render notes and lines
+        boxStyle = {
+            left: `${left}px`,
+            top: `${top}px`,
+            width: `${width}px`,
+            height: `${height}px`,
+        };
+    }
 
     return (
         <div
@@ -32,6 +53,10 @@ export default function BoardCanvas({ notes, lines, onUpdateNote, onDeleteNote, 
                 ))}
             </svg>
 
+            {selectionBox && boxStyle && (
+                <div className={styles.selectionBox} style={boxStyle} />
+            )}
+
             {notes.map((note) => (
                 <StickyNote
                     key={note.id}
@@ -39,6 +64,9 @@ export default function BoardCanvas({ notes, lines, onUpdateNote, onDeleteNote, 
                     onUpdate={onUpdateNote}
                     onDelete={onDeleteNote}
                     scale={scale}
+                    isSelected={selectedNoteIds.includes(note.id)}
+                    onSelect={onSelectNote}
+                    onMoveSelectedNotes={onMoveSelectedNotes}
                 />
             ))}
         </div>
