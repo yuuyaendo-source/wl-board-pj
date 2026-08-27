@@ -3,13 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { PersonalMember } from "@/lib/personalMembers";
-import type { Team } from "@/lib/types";
+import type { Team, User } from "@/lib/types";
 import { requireAdminAuth } from "./AdminAuthModal";
 
 interface AddUserMenuProps {
   members: PersonalMember[];
   onSuccess: () => void;
-  /** 指定時は親（管理メニュー等）が開閉を制御し、トリガーボタンは表示しない */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -26,6 +25,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   };
 
   const [tab, setTab] = useState<Tab>("members");
+
+  // APIから直接取得する全ユーザー詳細データ（複数チームIDを正しく取得）
+  const [fullUsers, setFullUsers] = useState<User[]>([]);
 
   // --- メンバー追加フォーム ---
   const [name, setName] = useState("");
@@ -52,6 +54,15 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
 
+  const fetchUsersData = useCallback(async () => {
+    try {
+      const data = await api.users.list();
+      setFullUsers(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
   const fetchTeams = useCallback(async () => {
     setTeamsLoading(true);
     try {
@@ -75,10 +86,11 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setNewTeamName("");
       setTeamError(null);
       setEditingTeamId(null);
+      fetchUsersData();
       fetchTeams();
       setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open, fetchTeams]);
+  }, [open, fetchUsersData, fetchTeams]);
 
   // ------- メンバー操作 -------
 
@@ -97,6 +109,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           call_name: callName.trim(),
           team_ids: teamIds,
         });
+        await fetchUsersData();
         onSuccess();
         setOpen(false);
       } catch (e) {
@@ -114,6 +127,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setError(null);
       try {
         await api.users.delete(ownerId);
+        await fetchUsersData();
         onSuccess();
       } catch (e) {
         setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -123,13 +137,15 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     });
   };
 
-  const startEdit = (m: PersonalMember | any) => {
+  const startEdit = (m: any) => {
     const id = m.ownerId ?? m.id;
+    const fullUser = fullUsers.find((u) => u.id === id);
     setEditingId(id);
     setEditName(m.name);
     setEditEmail(m.email ?? "");
     setEditCallName(m.call_name ?? "");
-    const initialTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+
+    const initialTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
     setEditTeamIds(initialTeamIds);
     setError(null);
   };
@@ -150,6 +166,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           call_name: editCallName.trim(),
           team_ids: editTeamIds,
         });
+        await fetchUsersData();
         onSuccess();
         setEditingId(null);
       } catch (e) {
@@ -356,7 +373,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                   <ul className="flex flex-col gap-1">
                     {members.map((m: any) => {
                       const memberId = m.ownerId ?? m.id;
-                      const userTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                      const fullUser = fullUsers.find((u) => u.id === memberId);
+                      const userTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                       const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
 
                       return (
@@ -554,7 +572,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                             <div className="flex flex-wrap gap-1">
                               {members
                                 .filter((m: any) => {
-                                  const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                  const memberId = m.ownerId ?? m.id;
+                                  const fullUser = fullUsers.find((u) => u.id === memberId);
+                                  const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                   return ids.includes(team.id);
                                 })
                                 .map((m: any) => (
@@ -563,7 +583,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </span>
                                 ))}
                               {members.filter((m: any) => {
-                                const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                const memberId = m.ownerId ?? m.id;
+                                const fullUser = fullUsers.find((u) => u.id === memberId);
+                                const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                 return ids.includes(team.id);
                               }).length === 0 && (
                                   <span className="text-xs text-zinc-400">メンバーなし</span>

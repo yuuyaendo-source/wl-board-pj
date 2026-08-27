@@ -120,8 +120,7 @@ async def create_user(
 
     db.add(user)
     await db.flush()
-    await db.refresh(user)
-    await db.refresh(user, ["faces"])
+    await db.refresh(user, ["faces", "teams"])
     return _user_to_response(user)
 
 
@@ -167,7 +166,7 @@ async def update_user(
             user.teams = []
 
     await db.flush()
-    await db.refresh(user)
+    await db.refresh(user, ["faces", "teams"])
     return _user_to_response(user)
 
 

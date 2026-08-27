@@ -8,6 +8,13 @@ ACTIVE_ENV_FILE="$NGINX_CONF_DIR/active_env.conf"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 DOCKER_COMPOSE_DB="$APP_DIR/docker-compose.db.yml"
 
+# .env ファイルが存在する場合は環境変数を読み込む
+if [ -f "$APP_DIR/.env" ]; then
+  set -a
+  source "$APP_DIR/.env"
+  set +a
+fi
+
 # ネットワーク作成（存在しない場合）
 docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-net
 
