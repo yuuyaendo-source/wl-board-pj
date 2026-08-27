@@ -3,6 +3,7 @@ import StickyNote from "./StickyNote";
 
 export default function BoardCanvas({
     canvasOuterRef,
+    canvasRef,
     notes,
     lines,
     onUpdateNote,
@@ -37,7 +38,7 @@ export default function BoardCanvas({
     const scaledHeight = baseHeight * scale;
 
     return (
-        /* 外側ラッパー：margin: auto を指定して、縮小時も全方位（中央）に均等配置 */
+        /* 外側ラッパー：キャンバスが全方位に拡大してもスクロール域を正しく確保 */
         <div
             ref={canvasOuterRef}
             className={styles.canvasOuter}
@@ -46,14 +47,17 @@ export default function BoardCanvas({
                 height: `max(calc(100vh - 60px), ${scaledHeight}px)`,
             }}
         >
-            {/* 内側キャンバス：元の4000pxのスケール変形領域 */}
+            {/* 内側キャンバス：中心(2000, 2000)を基準に全方位へ拡大縮小 */}
             <div
+                ref={canvasRef}
                 className={styles.canvas}
                 style={{
                     width: `${baseWidth}px`,
                     height: `${baseHeight}px`,
+                    left: `calc(50% - ${baseWidth / 2}px)`,
+                    top: `calc(50% - ${baseHeight / 2}px)`,
                     transform: `scale(${scale})`,
-                    transformOrigin: "0 0",
+                    transformOrigin: "center center",
                 }}
             >
                 <svg className={styles.svgLayer}>
