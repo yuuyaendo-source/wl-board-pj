@@ -3,6 +3,7 @@
     margin: auto;
     min-width: 100%;
     min-height: calc(100vh - 60px);
+    flex-shrink: 0;
     background-image: radial-gradient(#ddd 1px, transparent 1px);
     background-size: 20px 20px;
     background-color: #f0f0f0;

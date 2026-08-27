@@ -38,13 +38,14 @@ export default function BoardCanvas({
     const scaledHeight = baseHeight * scale;
 
     return (
-        /* 外側ラッパー：キャンバスが全方位に拡大してもスクロール域を正しく確保 */
+        /* 外側ラッパー：flexShrink: 0 で横幅の潰れを防止 */
         <div
             ref={canvasOuterRef}
             className={styles.canvasOuter}
             style={{
                 width: `max(100%, ${scaledWidth}px)`,
                 height: `max(calc(100vh - 60px), ${scaledHeight}px)`,
+                flexShrink: 0,
             }}
         >
             {/* 内側キャンバス：中心(2000, 2000)を基準に全方位へ拡大縮小 */}
