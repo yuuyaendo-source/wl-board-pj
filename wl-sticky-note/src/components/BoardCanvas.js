@@ -2,6 +2,7 @@ import styles from "./BoardCanvas.module.css";
 import StickyNote from "./StickyNote";
 
 export default function BoardCanvas({
+    canvasOuterRef,
     notes,
     lines,
     onUpdateNote,
@@ -15,9 +16,6 @@ export default function BoardCanvas({
 }) {
     const baseWidth = 4000;
     const baseHeight = 4000;
-
-    // Handle line drawing logic here if needed, or keep it simple for now
-    // For MVP, we'll just render notes and lines
 
     // 範囲選択ボックス（正規化計算）
     let boxStyle = null;
@@ -41,6 +39,7 @@ export default function BoardCanvas({
     return (
         /* 外側ラッパー：margin: auto を指定して、縮小時も全方位（中央）に均等配置 */
         <div
+            ref={canvasOuterRef}
             className={styles.canvasOuter}
             style={{
                 width: `max(100%, ${scaledWidth}px)`,

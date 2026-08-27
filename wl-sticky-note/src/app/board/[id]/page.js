@@ -45,6 +45,7 @@ export default function BoardPage() {
     const [selectionBox, setSelectionBox] = useState(null);
 
     const boardContainerRef = useRef(null);
+    const canvasOuterRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
@@ -127,10 +128,12 @@ export default function BoardPage() {
                 if (prev.some(n => n.id === note.id)) return prev;
                 // AI生成付箋は現在のビューポート中央付近に配置
                 let placed = note;
-                if (note.author === "AI" && boardContainerRef.current) {
-                    const el = boardContainerRef.current;
-                    const cx = (el.scrollLeft + el.clientWidth / 2) / scale - 100;
-                    const cy = (el.scrollTop + el.clientHeight / 2) / scale - 100;
+                if (note.author === "AI" && boardContainerRef.current && canvasOuterRef.current) {
+                    const container = boardContainerRef.current;
+                    const canvasRect = canvasOuterRef.current.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+                    const cx = (containerRect.width / 2 + container.scrollLeft - (canvasRect.left - containerRect.left + container.scrollLeft)) / scale - 100;
+                    const cy = (containerRect.height / 2 + container.scrollTop - (canvasRect.top - containerRect.top + container.scrollTop)) / scale - 100;
                     placed = { ...note, x: cx, y: cy };
                     socket.emit("update-note", { boardId, note: placed });
                 }
@@ -195,20 +198,16 @@ export default function BoardPage() {
         };
     }, [boardId, scale]);
 
-    // ボードの絶対中心（2000, 2000）を画面中央にスクロール配置する処理（縮小率に関わらず常に同一位置）
+    // ボードの絶対中心 (2000, 2000) を画面中央にスクロール合わせする処理
     const scrollToCenter = useCallback((smooth = false) => {
         const container = boardContainerRef.current;
         if (!container) return;
 
-        const scaledWidth = 4000 * scale;
-        const scaledHeight = 4000 * scale;
+        const targetCenterX = 2000 * scale;
+        const targetCenterY = 2000 * scale;
 
-        // コンテナのスクロール全体領域における中心計算
-        const totalWidth = Math.max(container.clientWidth, scaledWidth);
-        const totalHeight = Math.max(container.clientHeight, scaledHeight);
-
-        const scrollX = (totalWidth - container.clientWidth) / 2;
-        const scrollY = (totalHeight - container.clientHeight) / 2;
+        const scrollX = targetCenterX - container.clientWidth / 2;
+        const scrollY = targetCenterY - container.clientHeight / 2;
 
         container.scrollTo({
             left: Math.max(0, scrollX),
@@ -284,26 +283,21 @@ export default function BoardPage() {
     };
 
     const addNote = (initialText = "", dueDate = null) => {
-        // タイムスタンプとランダム値でユニークIDを生成
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
 
-        // 現在のビューポートの画面中央付近に新しい付箋を配置
         const container = boardContainerRef.current;
-        if (!container) return;
+        const canvasOuter = canvasOuterRef.current;
+        if (!container || !canvasOuter) return;
 
-        const viewportWidth = container.clientWidth;
-        const viewportHeight = container.clientHeight;
-        const scrollLeft = container.scrollLeft;
-        const scrollTop = container.scrollTop;
+        const containerRect = container.getBoundingClientRect();
+        const canvasRect = canvasOuter.getBoundingClientRect();
 
-        // ボード相対の中央座標（100%スケール換算）
-        const viewportCenterX = (scrollLeft + viewportWidth / 2) / scale;
-        const viewportCenterY = (scrollTop + viewportHeight / 2) / scale;
+        const screenCenterX = containerRect.width / 2;
+        const screenCenterY = containerRect.height / 2;
 
-        // 中央から付箋幅・高さの半分（100px）を引く
-        const noteX = viewportCenterX - 100 + (Math.random() * 20 - 10);
-        const noteY = viewportCenterY - 100 + (Math.random() * 20 - 10);
+        const noteX = (screenCenterX - (canvasRect.left - containerRect.left)) / scale - 100 + (Math.random() * 20 - 10);
+        const noteY = (screenCenterY - (canvasRect.top - containerRect.top)) / scale - 100 + (Math.random() * 20 - 10);
 
         const newNote = {
             id: `${timestamp}-${random}`,
@@ -316,7 +310,6 @@ export default function BoardPage() {
             author: username,
             createdAt: Date.now()
         };
-        // 楽観的更新
         setNotes((prev) => [...prev, newNote]);
         socket.emit("add-note", { boardId, note: newNote });
     };
@@ -631,11 +624,11 @@ export default function BoardPage() {
     };
 
     const getCanvasCoords = (e) => {
-        const container = boardContainerRef.current;
-        if (!container) return { x: 0, y: 0 };
-        const rect = container.getBoundingClientRect();
-        const x = (e.clientX - rect.left + container.scrollLeft) / scale;
-        const y = (e.clientY - rect.top + container.scrollTop) / scale;
+        const canvasOuter = canvasOuterRef.current;
+        if (!canvasOuter) return { x: 0, y: 0 };
+        const rect = canvasOuter.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / scale;
+        const y = (e.clientY - rect.top) / scale;
         return { x, y };
     };
 
@@ -802,6 +795,7 @@ export default function BoardPage() {
 
             <div className={styles.canvasWrapper}>
                 <BoardCanvas
+                    canvasOuterRef={canvasOuterRef}
                     notes={visibleNotes}
                     lines={lines}
                     onUpdateNote={updateNote}
