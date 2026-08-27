@@ -41,7 +41,7 @@ export default function BoardPage() {
     const [selectedNoteIds, setSelectedNoteIds] = useState([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
     const [isDraggingBoard, setIsDraggingBoard] = useState(false);
-    const [selectionBox, setSelectionBox] = useState(null); // { startX, startY, currentX, currentY, isShift }
+    const [selectionBox, setSelectionBox] = useState(null);
 
     const boardContainerRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
@@ -124,8 +124,9 @@ export default function BoardPage() {
                 let placed = note;
                 if (note.author === "AI" && boardContainerRef.current) {
                     const el = boardContainerRef.current;
-                    const cx = el.scrollLeft + (el.clientWidth / 2) - 100;
-                    const cy = el.scrollTop + (el.clientHeight / 2) - 75;
+                    // ビューポート中心に配置
+                    const cx = (el.scrollLeft + el.clientWidth / 2) / scale - 100;
+                    const cy = (el.scrollTop + el.clientHeight / 2) / scale - 100;
                     placed = { ...note, x: cx, y: cy };
                     socket.emit("update-note", { boardId, note: placed });
                 }
@@ -176,16 +177,18 @@ export default function BoardPage() {
             socket.off("disconnect");
             socket.disconnect();
         };
-    }, [boardId]);
+    }, [boardId, scale]);
 
-    // 初期ロード時に中央へスクロール
+    // 初期ロード時にキャンバスの中央（2000, 2000）を画面中心にスクロール設定
     useEffect(() => {
         const container = boardContainerRef.current;
         if (container) {
             setTimeout(() => {
-                const scrollX = (4000 - container.clientWidth) / 2;
-                const scrollY = (4000 - container.clientHeight) / 2;
-                container.scrollTo(scrollX, scrollY);
+                const canvasCenterX = 2000 * scale;
+                const canvasCenterY = 2000 * scale;
+                const scrollX = canvasCenterX - container.clientWidth / 2;
+                const scrollY = canvasCenterY - container.clientHeight / 2;
+                container.scrollTo(Math.max(0, scrollX), Math.max(0, scrollY));
             }, 100);
         }
     }, []);
@@ -193,17 +196,19 @@ export default function BoardPage() {
     const handleCenter = () => {
         const container = boardContainerRef.current;
         if (container) {
-            const scrollX = (4000 - container.clientWidth) / 2;
-            const scrollY = (4000 - container.clientHeight) / 2;
+            const canvasCenterX = 2000 * scale;
+            const canvasCenterY = 2000 * scale;
+            const scrollX = canvasCenterX - container.clientWidth / 2;
+            const scrollY = canvasCenterY - container.clientHeight / 2;
             container.scrollTo({
-                left: scrollX,
-                top: scrollY,
+                left: Math.max(0, scrollX),
+                top: Math.max(0, scrollY),
                 behavior: 'smooth'
             });
         }
     };
 
-    // ホイールズーム（カーソル中心）
+    // 全方位（放射状）ホイールズーム処理
     useEffect(() => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -221,6 +226,7 @@ export default function BoardPage() {
                 if (Math.abs(newScale - prevScale) < 0.001) return prevScale;
 
                 const rect = container.getBoundingClientRect();
+                // マウス位置を中心に放射状（全方位）に拡大・縮小
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
@@ -252,6 +258,7 @@ export default function BoardPage() {
         }
     };
 
+    // デフォルト位置の生成（画面＝ビューポートの真中央を中心に生成）
     const addNote = (initialText = "", dueDate = null) => {
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substr(2, 9);
@@ -264,15 +271,19 @@ export default function BoardPage() {
         const scrollLeft = container.scrollLeft;
         const scrollTop = container.scrollTop;
 
-        const centerX = scrollLeft + (viewportWidth / 2) - 100;
-        const bottomOffset = viewportWidth < 768 ? 420 : 300;
-        const bottomY = scrollTop + viewportHeight - bottomOffset;
+        // 現在表示されている画面の中心座標（100%基準）を計算
+        const viewportCenterX = (scrollLeft + viewportWidth / 2) / scale;
+        const viewportCenterY = (scrollTop + viewportHeight / 2) / scale;
+
+        // 付箋の中心が画面中央に来るようにオフセット調整（付箋幅200, 高さ200の半分＝100）
+        const noteX = viewportCenterX - 100 + (Math.random() * 20 - 10);
+        const noteY = viewportCenterY - 100 + (Math.random() * 20 - 10);
 
         const newNote = {
             id: `${timestamp}-${random}`,
             text: initialText,
-            x: centerX + Math.random() * 20 - 10,
-            y: bottomY + Math.random() * 20 - 10,
+            x: noteX,
+            y: noteY,
             color: color,
             dueDate: dueDate || null,
             pinned: false,
@@ -304,7 +315,6 @@ export default function BoardPage() {
         }, 100);
     }, [boardId]);
 
-    // 複数選択された付箋の一括移動ハンドラー（ピン留め除外・通信スロットル制御）
     const handleMoveSelectedNotes = useCallback((draggedNoteId, dx, dy) => {
         const currentNotes = notesRef.current;
         const isTargetSelected = selectedNoteIds.includes(draggedNoteId);
@@ -333,7 +343,6 @@ export default function BoardPage() {
         }, 100);
     }, [boardId, selectedNoteIds]);
 
-    // 付箋選択状態のトグル/変更処理
     const handleSelectNote = useCallback((noteId, isShift) => {
         setSelectedNoteIds((prev) => {
             if (isShift) {
@@ -401,6 +410,7 @@ export default function BoardPage() {
         reader.readAsText(file);
     };
 
+    // 付箋へジャンプ：最大拡大（MAX_SCALE）にし、付箋の中心座標を画面中心に移動
     const handleJumpToNote = (note) => {
         if (isGrayNote(note) && hideGrayNotes) {
             setHideGrayNotes(false);
@@ -408,15 +418,32 @@ export default function BoardPage() {
         setSelectedNoteIds([note.id]);
         const container = boardContainerRef.current;
         if (container) {
-            const noteX = note.x * scale;
-            const noteY = note.y * scale;
-            const centerX = noteX - (container.clientWidth / 2) + 100;
-            const centerY = noteY - (container.clientHeight / 2) + 100;
+            const isLarge = note.ratioW && note.ratioW >= 0.2;
+            const noteW = isLarge ? 320 : 200;
+            const noteH = isLarge ? 320 : 200;
 
-            container.scrollTo({
-                left: Math.max(0, centerX),
-                top: Math.max(0, centerY),
-                behavior: 'smooth'
+            // 最大拡大率に設定
+            const targetScale = MAX_SCALE;
+            setScale(targetScale);
+
+            // 付箋の真の中心（キャンバスの100%座標系）
+            const noteCenterX = note.x + noteW / 2;
+            const noteCenterY = note.y + noteH / 2;
+
+            // 最大拡大後の中心位置
+            const scaledCenterX = noteCenterX * targetScale;
+            const scaledCenterY = noteCenterY * targetScale;
+
+            // ビューポート（画面）の中心に来るようなスクロール位置
+            const targetLeft = scaledCenterX - container.clientWidth / 2;
+            const targetTop = scaledCenterY - container.clientHeight / 2;
+
+            requestAnimationFrame(() => {
+                container.scrollTo({
+                    left: Math.max(0, targetLeft),
+                    top: Math.max(0, targetTop),
+                    behavior: 'smooth'
+                });
             });
 
             setTimeout(() => {
@@ -508,7 +535,6 @@ export default function BoardPage() {
         }
     };
 
-    // キャンバス内座標変換ヘルパー (scale対応)
     const getCanvasCoords = (e) => {
         const container = boardContainerRef.current;
         if (!container) return { x: 0, y: 0 };
@@ -518,11 +544,9 @@ export default function BoardPage() {
         return { x, y };
     };
 
-    // マウスダウン（パン移動 or 範囲選択開始）
     const handleMouseDown = (e) => {
         const isClickingNote = e.target.closest('[data-sticky-note]');
 
-        // 1. パン移動開始: 中ボタン(button===1) または Spaceキー押下(button===0 && isSpacePressed)
         if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
             e.preventDefault();
             setIsDraggingBoard(true);
@@ -533,7 +557,6 @@ export default function BoardPage() {
             return;
         }
 
-        // 2. 範囲選択開始: 付箋以外をクリック & 通常左ボタン(button===0) & !isSpacePressed
         if (!isClickingNote && e.button === 0) {
             const coords = getCanvasCoords(e);
             isBoxSelecting.current = true;
@@ -550,9 +573,7 @@ export default function BoardPage() {
         }
     };
 
-    // マウス移動（パン移動処理 or 範囲選択ボックス描画・交差判定）
     const handleMouseMove = (e) => {
-        // パン移動中
         if (isDraggingBoard) {
             e.preventDefault();
             const container = boardContainerRef.current;
@@ -563,7 +584,6 @@ export default function BoardPage() {
             return;
         }
 
-        // 範囲選択中
         if (isBoxSelecting.current) {
             e.preventDefault();
             const coords = getCanvasCoords(e);
@@ -574,13 +594,11 @@ export default function BoardPage() {
 
             setSelectionBox(prev => prev ? ({ ...prev, currentX, currentY }) : null);
 
-            // 始点と終点の正規化（Math.min, Math.max）
             const left = Math.min(startX, currentX);
             const top = Math.min(startY, currentY);
             const right = Math.max(startX, currentX);
             const bottom = Math.max(startY, currentY);
 
-            // 表示中の付箋との交差判定（Intersection Test）
             const visibleList = hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes;
             const intersectedIds = visibleList.filter(note => {
                 const isLarge = note.ratioW && note.ratioW >= 0.2;
@@ -595,7 +613,6 @@ export default function BoardPage() {
             }).map(n => n.id);
 
             if (selectionBox?.isShift) {
-                // Shiftキー押下時はトグル追加選択
                 const base = initialSelectedIds.current;
                 const combined = Array.from(new Set([...base, ...intersectedIds]));
                 setSelectedNoteIds(combined);
@@ -605,7 +622,6 @@ export default function BoardPage() {
         }
     };
 
-    // マウスアップ（パン移動・範囲選択終了）
     const handleMouseUp = () => {
         if (isDraggingBoard) {
             setIsDraggingBoard(false);
@@ -615,7 +631,6 @@ export default function BoardPage() {
         }
 
         if (isBoxSelecting.current) {
-            // 移動量が極小（クリックのみ）かつ Shift なしの場合は選択解除
             if (selectionBox) {
                 const dx = Math.abs(selectionBox.currentX - selectionBox.startX);
                 const dy = Math.abs(selectionBox.currentY - selectionBox.startY);
