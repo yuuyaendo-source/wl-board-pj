@@ -49,7 +49,7 @@ export interface User {
 export interface Team {
   id: number;
   name: string;
-  member_count?: number;
+  member_count: number;
   created_at?: string;
   updated_at?: string;
 }
