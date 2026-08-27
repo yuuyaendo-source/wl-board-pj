@@ -57,6 +57,7 @@ backend/
       i9j0k1l2m3n4_add_system_settings.py
       j0k1l2m3n4o5_add_teams_and_user_team_id.py
       k1l2m3n4o5p6_add_due_date_and_manually_moved_flag.py
+      l2m3n4o5p6q7_add_user_teams_and_admin_auth.py
     env.py
     README
     script.py.mako
@@ -84,6 +85,7 @@ backend/
     routers/
       __init__.py
       admin_llm.py
+      auth_admin.py
       auth_google.py
       board_placements.py
       boards.py
@@ -143,6 +145,7 @@ frontend/
         page.tsx
     components/
       AddUserMenu.tsx
+      AdminAuthModal.tsx
       ApiErrorBanner.tsx
       ApiStatus.tsx
       DueDateBadge.tsx
@@ -707,6 +710,86 @@ def downgrade() -> None:
 
     with op.batch_alter_table("sticky_notes", schema=None) as batch_op:
         batch_op.drop_column("due_date")
+</file>
+
+<file path="backend/alembic/versions/l2m3n4o5p6q7_add_user_teams_and_admin_auth.py">
+"""add user_teams and admin auth
+
+Revision ID: l2m3n4o5p6q7
+Revises: k1l2m3n4o5p6
+Create Date: 2026-08-27
+
+"""
+
+from typing import Sequence, Union
+from alembic import op
+import sqlalchemy as sa
+
+revision: str = "l2m3n4o5p6q7"
+down_revision: Union[str, Sequence[str], None] = "k1l2m3n4o5p6"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    # 1. user_teams 中間テーブル作成
+    op.create_table(
+        "user_teams",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("team_id", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("user_id", "team_id"),
+    )
+    # チームからユーザーを逆引きするためのインデックス作成
+    op.create_index("ix_user_teams_team_id", "user_teams", ["team_id"], unique=False)
+
+    # 2. 既存データの移行 (users.team_id -> user_teams)
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            """
+            INSERT INTO user_teams (user_id, team_id)
+            SELECT id, team_id FROM users WHERE team_id IS NOT NULL
+            ON CONFLICT DO NOTHING
+            """
+        )
+    else:
+        op.execute(
+            """
+            INSERT OR IGNORE INTO user_teams (user_id, team_id)
+            SELECT id, team_id FROM users WHERE team_id IS NOT NULL
+            """
+        )
+
+    # 3. users から旧 team_id カラム・制約を削除
+    with op.batch_alter_table("users", schema=None) as batch_op:
+        batch_op.drop_index("ix_users_team_id")
+        batch_op.drop_constraint("fk_users_team_id", type_="foreignkey")
+        batch_op.drop_column("team_id")
+
+
+def downgrade() -> None:
+    # 1. users に team_id カラム・制約を復元
+    with op.batch_alter_table("users", schema=None) as batch_op:
+        batch_op.add_column(sa.Column("team_id", sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_users_team_id", "teams", ["team_id"], ["id"], ondelete="SET NULL"
+        )
+        batch_op.create_index("ix_users_team_id", ["team_id"], unique=False)
+
+    # 2. データの復旧（1ユーザー1チームの制限に丸める）
+    op.execute(
+        """
+        UPDATE users SET team_id = (
+            SELECT team_id FROM user_teams WHERE user_teams.user_id = users.id LIMIT 1
+        )
+        """
+    )
+
+    # 3. user_teams テーブルを削除
+    op.drop_index("ix_user_teams_team_id", table_name="user_teams")
+    op.drop_table("user_teams")
 </file>
 
 <file path="backend/alembic/env.py">
@@ -1642,10 +1725,14 @@ class Team(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
-    # リレーション: チームに所属するユーザー（1:N）
-    users = relationship("User", back_populates="team", foreign_keys="User.team_id")
+    # リレーション: チームに所属するユーザー（多対多）
+    users = relationship(
+        "User", secondary="user_teams", back_populates="teams", lazy="selectin"
+    )
 </file>
 
 <file path="backend/app/models/user_face.py">
@@ -1730,10 +1817,26 @@ class UserGoogleToken(Base):
 """users テーブル。共通ユーザー管理: 名前・Eメール・呼び名。顔画像は user_faces で複数枚保持。"""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+# 多対多リレーション用の中間テーブル
+user_teams = Table(
+    "user_teams",
+    Base.metadata,
+    Column(
+        "user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column(
+        "team_id",
+        Integer,
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
 
 
 class User(Base):
@@ -1743,22 +1846,30 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
     call_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     interest_vector: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 所属チーム（NULL = チーム未所属）
-    team_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # リレーション
-    sticky_notes = relationship("StickyNote", back_populates="author", foreign_keys="StickyNote.author_id")
-    board_placements_owned = relationship("BoardPlacement", back_populates="owner", foreign_keys="BoardPlacement.owner_id")
-    faces = relationship("UserFace", back_populates="user", cascade="all, delete-orphan")
-    team = relationship("Team", back_populates="users", foreign_keys=[team_id])
+    sticky_notes = relationship(
+        "StickyNote", back_populates="author", foreign_keys="StickyNote.author_id"
+    )
+    board_placements_owned = relationship(
+        "BoardPlacement", back_populates="owner", foreign_keys="BoardPlacement.owner_id"
+    )
+    faces = relationship(
+        "UserFace", back_populates="user", cascade="all, delete-orphan"
+    )
+    teams = relationship(
+        "Team", secondary=user_teams, back_populates="users", lazy="selectin"
+    )
 </file>
 
 <file path="backend/app/routers/__init__.py">
@@ -1779,6 +1890,7 @@ from app.ai.client import invalidate_resolved_model_cache
 from app.config import settings
 from app.db import get_db
 from app.models.system_setting import SystemSetting
+from app.routers.auth_admin import get_current_admin
 
 logger = logging.getLogger(__name__)
 
@@ -1786,11 +1898,15 @@ router = APIRouter(prefix="/admin/llm", tags=["admin"])
 
 
 class LlmStatusResponse(BaseModel):
-    db_llm_target: int | None = Field(description="DB に保存した上書き。null は DB 未設定で env に従う")
+    db_llm_target: int | None = Field(
+        description="DB に保存した上書き。null は DB 未設定で env に従う"
+    )
     env_llm_target: int | None
     effective_llm_target: int | None
     resolved_url: str | None
-    model_override: str | None = Field(description="環境で固定モデル指定時のみ。null なら自動解決")
+    model_override: str | None = Field(
+        description="環境で固定モデル指定時のみ。null なら自動解決"
+    )
     model_mode: str = Field(description='"auto" | "fixed"')
 
 
@@ -1810,7 +1926,10 @@ class LlmUpdateBody(BaseModel):
 
 
 @router.get("", response_model=LlmStatusResponse)
-async def get_llm_status(db: AsyncSession = Depends(get_db)):
+async def get_llm_status(
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
     result = await db.execute(select(SystemSetting).where(SystemSetting.id == 1))
     row = result.scalar_one_or_none()
     db_t = row.llm_target if row else None
@@ -1827,7 +1946,11 @@ async def get_llm_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("", response_model=LlmStatusResponse)
-async def put_llm_status(body: LlmUpdateBody, db: AsyncSession = Depends(get_db)):
+async def put_llm_status(
+    body: LlmUpdateBody,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
     if body.llm_target is not None:
         url, _ = settings.resolve_ollama_for_target(body.llm_target)
         if not url:
@@ -1858,6 +1981,113 @@ async def put_llm_status(body: LlmUpdateBody, db: AsyncSession = Depends(get_db)
         model_override=model_ov,
         model_mode="fixed" if model_ov else "auto",
     )
+</file>
+
+<file path="backend/app/routers/auth_admin.py">
+# -*- coding: utf-8 -*-
+"""管理者認証 API（パスワード保護用）。標準ライブラリで簡易 JWT を発行・検証。"""
+import base64
+import json
+import hmac
+import hashlib
+from datetime import datetime, timedelta
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+
+from app.config import settings
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
+
+security = HTTPBearer()
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(b64: str) -> bytes:
+    pad = b"=" * (4 - len(b64) % 4)
+    return base64.urlsafe_b64decode((b64 + pad).encode("ascii"))
+
+
+def create_access_token() -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    exp = int(
+        (datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()
+    )
+    payload = {"sub": "admin", "exp": exp}
+
+    header_b64 = _b64url_encode(json.dumps(header).encode("utf-8"))
+    payload_b64 = _b64url_encode(json.dumps(payload).encode("utf-8"))
+
+    msg = f"{header_b64}.{payload_b64}".encode("utf-8")
+    signature = hmac.new(
+        settings.jwt_secret.encode("utf-8"), msg, hashlib.sha256
+    ).digest()
+    sig_b64 = _b64url_encode(signature)
+
+    return f"{header_b64}.{payload_b64}.{sig_b64}"
+
+
+def verify_token(token: str) -> bool:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return False
+        header_b64, payload_b64, sig_b64 = parts
+
+        msg = f"{header_b64}.{payload_b64}".encode("utf-8")
+        expected_sig = hmac.new(
+            settings.jwt_secret.encode("utf-8"), msg, hashlib.sha256
+        ).digest()
+
+        if not hmac.compare_digest(_b64url_decode(sig_b64), expected_sig):
+            return False
+
+        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
+        if payload.get("sub") != "admin":
+            return False
+        if payload.get("exp", 0) < int(datetime.utcnow().timestamp()):
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"Token verification failed: {e}")
+        return False
+
+
+@router.post("/login", response_model=LoginResponse)
+async def login_admin(body: LoginRequest):
+    if body.password != settings.admin_password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+    access_token = create_access_token()
+    return LoginResponse(access_token=access_token)
+
+
+def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    if not verify_token(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return "admin"
 </file>
 
 <file path="backend/app/routers/auth_google.py">
@@ -3956,7 +4186,7 @@ from sqlalchemy import delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, StickyNote, User
+from app.models import BoardPlacement, BoardType, StickyNote, User, Team
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
@@ -4517,7 +4747,10 @@ async def copy_to_team(
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
 
-    result = await db.execute(select(User).where(User.team_id == body.team_id))
+    # 多対多（user_teams）に対応したメンバー取得クエリ
+    result = await db.execute(
+        select(User).where(User.teams.any(Team.id == body.team_id))
+    )
     members = list(result.scalars().all())
     if not members:
         return CopyToTeamResponse(
@@ -4928,6 +5161,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.team import Team
 from app.models.user import User
+from app.routers.auth_admin import get_current_admin
 from app.schemas.team import TeamCreate, TeamResponse, TeamUpdate
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -4948,6 +5182,7 @@ def _team_to_response(team: Team) -> TeamResponse:
 async def list_teams(db: AsyncSession = Depends(get_db)):
     """チーム一覧を取得する。"""
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(Team).options(selectinload(Team.users)).order_by(Team.id)
     )
@@ -4956,8 +5191,12 @@ async def list_teams(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=TeamResponse, status_code=201)
-async def create_team(body: TeamCreate, db: AsyncSession = Depends(get_db)):
-    """チームを新規作成する。チーム名は一意。"""
+async def create_team(
+    body: TeamCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チームを新規作成する。チーム名は一意。管理者権限が必要。"""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="チーム名は必須です")
@@ -4975,9 +5214,15 @@ async def create_team(body: TeamCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
-async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends(get_db)):
-    """チーム名を更新する。"""
+async def update_team(
+    team_id: int,
+    body: TeamUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チーム名を更新する。管理者権限が必要。"""
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(Team).options(selectinload(Team.users)).where(Team.id == team_id)
     )
@@ -4989,7 +5234,9 @@ async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends
         if not name:
             raise HTTPException(status_code=400, detail="チーム名は必須です")
         # 別チームに同名が存在しないか確認
-        other = await db.execute(select(Team).where(Team.name == name, Team.id != team_id))
+        other = await db.execute(
+            select(Team).where(Team.name == name, Team.id != team_id)
+        )
         if other.scalar_one_or_none() is not None:
             raise HTTPException(status_code=400, detail="同名のチームが既に存在します")
         team.name = name
@@ -4999,16 +5246,22 @@ async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends
 
 
 @router.delete("/{team_id}", status_code=204)
-async def delete_team(team_id: int, db: AsyncSession = Depends(get_db)):
-    """チームを削除する。所属メンバーの team_id は NULL にクリアされる（ON DELETE SET NULL）。"""
+async def delete_team(
+    team_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チームを削除する。管理者権限が必要。"""
     result = await db.execute(select(Team).where(Team.id == team_id))
     team = result.scalar_one_or_none()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
-    # 所属メンバーの team_id を手動で NULL クリア（SQLite は CASCADE ON DELETE が動作しない場合があるため）
-    members_result = await db.execute(select(User).where(User.team_id == team_id))
+    # 所属メンバーのリレーションを手動で解除（SQLite は CASCADE ON DELETE が動作しない場合があるため）
+    members_result = await db.execute(
+        select(User).where(User.teams.any(Team.id == team_id))
+    )
     for user in members_result.scalars().all():
-        user.team_id = None
+        user.teams = [t for t in user.teams if t.id != team_id]
     await db.flush()
     await db.delete(team)
     return None
@@ -5027,21 +5280,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, User, UserFace
+from app.models import BoardPlacement, BoardType, User, UserFace, Team
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.routers.auth_admin import get_current_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 def _user_to_response(user: User) -> UserResponse:
+    teams_list = user.teams if hasattr(user, "teams") and user.teams is not None else []
+    team_ids = [t.id for t in teams_list]
+    team_id = team_ids[0] if team_ids else None
+    teams_summary = [{"id": t.id, "name": t.name} for t in teams_list]
+
     return UserResponse(
         id=user.id,
         name=user.name,
         email=user.email,
         call_name=user.call_name,
         role=user.role,
-        team_id=user.team_id,
-        face_count=len(user.faces) if user.faces else 0,
+        team_id=team_id,
+        team_ids=team_ids,
+        teams=teams_summary,
+        face_count=len(user.faces) if hasattr(user, "faces") and user.faces else 0,
     )
 
 
@@ -5049,7 +5310,9 @@ def _user_to_response(user: User) -> UserResponse:
 async def list_users(db: AsyncSession = Depends(get_db)):
     """ユーザー一覧。共通ユーザー管理・Linko 連携用。"""
     result = await db.execute(
-        select(User).options(selectinload(User.faces)).order_by(User.id)
+        select(User)
+        .options(selectinload(User.faces), selectinload(User.teams))
+        .order_by(User.id)
     )
     users = list(result.scalars().unique().all())
     return [_user_to_response(u) for u in users]
@@ -5066,7 +5329,7 @@ async def get_user_by_email(
     key = email.strip().lower()
     result = await db.execute(
         select(User)
-        .options(selectinload(User.faces))
+        .options(selectinload(User.faces), selectinload(User.teams))
         .where(func.lower(User.email) == key)
         .limit(1)
     )
@@ -5080,7 +5343,9 @@ async def get_user_by_email(
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """ユーザー1件取得。"""
     result = await db.execute(
-        select(User).options(selectinload(User.faces)).where(User.id == user_id)
+        select(User)
+        .options(selectinload(User.faces), selectinload(User.teams))
+        .where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -5089,11 +5354,17 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=UserResponse)
-async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)):
-    """ユーザー1件作成。email は一意。"""
+async def create_user(
+    body: UserCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """ユーザー1件作成。email は一意。管理者権限が必要。"""
     try:
         await db.execute(
-            text("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1))")
+            text(
+                "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1))"
+            )
         )
     except Exception:
         pass  # SQLite では無視
@@ -5109,8 +5380,14 @@ async def create_user(body: UserCreate, db: AsyncSession = Depends(get_db)):
         email=email_clean,
         call_name=(body.call_name or "").strip() or None,
         role=body.role,
-        team_id=body.team_id,
     )
+
+    if body.team_ids:
+        r = await db.execute(select(Team).where(Team.id.in_(body.team_ids)))
+        user.teams = list(r.scalars().all())
+    else:
+        user.teams = []
+
     db.add(user)
     await db.flush()
     await db.refresh(user)
@@ -5123,10 +5400,13 @@ async def update_user(
     user_id: int,
     body: UserUpdate,
     db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
 ):
-    """ユーザー1件更新。"""
+    """ユーザー1件更新。管理者権限が必要。"""
     result = await db.execute(
-        select(User).options(selectinload(User.faces)).where(User.id == user_id)
+        select(User)
+        .options(selectinload(User.faces), selectinload(User.teams))
+        .where(User.id == user_id)
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -5137,7 +5417,9 @@ async def update_user(
         email_clean = body.email.strip() or None
         if email_clean:
             other = await db.execute(
-                select(User).where(User.id != user_id, func.lower(User.email) == email_clean.lower())
+                select(User).where(
+                    User.id != user_id, func.lower(User.email) == email_clean.lower()
+                )
             )
             if other.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="email already registered")
@@ -5146,17 +5428,26 @@ async def update_user(
         user.call_name = body.call_name.strip() or None
     if body.role is not None:
         user.role = body.role
-    # team_id: None が渡されたら未所属（NULL）に変更、数値なら設定
-    if "team_id" in body.model_fields_set:
-        user.team_id = body.team_id
+
+    if body.team_ids is not None:
+        if body.team_ids:
+            r = await db.execute(select(Team).where(Team.id.in_(body.team_ids)))
+            user.teams = list(r.scalars().all())
+        else:
+            user.teams = []
+
     await db.flush()
     await db.refresh(user)
     return _user_to_response(user)
 
 
 @router.delete("/{user_id}", status_code=204)
-async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    """ユーザー1件削除。削除前に当該ユーザーが持つパーソナル付箋をすべてタスクボードへリリース（誰も持っていないタスク＝黄色）する。"""
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """ユーザー1件削除。削除前に当該ユーザーが持つパーソナル付箋をすべてタスクボードへリリース（誰も持っていないタスク＝黄色）する。管理者権限が必要。"""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -5176,11 +5467,13 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
         note_id = p.note_id
         # TASK 配置（owner_id=None＝誰も持っていない）がなければ作成
         task_result = await db.execute(
-            select(BoardPlacement).where(
+            select(BoardPlacement)
+            .where(
                 BoardPlacement.note_id == note_id,
                 BoardPlacement.board_type == BoardType.TASK,
                 BoardPlacement.owner_id.is_(None),
-            ).limit(1)
+            )
+            .limit(1)
         )
         if task_result.scalar_one_or_none() is None:
             task_placement = BoardPlacement(
@@ -5205,6 +5498,7 @@ async def delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 # --- 顔画像 API（複数枚・カメラ/アップロード対応） ---
 
+
 class FaceListItem(BaseModel):
     id: int
     user_id: int
@@ -5216,6 +5510,7 @@ class FaceListItem(BaseModel):
 
 class AddFaceBody(BaseModel):
     """JSON で base64 画像を送る（カメラ撮影用）。"""
+
     image: str  # data:image/png;base64,... または base64 のみ
     source: str | None = "camera"
 
@@ -5259,7 +5554,9 @@ async def add_user_face(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    content_type = (
+        (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    )
     image_data: bytes
     src: str = "upload"
     if content_type == "application/json":
@@ -5544,7 +5841,8 @@ class TeamResponse(BaseModel):
 
 <file path="backend/app/schemas/user.py">
 # -*- coding: utf-8 -*-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 
 class UserCreate(BaseModel):
@@ -5552,7 +5850,7 @@ class UserCreate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
-    team_id: int | None = None
+    team_ids: List[int] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
@@ -5560,7 +5858,12 @@ class UserUpdate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
-    team_id: int | None = None
+    team_ids: Optional[List[int]] = None
+
+
+class TeamSummary(BaseModel):
+    id: int
+    name: str
 
 
 class UserResponse(BaseModel):
@@ -5569,7 +5872,10 @@ class UserResponse(BaseModel):
     email: str | None
     call_name: str | None
     role: str | None
+    # 後方互換用: クライアントが単一 team_id に依存している場合に備え、最初のチームIDを返す
     team_id: int | None = None
+    team_ids: List[int] = Field(default_factory=list)
+    teams: List[TeamSummary] = Field(default_factory=list)
     face_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -6454,8 +6760,11 @@ async def _place_on_task_board(
 設定。環境変数から読み込み（.env 対応）。
 将来的に PostgreSQL へ切り替える場合は DATABASE_URL を変更するだけにする。
 """
+import logging
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -6463,6 +6772,11 @@ class Settings(BaseSettings):
 
     # DB: SQLite (開発) は sqlite+aiosqlite。本番は postgresql+asyncpg 等に変更
     database_url: str = "sqlite+aiosqlite:///./board.db"
+
+    # 管理者用パスワードと JWT 設定
+    admin_password: str = Field(default="admin123")
+    jwt_secret: str = Field(default="super-secret-key-change-in-production-12345")
+    jwt_expire_minutes: int = 1440  # 24時間
 
     # 社内 LLM Docker を複数台切り替え: 1〜3 を指定すると OLLAMA_URL_n / OLLAMA_MODEL_n を採用。
     # 未設定なら従来どおり OLLAMA_URL / OLLAMA_MODEL のみ。
@@ -6536,17 +6850,6 @@ class Settings(BaseSettings):
             # 32バイト未満の場合はパディング（開発環境向け）
             v = v.ljust(32, "0")
         return v[:32]
-
-    # Gemini API（未使用: ローカル LLM 利用のためコメントアウト）
-    # gemini_api_key: str | None = None
-    # @field_validator("gemini_api_key")
-    # @classmethod
-    # def strip_api_key(cls, v: str | None) -> str | None:
-    #     if v is None:
-    #         return None
-    #     v = (v or "").strip()
-    #     return v if v else None
-    # gemini_model: str = "gemini-2.0-flash"
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
     postit_board_url: str = "http://127.0.0.1:3000"
@@ -6632,6 +6935,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 本番環境向けの警告ログ
+if settings.admin_password == "admin123":
+    logger.warning(
+        "WARNING: admin_password がデフォルト値 ('admin123') です。本番環境では .env で安全なパスワードに変更してください。"
+    )
 </file>
 
 <file path="backend/app/db.py">
@@ -6643,7 +6952,7 @@ SQLite (aiosqlite) と PostgreSQL (asyncpg) の両方に対応。
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from app.config import settings
 
@@ -6760,12 +7069,19 @@ async def seed_teams() -> None:
             team_map[team_name] = team.id
         await session.commit()
 
-        # 初期ユーザーの team_id が未設定の場合のみ割り当て
+        # 初期ユーザーの teams リレーションが空の場合のみ割り当て
         for user_id, team_name in SEED_USER_TEAM_MAP.items():
-            r = await session.execute(select(User).where(User.id == user_id))
+            r = await session.execute(
+                select(User).options(selectinload(User.teams)).where(User.id == user_id)
+            )
             user = r.scalar_one_or_none()
-            if user is not None and user.team_id is None:
-                user.team_id = team_map.get(team_name)
+            if user is not None and not user.teams:
+                target_id = team_map.get(team_name)
+                if target_id:
+                    tr = await session.execute(select(Team).where(Team.id == target_id))
+                    t_obj = tr.scalar_one_or_none()
+                    if t_obj:
+                        user.teams.append(t_obj)
         await session.commit()
 </file>
 
@@ -6788,6 +7104,7 @@ from app.db import init_db
 import app.models  # noqa: F401 — モデルを Base に登録してから create_all するため
 from app.routers import (
     admin_llm,
+    auth_admin,
     auth_google,
     board_placements,
     boards,
@@ -6805,7 +7122,9 @@ from app.routers import (
 logger = logging.getLogger(__name__)
 
 # デスクトップアプリ自動更新用リリース置き場（backend/desktop_app_releases）
-_DESKTOP_APP_RELEASES_DIR = Path(__file__).resolve().parent.parent / "desktop_app_releases"
+_DESKTOP_APP_RELEASES_DIR = (
+    Path(__file__).resolve().parent.parent / "desktop_app_releases"
+)
 
 
 @asynccontextmanager
@@ -6813,9 +7132,13 @@ async def lifespan(app: FastAPI):
     """起動時に DB 初期化（テーブル作成）とパーソナル用ユーザーシード。"""
     await init_db()
     from app.db import seed_personal_users, seed_teams
+
     await seed_personal_users()
     await seed_teams()
-    from app.services.llm_settings import get_effective_llm_target_sync, get_resolved_ollama_sync
+    from app.services.llm_settings import (
+        get_effective_llm_target_sync,
+        get_resolved_ollama_sync,
+    )
 
     url, model_ov = get_resolved_ollama_sync()
     if url:
@@ -6828,15 +7151,19 @@ async def lifespan(app: FastAPI):
             tgt,
         )
     else:
-        logger.warning("[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります")
+        logger.warning(
+            "[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります"
+        )
     try:
         from app.scheduler import start_scheduler
+
         start_scheduler()
     except Exception as e:
         logger.warning("スケジューラ起動をスキップ: %s", e)
     yield
     try:
         from app.scheduler import shutdown_scheduler
+
         shutdown_scheduler()
     except Exception:
         pass
@@ -6867,13 +7194,18 @@ app.include_router(news.router)
 app.include_router(personal.router)
 app.include_router(task_reminders.router)
 app.include_router(calendar_reminders.router)
+app.include_router(auth_admin.router)
 app.include_router(auth_google.router)
 app.include_router(admin_llm.router)
 app.include_router(brainstorm.router)
 
 # デスクトップアプリ自動更新: /desktop-app/latest.json と /desktop-app/WonderLinko.msi を配信
 if _DESKTOP_APP_RELEASES_DIR.is_dir():
-    app.mount("/desktop-app", StaticFiles(directory=str(_DESKTOP_APP_RELEASES_DIR)), name="desktop_app_releases")
+    app.mount(
+        "/desktop-app",
+        StaticFiles(directory=str(_DESKTOP_APP_RELEASES_DIR)),
+        name="desktop_app_releases",
+    )
 
 
 @app.get("/health")
@@ -7791,6 +8123,7 @@ echo "Staging stopped."
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { requireAdminAuth } from "@/app/components/AdminAuthModal";
 
 type LlmStatus = Awaited<ReturnType<typeof api.admin.llm.get>>;
 
@@ -7820,35 +8153,41 @@ export default function AdminSystemPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    requireAdminAuth(() => {
+      void load();
+    });
   }, [load]);
 
   const saveSlot = async (slot: number) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const s = await api.admin.llm.put({ llm_target: slot });
-      setStatus(s);
-      setDraft(slot);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setSaving(false);
-    }
+    requireAdminAuth(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const s = await api.admin.llm.put({ llm_target: slot });
+        setStatus(s);
+        setDraft(slot);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const clearDbOverride = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const s = await api.admin.llm.put({ llm_target: null });
-      setStatus(s);
-      setDraft("env");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setSaving(false);
-    }
+    requireAdminAuth(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const s = await api.admin.llm.put({ llm_target: null });
+        setStatus(s);
+        setDraft("env");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   return (
@@ -7950,6 +8289,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { PersonalMember } from "@/lib/personalMembers";
 import type { Team } from "@/lib/types";
+import { requireAdminAuth } from "./AdminAuthModal";
 
 interface AddUserMenuProps {
   members: PersonalMember[];
@@ -7976,14 +8316,14 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [callName, setCallName] = useState("");
-  const [teamId, setTeamId] = useState<number | "">("");
+  const [teamIds, setTeamIds] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editCallName, setEditCallName] = useState("");
-  const [editTeamId, setEditTeamId] = useState<number | "">("");
+  const [editTeamIds, setEditTeamIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -8014,7 +8354,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setName("");
       setEmail("");
       setCallName("");
-      setTeamId("");
+      setTeamIds([]);
       setEditingId(null);
       setError(null);
       setNewTeamName("");
@@ -8031,44 +8371,50 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     e.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await api.users.create({
-        name: trimmedName,
-        email: email.trim() || undefined,
-        call_name: callName.trim() || undefined,
-        team_id: teamId !== "" ? Number(teamId) : null,
-      });
-      onSuccess();
-      setOpen(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "追加に失敗しました");
-    } finally {
-      setSubmitting(false);
-    }
+
+    requireAdminAuth(async () => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        await api.users.create({
+          name: trimmedName,
+          email: email.trim() || undefined,
+          call_name: callName.trim() || undefined,
+          team_ids: teamIds,
+        });
+        onSuccess();
+        setOpen(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "追加に失敗しました");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   const handleDelete = async (ownerId: number, displayName: string) => {
-    if (!confirm(`「${displayName}」を削除しますか？\nその人が持っていた付箋はすべてタスクボードにリリースされ、誰でも引き取れる状態になります。`)) return;
-    setDeletingId(ownerId);
-    setError(null);
-    try {
-      await api.users.delete(ownerId);
-      onSuccess();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "削除に失敗しました");
-    } finally {
-      setDeletingId(null);
-    }
+    requireAdminAuth(async () => {
+      if (!confirm(`「${displayName}」を削除しますか？\nその人が持っていた付箋はすべてタスクボードにリリースされ、誰でも引き取れる状態になります。`)) return;
+      setDeletingId(ownerId);
+      setError(null);
+      try {
+        await api.users.delete(ownerId);
+        onSuccess();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "削除に失敗しました");
+      } finally {
+        setDeletingId(null);
+      }
+    });
   };
 
-  const startEdit = (m: PersonalMember) => {
-    setEditingId(m.ownerId);
+  const startEdit = (m: any) => {
+    setEditingId(m.ownerId || m.id);
     setEditName(m.name);
     setEditEmail(m.email ?? "");
     setEditCallName(m.call_name ?? "");
-    setEditTeamId(m.teamId ?? "");
+    const initialTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+    setEditTeamIds(initialTeamIds);
     setError(null);
   };
 
@@ -8077,22 +8423,25 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     if (editingId == null) return;
     const trimmedName = editName.trim();
     if (!trimmedName) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await api.users.update(editingId, {
-        name: trimmedName,
-        email: editEmail.trim() || undefined,
-        call_name: editCallName.trim() || undefined,
-        team_id: editTeamId !== "" ? Number(editTeamId) : null,
-      });
-      onSuccess();
-      setEditingId(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "更新に失敗しました");
-    } finally {
-      setSubmitting(false);
-    }
+
+    requireAdminAuth(async () => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        await api.users.update(editingId, {
+          name: trimmedName,
+          email: editEmail.trim() || undefined,
+          call_name: editCallName.trim() || undefined,
+          team_ids: editTeamIds,
+        });
+        onSuccess();
+        setEditingId(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "更新に失敗しました");
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   // ------- チーム操作 -------
@@ -8101,17 +8450,20 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     e.preventDefault();
     const trimmed = newTeamName.trim();
     if (!trimmed) return;
-    setTeamSubmitting(true);
-    setTeamError(null);
-    try {
-      await api.teams.create({ name: trimmed });
-      setNewTeamName("");
-      await fetchTeams();
-    } catch (e) {
-      setTeamError(e instanceof Error ? e.message : "チーム作成に失敗しました");
-    } finally {
-      setTeamSubmitting(false);
-    }
+
+    requireAdminAuth(async () => {
+      setTeamSubmitting(true);
+      setTeamError(null);
+      try {
+        await api.teams.create({ name: trimmed });
+        setNewTeamName("");
+        await fetchTeams();
+      } catch (e) {
+        setTeamError(e instanceof Error ? e.message : "チーム作成に失敗しました");
+      } finally {
+        setTeamSubmitting(false);
+      }
+    });
   };
 
   const startEditTeam = (team: Team) => {
@@ -8125,63 +8477,69 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     if (editingTeamId == null) return;
     const trimmed = editTeamName.trim();
     if (!trimmed) return;
-    setTeamSubmitting(true);
-    setTeamError(null);
-    try {
-      await api.teams.update(editingTeamId, { name: trimmed });
-      setEditingTeamId(null);
-      await fetchTeams();
-    } catch (e) {
-      setTeamError(e instanceof Error ? e.message : "チーム更新に失敗しました");
-    } finally {
-      setTeamSubmitting(false);
-    }
+
+    requireAdminAuth(async () => {
+      setTeamSubmitting(true);
+      setTeamError(null);
+      try {
+        await api.teams.update(editingTeamId, { name: trimmed });
+        setEditingTeamId(null);
+        await fetchTeams();
+      } catch (e) {
+        setTeamError(e instanceof Error ? e.message : "チーム更新に失敗しました");
+      } finally {
+        setTeamSubmitting(false);
+      }
+    });
   };
 
   const handleDeleteTeam = async (teamId: number, teamName: string) => {
-    if (!confirm(`「${teamName}」を削除しますか？\n所属メンバーのチーム割り当ては解除されます。`)) return;
-    setDeletingTeamId(teamId);
-    setTeamError(null);
-    try {
-      await api.teams.delete(teamId);
-      await fetchTeams();
-    } catch (e) {
-      setTeamError(e instanceof Error ? e.message : "チーム削除に失敗しました");
-    } finally {
-      setDeletingTeamId(null);
-    }
+    requireAdminAuth(async () => {
+      if (!confirm(`「${teamName}」を削除しますか？\n所属メンバーのチーム割り当ては解除されます。`)) return;
+      setDeletingTeamId(teamId);
+      setTeamError(null);
+      try {
+        await api.teams.delete(teamId);
+        await fetchTeams();
+      } catch (e) {
+        setTeamError(e instanceof Error ? e.message : "チーム削除に失敗しました");
+      } finally {
+        setDeletingTeamId(null);
+      }
+    });
   };
 
   const panelBoxClass = controlled
     ? "fixed right-4 top-14 z-50 w-[min(26rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg"
     : "absolute right-0 top-full z-50 mt-1 w-[26rem] max-h-[85vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-4 shadow-lg";
 
-  const teamSelectEl = (
-    <select
-      value={teamId}
-      onChange={(e) => setTeamId(e.target.value === "" ? "" : Number(e.target.value))}
-      className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm bg-white"
-      disabled={submitting}
-    >
-      <option value="">チームなし</option>
-      {teams.map((t) => (
-        <option key={t.id} value={t.id}>{t.name}</option>
-      ))}
-    </select>
-  );
-
-  const editTeamSelectEl = (
-    <select
-      value={editTeamId}
-      onChange={(e) => setEditTeamId(e.target.value === "" ? "" : Number(e.target.value))}
-      className="rounded border border-[var(--border)] px-2 py-1 text-sm bg-white"
-      disabled={submitting}
-    >
-      <option value="">チームなし</option>
-      {teams.map((t) => (
-        <option key={t.id} value={t.id}>{t.name}</option>
-      ))}
-    </select>
+  const renderTeamCheckboxes = (selectedIds: number[], onChange: (ids: number[]) => void) => (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-[var(--border)] p-2 bg-zinc-50">
+      <span className="text-xs text-zinc-500 font-medium">所属チーム（複数選択可）</span>
+      {teams.length === 0 ? (
+        <span className="text-xs text-zinc-400">チームが登録されていません</span>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {teams.map((t) => {
+            const checked = selectedIds.includes(t.id);
+            return (
+              <label key={t.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded border border-zinc-200 text-xs hover:bg-zinc-100">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => {
+                    if (e.target.checked) onChange([...selectedIds, t.id]);
+                    else onChange(selectedIds.filter((id) => id !== t.id));
+                  }}
+                  disabled={submitting}
+                />
+                <span className="text-zinc-700">{t.name}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 
   return (
@@ -8209,22 +8567,20 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
               <button
                 type="button"
                 onClick={() => setTab("members")}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  tab === "members"
+                className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "members"
                     ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
                     : "text-zinc-500 hover:text-zinc-700"
-                }`}
+                  }`}
               >
                 メンバー管理
               </button>
               <button
                 type="button"
                 onClick={() => { setTab("teams"); fetchTeams(); }}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                  tab === "teams"
+                className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "teams"
                     ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
                     : "text-zinc-500 hover:text-zinc-700"
-                }`}
+                  }`}
               >
                 チーム管理
               </button>
@@ -8265,7 +8621,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                     disabled={submitting}
                     maxLength={50}
                   />
-                  {teamSelectEl}
+                  {renderTeamCheckboxes(teamIds, setTeamIds)}
                   <div className="flex gap-2">
                     <button
                       type="submit"
@@ -8282,97 +8638,105 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 <div className="border-t border-[var(--border)] pt-3">
                   <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
                   <ul className="flex flex-col gap-1">
-                    {members.map((m) => (
-                      <li
-                        key={m.ownerId}
-                        className="flex flex-col gap-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
-                      >
-                        {editingId === m.ownerId ? (
-                          <form onSubmit={handleUpdate} className="flex flex-col gap-2">
-                            <input
-                              type="text"
-                              value={editName}
-                              onChange={(e) => setEditName(e.target.value)}
-                              placeholder="名前（必須）"
-                              className="rounded border border-[var(--border)] px-2 py-1 text-sm"
-                              disabled={submitting}
-                              maxLength={100}
-                            />
-                            <input
-                              type="email"
-                              value={editEmail}
-                              onChange={(e) => setEditEmail(e.target.value)}
-                              placeholder="メールアドレス"
-                              className="rounded border border-[var(--border)] px-2 py-1 text-sm"
-                              disabled={submitting}
-                              maxLength={255}
-                            />
-                            <input
-                              type="text"
-                              value={editCallName}
-                              onChange={(e) => setEditCallName(e.target.value)}
-                              placeholder="呼び名"
-                              className="rounded border border-[var(--border)] px-2 py-1 text-sm"
-                              disabled={submitting}
-                              maxLength={50}
-                            />
-                            {editTeamSelectEl}
-                            <div className="flex gap-2">
-                              <button
-                                type="submit"
-                                disabled={submitting || !editName.trim()}
-                                className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-                              >
-                                {submitting ? "保存中…" : "保存"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingId(null)}
-                                className="rounded border border-[var(--border)] px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
-                              >
-                                キャンセル
-                              </button>
-                            </div>
-                          </form>
-                        ) : (
-                          <>
-                            <div className="flex items-center justify-between gap-2">
-                              <div>
-                                <span className="text-zinc-800 font-medium">{m.name}</span>
-                                {m.teamId && (
-                                  <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
-                                    {teams.find(t => t.id === m.teamId)?.name ?? "チーム"}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 gap-1">
+                    {members.map((m: any) => {
+                      const userTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                      const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
+
+                      return (
+                        <li
+                          key={m.ownerId || m.id}
+                          className="flex flex-col gap-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                        >
+                          {editingId === (m.ownerId || m.id) ? (
+                            <form onSubmit={handleUpdate} className="flex flex-col gap-2">
+                              <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                placeholder="名前（必須）"
+                                className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                                disabled={submitting}
+                                maxLength={100}
+                              />
+                              <input
+                                type="email"
+                                value={editEmail}
+                                onChange={(e) => setEditEmail(e.target.value)}
+                                placeholder="メールアドレス"
+                                className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                                disabled={submitting}
+                                maxLength={255}
+                              />
+                              <input
+                                type="text"
+                                value={editCallName}
+                                onChange={(e) => setEditCallName(e.target.value)}
+                                placeholder="呼び名"
+                                className="rounded border border-[var(--border)] px-2 py-1 text-sm"
+                                disabled={submitting}
+                                maxLength={50}
+                              />
+                              {renderTeamCheckboxes(editTeamIds, setEditTeamIds)}
+                              <div className="flex gap-2">
                                 <button
-                                  type="button"
-                                  onClick={() => startEdit(m)}
-                                  className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
+                                  type="submit"
+                                  disabled={submitting || !editName.trim()}
+                                  className="rounded bg-[var(--primary)] px-2 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
                                 >
-                                  編集
+                                  {submitting ? "保存中…" : "保存"}
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleDelete(m.ownerId, m.name)}
-                                  disabled={deletingId === m.ownerId}
-                                  className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  onClick={() => setEditingId(null)}
+                                  className="rounded border border-[var(--border)] px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
                                 >
-                                  {deletingId === m.ownerId ? "削除中…" : "削除"}
+                                  キャンセル
                                 </button>
                               </div>
-                            </div>
-                            {(m.email || m.call_name) && (
-                              <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-zinc-500">
-                                {m.email && <span>{m.email}</span>}
-                                {m.call_name && <span>呼び名: {m.call_name}</span>}
+                            </form>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <span className="text-zinc-800 font-medium">{m.name}</span>
+                                  {userTeams.map((t) => (
+                                    <span key={t.id} className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
+                                      {t.name}
+                                    </span>
+                                  ))}
+                                  {userTeams.length === 0 && (
+                                    <span className="text-xs text-zinc-400">(未所属)</span>
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEdit(m)}
+                                    className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
+                                  >
+                                    編集
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(m.ownerId || m.id, m.name)}
+                                    disabled={deletingId === (m.ownerId || m.id)}
+                                    className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                    {deletingId === (m.ownerId || m.id) ? "削除中…" : "削除"}
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                          </>
-                        )}
-                      </li>
-                    ))}
+                              {(m.email || m.call_name) && (
+                                <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-zinc-500">
+                                  {m.email && <span>{m.email}</span>}
+                                  {m.call_name && <span>呼び名: {m.call_name}</span>}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                   {members.length === 0 && (
                     <p className="py-2 text-sm text-zinc-500">メンバーがいません</p>
@@ -8472,15 +8836,21 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                           {editingTeamId !== team.id && (
                             <div className="flex flex-wrap gap-1">
                               {members
-                                .filter(m => m.teamId === team.id)
-                                .map(m => (
-                                  <span key={m.ownerId} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                                .filter((m: any) => {
+                                  const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                  return ids.includes(team.id);
+                                })
+                                .map((m) => (
+                                  <span key={m.ownerId || m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                                     {m.name}
                                   </span>
                                 ))}
-                              {members.filter(m => m.teamId === team.id).length === 0 && (
-                                <span className="text-xs text-zinc-400">メンバーなし</span>
-                              )}
+                              {members.filter((m: any) => {
+                                const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                return ids.includes(team.id);
+                              }).length === 0 && (
+                                  <span className="text-xs text-zinc-400">メンバーなし</span>
+                                )}
                             </div>
                           )}
                         </li>
@@ -8506,6 +8876,118 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       )}
     </div>
   );
+}
+</file>
+
+<file path="frontend/app/components/AdminAuthModal.tsx">
+"use client";
+
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+
+let authCallbackQueue: Array<(token: string) => void> = [];
+
+export function requireAdminAuth(onSuccess: () => void) {
+    if (typeof window !== "undefined") {
+        const token = sessionStorage.getItem("admin_token");
+        if (token) {
+            onSuccess();
+        } else {
+            authCallbackQueue.push(onSuccess);
+            window.dispatchEvent(new Event("auth-required"));
+        }
+    }
+}
+
+export default function AdminAuthModal() {
+    const [isOpen, setIsOpen] = useState(false);
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const handleRequired = () => {
+            setIsOpen(true);
+            setError("");
+            setPassword("");
+        };
+        const handleUnauthorized = () => {
+            setError("セッションが切れました。再度パスワードを入力してください。");
+            setIsOpen(true);
+        };
+
+        window.addEventListener("auth-required", handleRequired);
+        window.addEventListener("auth-unauthorized", handleUnauthorized);
+
+        return () => {
+            window.removeEventListener("auth-required", handleRequired);
+            window.removeEventListener("auth-unauthorized", handleUnauthorized);
+        };
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
+        setLoading(true);
+        try {
+            const res = await api.admin.login(password);
+            sessionStorage.setItem("admin_token", res.access_token);
+            setIsOpen(false);
+
+            const callbacks = [...authCallbackQueue];
+            authCallbackQueue = [];
+            callbacks.forEach((cb) => cb(res.access_token));
+        } catch (err) {
+            setError("パスワードが間違っています。");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setIsOpen(false);
+        authCallbackQueue = [];
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+            <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+                <h2 className="mb-2 text-xl font-bold text-zinc-800">管理者認証</h2>
+                <p className="mb-4 text-sm text-zinc-600">
+                    この操作を実行するには、管理者パスワードを入力してください。
+                </p>
+                <form onSubmit={handleSubmit}>
+                    <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="パスワード"
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:border-[var(--primary)] focus:outline-none"
+                        autoFocus
+                    />
+                    {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+                    <div className="mt-6 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={handleCancel}
+                            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+                        >
+                            キャンセル
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading || !password}
+                            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                            {loading ? "認証中..." : "認証"}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
 }
 </file>
 
@@ -11019,23 +11501,41 @@ body {
 </file>
 
 <file path="frontend/app/layout.tsx">
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Nav from "./components/Nav";
+import AdminAuthModal from "./components/AdminAuthModal";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
-  title: "Board System (Wonder Rinko)",
-  description: "4ボード：Main / Task / Personal / Morning",
+  title: "Board System API (Wonder Linko)",
+  description: "4ボード（Main / Task / Personal / Morning）用のボードシステム",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="ja">
-      <body className="min-h-screen bg-white text-zinc-900 antialiased">
-        <Nav />
-        <main className="flex-1">{children}</main>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {children}
+        <AdminAuthModal />
       </body>
     </html>
   );
@@ -11053,6 +11553,13 @@ export default function Home() {
 <file path="frontend/lib/api.ts">
 const BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
 export const API_BASE = BASE;
+
+const getAuthToken = (): string | null => {
+  if (typeof window !== "undefined") {
+    return sessionStorage.getItem("admin_token");
+  }
+  return null;
+};
 
 function normalizeErrorMessage(status: number, body: string): string {
   const trimmed = body.trim();
@@ -11075,11 +11582,30 @@ function normalizeErrorMessage(status: number, body: string): string {
 }
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers,
   });
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("admin_token");
+      window.dispatchEvent(new Event("auth-unauthorized"));
+    }
+    const text = await res.text();
+    throw new Error(normalizeErrorMessage(res.status, text));
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(normalizeErrorMessage(res.status, text));
@@ -11102,9 +11628,9 @@ export const api = {
 
   users: {
     list: () => fetchApi<User[]>("/users"),
-    create: (body: { name: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
+    create: (body: { name: string; email?: string; call_name?: string; role?: string; team_ids?: number[] }) =>
       fetchApi<User>("/users", { method: "POST", body: JSON.stringify(body) }),
-    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
+    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string; team_ids?: number[] }) =>
       fetchApi<User>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (userId: number) =>
       fetchApi<undefined>(`/users/${userId}`, { method: "DELETE" }),
@@ -11213,6 +11739,11 @@ export const api = {
   },
 
   admin: {
+    login: (password: string) =>
+      fetchApi<{ access_token: string; token_type: string }>("/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      }),
     llm: {
       get: () =>
         fetchApi<{
@@ -11353,13 +11884,16 @@ export interface User {
   email: string | null;
   call_name: string | null;
   role: string | null;
-  team_id?: number | null;
+  team_id?: number | null; // 後方互換用
+  team_ids?: number[];
+  teams?: Pick<Team, "id" | "name">[];
+  face_count?: number;
 }
 
 export interface Team {
   id: number;
   name: string;
-  member_count: number;
+  member_count?: number;
   created_at?: string;
   updated_at?: string;
 }

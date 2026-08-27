@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.team import Team
 from app.models.user import User
+from app.routers.auth_admin import get_current_admin
 from app.schemas.team import TeamCreate, TeamResponse, TeamUpdate
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -27,6 +28,7 @@ def _team_to_response(team: Team) -> TeamResponse:
 async def list_teams(db: AsyncSession = Depends(get_db)):
     """チーム一覧を取得する。"""
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(Team).options(selectinload(Team.users)).order_by(Team.id)
     )
@@ -35,8 +37,12 @@ async def list_teams(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=TeamResponse, status_code=201)
-async def create_team(body: TeamCreate, db: AsyncSession = Depends(get_db)):
-    """チームを新規作成する。チーム名は一意。"""
+async def create_team(
+    body: TeamCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チームを新規作成する。チーム名は一意。管理者権限が必要。"""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="チーム名は必須です")
@@ -54,9 +60,15 @@ async def create_team(body: TeamCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{team_id}", response_model=TeamResponse)
-async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends(get_db)):
-    """チーム名を更新する。"""
+async def update_team(
+    team_id: int,
+    body: TeamUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チーム名を更新する。管理者権限が必要。"""
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(Team).options(selectinload(Team.users)).where(Team.id == team_id)
     )
@@ -68,7 +80,9 @@ async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends
         if not name:
             raise HTTPException(status_code=400, detail="チーム名は必須です")
         # 別チームに同名が存在しないか確認
-        other = await db.execute(select(Team).where(Team.name == name, Team.id != team_id))
+        other = await db.execute(
+            select(Team).where(Team.name == name, Team.id != team_id)
+        )
         if other.scalar_one_or_none() is not None:
             raise HTTPException(status_code=400, detail="同名のチームが既に存在します")
         team.name = name
@@ -78,16 +92,22 @@ async def update_team(team_id: int, body: TeamUpdate, db: AsyncSession = Depends
 
 
 @router.delete("/{team_id}", status_code=204)
-async def delete_team(team_id: int, db: AsyncSession = Depends(get_db)):
-    """チームを削除する。所属メンバーの team_id は NULL にクリアされる（ON DELETE SET NULL）。"""
+async def delete_team(
+    team_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
+    """チームを削除する。管理者権限が必要。"""
     result = await db.execute(select(Team).where(Team.id == team_id))
     team = result.scalar_one_or_none()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
-    # 所属メンバーの team_id を手動で NULL クリア（SQLite は CASCADE ON DELETE が動作しない場合があるため）
-    members_result = await db.execute(select(User).where(User.team_id == team_id))
+    # 所属メンバーのリレーションを手動で解除（SQLite は CASCADE ON DELETE が動作しない場合があるため）
+    members_result = await db.execute(
+        select(User).where(User.teams.any(Team.id == team_id))
+    )
     for user in members_result.scalars().all():
-        user.team_id = None
+        user.teams = [t for t in user.teams if t.id != team_id]
     await db.flush()
     await db.delete(team)
     return None

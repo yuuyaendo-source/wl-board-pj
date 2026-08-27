@@ -1,6 +1,13 @@
 const BASE = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") : "";
 export const API_BASE = BASE;
 
+const getAuthToken = (): string | null => {
+  if (typeof window !== "undefined") {
+    return sessionStorage.getItem("admin_token");
+  }
+  return null;
+};
+
 function normalizeErrorMessage(status: number, body: string): string {
   const trimmed = body.trim();
   if (trimmed.startsWith("<") || trimmed.startsWith("<!")) {
@@ -22,11 +29,30 @@ function normalizeErrorMessage(status: number, body: string): string {
 }
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers,
   });
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("admin_token");
+      window.dispatchEvent(new Event("auth-unauthorized"));
+    }
+    const text = await res.text();
+    throw new Error(normalizeErrorMessage(res.status, text));
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(normalizeErrorMessage(res.status, text));
@@ -49,9 +75,9 @@ export const api = {
 
   users: {
     list: () => fetchApi<User[]>("/users"),
-    create: (body: { name: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
+    create: (body: { name: string; email?: string; call_name?: string; role?: string; team_ids?: number[] }) =>
       fetchApi<User>("/users", { method: "POST", body: JSON.stringify(body) }),
-    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string; team_id?: number | null }) =>
+    update: (userId: number, body: { name?: string; email?: string; call_name?: string; role?: string; team_ids?: number[] }) =>
       fetchApi<User>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (userId: number) =>
       fetchApi<undefined>(`/users/${userId}`, { method: "DELETE" }),
@@ -160,6 +186,11 @@ export const api = {
   },
 
   admin: {
+    login: (password: string) =>
+      fetchApi<{ access_token: string; token_type: string }>("/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      }),
     llm: {
       get: () =>
         fetchApi<{

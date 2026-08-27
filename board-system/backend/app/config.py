@@ -3,8 +3,11 @@
 設定。環境変数から読み込み（.env 対応）。
 将来的に PostgreSQL へ切り替える場合は DATABASE_URL を変更するだけにする。
 """
+import logging
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -12,6 +15,11 @@ class Settings(BaseSettings):
 
     # DB: SQLite (開発) は sqlite+aiosqlite。本番は postgresql+asyncpg 等に変更
     database_url: str = "sqlite+aiosqlite:///./board.db"
+
+    # 管理者用パスワードと JWT 設定
+    admin_password: str = Field(default="admin123")
+    jwt_secret: str = Field(default="super-secret-key-change-in-production-12345")
+    jwt_expire_minutes: int = 1440  # 24時間
 
     # 社内 LLM Docker を複数台切り替え: 1〜3 を指定すると OLLAMA_URL_n / OLLAMA_MODEL_n を採用。
     # 未設定なら従来どおり OLLAMA_URL / OLLAMA_MODEL のみ。
@@ -85,17 +93,6 @@ class Settings(BaseSettings):
             # 32バイト未満の場合はパディング（開発環境向け）
             v = v.ljust(32, "0")
         return v[:32]
-
-    # Gemini API（未使用: ローカル LLM 利用のためコメントアウト）
-    # gemini_api_key: str | None = None
-    # @field_validator("gemini_api_key")
-    # @classmethod
-    # def strip_api_key(cls, v: str | None) -> str | None:
-    #     if v is None:
-    #         return None
-    #     v = (v or "").strip()
-    #     return v if v else None
-    # gemini_model: str = "gemini-2.0-flash"
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
     postit_board_url: str = "http://127.0.0.1:3000"
@@ -181,3 +178,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 本番環境向けの警告ログ
+if settings.admin_password == "admin123":
+    logger.warning(
+        "WARNING: admin_password がデフォルト値 ('admin123') です。本番環境では .env で安全なパスワードに変更してください。"
+    )

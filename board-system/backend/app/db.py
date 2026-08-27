@@ -6,7 +6,7 @@ SQLite (aiosqlite) と PostgreSQL (asyncpg) の両方に対応。
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, selectinload
 
 from app.config import settings
 
@@ -123,10 +123,17 @@ async def seed_teams() -> None:
             team_map[team_name] = team.id
         await session.commit()
 
-        # 初期ユーザーの team_id が未設定の場合のみ割り当て
+        # 初期ユーザーの teams リレーションが空の場合のみ割り当て
         for user_id, team_name in SEED_USER_TEAM_MAP.items():
-            r = await session.execute(select(User).where(User.id == user_id))
+            r = await session.execute(
+                select(User).options(selectinload(User.teams)).where(User.id == user_id)
+            )
             user = r.scalar_one_or_none()
-            if user is not None and user.team_id is None:
-                user.team_id = team_map.get(team_name)
+            if user is not None and not user.teams:
+                target_id = team_map.get(team_name)
+                if target_id:
+                    tr = await session.execute(select(Team).where(Team.id == target_id))
+                    t_obj = tr.scalar_one_or_none()
+                    if t_obj:
+                        user.teams.append(t_obj)
         await session.commit()

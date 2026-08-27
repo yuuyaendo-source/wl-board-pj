@@ -16,7 +16,11 @@ class Team(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
-    # リレーション: チームに所属するユーザー（1:N）
-    users = relationship("User", back_populates="team", foreign_keys="User.team_id")
+    # リレーション: チームに所属するユーザー（多対多）
+    users = relationship(
+        "User", secondary="user_teams", back_populates="teams", lazy="selectin"
+    )

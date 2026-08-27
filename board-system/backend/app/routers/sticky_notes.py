@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, StickyNote, User
+from app.models import BoardPlacement, BoardType, StickyNote, User, Team
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
@@ -571,7 +571,10 @@ async def copy_to_team(
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
 
-    result = await db.execute(select(User).where(User.team_id == body.team_id))
+    # 多対多（user_teams）に対応したメンバー取得クエリ
+    result = await db.execute(
+        select(User).where(User.teams.any(Team.id == body.team_id))
+    )
     members = list(result.scalars().all())
     if not members:
         return CopyToTeamResponse(
