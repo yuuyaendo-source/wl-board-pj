@@ -36,12 +36,12 @@ export default function BoardCanvas({
     const scaledHeight = baseHeight * scale;
 
     return (
-        /* 外側ラッパー：画面全体（min-100%）にドット背景を維持しつつ描画サイズを確保 */
+        /* 外側ラッパー：画面全体（100% / 100vh）を最低保証し、縮小時の背景切れを完全防止 */
         <div
             className={styles.canvasOuter}
             style={{
-                width: `${scaledWidth}px`,
-                height: `${scaledHeight}px`,
+                width: `max(100%, ${scaledWidth}px)`,
+                height: `max(calc(100vh - 60px), ${scaledHeight}px)`,
             }}
         >
             {/* 内側キャンバス：元の4000pxのスケール変形領域 */}

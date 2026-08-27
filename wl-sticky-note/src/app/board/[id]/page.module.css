@@ -6,6 +6,8 @@
     overflow: auto;
     position: relative;
     background-color: #f0f0f0;
+    background-image: radial-gradient(#ddd 1px, transparent 1px);
+    background-size: 20px 20px;
     cursor: default;
     touch-action: pan-x pan-y;
     padding-top: env(safe-area-inset-top);
@@ -67,6 +69,8 @@
 .canvasWrapper {
     margin-top: 60px;
     line-height: 0;
+    min-width: 100%;
+    min-height: calc(100vh - 60px);
 }
 
 @media (max-width: 767px) {
