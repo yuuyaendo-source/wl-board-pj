@@ -5427,8 +5427,7 @@ async def create_user(
 
     db.add(user)
     await db.flush()
-    await db.refresh(user)
-    await db.refresh(user, ["faces"])
+    await db.refresh(user, ["faces", "teams"])
     return _user_to_response(user)
 
 
@@ -5474,7 +5473,7 @@ async def update_user(
             user.teams = []
 
     await db.flush()
-    await db.refresh(user)
+    await db.refresh(user, ["faces", "teams"])
     return _user_to_response(user)
 
 
@@ -8022,6 +8021,13 @@ ACTIVE_ENV_FILE="$NGINX_CONF_DIR/active_env.conf"
 DOCKER_COMPOSE_FILE="$APP_DIR/docker-compose.prod.yml"
 DOCKER_COMPOSE_DB="$APP_DIR/docker-compose.db.yml"
 
+# .env ファイルが存在する場合は環境変数を読み込む
+if [ -f "$APP_DIR/.env" ]; then
+  set -a
+  source "$APP_DIR/.env"
+  set +a
+fi
+
 # ネットワーク作成（存在しない場合）
 docker network inspect linko-net >/dev/null 2>&1 || docker network create linko-net
 
@@ -8387,13 +8393,12 @@ export default function AdminSystemPage() {
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { PersonalMember } from "@/lib/personalMembers";
-import type { Team } from "@/lib/types";
+import type { Team, User } from "@/lib/types";
 import { requireAdminAuth } from "./AdminAuthModal";
 
 interface AddUserMenuProps {
   members: PersonalMember[];
   onSuccess: () => void;
-  /** 指定時は親（管理メニュー等）が開閉を制御し、トリガーボタンは表示しない */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -8410,6 +8415,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   };
 
   const [tab, setTab] = useState<Tab>("members");
+
+  // APIから直接取得する全ユーザー詳細データ（複数チームIDを正しく取得）
+  const [fullUsers, setFullUsers] = useState<User[]>([]);
 
   // --- メンバー追加フォーム ---
   const [name, setName] = useState("");
@@ -8436,6 +8444,15 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
 
+  const fetchUsersData = useCallback(async () => {
+    try {
+      const data = await api.users.list();
+      setFullUsers(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
   const fetchTeams = useCallback(async () => {
     setTeamsLoading(true);
     try {
@@ -8459,10 +8476,11 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setNewTeamName("");
       setTeamError(null);
       setEditingTeamId(null);
+      fetchUsersData();
       fetchTeams();
       setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open, fetchTeams]);
+  }, [open, fetchUsersData, fetchTeams]);
 
   // ------- メンバー操作 -------
 
@@ -8481,6 +8499,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           call_name: callName.trim(),
           team_ids: teamIds,
         });
+        await fetchUsersData();
         onSuccess();
         setOpen(false);
       } catch (e) {
@@ -8498,6 +8517,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setError(null);
       try {
         await api.users.delete(ownerId);
+        await fetchUsersData();
         onSuccess();
       } catch (e) {
         setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -8507,13 +8527,15 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     });
   };
 
-  const startEdit = (m: PersonalMember | any) => {
+  const startEdit = (m: any) => {
     const id = m.ownerId ?? m.id;
+    const fullUser = fullUsers.find((u) => u.id === id);
     setEditingId(id);
     setEditName(m.name);
     setEditEmail(m.email ?? "");
     setEditCallName(m.call_name ?? "");
-    const initialTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+
+    const initialTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
     setEditTeamIds(initialTeamIds);
     setError(null);
   };
@@ -8534,6 +8556,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           call_name: editCallName.trim(),
           team_ids: editTeamIds,
         });
+        await fetchUsersData();
         onSuccess();
         setEditingId(null);
       } catch (e) {
@@ -8740,7 +8763,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                   <ul className="flex flex-col gap-1">
                     {members.map((m: any) => {
                       const memberId = m.ownerId ?? m.id;
-                      const userTeamIds = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                      const fullUser = fullUsers.find((u) => u.id === memberId);
+                      const userTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                       const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
 
                       return (
@@ -8938,7 +8962,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                             <div className="flex flex-wrap gap-1">
                               {members
                                 .filter((m: any) => {
-                                  const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                  const memberId = m.ownerId ?? m.id;
+                                  const fullUser = fullUsers.find((u) => u.id === memberId);
+                                  const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                   return ids.includes(team.id);
                                 })
                                 .map((m: any) => (
@@ -8947,7 +8973,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </span>
                                 ))}
                               {members.filter((m: any) => {
-                                const ids = m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
+                                const memberId = m.ownerId ?? m.id;
+                                const fullUser = fullUsers.find((u) => u.id === memberId);
+                                const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
                                 return ids.includes(team.id);
                               }).length === 0 && (
                                   <span className="text-xs text-zinc-400">メンバーなし</span>
@@ -12850,7 +12878,7 @@ server {
 # 本番: cp .env.example .env のうえで値を設定し、deploy.sh 実行時に読み込まれる
 
 # 管理者認証用設定（未設定時はデフォルト値が使用されます）
-# ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=admin
 # JWT_SECRET=super-secret-key-change-in-production-12345
 
 # ローカル LLM（Ollama）。自動仕分け・マトリクススコア・日次リセットに使用。未設定時は AI はスキップ
@@ -12949,6 +12977,8 @@ services:
     environment:
       # DBは linko-db (docker-compose.db.ymlで定義) に接続
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@linko-db:5432/linko_board_system
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-production-12345}
       # ローカル LLM（Ollama）。未設定時は自動振り分けはスキップ
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.242:11435/v1}
       # 未設定で自動（Ollama のローカルモデル一覧から解決）。固定したいときだけ指定
@@ -13011,7 +13041,7 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
+        NEXT_PUBLIC_STICKY_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"
