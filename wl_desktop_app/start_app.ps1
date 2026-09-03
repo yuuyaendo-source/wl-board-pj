@@ -1,4 +1,4 @@
-# Wonder Rinko Desktop App 起動
+# Wonder Linko Desktop App 起動
 Set-Location $PSScriptRoot
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Error "Python が見つかりません。"

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Rinko Mini-Port: 常駐型フローティング入力ウィンドウ。
+Linko Mini-Port: 常駐型フローティング入力ウィンドウ。
 通常時はリン子ボタンと投稿ボタンのみ。「投稿」クリックで入力欄を表示し、送信ボタンで POST /sticky_notes に送信。
 """
 from __future__ import annotations
@@ -161,7 +161,7 @@ def _send_content(text: str) -> Tuple[bool, str]:
         return False, f"接続エラー: {str(e)[:80]}"
 
 
-def _rinko_icon_path() -> str:
+def _linko_icon_path() -> str:
     base = get_app_base_dir()
     for candidate in (
         os.path.join(base, "assets", "toast_icon.png"),
@@ -211,14 +211,14 @@ class MiniPortWindow(ctk.CTk):
             self._start_hotkey_listener()
         else:
             print(
-                "Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
+                "Linko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
             )
 
     # プレースホルダー用（CTkTextbox は placeholder 非対応のため自前で表示）
     PLACEHOLDER_TEXT = "付箋を投稿するコメントを入力"
 
     def _configure_window(self):
-        self.title("Rinko Mini-Port")
+        self.title("Linko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -254,8 +254,8 @@ class MiniPortWindow(ctk.CTk):
         self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.compact_frame.pack(fill="both", expand=True, padx=8, pady=6)
 
-        self._rinko_image = None  # 参照保持 (GC 防止)
-        icon_path = _rinko_icon_path()
+        self._linko_image = None  # 参照保持 (GC 防止)
+        icon_path = _linko_icon_path()
         use_icon = _HAS_PIL and os.path.isfile(icon_path)
 
         if avatar_on:
@@ -267,7 +267,7 @@ class MiniPortWindow(ctk.CTk):
             self._avatar_size = (avatar_size, avatar_size)
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(avatar_size, avatar_size),
@@ -276,15 +276,15 @@ class MiniPortWindow(ctk.CTk):
                     use_icon = False
             # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立。
             # 画像があるときは text を必ず空に (画像とテキストの重なり防止)。
-            self.btn_rinko = ctk.CTkLabel(
+            self.btn_linko = ctk.CTkLabel(
                 self.compact_frame,
                 text="" if use_icon else "📷",
-                image=self._rinko_image if use_icon else None,
+                image=self._linko_image if use_icon else None,
                 width=avatar_size,
                 height=avatar_size,
             )
-            self.btn_rinko.pack(side="top", pady=(2, 8))
-            self._bind_avatar_click_drag(self.btn_rinko)
+            self.btn_linko.pack(side="top", pady=(2, 8))
+            self._bind_avatar_click_drag(self.btn_linko)
 
             # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
             self._button_frame = ctk.CTkFrame(
@@ -325,14 +325,14 @@ class MiniPortWindow(ctk.CTk):
             self.COMPACT_H = 56
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(36, 36),
                     )
-                    self.btn_rinko = ctk.CTkButton(
+                    self.btn_linko = ctk.CTkButton(
                         self.compact_frame,
-                        image=self._rinko_image,
+                        image=self._linko_image,
                         text="",
                         width=44,
                         height=40,
@@ -344,7 +344,7 @@ class MiniPortWindow(ctk.CTk):
                 except Exception:
                     use_icon = False
             if not use_icon:
-                self.btn_rinko = ctk.CTkButton(
+                self.btn_linko = ctk.CTkButton(
                     self.compact_frame,
                     text="ボード",
                     width=56,
@@ -356,7 +356,7 @@ class MiniPortWindow(ctk.CTk):
                     text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
-            self.btn_rinko.pack(side="left", padx=(0, 8))
+            self.btn_linko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
                 self.compact_frame,
                 text="投稿",
@@ -524,9 +524,9 @@ class MiniPortWindow(ctk.CTk):
 
     # --- Phase 2: 2D アバター + 吹き出し ------------------------------------
     def _init_avatar(self) -> None:
-        """features.linko_avatar=True なら btn_rinko を 2D アバター表示に切替。
+        """features.linko_avatar=True なら btn_linko を 2D アバター表示に切替。
 
-        - 128px アバターを左に配置 (btn_rinko は _build_ui で既に 128 サイズに作られている)
+        - 128px アバターを左に配置 (btn_linko は _build_ui で既に 128 サイズに作られている)
         - SpeechBubble を生成して linko_avatar に register
         - まばたきアイドルアニメを起動
         - COMPACT 窓サイズを 240x140 に拡大
@@ -722,8 +722,8 @@ class MiniPortWindow(ctk.CTk):
                 self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
                 return
         try:
-            self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
-            self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
+            self.btn_linko.configure(image=self._avatar_ctk_images[pose], text="")
+            self._linko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
             if not getattr(self, "_pose_logged_once", False):
                 self._avatar_log(
                     f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}"
@@ -803,7 +803,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,
@@ -826,7 +826,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,

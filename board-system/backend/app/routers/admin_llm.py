@@ -90,7 +90,7 @@ async def put_llm_status(
 
     await db.flush()
     invalidate_resolved_model_cache(None)
-    logger.info("[Rinko AI] admin: llm_target を更新 db=%s", body.llm_target)
+    logger.info("[Linko AI] admin: llm_target を更新 db=%s", body.llm_target)
 
     eff = body.llm_target if body.llm_target is not None else settings.llm_target
     url, model_ov = settings.resolve_ollama_for_target(eff)

@@ -41,8 +41,8 @@ wl-sticky-note（本番: <http://wl-sticky-note.local/board/wl）と連携する
 **MSI 形式で配布（推奨）**
 
 1. 開発側: 本番向けの `config.json`（`postit_board_url`: `http://wl-sticky-note.local/`、`postit_board_id`: `wl`）を 02_3_WL_Desktop_app に置く。
-2. `cd 02_3_WL_Desktop_app` のうえで `.\build_msi.ps1` を実行。`dist\WonderRinko.msi` が生成される。
-3. **WonderRinko.msi** を配布。メンバーは MSI を実行してインストール（Python 不要）。インストール後、トレイにアイコンが出ればOK。必要に応じてインストール先の `config.json` で `user_id` を変更。
+2. `cd 02_3_WL_Desktop_app` のうえで `.\build_msi.ps1` を実行。`dist\WonderLinko.msi` が生成される。
+3. **WonderLinko.msi** を配布。メンバーは MSI を実行してインストール（Python 不要）。インストール後、トレイにアイコンが出ればOK。必要に応じてインストール先の `config.json` で `user_id` を変更。
 
 **フォルダ＋起動手順で配布**
 

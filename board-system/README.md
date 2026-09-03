@@ -1,4 +1,4 @@
-# Board System (Wonder Rinko)
+# Board System (Wonder Linko)
 
 付箋ボード（`wl-sticky-note`）と連携する統合ボードシステム。**Main / Task / Personal / Meeting** の 4 ボードを提供し、社内 LLM（Ollama）による自動仕分け・Google カレンダー連携・ニュース要約・デスクトップアプリ向け API を担う。
 

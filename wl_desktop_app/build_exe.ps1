@@ -1,6 +1,6 @@
-# Wonder Rinko Desktop App - exe build (PyInstaller)
+# Wonder Linko Desktop App - exe build (PyInstaller)
 # Run: .\build_exe.ps1
-# Output: dist\WonderRinko.exe
+# Output: dist\WonderLinko.exe
 #
 # Note: exe 単体の配布が許可されない環境では、代わりに .\build_msi.ps1 で MSI をビルドして配布すること。
 
@@ -15,11 +15,12 @@ Write-Host "Installing PyInstaller..." -ForegroundColor Yellow
 pip install -q pyinstaller
 
 Write-Host "Building exe..." -ForegroundColor Yellow
-# WonderRinko.spec で PIL を同梱（_imaging.pyd 必須）。spec が無ければ CLI でビルド
-if (Test-Path "WonderRinko.spec") {
-    pyinstaller --noconsole --clean WonderRinko.spec
-} else {
-    pyinstaller --noconsole --onefile --name WonderRinko app.py
+# WonderLinko.spec で PIL を同梱（_imaging.pyd 必須）。spec が無ければ CLI でビルド
+if (Test-Path "WonderLinko.spec") {
+    pyinstaller --noconsole --clean WonderLinko.spec
+}
+else {
+    pyinstaller --noconsole --onefile --name WonderLinko app.py
 }
 
 if ($LASTEXITCODE -ne 0) {
@@ -40,5 +41,5 @@ if (Test-Path ".env.example") {
 }
 
 Write-Host ""
-Write-Host "Done: dist\WonderRinko.exe" -ForegroundColor Green
-Write-Host "Distribute: WonderRinko.exe + config.json in the same folder." -ForegroundColor Cyan
+Write-Host "Done: dist\WonderLinko.exe" -ForegroundColor Green
+Write-Host "Distribute: WonderLinko.exe + config.json in the same folder." -ForegroundColor Cyan

@@ -108,7 +108,7 @@ cd src
 ## 関連アプリ
 
 - **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント・音声生成。また `GET /api/boards/:id/notes` で付箋を全件取得し、ローテーション表示する「付箋を全件取得」ボタンを提供。
-- **Wonder Rinko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
+- **Wonder Linko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
 
 ---
 

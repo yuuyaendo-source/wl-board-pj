@@ -1,4 +1,4 @@
-# Board System Backend (Wonder Rinko)
+# Board System Backend (Wonder Linko)
 
 4ボード（Main / Task / Personal / Meeting）用の FastAPI バックエンド。  
 開発は SQLite（async）、**本番 Docker は PostgreSQL**（`docker-compose.prod.yml` + `docker-compose.db.yml`）。
@@ -39,7 +39,7 @@ backend/
 │   ├── versions/      # マイグレーションスクリプト
 │   └── env.py         # 非同期対応
 ├── app/
-│   ├── ai/            # Rinko Core（triage, matrix, daily_reset）
+│   ├── ai/            # Linko Core（triage, matrix, daily_reset）
 │   ├── config.py      # 設定（DATABASE_URL, GEMINI_API_KEY 等）
 │   ├── db.py          # 非同期エンジン・セッション・Base・seed
 │   ├── main.py        # FastAPI アプリ
@@ -95,7 +95,7 @@ alembic revision --autogenerate -m "説明"   # 変更から新規リビジョ�
 - **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
 - **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
 
-## フェーズ3: AI Worker（Rinko Core）
+## フェーズ3: AI Worker（Linko Core）
 
 `OLLAMA_URL` を .env に設定すると以下が有効になる。
 

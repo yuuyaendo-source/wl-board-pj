@@ -496,7 +496,7 @@ if __name__ == "__main__":
 # 実行前: Wonder Linko を終了してください。
 
 $basePath = "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
-$possibleNames = @("Wonder Rinko", "WonderLinko", "WonderLinkoDesktop", "WonderLinko.Desktop", "Wonder Rinko")
+$possibleNames = @("Wonder Linko", "WonderLinko", "WonderLinkoDesktop", "WonderLinko.Desktop", "Wonder Linko")
 
 Write-Host "通知設定のリセットを試行します。" -ForegroundColor Cyan
 Write-Host ""
@@ -514,7 +514,8 @@ foreach ($name in $possibleNames) {
             Remove-Item -Path $fullPath -Recurse -Force -ErrorAction Stop
             Write-Host "削除しました: $name" -ForegroundColor Green
             $removed++
-        } catch {
+        }
+        catch {
             Write-Host "削除に失敗しました: $name - $_" -ForegroundColor Red
         }
     }
@@ -528,7 +529,8 @@ if ($removed -eq 0) {
     Write-Host "上記の一覧で Wonder Linko に該当しそうな名前のキーを、レジストリエディターで手動削除してみてください。" -ForegroundColor Gray
     Write-Host "  regedit で以下のパスを開きます:" -ForegroundColor Gray
     Write-Host "  HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings" -ForegroundColor Gray
-} else {
+}
+else {
     Write-Host ""
     Write-Host "リセットしました。Wonder Linko を起動し、トレイの「テストお知らせ」で通知を確認してください。" -ForegroundColor Green
 }
@@ -1201,7 +1203,7 @@ def get_log_file_path() -> str:
 <file path="app.py">
 # -*- coding: utf-8 -*-
 """
-Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+Wonder Linko Desktop App (DT_APP) - Personal Linko Agent
 社員PCに常駐し、お知らせとワンクリックDeep Linkで各ユーザーのパーソナルモードへ誘導する。
 タスクトレイ常駐＋ミニポート（付箋クイック投稿）を起動時に表示。トレイからミニポートの表示/非表示を切り替え可能。
 """
@@ -1885,7 +1887,7 @@ def run_tray():
     _config = load_config()
     image = _make_icon_image()
     menu = build_menu(None)
-    _icon = pystray.Icon("wonder_rinko", image, f"Wonder Linko（v{__version__}）", menu)
+    _icon = pystray.Icon("wonder_linko", image, f"Wonder Linko（v{__version__}）", menu)
     _icon.run()
 
 
@@ -2068,7 +2070,7 @@ def main():
     ):
         if startup.set_startup_enabled(True):
             notifications.show_toast(
-                "Wonder Rinko",
+                "Wonder Linko",
                 "PC起動時に自動で起動するように設定しました。",
                 duration_sec=4,
             )
@@ -2099,7 +2101,7 @@ def main():
         _miniport_window = None
         _miniport_visible = False
         notifications.show_toast(
-            "Wonder Rinko",
+            "Wonder Linko",
             "ミニポートの起動に失敗しました: " + str(e)[:50],
             duration_sec=5,
         )
@@ -2436,9 +2438,9 @@ def play_linko_audio(audio_url: str, text: str = "", log_prefix: str = "[audio]"
 </file>
 
 <file path="build_exe.ps1">
-# Wonder Rinko Desktop App - exe build (PyInstaller)
+# Wonder Linko Desktop App - exe build (PyInstaller)
 # Run: .\build_exe.ps1
-# Output: dist\WonderRinko.exe
+# Output: dist\WonderLinko.exe
 #
 # Note: exe 単体の配布が許可されない環境では、代わりに .\build_msi.ps1 で MSI をビルドして配布すること。
 
@@ -2453,11 +2455,12 @@ Write-Host "Installing PyInstaller..." -ForegroundColor Yellow
 pip install -q pyinstaller
 
 Write-Host "Building exe..." -ForegroundColor Yellow
-# WonderRinko.spec で PIL を同梱（_imaging.pyd 必須）。spec が無ければ CLI でビルド
-if (Test-Path "WonderRinko.spec") {
-    pyinstaller --noconsole --clean WonderRinko.spec
-} else {
-    pyinstaller --noconsole --onefile --name WonderRinko app.py
+# WonderLinko.spec で PIL を同梱（_imaging.pyd 必須）。spec が無ければ CLI でビルド
+if (Test-Path "WonderLinko.spec") {
+    pyinstaller --noconsole --clean WonderLinko.spec
+}
+else {
+    pyinstaller --noconsole --onefile --name WonderLinko app.py
 }
 
 if ($LASTEXITCODE -ne 0) {
@@ -2478,82 +2481,102 @@ if (Test-Path ".env.example") {
 }
 
 Write-Host ""
-Write-Host "Done: dist\WonderRinko.exe" -ForegroundColor Green
-Write-Host "Distribute: WonderRinko.exe + config.json in the same folder." -ForegroundColor Cyan
+Write-Host "Done: dist\WonderLinko.exe" -ForegroundColor Green
+Write-Host "Distribute: WonderLinko.exe + config.json in the same folder." -ForegroundColor Cyan
 </file>
 
 <file path="build_msi.ps1">
-# Wonder Rinko Desktop App - MSI ビルド（cx_Freeze）
+# Wonder Linko Desktop App - MSI ビルド（cx_Freeze）
 # 会社ポリシーで exe 直接実行が不可なため、MSI 形式で配布する。
 # 実行: .\build_msi.ps1
-# 出力: dist\WonderRinko.msi
+# 出力: dist\WonderLinko.msi
 
 Set-Location $PSScriptRoot
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Error "Python not found."
-    exit 1
+# 1. 仮想環境（.venv）の存在確認および自動作成
+$venvPath = Join-Path $PSScriptRoot ".venv"
+$venvPython = Join-Path $venvPath "Scripts\python.exe"
+
+if (-not (Test-Path $venvPython)) {
+    Write-Host "Creating virtual environment (.venv)..." -ForegroundColor Yellow
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        Write-Error "System Python not found. Please install Python."
+        exit 1
+    }
+    python -m venv .venv
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to create virtual environment."
+        exit 1
+    }
 }
 
+Write-Host "Using virtual environment: $venvPython" -ForegroundColor Cyan
+
+# 2. 仮想環境内への依存パッケージインストール
 Write-Host "Installing runtime dependencies (requirements.txt)..." -ForegroundColor Yellow
-# 重要: ビルド時の Python 環境に requirements.txt の全パッケージが必要。
-# cx_Freeze は import 解析で見つけたパッケージしかバンドルしないため、
-# requirements.txt が未 install だと python-socketio などが msi に入らない。
-pip install -q -r requirements.txt
+& $venvPython -m pip install -q -r requirements.txt
 if ($LASTEXITCODE -ne 0) {
     Write-Error "requirements.txt install failed."
     exit 1
 }
 
 Write-Host "Installing cx_Freeze and freeze-core..." -ForegroundColor Yellow
-# freeze-core は cx_Freeze の Windows 用依存。Python バージョンに合った wheel を入れるため明示的にアップグレード
-pip install -q --upgrade freeze-core cx_Freeze
+& $venvPython -m pip install -q --upgrade freeze-core cx_Freeze
 
-# Python 3.13+ では python-msilib が cx_Freeze の依存で入る
-$pyVer = (python -c "import sys; print(sys.version_info.major, sys.version_info.minor)" 2>$null)
+# Python 3.13+ 用のパッケージ処理
+$pyVer = (& $venvPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null)
 if ($pyVer -match "3\.(1[3-9]|[2-9][0-9])") {
-    pip install -q python-msilib 2>$null
+    & $venvPython -m pip install -q python-msilib 2>$null
 }
 
-# build/ と dist/ をクリーンしてから再ビルド (cx_Freeze の cache で旧依存が残るのを防ぐ)
+# 3. キャッシュ・過去ビルドのクリーンアップ
 if (Test-Path build) { Remove-Item -Recurse -Force build }
-if (Test-Path dist)  { Remove-Item -Recurse -Force dist }
+if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
+# 4. MSI ビルド実行
 Write-Host "Building MSI..." -ForegroundColor Yellow
-python setup.py bdist_msi
+& $venvPython setup.py bdist_msi
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed."
     exit 1
 }
 
+# 5. 生成物および各種バンドル確認
 $msiPath = Get-ChildItem -Path "dist" -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($msiPath) {
     Write-Host ""
     Write-Host "Done: $($msiPath.FullName)" -ForegroundColor Green
+    
     $pilPyd = Get-ChildItem -Path "build" -Recurse -Filter "_imaging*.pyd" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($pilPyd) {
         Write-Host "PIL _imaging: bundled ($($pilPyd.Name))" -ForegroundColor Gray
-    } else {
+    }
+    else {
         Write-Error "_imaging*.pyd is not in build. Do not distribute this MSI."
         exit 1
     }
+
     # Phase 3 (来客通知) で socketio が必須。バンドル漏れチェック
     $sioDir = Get-ChildItem -Path "build" -Recurse -Directory -Filter "socketio" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($sioDir) {
         Write-Host "python-socketio: bundled ($($sioDir.FullName))" -ForegroundColor Gray
-    } else {
+    }
+    else {
         Write-Error "python-socketio is not bundled. visitor_notify will not work. Aborting."
         exit 1
     }
+
     $eioDir = Get-ChildItem -Path "build" -Recurse -Directory -Filter "engineio" -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $eioDir) {
         Write-Error "python-engineio is not bundled. visitor_notify will not work. Aborting."
         exit 1
     }
+
     Write-Host "Distribute the MSI for installation." -ForegroundColor Cyan
     Write-Host "Note: Put production config.json before building to bundle it." -ForegroundColor Gray
-} else {
+}
+else {
     Write-Host "MSI not found in dist. Check build output." -ForegroundColor Yellow
 }
 </file>
@@ -3777,7 +3800,7 @@ def _get_defaults():
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
         "notifications_enabled": True,  # 通知表示の総合スイッチ（トースト・吹き出し・来客通知・口パク。Windows OS 設定とは別）
-        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
+        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Linko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wlboardsys.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない
@@ -7069,7 +7092,7 @@ def build_linko_cards_url(cfg: dict | None) -> str:
 <file path="mini_port.py">
 # -*- coding: utf-8 -*-
 """
-Rinko Mini-Port: 常駐型フローティング入力ウィンドウ。
+Linko Mini-Port: 常駐型フローティング入力ウィンドウ。
 通常時はリン子ボタンと投稿ボタンのみ。「投稿」クリックで入力欄を表示し、送信ボタンで POST /sticky_notes に送信。
 """
 from __future__ import annotations
@@ -7230,7 +7253,7 @@ def _send_content(text: str) -> Tuple[bool, str]:
         return False, f"接続エラー: {str(e)[:80]}"
 
 
-def _rinko_icon_path() -> str:
+def _linko_icon_path() -> str:
     base = get_app_base_dir()
     for candidate in (
         os.path.join(base, "assets", "toast_icon.png"),
@@ -7280,14 +7303,14 @@ class MiniPortWindow(ctk.CTk):
             self._start_hotkey_listener()
         else:
             print(
-                "Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
+                "Linko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
             )
 
     # プレースホルダー用（CTkTextbox は placeholder 非対応のため自前で表示）
     PLACEHOLDER_TEXT = "付箋を投稿するコメントを入力"
 
     def _configure_window(self):
-        self.title("Rinko Mini-Port")
+        self.title("Linko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -7323,8 +7346,8 @@ class MiniPortWindow(ctk.CTk):
         self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.compact_frame.pack(fill="both", expand=True, padx=8, pady=6)
 
-        self._rinko_image = None  # 参照保持 (GC 防止)
-        icon_path = _rinko_icon_path()
+        self._linko_image = None  # 参照保持 (GC 防止)
+        icon_path = _linko_icon_path()
         use_icon = _HAS_PIL and os.path.isfile(icon_path)
 
         if avatar_on:
@@ -7336,7 +7359,7 @@ class MiniPortWindow(ctk.CTk):
             self._avatar_size = (avatar_size, avatar_size)
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(avatar_size, avatar_size),
@@ -7345,15 +7368,15 @@ class MiniPortWindow(ctk.CTk):
                     use_icon = False
             # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立。
             # 画像があるときは text を必ず空に (画像とテキストの重なり防止)。
-            self.btn_rinko = ctk.CTkLabel(
+            self.btn_linko = ctk.CTkLabel(
                 self.compact_frame,
                 text="" if use_icon else "📷",
-                image=self._rinko_image if use_icon else None,
+                image=self._linko_image if use_icon else None,
                 width=avatar_size,
                 height=avatar_size,
             )
-            self.btn_rinko.pack(side="top", pady=(2, 8))
-            self._bind_avatar_click_drag(self.btn_rinko)
+            self.btn_linko.pack(side="top", pady=(2, 8))
+            self._bind_avatar_click_drag(self.btn_linko)
 
             # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
             self._button_frame = ctk.CTkFrame(
@@ -7394,14 +7417,14 @@ class MiniPortWindow(ctk.CTk):
             self.COMPACT_H = 56
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(36, 36),
                     )
-                    self.btn_rinko = ctk.CTkButton(
+                    self.btn_linko = ctk.CTkButton(
                         self.compact_frame,
-                        image=self._rinko_image,
+                        image=self._linko_image,
                         text="",
                         width=44,
                         height=40,
@@ -7413,7 +7436,7 @@ class MiniPortWindow(ctk.CTk):
                 except Exception:
                     use_icon = False
             if not use_icon:
-                self.btn_rinko = ctk.CTkButton(
+                self.btn_linko = ctk.CTkButton(
                     self.compact_frame,
                     text="ボード",
                     width=56,
@@ -7425,7 +7448,7 @@ class MiniPortWindow(ctk.CTk):
                     text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
-            self.btn_rinko.pack(side="left", padx=(0, 8))
+            self.btn_linko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
                 self.compact_frame,
                 text="投稿",
@@ -7593,9 +7616,9 @@ class MiniPortWindow(ctk.CTk):
 
     # --- Phase 2: 2D アバター + 吹き出し ------------------------------------
     def _init_avatar(self) -> None:
-        """features.linko_avatar=True なら btn_rinko を 2D アバター表示に切替。
+        """features.linko_avatar=True なら btn_linko を 2D アバター表示に切替。
 
-        - 128px アバターを左に配置 (btn_rinko は _build_ui で既に 128 サイズに作られている)
+        - 128px アバターを左に配置 (btn_linko は _build_ui で既に 128 サイズに作られている)
         - SpeechBubble を生成して linko_avatar に register
         - まばたきアイドルアニメを起動
         - COMPACT 窓サイズを 240x140 に拡大
@@ -7791,8 +7814,8 @@ class MiniPortWindow(ctk.CTk):
                 self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
                 return
         try:
-            self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
-            self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
+            self.btn_linko.configure(image=self._avatar_ctk_images[pose], text="")
+            self._linko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
             if not getattr(self, "_pose_logged_once", False):
                 self._avatar_log(
                     f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}"
@@ -7872,7 +7895,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,
@@ -7895,7 +7918,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,
@@ -8234,6 +8257,7 @@ def are_enabled(cfg=None) -> bool:
     try:
         if cfg is None:
             from config_loader import load_config
+
             cfg = load_config()
         return bool(cfg.get("notifications_enabled", True))
     except Exception:
@@ -8254,6 +8278,7 @@ def _open_last_notification_url():
     url = get_last_notification_url()
     if url:
         from security import safe_webbrowser_open
+
         safe_webbrowser_open(url)
 
 
@@ -8264,6 +8289,7 @@ def _get_toast_icon_path():
     """
     try:
         from config_loader import load_config, get_app_base_dir
+
         cfg = load_config()
         path = (cfg.get("toast_icon_path") or "").strip()
         if path:
@@ -8279,6 +8305,7 @@ def _get_toast_icon_path():
     # 緑の丸デザインの PNG を自動生成（exe 時は exe と同じフォルダ）
     try:
         from config_loader import get_app_base_dir
+
         app_dir = get_app_base_dir()
     except Exception:
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -8292,18 +8319,30 @@ def _get_toast_icon_path():
     if not os.path.isfile(default_path):
         try:
             from PIL import Image, ImageDraw
+
             size = 256
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             d = ImageDraw.Draw(img)
-            d.ellipse([4, 4, size - 4, size - 4], fill=(0, 200, 120), outline=(0, 255, 200))
-            d.ellipse([size // 4, size // 4, size - size // 4, size - size // 4], fill=(0, 60, 40))
+            d.ellipse(
+                [4, 4, size - 4, size - 4], fill=(0, 200, 120), outline=(0, 255, 200)
+            )
+            d.ellipse(
+                [size // 4, size // 4, size - size // 4, size - size // 4],
+                fill=(0, 60, 40),
+            )
             img.save(default_path)
         except Exception:
             return None
     return os.path.abspath(default_path)
 
 
-def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8, force_show: bool = False):
+def show_toast(
+    title: str,
+    message: str,
+    url: str = None,
+    duration_sec: int = 8,
+    force_show: bool = False,
+):
     """
     右下にトーストを表示する。
     url を渡すと保存し、表示中にクリックするとそのお知らせへ飛べる。
@@ -8315,6 +8354,7 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
         try:
             from config_loader import load_config
             from security import filter_allowed_url
+
             url = filter_allowed_url(url, load_config(), purpose="toast")
         except Exception:
             url = None
@@ -8329,11 +8369,12 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
         if url:
             try:
                 from winotify import Notification
+
                 icon_path = _get_toast_icon_path()
                 # app_id を変えると Windows が「別アプリ」と扱う。通知オフで復旧しない場合の対策で WonderLinko.Desktop に変更
                 kwargs = {
                     "app_id": "WonderLinko.Desktop",
-                    "title": title or "Wonder Rinko",
+                    "title": title or "Wonder Linko",
                     "msg": message,
                 }
                 if icon_path:
@@ -8347,6 +8388,7 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
         # 2) win10toast-click（トースト本体クリックで開く）
         try:
             from win10toast_click import ToastNotifier
+
             toaster = ToastNotifier()
             kwargs = {
                 "title": title or "リン子のお知らせ",
@@ -8363,10 +8405,12 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
         # 3) フォールバック: win10toast（表示のみ・トレイの「最後のお知らせを開く」で開く）
         try:
             from win10toast import ToastNotifier
+
             toaster = ToastNotifier()
             toaster.show_toast(
-                title=title or "Wonder Rinko",
-                msg=message + ("\n（トレイの「最後のお知らせを開く」で開く）" if url else ""),
+                title=title or "Wonder Linko",
+                msg=message
+                + ("\n（トレイの「最後のお知らせを開く」で開く）" if url else ""),
                 duration=duration_sec,
                 threaded=True,
             )
@@ -8376,6 +8420,7 @@ def show_toast(title: str, message: str, url: str = None, duration_sec: int = 8,
     print(f"[Notify] {title}: {message}")
     if url:
         from security import safe_webbrowser_open
+
         safe_webbrowser_open(url)
 
 
@@ -8384,6 +8429,7 @@ def open_last_notification():
     url = get_last_notification_url()
     if url:
         from security import safe_webbrowser_open
+
         return safe_webbrowser_open(url)
     return False
 </file>
@@ -8561,7 +8607,7 @@ def deliver_remind(
 </file>
 
 <file path="requirements.txt">
-# Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+# Wonder Linko Desktop App (DT_APP) - Personal Linko Agent
 # Python 3.10+
 pystray>=0.19.5
 Pillow>=10.0.0
@@ -8576,6 +8622,7 @@ python-docx>=1.1.0
 # Windows のみ（トースト通知用）。Linux/macOS ではスキップされる
 pywin32>=306; sys_platform == "win32"
 winotify>=1.1.0; sys_platform == "win32"
+win10toast>=0.9; sys_platform == "win32"
 win10toast-click>=0.1.2; sys_platform == "win32"
 # Windows の zoneinfo (Asia/Tokyo) 用
 tzdata>=2024.1; sys_platform == "win32"
@@ -9881,7 +9928,7 @@ class SpeechBubble:
 </file>
 
 <file path="start_app.ps1">
-# Wonder Rinko Desktop App 起動
+# Wonder Linko Desktop App 起動
 Set-Location $PSScriptRoot
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Error "Python が見つかりません。"
@@ -9903,7 +9950,7 @@ import os
 import sys
 
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_NAME = "Wonder Rinko"
+APP_NAME = "Wonder Linko"
 
 
 def _get_startup_command():
@@ -9921,9 +9968,11 @@ def _get_startup_command():
     pythonw = os.path.join(python_dir, "pythonw.exe")
     if not os.path.isfile(pythonw):
         pythonw = os.path.join(python_dir, "python.exe")
+
     # パスにスペースが含まれる場合はダブルクォート
     def quote(s):
         return f'"{s}"' if " " in s else s
+
     return f"{quote(pythonw)} {quote(app_py)}"
 
 
@@ -9933,12 +9982,8 @@ def is_startup_enabled():
         return False
     try:
         import winreg
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            RUN_KEY_PATH,
-            0,
-            winreg.KEY_READ
-        )
+
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ)
         try:
             winreg.QueryValueEx(key, APP_NAME)
             return True
@@ -9959,11 +10004,9 @@ def set_startup_enabled(enabled):
         return False
     try:
         import winreg
+
         key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            RUN_KEY_PATH,
-            0,
-            winreg.KEY_SET_VALUE
+            winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE
         )
         try:
             if enabled:
@@ -10897,12 +10940,15 @@ def _log(msg: str):
     """ログに確実に残す（別スレッドから呼ばれるため app_log.log_info を使用）。"""
     try:
         from app_log import log_info
+
         log_info(msg)
     except Exception:
         pass
 
 
-def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None) -> bool:
+def wait_for_network(
+    host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None
+) -> bool:
     """
     社内ネットワーク到達を待つ（HTTP プローブ。ping は使わない）。
 
@@ -10912,11 +10958,15 @@ def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180, 
     if cfg is None:
         try:
             from config_loader import load_config
+
             cfg = load_config()
         except Exception:
             cfg = {}
     from network_readiness import wait_for_network_ready
-    return wait_for_network_ready(cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec)
+
+    return wait_for_network_ready(
+        cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec
+    )
 
 
 def _version_tuple(version_str: str) -> tuple:
@@ -10996,9 +11046,18 @@ def _find_wonderlinko_product_codes():
     except Exception:
         return codes
     roots = [
-        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ]
     for root, path in roots:
         try:
@@ -11020,7 +11079,11 @@ def _find_wonderlinko_product_codes():
                     sk.Close()
                 except OSError:
                     continue
-                if name and ("WonderLinko" in name or "Wonder Linko" in name or "WonderRinko" in name):
+                if name and (
+                    "WonderLinko" in name
+                    or "Wonder Linko" in name
+                    or "WonderLinko" in name
+                ):
                     if sub not in codes:
                         codes.append(sub)
         finally:
@@ -11092,11 +11155,13 @@ def download_and_install(download_url: str, timeout: int = 120):
         if product_codes:
             uninstall_block = "\n".join(
                 f'echo [update] uninstall {c} >> "{trace_log}"\n'
-                f'msiexec /x {c} /qn /norestart'
+                f"msiexec /x {c} /qn /norestart"
                 for c in product_codes
             )
         else:
-            uninstall_block = f'echo [update] no existing product found >> "{trace_log}"'
+            uninstall_block = (
+                f'echo [update] no existing product found >> "{trace_log}"'
+            )
 
         bat_path = os.path.join(tmp, "wonderlinko_update.bat")
         # ASCII のみ (日本語は chcp 依存で文字化け・失敗の原因)。各ステップを trace_log に追記。
@@ -11143,7 +11208,9 @@ del "%~f0"
             close_fds=True,
             cwd=tmp,
         )
-        _log(f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。")
+        _log(
+            f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。"
+        )
         # バッチが waitloop に入る猶予を与えてから終了。
         # 重要: sys.exit(0) は SystemExit を投げるが、Tk / pystray のイベント
         # コールバック内 (設定パネルのボタン・トレイメニュー) では握りつぶされ、
@@ -11163,6 +11230,7 @@ def check_and_notify(current_version: str, check_url: str, on_result):
     バックグラウンドで更新チェックし、結果を on_result(has_update, latest_version, download_url) でコールバックする。
     on_result はメインスレッドから呼びたい場合は、呼び出し側で after 等でラップすること。
     """
+
     def run():
         _log("更新チェック バックグラウンドスレッド開始")
         result = check_for_update(current_version, check_url)
@@ -11178,7 +11246,7 @@ def check_and_notify(current_version: str, check_url: str, on_result):
 <file path="version.py">
 # -*- coding: utf-8 -*-
 """アプリのバージョン（一元管理）。setup.py と更新チェックで参照する。"""
-__version__ = "3.9.6"
+__version__ = "3.9.7"
 </file>
 
 <file path="visitor_notify_client.py">

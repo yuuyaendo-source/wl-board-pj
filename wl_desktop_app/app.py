@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+Wonder Linko Desktop App (DT_APP) - Personal Linko Agent
 社員PCに常駐し、お知らせとワンクリックDeep Linkで各ユーザーのパーソナルモードへ誘導する。
 タスクトレイ常駐＋ミニポート（付箋クイック投稿）を起動時に表示。トレイからミニポートの表示/非表示を切り替え可能。
 """
@@ -684,7 +684,7 @@ def run_tray():
     _config = load_config()
     image = _make_icon_image()
     menu = build_menu(None)
-    _icon = pystray.Icon("wonder_rinko", image, f"Wonder Linko（v{__version__}）", menu)
+    _icon = pystray.Icon("wonder_linko", image, f"Wonder Linko（v{__version__}）", menu)
     _icon.run()
 
 
@@ -867,7 +867,7 @@ def main():
     ):
         if startup.set_startup_enabled(True):
             notifications.show_toast(
-                "Wonder Rinko",
+                "Wonder Linko",
                 "PC起動時に自動で起動するように設定しました。",
                 duration_sec=4,
             )
@@ -898,7 +898,7 @@ def main():
         _miniport_window = None
         _miniport_visible = False
         notifications.show_toast(
-            "Wonder Rinko",
+            "Wonder Linko",
             "ミニポートの起動に失敗しました: " + str(e)[:50],
             duration_sec=5,
         )

@@ -1,4 +1,4 @@
-# Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+# Wonder Linko Desktop App (DT_APP) - Personal Linko Agent
 # Python 3.10+
 pystray>=0.19.5
 Pillow>=10.0.0
@@ -13,6 +13,7 @@ python-docx>=1.1.0
 # Windows のみ（トースト通知用）。Linux/macOS ではスキップされる
 pywin32>=306; sys_platform == "win32"
 winotify>=1.1.0; sys_platform == "win32"
+win10toast>=0.9; sys_platform == "win32"
 win10toast-click>=0.1.2; sys_platform == "win32"
 # Windows の zoneinfo (Asia/Tokyo) 用
 tzdata>=2024.1; sys_platform == "win32"

@@ -99,7 +99,7 @@ def _get_defaults():
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
         "notifications_enabled": True,  # 通知表示の総合スイッチ（トースト・吹き出し・来客通知・口パク。Windows OS 設定とは別）
-        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
+        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Linko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wlboardsys.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない

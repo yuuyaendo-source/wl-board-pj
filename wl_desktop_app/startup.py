@@ -7,7 +7,7 @@ import os
 import sys
 
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_NAME = "Wonder Rinko"
+APP_NAME = "Wonder Linko"
 
 
 def _get_startup_command():
@@ -25,9 +25,11 @@ def _get_startup_command():
     pythonw = os.path.join(python_dir, "pythonw.exe")
     if not os.path.isfile(pythonw):
         pythonw = os.path.join(python_dir, "python.exe")
+
     # パスにスペースが含まれる場合はダブルクォート
     def quote(s):
         return f'"{s}"' if " " in s else s
+
     return f"{quote(pythonw)} {quote(app_py)}"
 
 
@@ -37,12 +39,8 @@ def is_startup_enabled():
         return False
     try:
         import winreg
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            RUN_KEY_PATH,
-            0,
-            winreg.KEY_READ
-        )
+
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ)
         try:
             winreg.QueryValueEx(key, APP_NAME)
             return True
@@ -63,11 +61,9 @@ def set_startup_enabled(enabled):
         return False
     try:
         import winreg
+
         key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            RUN_KEY_PATH,
-            0,
-            winreg.KEY_SET_VALUE
+            winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE
         )
         try:
             if enabled:

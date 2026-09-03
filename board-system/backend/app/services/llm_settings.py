@@ -30,7 +30,7 @@ async def get_db_llm_target_async(db: AsyncSession) -> int | None:
         return row[0]
     except Exception as e:
         logger.warning(
-            "[Rinko AI] system_settings 読み取りに失敗（マイグレーション未適用の可能性）: %s",
+            "[Linko AI] system_settings 読み取りに失敗（マイグレーション未適用の可能性）: %s",
             e,
         )
         return None
