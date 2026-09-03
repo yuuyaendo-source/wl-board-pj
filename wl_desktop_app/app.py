@@ -860,17 +860,18 @@ def main():
         start_postit_poll(lambda: _config, on_new_postit_notes)
 
     # MSI 等でインストールした exe の初回起動時のみ、Windows 再起動後もミニポートを自動表示するためスタートアップに登録
-    if (
-        sys.platform == "win32"
-        and getattr(sys, "frozen", False)
-        and not startup.is_startup_enabled()
-    ):
-        if startup.set_startup_enabled(True):
-            notifications.show_toast(
-                "Wonder Linko",
-                "PC起動時に自動で起動するように設定しました。",
-                duration_sec=4,
-            )
+    # ★ セキュリティ誤検知対策のため、起動時のサイレントな自動登録は無効化し、設定画面からの手動登録のみに変更 ★
+    # if (
+    #     sys.platform == "win32"
+    #     and getattr(sys, "frozen", False)
+    #     and not startup.is_startup_enabled()
+    # ):
+    #     if startup.set_startup_enabled(True):
+    #         notifications.show_toast(
+    #             "Wonder Linko",
+    #             "PC起動時に自動で起動するように設定しました。",
+    #             duration_sec=4,
+    #         )
 
     # ミニポートを起動時に強制表示（タスクトレイは常駐、ミニポートはトレイから表示/非表示可能）
     try:
