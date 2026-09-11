@@ -7,5 +7,9 @@ __pycache__/
 /toast_icon.png
 dist/
 build/
-*.spec
+# 改善計画16: WonderLinko.spec をGit管理に含めるため除外を解除
+# *.spec
 WonderLinko.log
+
+# 改善計画17: 署名用証明書の秘密鍵を除外 (公開鍵の .cer は Git管理対象)
+cert/*.pfx

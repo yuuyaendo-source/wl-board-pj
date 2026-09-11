@@ -4,7 +4,7 @@
 
 来客通知・リン子アバター・ブレスト・タスク/カレンダーリマインド・顔/音声セルフ登録などは **`features.*` で任意に ON**（機能フラグは既定すべて OFF。`brainstorm_voice` のみ既定 ON）。
 
-> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.6**）。MSI ビルドと自動更新チェックがこの値を参照する。
+> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.7**）。MSI ビルドと自動更新チェックがこの値を参照する。
 
 ---
 
@@ -50,13 +50,15 @@
 | ----------- | ------ |
 | `app.py` | 起動シーケンス、単一インスタンス、トレイ、各ポーリング起動 |
 | `config_loader.py` | `config.json` 読み書き、環境変数マージ、`features` ヘルパ |
+| `settings_dialog.py` | 設定ダイアログ（完全自動保存・即時反映、各機能フラグ ON/OFF、表示名編集等） |
 | `mini_port.py` | ミニポート UI、付箋 POST、パーソナルボードを開く |
+| `chat_panel.py` | リン子とのブレストチャット（SSE ストリーミング、Ctrl+Enter 送信、音声/添付） |
 | `notifications.py` | Windows トースト、最後のお知らせ URL 保持 |
 | `linko_avatar.py` / `speech_bubble.py` | 2D アバター（11 ポーズ・口パク・アイドル） |
 | `remind_notify.py` | タスク/カレンダー通知のトースト・吹き出し・TTS 統一配信 |
 | `audio_player.py` | WAV 再生、`linko_server_url/api/v2/tts` による読み上げ |
 | `security.py` | 外向き URL ホワイトリスト、`webbrowser.open` ガード |
-| `update_checker.py` / `startup.py` | MSI 自動更新、Windows スタートアップ登録 |
+| `update_checker.py` / `startup.py` | MSI 自動更新、Windows スタートアップ登録（OSタスクマネージャー同期・自動登録） |
 
 ---
 
@@ -66,22 +68,25 @@
 flowchart TD
     A[app.py 起動] --> B{--after-update-wait?}
     B -->|Yes| C[インストーラ終了待ち → 自己再起動]
-    B -->|No| D{単一インスタンス mutex}
+    B -->|No| D{単一インスタンスソケット}
     D -->|既存あり| E[show_request → 前面化依頼 → 終了]
     D -->|取得成功| F[load_config]
     F --> G[表示名未設定 → 入力ダイアログ]
     G --> H[Board 未ログイン → メールログイン促し（任意）]
     H --> I[付箋ポーリング開始]
-    I --> J[MiniPortWindow 表示]
+    I --> I2[スタートアップ同期 _sync_startup_setting]
+    I2 --> J[MiniPortWindow 表示]
     J --> K[トレイスレッド開始]
     K --> L[タスク/カレンダー/来客ポーリング開始]
     L --> M[更新チェック（バックグラウンド・UI なし）]
     M --> N[mainloop]
 ```
 
-**Windows MSI 初回起動時:** スタートアップ未登録ならレジストリに自動登録し、トーストで通知。
+**スタートアップ登録（自動起動・改善計画18）:** スタートアップフォルダ（`shell:startup`）へのショートカット配置により行います。既定は ON で、アプリ初回起動時に自動登録されます。タスクマネージャーでの無効化状態（`StartupApproved`）と双方向で安全に同期され、ユーザーがOS側で無効化した場合はアプリ側が勝手に再登録しないセキュリティ設計を採用しています。
 
-**単一インスタンス:** 2 回目以降の起動は新プロセスを起動せず、既存インスタンスのミニポートを前面化する。
+**設定画面（完全自動保存・改善計画18）:** 設定ダイアログの「保存」「キャンセル」ボタンは廃止され、チェックボックスや選択肢の変更、およびテキスト入力フィールドからのフォーカスアウト／Enterキー押下により即座に設定ファイルへ反映・保存されます。
+
+**単一インスタンス:** 2 回目以降の起動は新プロセスを起動せず、ローカルソケット排他制御と `show_request` により既存インスタンスのミニポートを前面化する。
 
 ---
 
@@ -95,11 +100,11 @@ flowchart TD
 | **付箋新着通知** | 60 秒間隔ポーリング（`0` で無効） | 件数/更新時刻変化 → トースト | `GET …/api/boards/{id}/summary` |
 | **タスクトレイ** | 左クリック「開く」 | `tray_click_action` に従い URL を開く | 付箋 / パーソナル / 最後のお知らせ |
 | **通知 ON/OFF** | ミニポート 🔔 / 右クリック | `notifications_enabled` をトグル | ローカル config のみ |
-| **設定** | トレイ「設定…」/ ミニポート ⚙ | `open_settings_dialog()` | — |
-| **前面化** | `Ctrl+Shift+Space`（pynput） | ミニポートを前面表示 | — |
+| **設定** | トレイ「設定…」/ ミニポート ⚙ | `open_settings_dialog()`（自動保存・即時反映） | — |
+| **前面化** | トレイ「ミニポートを表示」/ 重複起動時 | ミニポートを前面表示（※誤検知防止のためグローバルホットキーは廃止） | — |
 | **表示名** | 初回起動時 | 付箋投稿者名を入力・保存 | `display_name` |
 | **Board ログイン** | 初回起動時（任意） | メール → personal_id 保存 | `board_system_personal_id` 等 |
-| **PC 起動時自動起動** | MSI 初回 / 設定チェックボックス | レジストリ Run キー | Windows のみ |
+| **PC 起動時自動起動** | 既定 ON（初回自動登録・OS同期） | スタートアップフォルダ（ショートカット・OS設定同期） | Windows のみ |
 | **自動更新チェック** | 起動時 1 回 | 更新あっても **ダイアログは出さない**（ログのみ） | `update_check_url` |
 
 ### トレイメニュー（最小構成）
@@ -208,7 +213,8 @@ Google API はデスクトップから直接呼ばない。Board System サー�
   → 「付箋にする」→ mini_port 経由で sticky_notes POST
 ```
 
-`brainstorm` OFF 時のアバタークリックは挨拶吹き出し＋口パクのみ。
+`brainstorm` OFF 時のアバタークリックは挨拶吹き出し＋口パクのみ。  
+チャットパネル内のメッセージ送信は「送信」ボタンのほか、`Ctrl + Enter` キーに対応しています（入力欄上部に「Ctrl + Enter で送信」のヒントを表示）。
 
 ### 顔セルフ登録（`face_registry_self`）
 
@@ -248,7 +254,6 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 | 来客 Socket.IO | 常時接続 | `visitor_notify_client` | `visitor_notify` |
 | show_request 監視 | 1 秒 | `app.py` | 常時 |
 | 更新チェック | 起動時 1 回 | `update_checker` | `update_check_url` 設定時 |
-| ホットキー | 常時 | `mini_port`（pynput） | 常時 |
 
 ---
 
@@ -291,7 +296,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 
 ## 設定（config.json）
 
-未配置時は `config_loader.py` の defaults を使用。**v3.1.4 以降、MSI に `config.json` はバンドルしない**（上書きインストールで設定が消える事故を防ぐ）。
+設定ファイルの保存先は `%LOCALAPPDATA%\WonderLink\config.json` です（初回起動時に未配置の場合はデフォルト設定または同包雛形から自動生成）。**v3.1.4 以降、MSI に `config.json` はバンドルしない**（上書きインストールで設定が消える事故を防ぐ）。
 
 ### 主要キー
 
@@ -352,16 +357,33 @@ cd wl_desktop_app
 
 ---
 
-## 配布
+## 配布・インストール
 
-社内環境では **MSI 配布を推奨**。
+社内環境では **MSI 配布を標準** とします。誤検知対策のため、単一exeファイルの配布(`--onefile`)は廃止されました（改善計画16）。
 
 | 方式 | コマンド / 備考 |
 |------|-----------------|
-| **MSI（推奨）** | Windows で `.\build_msi.ps1` → `dist\WonderLinko.msi` |
-| 単体 exe | `.\build_exe.ps1`（許可されている環境のみ） |
+| **MSI（標準）** | Windows で `.\build_msi.ps1` → `dist\` に `WonderLinko.msi` と `install.bat` などが生成されます。 |
 
 ビルド前に `config.production.example.json` を `config.json` にコピーして本番 URL を確認すること（MSI には同梱されないが、開発ビルドの挙動確認用）。
+
+### 社内PCへのインストール手順（ユーザー向け）
+
+セキュリティソフトの誤検知や SmartScreen の警告を防ぐため、自己署名証明書を用いたインストールを行います（改善計画17）。
+
+1. 配布されたZIPファイルを**すべて展開（解凍）**します。
+2. フォルダ内の `install.bat` をダブルクリックして実行します。
+3. UAC（ユーザーアカウント制御）のプロンプト「このアプリがデバイスに変更を加えることを許可しますか？（Windows コマンド プロセッサ）」が表示されたら「はい」をクリックします。
+4. 自動的に証明書が登録され、MSIのインストールがバックグラウンドで進行します。完了メッセージが出たら終了です。
+
+> **注意:** ダウンロードしたZIPを解凍せずに直接実行するとエラーになります。また、SmartScreenの青い警告画面が出た場合は「詳細情報」→「実行」をクリックするか、ZIPファイルのプロパティを開き「許可する（ブロックの解除）」にチェックを入れてから展開してください。
+
+### 旧バージョンからの移行手順
+
+- **旧MSI版（AppDataインストール版）をご利用の方**:
+  必ず Windows の「設定」→「アプリ」から古い Wonder Linko を手動でアンインストールしてから、新バージョンをインストールしてください（上書き不可）。
+- **旧exe版をご利用の方**:
+  古い `WonderLinko.exe` を手動で削除し、スタートアップに登録している場合はショートカットも削除してください。
 
 ---
 
@@ -378,13 +400,13 @@ cd wl_desktop_app
 1. `version.py` の `__version__` を bump
 2. `board-system/backend/desktop_app_releases/latest.json` を同バージョンに更新
 3. Windows: `.\build_msi.ps1` → MSI 生成
-4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.6.msi`）
+4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.7.msi`）
 5. **v3.2.3 以降:** `desktop_app_releases/` は bind mount のため **git pull + scp で即反映**（通常 deploy 不要）
 
 ```json
 {
-  "version": "3.9.6",
-  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.6.msi"
+  "version": "3.9.7",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.7.msi"
 }
 ```
 
@@ -398,22 +420,46 @@ cd wl_desktop_app
 
 | 機能 | Windows | Linux / Mac（開発） |
 | ------ | --------- | --------------------- |
-| 配布 | MSI 本番 | 開発・検証のみ |
-| 単一インスタンス mutex | ○ | スキップ |
-| トースト | winotify 等 | コンソール出力 |
+| 配布 | MSI 本番（Program Files） | 開発・検証のみ |
+| 単一インスタンス | ○（127.0.0.1 ソケット排他） | スキップ |
+| トースト | winotify | コンソール出力 |
 | 音声（winsound / TTS） | ○ | スキップ |
-| スタートアップ登録 | レジストリ | 常に無効 |
+| スタートアップ登録 | ショートカット配置（shell:startup・OS同期） | 常に無効 |
 | MSI 自動更新 | ○ | エラー |
 | Web カメラ / マイク登録 | OpenCV / sounddevice | プラットフォーム依存 |
-| 診断ログ `WonderLinko_diagnostic.txt` | frozen exe 時 | なし |
+| 診断ログ `WonderLinko_diagnostic.txt` | `%LOCALAPPDATA%\WonderLink` | なし |
 
 ---
 
-## セキュリティ
+## セキュリティ・誤検知対策（改善計画14〜18対応）
 
-外向き HTTP は `security.py` のホワイトリストで制限。既定: `*.internal.wonder-link.com` + localhost。
+- **ビルド・配布方式の適正化（改善計画16）**: `--onefile` オプションによる自己解凍型バイナリ（ドロッパーとして誤検知されやすい）を廃止し、安全なディレクトリ配置型の MSI 配布へ一本化しました。
+- **自己署名証明書の導入（改善計画17）**: ビルド時にバイナリおよび MSI に自己署名証明書でコード署名を行います。ユーザーには `install.bat` を通じて証明書を Windows に登録させることで、SmartScreen の警告やヒューリスティック検知を回避しています。
+- **低レイヤ Win32 API (`ctypes`) の全廃（改善計画15）**: `ctypes` による `CreateMutexW`, `OpenProcess`, `MessageBoxW` などの低レベル API 呼び出しをコードベースから完全排除し、ソケットバインドによる二重起動防止や Tkinter によるダイアログ表示に移行しました。
+- **キーロガー誤検知対策（グローバルホットキー廃止・改善計画14/15）**: アンチウイルスによるキーロガー類似判定を根本的に防ぐため、グローバルホットキー監視（`pynput` および `RegisterHotKey`）を完全撤廃。ミニポート表示はトレイアイコン操作または重複起動時のシグナル連携（`show_request`）にて行います。
+- **スタートアップ登録の適正化とOS状態の同期（改善計画14/15/18）**: マルウェアの永続化と判定されやすい `winreg` による Run キー直接書き換えは行わず、Windows 標準のスタートアップフォルダ（`shell:startup`）へのショートカット（`.lnk`）配置方式を採用。既定で自動登録しつつ、タスクマネージャーの無効化状態（`StartupApproved`）を検知してアプリ側が勝手に再登録しない安全な同期機構を導入しています。
+- **旧式通知ライブラリの排除**: 古い Win32 API をフックする `win10toast` 系を全廃し、モダンな `winotify` に一本化しました。
+- **Program Files へのインストールとユーザーデータ領域の分離**: インストール先を `[ProgramFilesFolder]` に移行し、書き込み権限が必要な設定ファイル（`config.json`）やログ（`WonderLinko.log`）は `%LOCALAPPDATA%\WonderLink` 配下へ適正に分離しました。
+- **外向き通信制限**: 外向き HTTP は `security.py` のホワイトリストで制限。既定: `*.internal.wonder-link.com` + localhost。
+- **URLオープン検証**: `webbrowser.open` も同様に検証。Board personal_id は数字のみ許可。
+- **開発時の Defender 除外設定案内**:
+  開発環境（特に `build` や `dist` フォルダ配下）で誤判定による一時的なブロックが発生する場合は、Windows セキュリティの「ウイルスと脅威の防止」＞「設定の管理」＞「除外の追加または削除」にて、リポジトリの該当フォルダーを除外対象に追加してください。
 
-`webbrowser.open` も同様に検証。Board personal_id は数字のみ許可。
+### 開発者向け：署名証明書のセットアップ
+
+**初回リリース（MSIビルド）時**には、事前に以下の手順で自己署名証明書の生成とパスワード設定が必要です。
+
+1. **証明書の生成**:
+   `scripts\generate_cert.ps1` を実行します。プロンプトが表示されるので、証明書のエクスポート用パスワード（任意の半角英数字）を入力します。
+   （これにより、`cert/WonderLink_CodeSigning.pfx` と `cert/WonderLink_InternalRoot.cer` が生成されます）
+2. **パスワードの設定**:
+   プロジェクトルートの `.env` ファイルに、1で入力したパスワードを設定します。
+   ```env
+   # 証明書のエクスポート用パスワード (build_msi.ps1 の自動署名で使用)
+   CERT_PASSWORD=入力したパスワード
+   ```
+3. **ビルドの実行**:
+   以降は `.\build_msi.ps1` を実行するだけで、自動的に証明書とパスワードを読み込んで署名が行われます。
 
 ---
 
@@ -430,7 +476,7 @@ Board System の `users` テーブルと linko-system が共用。新規ユー�
 | ファイル | 内容 |
 | ---------- | ------ |
 | `docs/v3_リリース手順.md` | MSI ビルド〜本番配信 |
-| `docs/v2_拡張計画.md` | `features.*` 拡張の経緯 |
+| `docs/v2_拡張計画.md` | `features.*` 拡張の経経緯 |
 | `docs/指示書_顔セルフ登録_Phase1.md` | 顔セルフ登録 |
 | `docs/指示書_音声セルフ登録_Phase2.md` | 音声セルフ登録 |
 | `docs/Windows通知がオフになった場合.md` | 通知トラブル |

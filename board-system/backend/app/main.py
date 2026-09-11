@@ -58,13 +58,13 @@ async def lifespan(app: FastAPI):
         tgt = f" [effective_LLM_TARGET={eff}]" if eff is not None else ""
         model_line = model_ov or "自動（Ollama のローカルモデル一覧から解決）"
         logger.info(
-            "[Rinko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
+            "[Linko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
             model_line,
             tgt,
         )
     else:
         logger.warning(
-            "[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります"
+            "[Linko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります"
         )
     try:
         from app.scheduler import start_scheduler

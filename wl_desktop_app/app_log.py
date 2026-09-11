@@ -34,15 +34,29 @@ class BufferHandler(logging.Handler):
             self.handleError(record)
 
 
+def _get_log_dir() -> str:
+    """ログ出力先ディレクトリを返す。LOCALAPPDATA 優先、無ければホームディレクトリ配下。"""
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "WonderLink")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def get_log_file_path() -> str:
+    """ログファイルの絶対パスを返す。"""
+    return os.path.join(_get_log_dir(), "WonderLinko.log")
+
+
 def setup_app_log() -> logging.Logger:
     """ログを初期化し、ファイルとバッファに出力する Logger を返す。起動時に1回呼ぶ。"""
     global _logger, _log_path
     if _logger is not None:
         return _logger
 
-    from config_loader import get_app_base_dir
-    base_dir = get_app_base_dir()
-    _log_path = os.path.join(base_dir, "WonderLinko.log")
+    _log_path = get_log_file_path()
     log_path = _log_path
 
     logger = logging.getLogger("WonderLinko")
@@ -106,9 +120,3 @@ def get_recent_log_lines() -> list[str]:
     """直近のログ行を最大50行、古い順で返す。"""
     with BufferHandler._lock:
         return list(_buffer)
-
-
-def get_log_file_path() -> str:
-    """ログファイルの絶対パスを返す。"""
-    from config_loader import get_app_base_dir
-    return os.path.join(get_app_base_dir(), "WonderLinko.log")

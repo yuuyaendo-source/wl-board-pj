@@ -165,6 +165,28 @@ class SettingsDialog(ctk.CTkToplevel):
         self.lift()
         self.focus_force()
 
+    def _delayed_save(self, *args) -> None:
+        """UIの値が内部変数に確実に反映されるのを待ってから保存処理を実行する"""
+        self.after(50, self._save_settings)
+
+    def _bind_entry(self, entry: ctk.CTkEntry) -> None:
+        """Entry ウィジェットへのフォーカスアウトおよび Return キー押下時の保存バインド。"""
+
+        def _on_return(e):
+            self.focus()
+            self._save_settings()
+
+        def _on_focus_out(e):
+            self._save_settings()
+
+        entry.bind("<FocusOut>", _on_focus_out)
+        entry.bind("<Return>", _on_return)
+        try:
+            entry._entry.bind("<FocusOut>", _on_focus_out)
+            entry._entry.bind("<Return>", _on_return)
+        except Exception:
+            pass
+
     # --- UI 構築 -----------------------------------------------------------
     def _build_ui(self) -> None:
         pad = 12
@@ -172,9 +194,8 @@ class SettingsDialog(ctk.CTkToplevel):
         # 下部ボタンを先に bottom に確保
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=pad, pady=(6, pad), side="bottom")
-        ctk.CTkButton(btn_frame, text="保存", command=self._on_save).pack(side="right")
-        ctk.CTkButton(btn_frame, text="キャンセル", command=self._on_close).pack(
-            side="right", padx=(0, 8)
+        ctk.CTkButton(btn_frame, text="閉じる", command=self._on_close).pack(
+            side="right"
         )
         ctk.CTkButton(
             btn_frame,
@@ -200,9 +221,11 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", pady=(0, 8))
 
         ctk.CTkLabel(scroll, text="表示名 (付箋の投稿者名)", anchor="w").pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._display_name_var).pack(
-            fill="x", pady=(2, 12)
+        self._display_name_entry = ctk.CTkEntry(
+            scroll, textvariable=self._display_name_var
         )
+        self._display_name_entry.pack(fill="x", pady=(2, 12))
+        self._bind_entry(self._display_name_entry)
 
         ctk.CTkLabel(scroll, text="トレイアイコン左クリックで開く先", anchor="w").pack(
             fill="x"
@@ -212,19 +235,23 @@ class SettingsDialog(ctk.CTkToplevel):
             values=[label for _, label in _TRAY_CLICK_OPTIONS],
             variable=self._tray_click_var,
             width=160,
+            command=self._delayed_save,
         ).pack(anchor="w", pady=(2, 4))
         ctk.CTkCheckBox(
             scroll,
             text="PC起動時に自動で起動 (Windows)",
             variable=self._startup_var,
+            command=self._delayed_save,
         ).pack(anchor="w", pady=(0, 12))
 
         ctk.CTkLabel(
             scroll, text="linko 管理者トークン (社員・顔・音声の管理)", anchor="w"
         ).pack(fill="x")
-        ctk.CTkEntry(scroll, textvariable=self._linko_admin_token_var, show="*").pack(
-            fill="x", pady=(2, 8)
+        self._linko_admin_token_entry = ctk.CTkEntry(
+            scroll, textvariable=self._linko_admin_token_var, show="*"
         )
+        self._linko_admin_token_entry.pack(fill="x", pady=(2, 8))
+        self._bind_entry(self._linko_admin_token_entry)
         ctk.CTkButton(
             scroll,
             text="社員・顔・音声の管理を開く…",
@@ -266,7 +293,9 @@ class SettingsDialog(ctk.CTkToplevel):
             self._feature_vars[key] = var
             row = ctk.CTkFrame(scroll, fg_color="transparent")
             row.pack(fill="x", pady=(0, 6))
-            ctk.CTkCheckBox(row, text=label, variable=var).pack(anchor="w")
+            ctk.CTkCheckBox(
+                row, text=label, variable=var, command=self._delayed_save
+            ).pack(anchor="w")
             ctk.CTkLabel(
                 row,
                 text=desc,
@@ -281,9 +310,11 @@ class SettingsDialog(ctk.CTkToplevel):
             text="タスクリマインド時刻 (HH:MM, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(8, 0))
-        ctk.CTkEntry(scroll, textvariable=self._task_remind_times_var).pack(
-            fill="x", pady=(2, 4)
+        self._task_remind_times_entry = ctk.CTkEntry(
+            scroll, textvariable=self._task_remind_times_var
         )
+        self._task_remind_times_entry.pack(fill="x", pady=(2, 4))
+        self._bind_entry(self._task_remind_times_entry)
         ctk.CTkLabel(
             scroll,
             text="例: 13:00, 17:00",
@@ -294,6 +325,7 @@ class SettingsDialog(ctk.CTkToplevel):
             scroll,
             text="平日のみ (土日は鳴らさない)",
             variable=self._task_remind_weekdays_var,
+            command=self._delayed_save,
         ).pack(anchor="w")
         ctk.CTkButton(
             scroll,
@@ -309,9 +341,11 @@ class SettingsDialog(ctk.CTkToplevel):
             text="カレンダーリマインド (開始の何分前, カンマ区切り・複数可)",
             anchor="w",
         ).pack(fill="x", pady=(12, 0))
-        ctk.CTkEntry(scroll, textvariable=self._calendar_remind_minutes_var).pack(
-            fill="x", pady=(2, 4)
+        self._calendar_remind_minutes_entry = ctk.CTkEntry(
+            scroll, textvariable=self._calendar_remind_minutes_var
         )
+        self._calendar_remind_minutes_entry.pack(fill="x", pady=(2, 4))
+        self._bind_entry(self._calendar_remind_minutes_entry)
         ctk.CTkLabel(
             scroll,
             text="例: 15, 5（15分前と5分前に通知。各 1〜15。calendar_notify が ON のとき有効）",
@@ -417,72 +451,116 @@ class SettingsDialog(ctk.CTkToplevel):
             except Exception:
                 print(f"task remind pause failed: {e}", flush=True)
 
-    def _on_save(self) -> None:
-        # 表示名は空白除去のみ。空文字も許可 (旧仕様準拠)
-        self._cfg["display_name"] = self._display_name_var.get().strip()
-        self._cfg["linko_admin_token"] = self._linko_admin_token_var.get().strip()
+    def _save_settings(self) -> None:
+        """UIの現在の状態を比較し、変更があった項目のみ保存・反映する（自動保存）。"""
+        new_display_name = self._display_name_var.get().strip()
+        new_admin_token = self._linko_admin_token_var.get().strip()
         tray_reverse = {label: key for key, label in _TRAY_CLICK_OPTIONS}
-        self._cfg["tray_click_action"] = tray_reverse.get(
-            self._tray_click_var.get(), "postit"
-        )
-        # features を辞書ごと書き出し (未知キーは保つ)
-        features = dict(self._cfg.get("features") or {})
+        new_tray_click = tray_reverse.get(self._tray_click_var.get(), "postit")
+
+        new_features = dict(self._cfg.get("features") or {})
         for key, var in self._feature_vars.items():
-            features[key] = bool(var.get())
-        prev_visitor_notify = bool(
-            (self._cfg.get("features") or {}).get("visitor_notify")
+            new_features[key] = bool(var.get())
+
+        from config_loader import (
+            parse_task_remind_times_from_text,
+            parse_calendar_remind_minutes_from_text,
         )
-        self._cfg["features"] = features
-        parsed_times = []
-        from config_loader import parse_task_remind_times_from_text
 
         parsed_times = parse_task_remind_times_from_text(
             self._task_remind_times_var.get()
         )
-        if parsed_times:
-            self._cfg["task_remind_times"] = parsed_times
-        self._cfg["task_remind_weekdays_only"] = bool(
-            self._task_remind_weekdays_var.get()
+        new_task_times = (
+            parsed_times
+            if parsed_times
+            else self._cfg.get("task_remind_times", ["13:00", "17:00"])
         )
-        from config_loader import parse_calendar_remind_minutes_from_text
-
-        cal_mins = parse_calendar_remind_minutes_from_text(
+        new_task_weekdays = bool(self._task_remind_weekdays_var.get())
+        new_cal_mins = parse_calendar_remind_minutes_from_text(
             self._calendar_remind_minutes_var.get()
         )
-        self._cfg["calendar_remind_minutes_before_list"] = cal_mins
-        self._cfg["calendar_remind_minutes_before"] = cal_mins[0]
-        import sys
 
+        desired_startup = bool(self._startup_var.get())
+
+        # 差分チェック
+        changed = False
+
+        if new_display_name != (self._cfg.get("display_name") or ""):
+            self._cfg["display_name"] = new_display_name
+            changed = True
+
+        if new_admin_token != (self._cfg.get("linko_admin_token") or ""):
+            self._cfg["linko_admin_token"] = new_admin_token
+            changed = True
+
+        if new_tray_click != self._cfg.get("tray_click_action"):
+            self._cfg["tray_click_action"] = new_tray_click
+            changed = True
+
+        prev_features = dict(self._cfg.get("features") or {})
+        if new_features != prev_features:
+            self._cfg["features"] = new_features
+            changed = True
+
+        if new_task_times != self._cfg.get("task_remind_times"):
+            self._cfg["task_remind_times"] = new_task_times
+            changed = True
+
+        if new_task_weekdays != bool(self._cfg.get("task_remind_weekdays_only", True)):
+            self._cfg["task_remind_weekdays_only"] = new_task_weekdays
+            changed = True
+
+        if new_cal_mins != self._cfg.get("calendar_remind_minutes_before_list"):
+            self._cfg["calendar_remind_minutes_before_list"] = new_cal_mins
+            self._cfg["calendar_remind_minutes_before"] = new_cal_mins[0]
+            changed = True
+
+        # スタートアップの差分チェック＆適用
         if sys.platform == "win32":
             try:
                 import startup
 
-                desired_startup = bool(self._startup_var.get())
                 if desired_startup != startup.is_startup_enabled():
                     startup.set_startup_enabled(desired_startup)
+                    self._cfg["startup_enabled"] = desired_startup
+                    changed = True
+                elif self._cfg.get("startup_enabled") != desired_startup:
+                    self._cfg["startup_enabled"] = desired_startup
+                    changed = True
             except Exception as e:
                 print(f"startup toggle failed: {e}", flush=True)
+
+        if not changed:
+            return
+
         try:
             save_config(self._cfg)
             self._cfg = load_config()
             try:
-                import sys
-
                 main = sys.modules.get("__main__")
                 if main is not None and hasattr(main, "_config"):
                     main._config = self._cfg
             except Exception:
                 pass
+            try:
+                import app
+
+                if hasattr(app, "_config"):
+                    app._config = self._cfg
+            except Exception:
+                pass
         except Exception as e:
             try:
-                from tkinter import messagebox
+                from app_log import log_error
 
-                messagebox.showerror("保存エラー", f"設定の保存に失敗しました: {e}")
+                log_error(f"設定自動保存失敗: {e}")
             except Exception:
                 print("config save failed:", e, flush=True)
             return
+
         # 来客通知の ON/OFF が変わったら接続を切替
-        new_visitor_notify = bool(features.get("visitor_notify"))
+        prev_visitor_notify = bool(prev_features.get("visitor_notify"))
+        new_visitor_notify = bool(new_features.get("visitor_notify"))
         if new_visitor_notify != prev_visitor_notify:
             try:
                 from visitor_notify_client import (
@@ -496,7 +574,25 @@ class SettingsDialog(ctk.CTkToplevel):
                     stop_visitor_notify()
             except Exception as e:
                 print(f"visitor_notify toggle failed: {e}", flush=True)
-        self._on_close()
+
+        # ミニポート画面・タスクバーの即時更新
+        try:
+            main = sys.modules.get("__main__")
+            if (
+                main is not None
+                and hasattr(main, "_miniport_window")
+                and main._miniport_window
+            ):
+                main._miniport_window.after(0, main._miniport_window.reload_settings)
+        except Exception as e:
+            print(f"miniport refresh failed: {e}", flush=True)
+        try:
+            import app
+
+            if hasattr(app, "_miniport_window") and app._miniport_window:
+                app._miniport_window.after(0, app._miniport_window.reload_settings)
+        except Exception:
+            pass
 
     def _on_update_clicked(self) -> None:
         """設定パネルの「アップデート確認」ボタン。手動で更新チェック → 確認 → インストール。"""
@@ -533,6 +629,15 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_close(self) -> None:
         global _dialog_instance
         _dialog_instance = None
+        try:
+            self._save_settings()
+        except Exception as e:
+            try:
+                from app_log import log_error
+
+                log_error(f"閉じる時の設定保存失敗: {e}")
+            except Exception:
+                pass
         try:
             self.destroy()
         except Exception:

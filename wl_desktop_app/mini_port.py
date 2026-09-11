@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Rinko Mini-Port: 常駐型フローティング入力ウィンドウ。
+Linko Mini-Port: 常駐型フローティング入力ウィンドウ。
 通常時はリン子ボタンと投稿ボタンのみ。「投稿」クリックで入力欄を表示し、送信ボタンで POST /sticky_notes に送信。
 """
 from __future__ import annotations
@@ -40,14 +40,6 @@ try:
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
-
-# ホットキー用（別スレッドで動作）
-try:
-    from pynput import keyboard
-
-    HAS_PYNPUT = True
-except ImportError:
-    HAS_PYNPUT = False
 
 
 def _sticky_note_api_url():
@@ -161,7 +153,7 @@ def _send_content(text: str) -> Tuple[bool, str]:
         return False, f"接続エラー: {str(e)[:80]}"
 
 
-def _rinko_icon_path() -> str:
+def _linko_icon_path() -> str:
     base = get_app_base_dir()
     for candidate in (
         os.path.join(base, "assets", "toast_icon.png"),
@@ -207,18 +199,12 @@ class MiniPortWindow(ctk.CTk):
         self._build_ui()
         self._setup_context_menu()
         self._position_bottom_right(compact=True)
-        if HAS_PYNPUT:
-            self._start_hotkey_listener()
-        else:
-            print(
-                "Rinko Mini-Port: pynput が未インストールです。pip install pynput で Ctrl+Shift+Space が有効になります。"
-            )
 
     # プレースホルダー用（CTkTextbox は placeholder 非対応のため自前で表示）
     PLACEHOLDER_TEXT = "付箋を投稿するコメントを入力"
 
     def _configure_window(self):
-        self.title("Rinko Mini-Port")
+        self.title("Linko Mini-Port")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.resizable(False, False)
@@ -229,17 +215,79 @@ class MiniPortWindow(ctk.CTk):
         self._transparent_key = apply_window_transparency(
             self, fg_fallback=Theme.SURFACE
         )
+        self._apply_taskbar_mode()
+
+    def _apply_taskbar_mode(self):
+        """taskbar_mode フラグに応じて Windows のタスクバーアイコン表示を切替"""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from config_loader import is_feature_enabled
+
+            taskbar_on = is_feature_enabled("taskbar_mode")
+            hwnd = self.winfo_id()
+            parent_hwnd = ctypes.windll.user32.GetParent(hwnd)
+            target_hwnd = parent_hwnd if parent_hwnd else hwnd
+
+            GWL_EXSTYLE = -20
+            WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+
+            style = ctypes.windll.user32.GetWindowLongW(target_hwnd, GWL_EXSTYLE)
+            if taskbar_on:
+                style = (style | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+            else:
+                style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+
+            ctypes.windll.user32.SetWindowLongW(target_hwnd, GWL_EXSTYLE, style)
+
+            # スタイル変更を OS に認識させるため一度非表示にして再表示
+            self.withdraw()
+            self.after(10, self.deiconify)
+        except Exception as e:
+            print(f"[mini_port] taskbar_mode apply failed: {e}", flush=True)
+
+    def reload_settings(self):
+        """設定変更時にリアルタイムで UI やタスクバー状態を再構築して反映"""
+        self._apply_taskbar_mode()
+
+        from config_loader import is_feature_enabled
+
+        new_avatar_on = is_feature_enabled("linko_avatar")
+
+        # アバター表示設定に変更があった場合のみ UI を再構築
+        if getattr(self, "_avatar_on", None) != new_avatar_on:
+            self._avatar_on = new_avatar_on
+            try:
+                import linko_avatar
+
+                linko_avatar.stop_idle_animation()
+                if hasattr(self, "_speech_bubble") and self._speech_bubble:
+                    self._speech_bubble.hide()
+            except Exception:
+                pass
+
+            if hasattr(self, "main_frame") and self.main_frame.winfo_exists():
+                self.main_frame.destroy()
+
+            self._build_ui()
+            if self._input_visible:
+                self.compact_frame.pack_forget()
+                self.input_frame.pack(fill="both", expand=True, padx=12, pady=10)
+            self._position_bottom_right(compact=not self._input_visible)
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
-        self.frame = ctk.CTkFrame(
-            self,
-            corner_radius=Theme.RADIUS_CARD,
-            border_width=2,
-            border_color=Theme.SURFACE_BORDER,
-            fg_color=Theme.SURFACE,
-        )
-        self.frame.pack(fill="both", expand=True, padx=0, pady=0)
+        if not hasattr(self, "main_frame") or not self.main_frame.winfo_exists():
+            self.main_frame = ctk.CTkFrame(
+                self,
+                corner_radius=Theme.RADIUS_CARD,
+                border_width=2,
+                border_color=Theme.SURFACE_BORDER,
+                fg_color=Theme.SURFACE,
+            )
+            self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
         # features.linko_avatar の値でレイアウトを分岐
         try:
@@ -251,11 +299,11 @@ class MiniPortWindow(ctk.CTk):
         self._avatar_on = avatar_on
 
         # --- 通常時フレーム ---
-        self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.compact_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.compact_frame.pack(fill="both", expand=True, padx=8, pady=6)
 
-        self._rinko_image = None  # 参照保持 (GC 防止)
-        icon_path = _rinko_icon_path()
+        self._linko_image = None  # 参照保持 (GC 防止)
+        icon_path = _linko_icon_path()
         use_icon = _HAS_PIL and os.path.isfile(icon_path)
 
         if avatar_on:
@@ -267,7 +315,7 @@ class MiniPortWindow(ctk.CTk):
             self._avatar_size = (avatar_size, avatar_size)
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(avatar_size, avatar_size),
@@ -276,15 +324,15 @@ class MiniPortWindow(ctk.CTk):
                     use_icon = False
             # アバターは CTkLabel: クリック (吹き出し) とドラッグ (移動) を自前で両立。
             # 画像があるときは text を必ず空に (画像とテキストの重なり防止)。
-            self.btn_rinko = ctk.CTkLabel(
+            self.btn_linko = ctk.CTkLabel(
                 self.compact_frame,
                 text="" if use_icon else "📷",
-                image=self._rinko_image if use_icon else None,
+                image=self._linko_image if use_icon else None,
                 width=avatar_size,
                 height=avatar_size,
             )
-            self.btn_rinko.pack(side="top", pady=(2, 8))
-            self._bind_avatar_click_drag(self.btn_rinko)
+            self.btn_linko.pack(side="top", pady=(2, 8))
+            self._bind_avatar_click_drag(self.btn_linko)
 
             # アバター下のボタン列 (横並び)。投稿=主アクション、ボード=副。
             self._button_frame = ctk.CTkFrame(
@@ -325,14 +373,14 @@ class MiniPortWindow(ctk.CTk):
             self.COMPACT_H = 56
             if use_icon:
                 try:
-                    self._rinko_image = ctk.CTkImage(
+                    self._linko_image = ctk.CTkImage(
                         light_image=icon_path,
                         dark_image=icon_path,
                         size=(36, 36),
                     )
-                    self.btn_rinko = ctk.CTkButton(
+                    self.btn_linko = ctk.CTkButton(
                         self.compact_frame,
-                        image=self._rinko_image,
+                        image=self._linko_image,
                         text="",
                         width=44,
                         height=40,
@@ -344,7 +392,7 @@ class MiniPortWindow(ctk.CTk):
                 except Exception:
                     use_icon = False
             if not use_icon:
-                self.btn_rinko = ctk.CTkButton(
+                self.btn_linko = ctk.CTkButton(
                     self.compact_frame,
                     text="ボード",
                     width=56,
@@ -356,7 +404,7 @@ class MiniPortWindow(ctk.CTk):
                     text_color=Theme.SECONDARY_TEXT,
                     command=self._open_taskboard,
                 )
-            self.btn_rinko.pack(side="left", padx=(0, 8))
+            self.btn_linko.pack(side="left", padx=(0, 8))
             self.btn_post = ctk.CTkButton(
                 self.compact_frame,
                 text="投稿",
@@ -377,7 +425,7 @@ class MiniPortWindow(ctk.CTk):
         self._init_avatar()
 
         # --- 入力表示時: テキストエリア + 閉じる + 送信 ---
-        self.input_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.input_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         # 3行表示・スクロール・改行可（プレースホルダーは FocusIn/FocusOut で制御）
         self.textbox = ctk.CTkTextbox(
             self.input_frame,
@@ -473,7 +521,7 @@ class MiniPortWindow(ctk.CTk):
             # PNG の角丸半径はフレームの border 半径と揃えてあるので、縁は二重にならず
             # きれいに重なる。コンテンツ (compact_frame / input_frame) は上に描かれる。
             self._card_bg_label = ctk.CTkLabel(
-                self.frame, text="", image=self._card_bg_image
+                self.main_frame, text="", image=self._card_bg_image
             )
             self._card_bg_label.place(x=0, y=0, anchor="nw")
             self._card_bg_label.lower()
@@ -485,7 +533,11 @@ class MiniPortWindow(ctk.CTk):
         enabled = self._get_notifications_enabled()
         label = "🔔" if enabled else "🔕"
         self.btn_notify = ctk.CTkButton(
-            self.frame if getattr(self, "_avatar_on", False) else self.compact_frame,
+            (
+                self.main_frame
+                if getattr(self, "_avatar_on", False)
+                else self.compact_frame
+            ),
             text=label,
             width=22 if getattr(self, "_avatar_on", False) else 36,
             height=22 if getattr(self, "_avatar_on", False) else 40,
@@ -524,9 +576,9 @@ class MiniPortWindow(ctk.CTk):
 
     # --- Phase 2: 2D アバター + 吹き出し ------------------------------------
     def _init_avatar(self) -> None:
-        """features.linko_avatar=True なら btn_rinko を 2D アバター表示に切替。
+        """features.linko_avatar=True なら btn_linko を 2D アバター表示に切替。
 
-        - 128px アバターを左に配置 (btn_rinko は _build_ui で既に 128 サイズに作られている)
+        - 128px アバターを左に配置 (btn_linko は _build_ui で既に 128 サイズに作られている)
         - SpeechBubble を生成して linko_avatar に register
         - まばたきアイドルアニメを起動
         - COMPACT 窓サイズを 240x140 に拡大
@@ -568,7 +620,7 @@ class MiniPortWindow(ctk.CTk):
             # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
-                    self.frame,
+                    self.main_frame,
                     text="✕",
                     width=22,
                     height=22,
@@ -582,7 +634,7 @@ class MiniPortWindow(ctk.CTk):
                 self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
 
                 self.btn_settings_mini = ctk.CTkButton(
-                    self.frame,
+                    self.main_frame,
                     text="⚙",
                     width=22,
                     height=22,
@@ -722,8 +774,8 @@ class MiniPortWindow(ctk.CTk):
                 self._avatar_log(f"_set_avatar_pose CTkImage error: {e}")
                 return
         try:
-            self.btn_rinko.configure(image=self._avatar_ctk_images[pose], text="")
-            self._rinko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
+            self.btn_linko.configure(image=self._avatar_ctk_images[pose], text="")
+            self._linko_image = self._avatar_ctk_images[pose]  # GC 防止のため参照保持
             if not getattr(self, "_pose_logged_once", False):
                 self._avatar_log(
                     f"_set_avatar_pose OK (first): pose={pose} size={self._avatar_size}"
@@ -750,7 +802,7 @@ class MiniPortWindow(ctk.CTk):
         self._ctx_menu.add_command(
             label="ミニポートを非表示にする", command=self._ctx_hide_miniport
         )
-        for widget in (self.frame, self.compact_frame):
+        for widget in (self.main_frame, self.compact_frame):
             widget.bind("<Button-3>", self._on_right_click)
         if hasattr(self, "input_frame"):
             self.input_frame.bind("<Button-3>", self._on_right_click)
@@ -792,8 +844,8 @@ class MiniPortWindow(ctk.CTk):
         self._drag_start_y = 0
         self._drag_win_x = 0
         self._drag_win_y = 0
-        self.frame.bind("<Button-1>", self._on_drag_start)
-        self.frame.bind("<B1-Motion>", self._on_drag_motion)
+        self.main_frame.bind("<Button-1>", self._on_drag_start)
+        self.main_frame.bind("<B1-Motion>", self._on_drag_motion)
         self.compact_frame.bind("<Button-1>", self._on_drag_start)
         self.compact_frame.bind("<B1-Motion>", self._on_drag_motion)
         self.input_frame.bind("<Button-1>", self._on_drag_start)
@@ -803,7 +855,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ開始。ボタン・テキストボックス上では開始しない。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,
@@ -826,7 +878,7 @@ class MiniPortWindow(ctk.CTk):
         """ドラッグ中: ウィンドウを移動。"""
         w = event.widget
         block = (
-            self.btn_rinko,
+            self.btn_linko,
             self.btn_post,
             self.btn_send,
             self.btn_close,
@@ -999,17 +1051,6 @@ class MiniPortWindow(ctk.CTk):
             self.textbox.focus_set()
         else:
             self.btn_post.focus_set()
-
-    def _start_hotkey_listener(self):
-        def on_activate():
-            self.focus_and_raise()
-
-        def listen():
-            with keyboard.GlobalHotKeys({"<ctrl>+<shift>+<space>": on_activate}) as h:
-                h.join()
-
-        t = threading.Thread(target=listen, daemon=True)
-        t.start()
 
 
 def main():

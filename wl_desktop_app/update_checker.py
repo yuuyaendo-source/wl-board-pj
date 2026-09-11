@@ -24,12 +24,15 @@ def _log(msg: str):
     """ログに確実に残す（別スレッドから呼ばれるため app_log.log_info を使用）。"""
     try:
         from app_log import log_info
+
         log_info(msg)
     except Exception:
         pass
 
 
-def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None) -> bool:
+def wait_for_network(
+    host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None
+) -> bool:
     """
     社内ネットワーク到達を待つ（HTTP プローブ。ping は使わない）。
 
@@ -39,11 +42,15 @@ def wait_for_network(host: str, interval_sec: int = 5, max_wait_sec: int = 180, 
     if cfg is None:
         try:
             from config_loader import load_config
+
             cfg = load_config()
         except Exception:
             cfg = {}
     from network_readiness import wait_for_network_ready
-    return wait_for_network_ready(cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec)
+
+    return wait_for_network_ready(
+        cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec
+    )
 
 
 def _version_tuple(version_str: str) -> tuple:
@@ -123,9 +130,18 @@ def _find_wonderlinko_product_codes():
     except Exception:
         return codes
     roots = [
-        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-        (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
     ]
     for root, path in roots:
         try:
@@ -147,7 +163,11 @@ def _find_wonderlinko_product_codes():
                     sk.Close()
                 except OSError:
                     continue
-                if name and ("WonderLinko" in name or "Wonder Linko" in name or "WonderRinko" in name):
+                if name and (
+                    "WonderLinko" in name
+                    or "Wonder Linko" in name
+                    or "WonderLinko" in name
+                ):
                     if sub not in codes:
                         codes.append(sub)
         finally:
@@ -219,11 +239,13 @@ def download_and_install(download_url: str, timeout: int = 120):
         if product_codes:
             uninstall_block = "\n".join(
                 f'echo [update] uninstall {c} >> "{trace_log}"\n'
-                f'msiexec /x {c} /qn /norestart'
+                f"msiexec /x {c} /qn /norestart"
                 for c in product_codes
             )
         else:
-            uninstall_block = f'echo [update] no existing product found >> "{trace_log}"'
+            uninstall_block = (
+                f'echo [update] no existing product found >> "{trace_log}"'
+            )
 
         bat_path = os.path.join(tmp, "wonderlinko_update.bat")
         # ASCII のみ (日本語は chcp 依存で文字化け・失敗の原因)。各ステップを trace_log に追記。
@@ -270,7 +292,9 @@ del "%~f0"
             close_fds=True,
             cwd=tmp,
         )
-        _log(f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。")
+        _log(
+            f"更新バッチを起動: {bat_path} (trace: {trace_log}, install: {install_log})。アプリを終了します。"
+        )
         # バッチが waitloop に入る猶予を与えてから終了。
         # 重要: sys.exit(0) は SystemExit を投げるが、Tk / pystray のイベント
         # コールバック内 (設定パネルのボタン・トレイメニュー) では握りつぶされ、
@@ -290,6 +314,7 @@ def check_and_notify(current_version: str, check_url: str, on_result):
     バックグラウンドで更新チェックし、結果を on_result(has_update, latest_version, download_url) でコールバックする。
     on_result はメインスレッドから呼びたい場合は、呼び出し側で after 等でラップすること。
     """
+
     def run():
         _log("更新チェック バックグラウンドスレッド開始")
         result = check_for_update(current_version, check_url)

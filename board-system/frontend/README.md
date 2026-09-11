@@ -1,4 +1,4 @@
-# Board System Frontend (Wonder Rinko)
+# Board System Frontend (Wonder Linko)
 
 Next.js (App Router) + Tailwind CSS + Framer Motion。4ボード View と D&D、1行入力。**本番では basePath `/boards` でビルドし、同一サーバの付箋ボードと Nginx で共存。** 詳細は [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
 

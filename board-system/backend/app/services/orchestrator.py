@@ -78,19 +78,19 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     4. 担当者名があれば Personal Inbox に配布
     例外時はログのみで握りつぶし、呼び出し元の 500 を防ぐ。
     """
-    logger.info("[Rinko AI] Processing Note ID: %s...", note_id)
+    logger.info("[Linko AI] Processing Note ID: %s...", note_id)
 
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
-        logger.error("[Rinko AI] Note %s not found.", note_id)
+        logger.error("[Linko AI] Note %s not found.", note_id)
         return
 
     content = note.content or ""
     content_preview = (
         (content[:300] + "…") if len(content) > 300 else (content or "(空)")
     )
-    logger.info("[Rinko AI] Note %s 内容: %s", note_id, content_preview)
+    logger.info("[Linko AI] Note %s 内容: %s", note_id, content_preview)
 
     # 非同期で LLM 設定（URL, モデル上書き）を取得
     ollama_url, model_ov = await get_resolved_ollama_async(db)
@@ -101,18 +101,18 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             run_triage, content, ollama_url, model_ov
         )
     except Exception as e:
-        logger.warning("[Rinko AI] Triage failed: %s", e)
+        logger.warning("[Linko AI] Triage failed: %s", e)
         triage_result = None
 
     if not triage_result:
         logger.warning(
-            "[Rinko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
+            "[Linko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
             " OLLAMA_URL を .env に設定するとタスク判定・列の自動振り分けが有効になります。"
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
         logger.info(
-            "[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
+            "[Linko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
             note_id,
         )
         if not note.postit_note_id:
@@ -129,14 +129,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
                 note.postit_board_id = settings.postit_board_id
                 note.postit_note_id = f"bs-{note.id}"
                 await db.flush()
-                logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
+                logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
         return
 
     # タスクでないと判定されても全件 Task ボードに載せる（曖昧な内容で取りこぼしを防ぐ）
     if not triage_result.get("is_task"):
         reason = triage_result.get("reason") or ""
         logger.info(
-            "[Rinko AI] Note %s タスクでないと判定 → アイデア列に配置｜%s",
+            "[Linko AI] Note %s タスクでないと判定 → アイデア列に配置｜%s",
             note_id,
             reason,
         )
@@ -145,7 +145,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
 
     triage_reason = triage_result.get("reason") or ""
     if triage_reason and triage_result.get("is_task"):
-        logger.info("[Rinko AI] Note %s Triage 理由: %s", note_id, triage_reason)
+        logger.info("[Linko AI] Note %s Triage 理由: %s", note_id, triage_reason)
 
     # --- 2. Matrix Scoring（タスクと判定されたときのみ） ---
     urgency, importance, column = 50.0, 50.0, 1
@@ -156,7 +156,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
                 run_matrix_scoring, content, ollama_url, model_ov
             )
         except Exception as e:
-            logger.warning("[Rinko AI] Matrix scoring failed: %s", e)
+            logger.warning("[Linko AI] Matrix scoring failed: %s", e)
             matrix_result = None
         if matrix_result:
             urgency = float(matrix_result.get("urgency", 50))
@@ -167,7 +167,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         column_name = COLUMN_NAMES.get(column, "アイデア")
         matrix_reason = (matrix_result or {}).get("reason") or ""
         logger.info(
-            "[Rinko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
+            "[Linko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
             note_id,
             urgency,
             importance,
@@ -177,7 +177,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         await _place_on_task_board(db, note_id, urgency, importance, column)
         await db.flush()
         logger.info(
-            "[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置",
+            "[Linko AI] Note %s 振り分け完了: Task の「%s」列に配置",
             note_id,
             column_name,
         )
@@ -190,11 +190,11 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         try:
             user = await _resolve_assignee_user_async(assignee_name, db)
         except Exception as e:
-            logger.warning("[Rinko AI] Assignee resolve failed: %s", e)
+            logger.warning("[Linko AI] Assignee resolve failed: %s", e)
             user = None
 
         if user:
-            logger.info("[Rinko AI] Assigning to user: %s", user.name)
+            logger.info("[Linko AI] Assigning to user: %s", user.name)
             personal = BoardPlacement(
                 note_id=note_id,
                 board_type=BoardType.PERSONAL,
@@ -205,14 +205,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             db.add(personal)
             await db.flush()
             logger.info(
-                "[Rinko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
+                "[Linko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
                 note_id,
                 user.name,
             )
         else:
-            logger.warning("[Rinko AI] Assignee '%s' not found in DB.", assignee_name)
+            logger.warning("[Linko AI] Assignee '%s' not found in DB.", assignee_name)
     else:
-        logger.info("[Rinko AI] Note %s 振り分け完了（担当者なし）", note_id)
+        logger.info("[Linko AI] Note %s 振り分け完了（担当者なし）", note_id)
 
     # Board System でタスクになった付箋（付箋ボード連携なし）を付箋ボードに反映
     if not note.postit_note_id:
@@ -229,7 +229,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             note.postit_board_id = settings.postit_board_id
             note.postit_note_id = f"bs-{note.id}"
             await db.flush()
-            logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
+            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
 
 
 def _sync_note_to_postit_sync(
@@ -259,7 +259,7 @@ def _sync_note_to_postit_sync(
             if 200 <= resp.status < 300:
                 return True
     except Exception as e:
-        logger.warning("[Rinko AI] sync_note_to_postit failed: %s", e)
+        logger.warning("[Linko AI] sync_note_to_postit failed: %s", e)
     return False
 
 

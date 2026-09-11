@@ -10,7 +10,7 @@ Wonder Linko のトースト通知を Windows の設定で一度オフにする�
 2. **システム** → **通知**
 3. 「**通知を表示するアプリ**」または「**アプリの通知**」の一覧で、次のいずれかを探す：
    - **Wonder Linko**
-   - **Wonder Rinko**
+   - **Wonder Linko**
    - **WonderLinko.exe**
    - **Python**（exe の種類によって表示名が異なる場合があります）
 4. 該当アプリのスイッチを **オン** にする
@@ -23,7 +23,7 @@ Wonder Linko のトースト通知を Windows の設定で一度オフにする�
 
 1. **設定** を開く
 2. **システム** → **通知とアクション**
-3. 「**送信ごとの通知の受信設定**」またはアプリ一覧で、上記と同様に **Wonder Linko / Wonder Rinko / WonderLinko** を探す
+3. 「**送信ごとの通知の受信設定**」またはアプリ一覧で、上記と同様に **Wonder Linko / Wonder Linko / WonderLinko** を探す
 4. オフになっている場合は **オン** に変更する
 
 ### それでも表示されない場合
@@ -48,7 +48,7 @@ Wonder Linko のトースト通知を Windows の設定で一度オフにする�
    ```
 
 3. その下の **サブキー** を確認する。次のような名前のキーがあれば、それが Wonder Linko の通知設定の可能性があります：
-   - `Wonder Rinko`
+   - `Wonder Linko`
    - `WonderLinko`
    - `WonderLinkoDesktop`
    - または `Python` など（環境によって異なります）

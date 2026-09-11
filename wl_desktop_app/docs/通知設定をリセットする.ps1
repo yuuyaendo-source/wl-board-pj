@@ -4,7 +4,7 @@
 # 実行前: Wonder Linko を終了してください。
 
 $basePath = "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
-$possibleNames = @("Wonder Rinko", "WonderLinko", "WonderLinkoDesktop", "WonderLinko.Desktop", "Wonder Rinko")
+$possibleNames = @("Wonder Linko", "WonderLinko", "WonderLinkoDesktop", "WonderLinko.Desktop", "Wonder Linko")
 
 Write-Host "通知設定のリセットを試行します。" -ForegroundColor Cyan
 Write-Host ""
@@ -22,7 +22,8 @@ foreach ($name in $possibleNames) {
             Remove-Item -Path $fullPath -Recurse -Force -ErrorAction Stop
             Write-Host "削除しました: $name" -ForegroundColor Green
             $removed++
-        } catch {
+        }
+        catch {
             Write-Host "削除に失敗しました: $name - $_" -ForegroundColor Red
         }
     }
@@ -36,7 +37,8 @@ if ($removed -eq 0) {
     Write-Host "上記の一覧で Wonder Linko に該当しそうな名前のキーを、レジストリエディターで手動削除してみてください。" -ForegroundColor Gray
     Write-Host "  regedit で以下のパスを開きます:" -ForegroundColor Gray
     Write-Host "  HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings" -ForegroundColor Gray
-} else {
+}
+else {
     Write-Host ""
     Write-Host "リセットしました。Wonder Linko を起動し、トレイの「テストお知らせ」で通知を確認してください。" -ForegroundColor Green
 }

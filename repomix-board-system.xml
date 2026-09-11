@@ -935,7 +935,7 @@ def downgrade() -> None:
 <file path="backend/app/ai/__init__.py">
 # -*- coding: utf-8 -*-
 """
-Rinko Core: ローカル LLM（Ollama）を用いた自動仕分け・マトリクススコア・日次リセット。
+Linko Core: ローカル LLM（Ollama）を用いた自動仕分け・マトリクススコア・日次リセット。
 OLLAMA_URL 未設定時は各関数は None または空を返し、呼び出し元でスキップする。
 """
 from app.ai.triage import run_triage
@@ -943,7 +943,12 @@ from app.ai.matrix import run_matrix_scoring
 from app.ai.daily_reset import run_daily_reset_messages
 from app.ai.today_summary import run_today_short_summaries
 
-__all__ = ["run_triage", "run_matrix_scoring", "run_daily_reset_messages", "run_today_short_summaries"]
+__all__ = [
+    "run_triage",
+    "run_matrix_scoring",
+    "run_daily_reset_messages",
+    "run_today_short_summaries",
+]
 </file>
 
 <file path="backend/app/ai/client.py">
@@ -1039,9 +1044,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /api/tags 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /api/tags 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /api/tags 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /api/tags 解析スキップ: %s", e)
 
     try:
         r = sess.get(f"{v1_base}/models", timeout=20)
@@ -1050,9 +1055,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /v1/models 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /v1/models 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /v1/models 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /v1/models 解析スキップ: %s", e)
 
     return None
 
@@ -1087,14 +1092,14 @@ def resolve_ollama_model_for_request(
     discovered = _discover_model_id(root, v1_norm, sess)
     if not discovered:
         logger.warning(
-            "[Rinko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
+            "[Linko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
             root,
         )
         return None
 
     with _cache_lock:
         _model_cache[key] = (discovered, now + ttl)
-    logger.info("[Rinko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
+    logger.info("[Linko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
     return discovered
 
 
@@ -1140,7 +1145,7 @@ def generate_text(
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
@@ -1155,14 +1160,14 @@ def generate_text(
             return str(content).strip() or None
         except requests.RequestException as e:
             logger.warning(
-                "[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )
             return None
         except Exception as e:
             logger.warning(
-                "[Rinko AI] Ollama 呼び出しエラー: %s — %s",
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )
@@ -1200,23 +1205,23 @@ def generate_json(
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
                 logger.warning(
-                    "[Rinko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
+                    "[Linko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
                     " 自動解決時は ollama の /api/tags を確認してください。",
                 )
             r.raise_for_status()
             data = r.json()
             choices = data.get("choices") or []
             if not choices:
-                logger.warning("[Rinko AI] Ollama 応答に choices がありません")
+                logger.warning("[Linko AI] Ollama 応答に choices がありません")
                 return None
             content = (choices[0].get("message") or {}).get("content")
             if not content or not (text := str(content).strip()):
-                logger.warning("[Rinko AI] Ollama 応答が空でした")
+                logger.warning("[Linko AI] Ollama 応答が空でした")
                 return None
             if "```" in text:
                 m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
@@ -1227,19 +1232,19 @@ def generate_json(
             msg = str(e)[:300]
             if "404" not in msg:
                 logger.warning(
-                    "[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                    "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
                     type(e).__name__,
                     msg,
                 )
             return None
         except json.JSONDecodeError as e:
             logger.warning(
-                "[Rinko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200]
+                "[Linko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200]
             )
             return None
         except Exception as e:
             logger.warning(
-                "[Rinko AI] Ollama 呼び出しエラー: %s — %s",
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )
@@ -2006,7 +2011,7 @@ async def put_llm_status(
 
     await db.flush()
     invalidate_resolved_model_cache(None)
-    logger.info("[Rinko AI] admin: llm_target を更新 db=%s", body.llm_target)
+    logger.info("[Linko AI] admin: llm_target を更新 db=%s", body.llm_target)
 
     eff = body.llm_target if body.llm_target is not None else settings.llm_target
     url, model_ov = settings.resolve_ollama_for_target(eff)
@@ -6352,7 +6357,7 @@ async def get_db_llm_target_async(db: AsyncSession) -> int | None:
         return row[0]
     except Exception as e:
         logger.warning(
-            "[Rinko AI] system_settings 読み取りに失敗（マイグレーション未適用の可能性）: %s",
+            "[Linko AI] system_settings 読み取りに失敗（マイグレーション未適用の可能性）: %s",
             e,
         )
         return None
@@ -6572,19 +6577,19 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     4. 担当者名があれば Personal Inbox に配布
     例外時はログのみで握りつぶし、呼び出し元の 500 を防ぐ。
     """
-    logger.info("[Rinko AI] Processing Note ID: %s...", note_id)
+    logger.info("[Linko AI] Processing Note ID: %s...", note_id)
 
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
-        logger.error("[Rinko AI] Note %s not found.", note_id)
+        logger.error("[Linko AI] Note %s not found.", note_id)
         return
 
     content = note.content or ""
     content_preview = (
         (content[:300] + "…") if len(content) > 300 else (content or "(空)")
     )
-    logger.info("[Rinko AI] Note %s 内容: %s", note_id, content_preview)
+    logger.info("[Linko AI] Note %s 内容: %s", note_id, content_preview)
 
     # 非同期で LLM 設定（URL, モデル上書き）を取得
     ollama_url, model_ov = await get_resolved_ollama_async(db)
@@ -6595,18 +6600,18 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             run_triage, content, ollama_url, model_ov
         )
     except Exception as e:
-        logger.warning("[Rinko AI] Triage failed: %s", e)
+        logger.warning("[Linko AI] Triage failed: %s", e)
         triage_result = None
 
     if not triage_result:
         logger.warning(
-            "[Rinko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
+            "[Linko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
             " OLLAMA_URL を .env に設定するとタスク判定・列の自動振り分けが有効になります。"
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
         logger.info(
-            "[Rinko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
+            "[Linko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
             note_id,
         )
         if not note.postit_note_id:
@@ -6623,14 +6628,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
                 note.postit_board_id = settings.postit_board_id
                 note.postit_note_id = f"bs-{note.id}"
                 await db.flush()
-                logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
+                logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
         return
 
     # タスクでないと判定されても全件 Task ボードに載せる（曖昧な内容で取りこぼしを防ぐ）
     if not triage_result.get("is_task"):
         reason = triage_result.get("reason") or ""
         logger.info(
-            "[Rinko AI] Note %s タスクでないと判定 → アイデア列に配置｜%s",
+            "[Linko AI] Note %s タスクでないと判定 → アイデア列に配置｜%s",
             note_id,
             reason,
         )
@@ -6639,7 +6644,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
 
     triage_reason = triage_result.get("reason") or ""
     if triage_reason and triage_result.get("is_task"):
-        logger.info("[Rinko AI] Note %s Triage 理由: %s", note_id, triage_reason)
+        logger.info("[Linko AI] Note %s Triage 理由: %s", note_id, triage_reason)
 
     # --- 2. Matrix Scoring（タスクと判定されたときのみ） ---
     urgency, importance, column = 50.0, 50.0, 1
@@ -6650,7 +6655,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
                 run_matrix_scoring, content, ollama_url, model_ov
             )
         except Exception as e:
-            logger.warning("[Rinko AI] Matrix scoring failed: %s", e)
+            logger.warning("[Linko AI] Matrix scoring failed: %s", e)
             matrix_result = None
         if matrix_result:
             urgency = float(matrix_result.get("urgency", 50))
@@ -6661,7 +6666,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         column_name = COLUMN_NAMES.get(column, "アイデア")
         matrix_reason = (matrix_result or {}).get("reason") or ""
         logger.info(
-            "[Rinko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
+            "[Linko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
             note_id,
             urgency,
             importance,
@@ -6671,7 +6676,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         await _place_on_task_board(db, note_id, urgency, importance, column)
         await db.flush()
         logger.info(
-            "[Rinko AI] Note %s 振り分け完了: Task の「%s」列に配置",
+            "[Linko AI] Note %s 振り分け完了: Task の「%s」列に配置",
             note_id,
             column_name,
         )
@@ -6684,11 +6689,11 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         try:
             user = await _resolve_assignee_user_async(assignee_name, db)
         except Exception as e:
-            logger.warning("[Rinko AI] Assignee resolve failed: %s", e)
+            logger.warning("[Linko AI] Assignee resolve failed: %s", e)
             user = None
 
         if user:
-            logger.info("[Rinko AI] Assigning to user: %s", user.name)
+            logger.info("[Linko AI] Assigning to user: %s", user.name)
             personal = BoardPlacement(
                 note_id=note_id,
                 board_type=BoardType.PERSONAL,
@@ -6699,14 +6704,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             db.add(personal)
             await db.flush()
             logger.info(
-                "[Rinko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
+                "[Linko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
                 note_id,
                 user.name,
             )
         else:
-            logger.warning("[Rinko AI] Assignee '%s' not found in DB.", assignee_name)
+            logger.warning("[Linko AI] Assignee '%s' not found in DB.", assignee_name)
     else:
-        logger.info("[Rinko AI] Note %s 振り分け完了（担当者なし）", note_id)
+        logger.info("[Linko AI] Note %s 振り分け完了（担当者なし）", note_id)
 
     # Board System でタスクになった付箋（付箋ボード連携なし）を付箋ボードに反映
     if not note.postit_note_id:
@@ -6723,7 +6728,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             note.postit_board_id = settings.postit_board_id
             note.postit_note_id = f"bs-{note.id}"
             await db.flush()
-            logger.info("[Rinko AI] Note %s を付箋ボードに反映しました", note.id)
+            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
 
 
 def _sync_note_to_postit_sync(
@@ -6753,7 +6758,7 @@ def _sync_note_to_postit_sync(
             if 200 <= resp.status < 300:
                 return True
     except Exception as e:
-        logger.warning("[Rinko AI] sync_note_to_postit failed: %s", e)
+        logger.warning("[Linko AI] sync_note_to_postit failed: %s", e)
     return False
 
 
@@ -6787,7 +6792,7 @@ async def _place_on_task_board(
 </file>
 
 <file path="backend/app/__init__.py">
-# Board System Backend (Wonder Rinko)
+# Board System Backend (Wonder Linko)
 </file>
 
 <file path="backend/app/config.py">
@@ -7182,13 +7187,13 @@ async def lifespan(app: FastAPI):
         tgt = f" [effective_LLM_TARGET={eff}]" if eff is not None else ""
         model_line = model_ov or "自動（Ollama のローカルモデル一覧から解決）"
         logger.info(
-            "[Rinko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
+            "[Linko AI] OLLAMA 設定済み — 自動振り分け・スコアリングが有効です (model=%s)%s",
             model_line,
             tgt,
         )
     else:
         logger.warning(
-            "[Rinko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります"
+            "[Linko AI] OLLAMA_URL 未設定 — 自動振り分けはスキップされ、付箋はすべてアイデア列に入ります"
         )
     try:
         from app.scheduler import start_scheduler
@@ -7375,8 +7380,8 @@ def shutdown_scheduler() -> None:
 
 <file path="backend/desktop_app_releases/latest.json">
 {
-  "version": "3.9.6",
-  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.6.msi"
+  "version": "3.9.7",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.7.msi"
 }
 </file>
 
@@ -7921,7 +7926,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
 <file path="backend/requirements.txt">
-# Board System (Wonder Rinko) - Backend. Python 3.10+
+# Board System (Wonder Linko) - Backend. Python 3.10+
 # FastAPI + async SQLAlchemy (SQLite, later PostgreSQL)
 
 fastapi>=0.115.0
@@ -8405,6 +8410,21 @@ interface AddUserMenuProps {
 
 type Tab = "members" | "teams";
 
+// チームごとのバッジカラー設定
+const TEAM_BADGE_STYLES = [
+  "bg-indigo-100 text-indigo-700 border-indigo-200",
+  "bg-emerald-100 text-emerald-700 border-emerald-200",
+  "bg-amber-100 text-amber-700 border-amber-200",
+  "bg-rose-100 text-rose-700 border-rose-200",
+  "bg-purple-100 text-purple-700 border-purple-200",
+  "bg-sky-100 text-sky-700 border-sky-200",
+];
+
+function getTeamBadgeStyle(teamId: number): string {
+  const index = Math.abs(Number(teamId)) % TEAM_BADGE_STYLES.length;
+  return TEAM_BADGE_STYLES[index];
+}
+
 export default function AddUserMenu({ members, onSuccess, open: controlledOpen, onOpenChange }: AddUserMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const controlled = controlledOpen !== undefined && onOpenChange !== undefined;
@@ -8416,10 +8436,10 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
 
   const [tab, setTab] = useState<Tab>("members");
 
-  // APIから直接取得する全ユーザー詳細データ（複数チームIDを正しく取得）
+  // APIから直接取得した最新ユーザーリスト
   const [fullUsers, setFullUsers] = useState<User[]>([]);
 
-  // --- メンバー追加フォーム ---
+  // --- メンバー追加・編集フォームステート ---
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [callName, setCallName] = useState("");
@@ -8434,7 +8454,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // --- チーム管理 ---
+  // --- チーム管理ステート ---
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
@@ -8444,6 +8464,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
 
+  // ユーザー全件取得
   const fetchUsersData = useCallback(async () => {
     try {
       const data = await api.users.list();
@@ -8453,6 +8474,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     }
   }, []);
 
+  // チーム一覧取得
   const fetchTeams = useCallback(async () => {
     setTeamsLoading(true);
     try {
@@ -8476,8 +8498,8 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setNewTeamName("");
       setTeamError(null);
       setEditingTeamId(null);
-      fetchUsersData();
-      fetchTeams();
+      void fetchUsersData();
+      void fetchTeams();
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open, fetchUsersData, fetchTeams]);
@@ -8493,13 +8515,14 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setSubmitting(true);
       setError(null);
       try {
-        await api.users.create({
+        const newUser = await api.users.create({
           name: trimmedName,
           email: email.trim(),
           call_name: callName.trim(),
           team_ids: teamIds,
         });
-        await fetchUsersData();
+        // 取得レスポンスを直接ステートに追加して同期ズレを防止
+        setFullUsers((prev) => [...prev, newUser]);
         onSuccess();
         setOpen(false);
       } catch (e) {
@@ -8517,7 +8540,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setError(null);
       try {
         await api.users.delete(ownerId);
-        await fetchUsersData();
+        setFullUsers((prev) => prev.filter((u) => Number(u.id) !== Number(ownerId)));
         onSuccess();
       } catch (e) {
         setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -8528,15 +8551,26 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
   };
 
   const startEdit = (m: any) => {
-    const id = m.ownerId ?? m.id;
-    const fullUser = fullUsers.find((u) => u.id === id);
-    setEditingId(id);
-    setEditName(m.name);
-    setEditEmail(m.email ?? "");
-    setEditCallName(m.call_name ?? "");
+    const targetId = Number(m.ownerId ?? m.id);
+    // fullUsersの最新データから参照
+    const targetUser = fullUsers.find((u) => Number(u.id) === targetId) ?? m;
 
-    const initialTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-    setEditTeamIds(initialTeamIds);
+    setEditingId(targetId);
+    setEditName(targetUser.name ?? "");
+    setEditEmail(targetUser.email ?? "");
+    setEditCallName(targetUser.call_name ?? "");
+
+    // チームIDリストを確実に数値配列化
+    let extractedTeamIds: number[] = [];
+    if (Array.isArray(targetUser.team_ids)) {
+      extractedTeamIds = targetUser.team_ids.map(Number);
+    } else if (Array.isArray(targetUser.teams)) {
+      extractedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
+    } else if (targetUser.teamId) {
+      extractedTeamIds = [Number(targetUser.teamId)];
+    }
+
+    setEditTeamIds(extractedTeamIds);
     setError(null);
   };
 
@@ -8550,13 +8584,18 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       setSubmitting(true);
       setError(null);
       try {
-        await api.users.update(editingId, {
+        const updatedUser = await api.users.update(editingId, {
           name: trimmedName,
           email: editEmail.trim(),
           call_name: editCallName.trim(),
           team_ids: editTeamIds,
         });
-        await fetchUsersData();
+
+        // サーバーから返ってきた最新データを直接ステートに反映（同期ズレ解消）
+        setFullUsers((prev) =>
+          prev.map((u) => (Number(u.id) === Number(editingId) ? updatedUser : u))
+        );
+
         onSuccess();
         setEditingId(null);
       } catch (e) {
@@ -8624,6 +8663,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       try {
         await api.teams.delete(teamId);
         await fetchTeams();
+        await fetchUsersData();
       } catch (e) {
         setTeamError(e instanceof Error ? e.message : "チーム削除に失敗しました");
       } finally {
@@ -8644,15 +8684,16 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       ) : (
         <div className="flex flex-wrap gap-2">
           {teams.map((t) => {
-            const checked = selectedIds.includes(t.id);
+            const checked = selectedIds.map(Number).includes(Number(t.id));
             return (
               <label key={t.id} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded border border-zinc-200 text-xs hover:bg-zinc-100">
                 <input
                   type="checkbox"
                   checked={checked}
                   onChange={(e) => {
-                    if (e.target.checked) onChange([...selectedIds, t.id]);
-                    else onChange(selectedIds.filter((id) => id !== t.id));
+                    const targetId = Number(t.id);
+                    if (e.target.checked) onChange([...selectedIds.map(Number), targetId]);
+                    else onChange(selectedIds.map(Number).filter((id) => id !== targetId));
                   }}
                   disabled={submitting}
                 />
@@ -8664,6 +8705,9 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
       )}
     </div>
   );
+
+  // 一覧表示データは fullUsers を最優先
+  const displayList = fullUsers.length > 0 ? fullUsers : members;
 
   return (
     <div className={controlled ? "contents" : "relative"}>
@@ -8699,7 +8743,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
               </button>
               <button
                 type="button"
-                onClick={() => { setTab("teams"); fetchTeams(); }}
+                onClick={() => { setTab("teams"); void fetchTeams(); }}
                 className={`px-4 py-2 text-sm font-medium transition-colors ${tab === "teams"
                   ? "border-b-2 border-[var(--primary)] text-[var(--primary)]"
                   : "text-zinc-500 hover:text-zinc-700"
@@ -8761,11 +8805,21 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                 <div className="border-t border-[var(--border)] pt-3">
                   <p className="mb-2 text-xs text-zinc-500">編集・削除（付箋はタスクボードにリリースされます）</p>
                   <ul className="flex flex-col gap-1">
-                    {members.map((m: any) => {
-                      const memberId = m.ownerId ?? m.id;
-                      const fullUser = fullUsers.find((u) => u.id === memberId);
-                      const userTeamIds = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                      const userTeams = teams.filter((t) => userTeamIds.includes(t.id));
+                    {displayList.map((m: any) => {
+                      const memberId = Number(m.ownerId ?? m.id);
+                      const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                      // 所属チームの判定
+                      let assignedTeamIds: number[] = [];
+                      if (Array.isArray(targetUser.team_ids)) {
+                        assignedTeamIds = targetUser.team_ids.map(Number);
+                      } else if (Array.isArray(targetUser.teams)) {
+                        assignedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
+                      } else if (targetUser.teamId) {
+                        assignedTeamIds = [Number(targetUser.teamId)];
+                      }
+
+                      const userTeams = teams.filter((t) => assignedTeamIds.includes(Number(t.id)));
 
                       return (
                         <li
@@ -8822,10 +8876,13 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                           ) : (
                             <>
                               <div className="flex items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="text-zinc-800 font-medium">{m.name}</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-zinc-800 font-medium">{targetUser.name}</span>
                                   {userTeams.map((t) => (
-                                    <span key={t.id} className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
+                                    <span
+                                      key={t.id}
+                                      className={`rounded-full px-2 py-0.5 text-xs font-medium border ${getTeamBadgeStyle(t.id)}`}
+                                    >
                                       {t.name}
                                     </span>
                                   ))}
@@ -8836,14 +8893,14 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                 <div className="flex shrink-0 gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => startEdit(m)}
+                                    onClick={() => startEdit(targetUser)}
                                     className="rounded px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100"
                                   >
                                     編集
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => handleDelete(memberId, m.name)}
+                                    onClick={() => handleDelete(memberId, targetUser.name)}
                                     disabled={deletingId === memberId}
                                     className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                                   >
@@ -8851,10 +8908,10 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   </button>
                                 </div>
                               </div>
-                              {(m.email || m.call_name) && (
+                              {(targetUser.email || targetUser.call_name) && (
                                 <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-zinc-500">
-                                  {m.email && <span>{m.email}</span>}
-                                  {m.call_name && <span>呼び名: {m.call_name}</span>}
+                                  {targetUser.email && <span>{targetUser.email}</span>}
+                                  {targetUser.call_name && <span>呼び名: {targetUser.call_name}</span>}
                                 </div>
                               )}
                             </>
@@ -8863,7 +8920,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                       );
                     })}
                   </ul>
-                  {members.length === 0 && (
+                  {displayList.length === 0 && (
                     <p className="py-2 text-sm text-zinc-500">メンバーがいません</p>
                   )}
                 </div>
@@ -8960,23 +9017,41 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                           {/* 所属メンバー一覧 */}
                           {editingTeamId !== team.id && (
                             <div className="flex flex-wrap gap-1">
-                              {members
+                              {displayList
                                 .filter((m: any) => {
-                                  const memberId = m.ownerId ?? m.id;
-                                  const fullUser = fullUsers.find((u) => u.id === memberId);
-                                  const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                                  return ids.includes(team.id);
+                                  const memberId = Number(m.ownerId ?? m.id);
+                                  const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                                  let ids: number[] = [];
+                                  if (Array.isArray(targetUser.team_ids)) {
+                                    ids = targetUser.team_ids.map(Number);
+                                  } else if (Array.isArray(targetUser.teams)) {
+                                    ids = targetUser.teams.map((t: any) => Number(t.id));
+                                  } else if (targetUser.teamId) {
+                                    ids = [Number(targetUser.teamId)];
+                                  }
+
+                                  return ids.includes(Number(team.id));
                                 })
                                 .map((m: any) => (
                                   <span key={m.ownerId ?? m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
                                     {m.name}
                                   </span>
                                 ))}
-                              {members.filter((m: any) => {
-                                const memberId = m.ownerId ?? m.id;
-                                const fullUser = fullUsers.find((u) => u.id === memberId);
-                                const ids = fullUser?.team_ids ?? m.team_ids ?? (m.teams ? m.teams.map((t: any) => t.id) : m.teamId ? [m.teamId] : []);
-                                return ids.includes(team.id);
+                              {displayList.filter((m: any) => {
+                                const memberId = Number(m.ownerId ?? m.id);
+                                const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
+
+                                let ids: number[] = [];
+                                if (Array.isArray(targetUser.team_ids)) {
+                                  ids = targetUser.team_ids.map(Number);
+                                } else if (Array.isArray(targetUser.teams)) {
+                                  ids = targetUser.teams.map((t: any) => Number(t.id));
+                                } else if (targetUser.teamId) {
+                                  ids = [Number(targetUser.teamId)];
+                                }
+
+                                return ids.includes(Number(team.id));
                               }).length === 0 && (
                                   <span className="text-xs text-zinc-400">メンバーなし</span>
                                 )}
@@ -12878,7 +12953,7 @@ server {
 # 本番: cp .env.example .env のうえで値を設定し、deploy.sh 実行時に読み込まれる
 
 # 管理者認証用設定（未設定時はデフォルト値が使用されます）
-ADMIN_PASSWORD=admin
+# ADMIN_PASSWORD=admin
 # JWT_SECRET=super-secret-key-change-in-production-12345
 
 # ローカル LLM（Ollama）。自動仕分け・マトリクススコア・日次リセットに使用。未設定時は AI はスキップ

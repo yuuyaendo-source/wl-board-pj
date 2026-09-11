@@ -90,16 +90,16 @@ if not _has_matching_pyd:
     )
 
 build_exe_options = {
-    "excludes": ["unittest", "PIL"],
+    "excludes": ["unittest", "PIL", "pynput"],
     "include_files": include_files,
     "includes": [
         "pystray",
         "winotify",
-        "win10toast",
-        "win10toast_click",
+        "win32com",
+        "win32com.shell",
+        "pythoncom",
         "requests",
         "customtkinter",
-        "pynput",
         # Phase 3 (来客通知): python-socketio[client] とその依存。
         # websocket (単数) = websocket-client が提供。websockets (複数) とは別物 (asyncio 用、不要)。
         "socketio",
@@ -134,7 +134,6 @@ build_exe_options = {
     ],
     "packages": [
         "customtkinter",
-        "pynput",
         "socketio",
         "engineio",
         "docx",
@@ -146,12 +145,12 @@ build_exe_options = {
     "zip_exclude_packages": ["*"],
 }
 
-# MSI 用オプション（ユーザー領域にインストール・管理者不要）
-# all_users=False で per-user（cx_Freeze が ALLUSERS を適切に設定）。インストール先は C:\Users\<user>\AppData\Local\WonderLink\WonderLinko
+# MSI 用オプション（Program Files にインストール・管理者権限 All Users）
+# all_users=True で per-machine。インストール先は C:\Program Files\WonderLink\WonderLinko
 bdist_msi_options = {
     "add_to_path": False,
-    "all_users": False,
-    "initial_target_dir": r"[LocalAppDataFolder]\WonderLink\WonderLinko",
+    "all_users": True,
+    "initial_target_dir": r"[ProgramFilesFolder]\WonderLink\WonderLinko",
     "output_name": "WonderLinko.msi",  # 旧 target_name（cx_Freeze 7+ で変更）
     "upgrade_code": "{B29E4C50-1A2B-4C3D-9E5F-6A7B8C9D0E1F}",
     "summary_data": {

@@ -274,6 +274,16 @@ class ChatPanel(ctk.CTkToplevel):
         )
         self._attach_btn.pack(side="right")
 
+        # 送信ショートカットのヒント表示
+        self._hint_label = ctk.CTkLabel(
+            self,
+            text="Ctrl + Enter で送信",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=11),
+            anchor="e",
+        )
+        self._hint_label.pack(fill="x", padx=14, pady=(0, 2))
+
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(fill="x", padx=10, pady=(0, 10))
         self._entry = ctk.CTkTextbox(

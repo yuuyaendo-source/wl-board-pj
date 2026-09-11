@@ -90,9 +90,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /api/tags 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /api/tags 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /api/tags 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /api/tags 解析スキップ: %s", e)
 
     try:
         r = sess.get(f"{v1_base}/models", timeout=20)
@@ -101,9 +101,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /v1/models 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /v1/models 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /v1/models 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /v1/models 解析スキップ: %s", e)
 
     return None
 
@@ -138,14 +138,14 @@ def resolve_ollama_model_for_request(
     discovered = _discover_model_id(root, v1_norm, sess)
     if not discovered:
         logger.warning(
-            "[Rinko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
+            "[Linko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
             root,
         )
         return None
 
     with _cache_lock:
         _model_cache[key] = (discovered, now + ttl)
-    logger.info("[Rinko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
+    logger.info("[Linko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
     return discovered
 
 
@@ -191,7 +191,7 @@ def generate_text(
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
@@ -206,14 +206,14 @@ def generate_text(
             return str(content).strip() or None
         except requests.RequestException as e:
             logger.warning(
-                "[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )
             return None
         except Exception as e:
             logger.warning(
-                "[Rinko AI] Ollama 呼び出しエラー: %s — %s",
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )
@@ -251,23 +251,23 @@ def generate_json(
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
                 logger.warning(
-                    "[Rinko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
+                    "[Linko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
                     " 自動解決時は ollama の /api/tags を確認してください。",
                 )
             r.raise_for_status()
             data = r.json()
             choices = data.get("choices") or []
             if not choices:
-                logger.warning("[Rinko AI] Ollama 応答に choices がありません")
+                logger.warning("[Linko AI] Ollama 応答に choices がありません")
                 return None
             content = (choices[0].get("message") or {}).get("content")
             if not content or not (text := str(content).strip()):
-                logger.warning("[Rinko AI] Ollama 応答が空でした")
+                logger.warning("[Linko AI] Ollama 応答が空でした")
                 return None
             if "```" in text:
                 m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
@@ -278,19 +278,19 @@ def generate_json(
             msg = str(e)[:300]
             if "404" not in msg:
                 logger.warning(
-                    "[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                    "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
                     type(e).__name__,
                     msg,
                 )
             return None
         except json.JSONDecodeError as e:
             logger.warning(
-                "[Rinko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200]
+                "[Linko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200]
             )
             return None
         except Exception as e:
             logger.warning(
-                "[Rinko AI] Ollama 呼び出しエラー: %s — %s",
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
                 type(e).__name__,
                 str(e)[:300],
             )

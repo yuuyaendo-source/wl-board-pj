@@ -4,12 +4,45 @@ import os
 import sys
 import json
 
-# exe 化（PyInstaller）時は exe と同じフォルダの config.json を読む
+# アプリのベースディレクトリ（アセット等の参照用）
 if getattr(sys, "frozen", False):
     _BASE_DIR = os.path.dirname(sys.executable)
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(_BASE_DIR, "config.json")
+
+
+def _get_config_dir() -> str:
+    """設定ファイルの保存先ディレクトリを返す。LOCALAPPDATA 優先、無ければホームディレクトリ配下。"""
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "WonderLink")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+CONFIG_DIR = _get_config_dir()
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+
+
+def _ensure_config_file():
+    """%LOCALAPPDATA% に config.json が存在しない場合のみ、ベースディレクトリの雛形を安全にコピーする。
+    shutil.copy を使うと Program Files 側の ACL を引き継いで書き込み権限エラーになる恐れがあるため、
+    json.load / json.dump によるクリーンなファイル生成を行う。
+    """
+    if os.path.isfile(CONFIG_PATH):
+        return
+    base_config = os.path.join(_BASE_DIR, "config.json")
+    if os.path.isfile(base_config):
+        try:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            with open(base_config, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
 
 CALENDAR_REMIND_MINUTES_MIN = 1
 CALENDAR_REMIND_MINUTES_MAX = 15
@@ -99,7 +132,8 @@ def _get_defaults():
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
         "notifications_enabled": True,  # 通知表示の総合スイッチ（トースト・吹き出し・来客通知・口パク。Windows OS 設定とは別）
-        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Rinko Mini-Port 送信先（この URL に POST で送信）
+        "startup_enabled": True,  # Windows 起動時のスタートアップ自動登録（既定 ON、OS 設定と同期）
+        "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Linko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wlboardsys.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない
@@ -162,6 +196,7 @@ DEFAULTS = _get_defaults()
 
 def load_config():
     """config.json を読み、環境変数で上書き可能にする。"""
+    _ensure_config_file()
     cfg = dict(_get_defaults())
     if os.path.isfile(CONFIG_PATH):
         try:
@@ -341,6 +376,7 @@ def save_config(cfg):
         sanitize_config_urls(out, defaults)
     except Exception as e:
         print(f"[security] config save sanitize skipped: {e}", flush=True)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
 

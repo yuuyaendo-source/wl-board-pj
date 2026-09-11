@@ -1,4 +1,4 @@
-# Board System (Wonder Rinko) - Backend. Python 3.10+
+# Board System (Wonder Linko) - Backend. Python 3.10+
 # FastAPI + async SQLAlchemy (SQLite, later PostgreSQL)
 
 fastapi>=0.115.0

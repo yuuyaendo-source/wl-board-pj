@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wonder Rinko Desktop App (DT_APP) - Personal Rinko Agent
+Wonder Linko Desktop App (DT_APP) - Personal Linko Agent
 社員PCに常駐し、お知らせとワンクリックDeep Linkで各ユーザーのパーソナルモードへ誘導する。
 タスクトレイ常駐＋ミニポート（付箋クイック投稿）を起動時に表示。トレイからミニポートの表示/非表示を切り替え可能。
 """
@@ -16,12 +16,23 @@ _exe_dir = (
 _lib_dir = os.path.join(_exe_dir, "lib") if _exe_dir else None
 
 
+def _diagnostic_log_path() -> str:
+    """診断ログの出力先パスを返す。LOCALAPPDATA 優先、無ければホームディレクトリ配下。"""
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "WonderLink")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, "WonderLinko_diagnostic.txt")
+
+
 def _write_diagnostic(line: str):
-    """凍結時のみ、診断ログを exe と同じフォルダに追記する。"""
+    r"""凍結時のみ、診断ログを %LOCALAPPDATA%\WonderLink に追記する。"""
     if not _exe_dir:
         return
     try:
-        log_path = os.path.join(_exe_dir, "WonderLinko_diagnostic.txt")
+        log_path = _diagnostic_log_path()
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
@@ -33,7 +44,7 @@ def _diagnostic_frozen_env():
     if not _exe_dir or not _lib_dir:
         return
     try:
-        log_path = os.path.join(_exe_dir, "WonderLinko_diagnostic.txt")
+        log_path = _diagnostic_log_path()
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(
                 f"[{__import__('datetime').datetime.now().isoformat()}] 起動時診断\n"
@@ -69,12 +80,6 @@ import time
 import warnings
 import webbrowser
 from urllib.parse import quote_plus
-
-# win10toast の pkg_resources 非推奨警告を抑制
-warnings.filterwarnings(
-    "ignore", message="pkg_resources is deprecated", category=UserWarning
-)
-
 import pystray
 
 # PIL は凍結環境で _imaging の読み込みに失敗することがある（デバイス側要因の可能性あり）
@@ -89,23 +94,25 @@ except ImportError as e:
         _write_diagnostic(
             "デバイス側の確認: (1) lib\\PIL に _imaging*.pyd があるか (2) VC++ Redistributable 導入 (3) ウイルス対策で .pyd がブロックされていないか"
         )
+    error_msg = (
+        f"PIL（画像処理）の読み込みに失敗しました。\n\n{e}\n\n"
+        "【デバイス側で確認してください】\n"
+        "・インストール先の lib\\PIL フォルダに _imaging で始まる .pyd ファイルがあるか\n"
+        "・Visual C++ Redistributable がインストールされているか\n"
+        "・ウイルス対策ソフトで .pyd がブロックされていないか\n\n"
+        "詳細は %LOCALAPPDATA%\\WonderLink\\WonderLinko_diagnostic.txt を参照してください。"
+    )
     try:
-        import ctypes
+        import tkinter
+        from tkinter import messagebox
 
-        ctypes.windll.user32.MessageBoxW(  # type: ignore
-            None,
-            f"PIL（画像処理）の読み込みに失敗しました。\n\n{e}\n\n"
-            "【デバイス側で確認してください】\n"
-            "・インストール先の lib\\PIL フォルダに _imaging で始まる .pyd ファイルがあるか\n"
-            "・Visual C++ Redistributable がインストールされているか\n"
-            "・ウイルス対策ソフトで .pyd がブロックされていないか\n\n"
-            "詳細は exe と同じフォルダの WonderLinko_diagnostic.txt を参照してください。",
-            "Wonder Linko - 起動エラー",
-            0x10,
-        )
-    except Exception:
-        pass
-    raise
+        root = tkinter.Tk()
+        root.withdraw()
+        messagebox.showerror("Wonder Linko - 起動エラー", error_msg)
+        root.destroy()
+    except Exception as te:
+        _write_diagnostic(f"tkinter messagebox failed: {te}")
+    sys.exit(1)
 
 # 以降のコードで Image / ImageDraw をそのまま使えるようにする
 Image = _PIL_Image
@@ -131,10 +138,11 @@ _miniport_window = None
 _miniport_visible = True
 
 # 単一インスタンス制御。クリックするたびにミニポートとトレイが増殖するのを防ぐ。
-# Windows: 名前付き mutex で先発プロセスを検出
+# ローカルループバック (127.0.0.1) の特定ポートに対する排他バインドで重複プロセスを検出。
 # 重複検知時は %LOCALAPPDATA%\WonderLink\show_request ファイルを置いて
 # 先発プロセスにミニポート前面化を依頼してから自プロセスを即終了する。
-_SINGLE_INSTANCE_MUTEX_HANDLE = None
+_SINGLE_INSTANCE_SOCKET = None
+_SINGLE_INSTANCE_PORTS = [50050, 50051, 50052]
 _SHOW_REQUEST_STOP = False
 
 
@@ -154,41 +162,34 @@ def _show_request_path() -> str:
 
 
 def _acquire_single_instance_lock() -> bool:
-    """Windows の named mutex で単一インスタンスを保証。
+    """127.0.0.1 のソケットバインドにより単一インスタンスを保証。
+    ctypes / CreateMutexW を使わずに安全に二重起動を防止する。
 
     戻り値:
         True  ロック取得成功 (自プロセスが正規の起動主体)
         False 他プロセスが既に取得済み (自プロセスは終了すべき)
     """
-    global _SINGLE_INSTANCE_MUTEX_HANDLE
-    if sys.platform != "win32":
-        # Linux / macOS は配布対象外。開発時はロックなしで動かす。
-        return True
-    try:
-        import ctypes
-        from ctypes import wintypes
+    global _SINGLE_INSTANCE_SOCKET
+    import socket
 
-        kernel32 = ctypes.windll.kernel32
-        ERROR_ALREADY_EXISTS = 183
-        # Local\ プレフィックス: per-session (RDP 等で別セッションは別 mutex 扱い)
-        mutex_name = "Local\\WonderLinkoDesktopAppSingleInstance"
-        kernel32.CreateMutexW.argtypes = [
-            ctypes.c_void_p,
-            wintypes.BOOL,
-            wintypes.LPCWSTR,
-        ]
-        kernel32.CreateMutexW.restype = wintypes.HANDLE
-        kernel32.GetLastError.restype = wintypes.DWORD
-        h = kernel32.CreateMutexW(None, False, mutex_name)
-        if not h:
-            # CreateMutexW 自体が失敗した場合は fail-open (ロックなしで起動)
+    for port in _SINGLE_INSTANCE_PORTS:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Windows では SO_EXCLUSIVEADDRUSE を設定してポート乗っ取り/二重バインドを防ぐ
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            s.bind(("127.0.0.1", port))
+            s.listen(1)
+            _SINGLE_INSTANCE_SOCKET = s
             return True
-        if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
-            return False
-        _SINGLE_INSTANCE_MUTEX_HANDLE = h
-        return True
-    except Exception:
-        return True
+        except (OSError, socket.error):
+            # このポートがバインドできない場合は次の候補ポートを試す
+            continue
+        except Exception:
+            continue
+
+    # すべての候補ポートでバインドできなかった場合は二重起動と判断
+    return False
 
 
 def _signal_existing_instance_to_show() -> None:
@@ -560,11 +561,21 @@ def _show_notification_help(*args):
         "  最新版の MSI で再インストールしてください。新版は通知用IDを変更しているため、通知が復活することがあります。"
     )
     try:
-        import ctypes
+        from tkinter import messagebox
 
-        ctypes.windll.user32.MessageBoxW(
-            None, msg, "Wonder Linko - 通知が表示されない場合", 0
-        )
+        if _miniport_window is not None:
+            messagebox.showinfo(
+                "Wonder Linko - 通知が表示されない場合", msg, parent=_miniport_window
+            )
+        else:
+            import tkinter
+
+            root = tkinter.Tk()
+            root.withdraw()
+            messagebox.showinfo(
+                "Wonder Linko - 通知が表示されない場合", msg, parent=root
+            )
+            root.destroy()
     except Exception:
         pass
 
@@ -684,7 +695,7 @@ def run_tray():
     _config = load_config()
     image = _make_icon_image()
     menu = build_menu(None)
-    _icon = pystray.Icon("wonder_rinko", image, f"Wonder Linko（v{__version__}）", menu)
+    _icon = pystray.Icon("wonder_linko", image, f"Wonder Linko（v{__version__}）", menu)
     _icon.run()
 
 
@@ -760,38 +771,13 @@ def _prompt_board_system_login_if_needed():
 
 
 def _wait_for_process_exit(pid: int):
-    """指定 PID のプロセスが終了するまで待つ（Windows: OpenProcess + WaitForSingleObject）。"""
-    if sys.platform == "win32":
+    """指定 PID のプロセスが終了するまで待つ。"""
+    while True:
         try:
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32  # type: ignore
-            SYNCHRONIZE = 0x00100000
-            INFINITE = 0xFFFFFFFF
-            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if handle:
-                try:
-                    kernel32.WaitForSingleObject(handle, INFINITE)
-                finally:
-                    kernel32.CloseHandle(handle)
-        except Exception:
-            import time
-
-            while True:
-                try:
-                    os.kill(pid, 0)
-                except (OSError, ProcessLookupError):
-                    break
-                time.sleep(0.5)
-    else:
-        import time
-
-        while True:
-            try:
-                os.kill(pid, 0)
-            except (OSError, ProcessLookupError):
-                break
-            time.sleep(0.5)
+            os.kill(pid, 0)
+        except (OSError, ProcessLookupError):
+            break
+        time.sleep(0.5)
 
 
 def _launch_self():
@@ -805,6 +791,37 @@ def _launch_self():
     else:
         args = [a for a in sys.argv[1:] if not a.startswith("--after-update-wait")]
         subprocess.Popen([exe, sys.argv[0]] + args)
+
+
+def _sync_startup_setting():
+    """改善計画18: スタートアップ自動登録・OS設定（タスクマネージャー）との安全な同期。"""
+    global _config
+    if sys.platform != "win32":
+        return
+    try:
+        taskmgr_disabled = startup.is_disabled_by_task_manager()
+        shortcut_path = startup._get_shortcut_path()
+        shortcut_exists = os.path.isfile(shortcut_path)
+
+        if taskmgr_disabled:
+            # タスクマネージャーで明示的に無効化されている場合、アプリ設定も False に同期（勝手な再登録を防ぐ）
+            if _config.get("startup_enabled") is not False:
+                _config["startup_enabled"] = False
+                save_config(_config)
+                log_info("[startup] タスクマネージャーでの無効化状態を検知し、設定を OFF に同期しました")
+        elif not shortcut_exists:
+            # ショートカット未作成かつタスクマネージャー無効化なし（新規インストール・初回起動等）
+            if _config.get("startup_enabled", True):
+                if startup.set_startup_enabled(True):
+                    log_info("[startup] 初回スタートアップ自動登録を実行しました")
+        else:
+            # ショートカットが存在し、かつタスクマネージャーでも無効化されていない
+            if not _config.get("startup_enabled", True):
+                _config["startup_enabled"] = True
+                save_config(_config)
+                log_info("[startup] OS側の有効状態に合わせて設定を ON に同期しました")
+    except Exception as e:
+        log_info(f"[startup] スタートアップ同期スキップ: {e}")
 
 
 def main():
@@ -859,18 +876,8 @@ def main():
     if _config.get("postit_poll_interval_sec", 0) > 0:
         start_postit_poll(lambda: _config, on_new_postit_notes)
 
-    # MSI 等でインストールした exe の初回起動時のみ、Windows 再起動後もミニポートを自動表示するためスタートアップに登録
-    if (
-        sys.platform == "win32"
-        and getattr(sys, "frozen", False)
-        and not startup.is_startup_enabled()
-    ):
-        if startup.set_startup_enabled(True):
-            notifications.show_toast(
-                "Wonder Rinko",
-                "PC起動時に自動で起動するように設定しました。",
-                duration_sec=4,
-            )
+    # 改善計画18: スタートアップ自動登録とOS設定（タスクマネージャー）との安全な同期
+    _sync_startup_setting()
 
     # ミニポートを起動時に強制表示（タスクトレイは常駐、ミニポートはトレイから表示/非表示可能）
     try:
@@ -898,7 +905,7 @@ def main():
         _miniport_window = None
         _miniport_visible = False
         notifications.show_toast(
-            "Wonder Rinko",
+            "Wonder Linko",
             "ミニポートの起動に失敗しました: " + str(e)[:50],
             duration_sec=5,
         )
