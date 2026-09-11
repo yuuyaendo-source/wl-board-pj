@@ -7706,8 +7706,8 @@ class MiniPortWindow(ctk.CTk):
             except Exception:
                 pass
 
-            if hasattr(self, "frame") and self.frame.winfo_exists():
-                self.frame.destroy()
+            if hasattr(self, "main_frame") and self.main_frame.winfo_exists():
+                self.main_frame.destroy()
 
             self._build_ui()
             if self._input_visible:
@@ -7717,15 +7717,15 @@ class MiniPortWindow(ctk.CTk):
 
     def _build_ui(self):
         # 角丸フレームのみを見せる (外側の長方形は Toplevel の transparentcolor で透過)。
-        if not hasattr(self, "frame") or not self.frame.winfo_exists():
-            self.frame = ctk.CTkFrame(
+        if not hasattr(self, "main_frame") or not self.main_frame.winfo_exists():
+            self.main_frame = ctk.CTkFrame(
                 self,
                 corner_radius=Theme.RADIUS_CARD,
                 border_width=2,
                 border_color=Theme.SURFACE_BORDER,
                 fg_color=Theme.SURFACE,
             )
-            self.frame.pack(fill="both", expand=True, padx=0, pady=0)
+            self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
         # features.linko_avatar の値でレイアウトを分岐
         try:
@@ -7737,7 +7737,7 @@ class MiniPortWindow(ctk.CTk):
         self._avatar_on = avatar_on
 
         # --- 通常時フレーム ---
-        self.compact_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.compact_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.compact_frame.pack(fill="both", expand=True, padx=8, pady=6)
 
         self._linko_image = None  # 参照保持 (GC 防止)
@@ -7863,7 +7863,7 @@ class MiniPortWindow(ctk.CTk):
         self._init_avatar()
 
         # --- 入力表示時: テキストエリア + 閉じる + 送信 ---
-        self.input_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.input_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         # 3行表示・スクロール・改行可（プレースホルダーは FocusIn/FocusOut で制御）
         self.textbox = ctk.CTkTextbox(
             self.input_frame,
@@ -7959,7 +7959,7 @@ class MiniPortWindow(ctk.CTk):
             # PNG の角丸半径はフレームの border 半径と揃えてあるので、縁は二重にならず
             # きれいに重なる。コンテンツ (compact_frame / input_frame) は上に描かれる。
             self._card_bg_label = ctk.CTkLabel(
-                self.frame, text="", image=self._card_bg_image
+                self.main_frame, text="", image=self._card_bg_image
             )
             self._card_bg_label.place(x=0, y=0, anchor="nw")
             self._card_bg_label.lower()
@@ -7971,7 +7971,11 @@ class MiniPortWindow(ctk.CTk):
         enabled = self._get_notifications_enabled()
         label = "🔔" if enabled else "🔕"
         self.btn_notify = ctk.CTkButton(
-            self.frame if getattr(self, "_avatar_on", False) else self.compact_frame,
+            (
+                self.main_frame
+                if getattr(self, "_avatar_on", False)
+                else self.compact_frame
+            ),
             text=label,
             width=22 if getattr(self, "_avatar_on", False) else 36,
             height=22 if getattr(self, "_avatar_on", False) else 40,
@@ -8054,7 +8058,7 @@ class MiniPortWindow(ctk.CTk):
             # (アバターの顔や下部のボタン列に被らない位置)
             try:
                 self.btn_close_mini = ctk.CTkButton(
-                    self.frame,
+                    self.main_frame,
                     text="✕",
                     width=22,
                     height=22,
@@ -8068,7 +8072,7 @@ class MiniPortWindow(ctk.CTk):
                 self.btn_close_mini.place(relx=1.0, rely=0.0, x=-8, y=8, anchor="ne")
 
                 self.btn_settings_mini = ctk.CTkButton(
-                    self.frame,
+                    self.main_frame,
                     text="⚙",
                     width=22,
                     height=22,
@@ -8236,7 +8240,7 @@ class MiniPortWindow(ctk.CTk):
         self._ctx_menu.add_command(
             label="ミニポートを非表示にする", command=self._ctx_hide_miniport
         )
-        for widget in (self.frame, self.compact_frame):
+        for widget in (self.main_frame, self.compact_frame):
             widget.bind("<Button-3>", self._on_right_click)
         if hasattr(self, "input_frame"):
             self.input_frame.bind("<Button-3>", self._on_right_click)
@@ -8278,8 +8282,8 @@ class MiniPortWindow(ctk.CTk):
         self._drag_start_y = 0
         self._drag_win_x = 0
         self._drag_win_y = 0
-        self.frame.bind("<Button-1>", self._on_drag_start)
-        self.frame.bind("<B1-Motion>", self._on_drag_motion)
+        self.main_frame.bind("<Button-1>", self._on_drag_start)
+        self.main_frame.bind("<B1-Motion>", self._on_drag_motion)
         self.compact_frame.bind("<Button-1>", self._on_drag_start)
         self.compact_frame.bind("<B1-Motion>", self._on_drag_motion)
         self.input_frame.bind("<Button-1>", self._on_drag_start)

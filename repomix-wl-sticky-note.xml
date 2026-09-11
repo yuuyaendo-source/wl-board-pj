@@ -109,13 +109,12 @@ src/
 This section contains the contents of the repository's files.
 
 <file path="src/app/[id]/page.js">
-// wl-sticky-note/src/app/[id]/page.js
 import { redirect } from "next/navigation";
 
 export default async function ShortUrlRedirect({ params }) {
     const { id } = await params;
-    // /board/[id] へ自動転送
-    redirect(`/board/${id}`);
+    // basePath ("/board") は Next.js が自動補完するため、`/${id}` を指定します
+    redirect(`/${id}`);
 }
 </file>
 
@@ -1280,10 +1279,9 @@ export default function RootLayout({ children }) {
 <file path="src/app/page.js">
 import { redirect } from "next/navigation";
 
-// トップはデフォルトボードへ（basePath 時は /board/wl、開発時は /board/wl）
 export default function Home() {
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-  redirect(basePath ? `${basePath}/wl` : "/board/wl");
+  // basePath ("/board") は Next.js が自動補完するため、単体で "/wl" を指定します
+  redirect("/wl");
 }
 </file>
 
@@ -4705,10 +4703,9 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const nextConfig = {
   basePath,
   async redirects() {
-    // basePath あり（本番 /board）のときは /board を /board/wl へ
-    const dest = basePath ? `${basePath}/wl` : '/board/wl';
+    // Next.js の redirects 内の destination にも basePath が自動付与されるため '/wl' とします
     return [
-      { source: '/', destination: dest, permanent: false },
+      { source: '/', destination: '/wl', permanent: false },
     ];
   },
   async rewrites() {
