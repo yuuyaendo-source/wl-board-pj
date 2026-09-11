@@ -15,8 +15,8 @@ COPY . .
 RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
-# basePathの二重化を防ぐためデフォルト値を空にします
-ARG NEXT_PUBLIC_BASE_PATH=""
+# 本番で Nginx の /board/ 配下で提供する場合は /board でビルド（アセットが /board/_next/ になる）
+ARG NEXT_PUBLIC_BASE_PATH
 ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 
 # Next.js ビルド
