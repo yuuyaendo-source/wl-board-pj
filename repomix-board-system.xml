@@ -12978,7 +12978,6 @@ OLLAMA_URL=http://172.16.1.242:11435/v1
 # NEXT_PUBLIC_API_URL=https://wlboardsys.internal.wonder-link.com/api/bs
 # NEXT_PUBLIC_LEGACY_BOARD_URL=https://wlboardsys.internal.wonder-link.com
 # NEXT_PUBLIC_BASE_PATH=/boards
-# NEXT_PUBLIC_STICKY_BASE_PATH=/board
 # NEXT_PUBLIC_BOARD_SYSTEM_URL=https://wlboardsys.internal.wonder-link.com/boards
 
 # 任意: ログレベル
@@ -13116,7 +13115,8 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        NEXT_PUBLIC_STICKY_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-/board}
+        # NEXT_PUBLIC_BASE_PATH に変数名を合わせ、デフォルト値を空文字 "" に修正します
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-""}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"
