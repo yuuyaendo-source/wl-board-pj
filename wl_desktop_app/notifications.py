@@ -125,55 +125,23 @@ def show_toast(
         return
 
     if sys.platform == "win32":
-        # 1) winotify（「開く」ボタンでURLを開く・ワンクリックで確実・アイコン指定可）
-        if url:
-            try:
-                from winotify import Notification
-
-                icon_path = _get_toast_icon_path()
-                # app_id を変えると Windows が「別アプリ」と扱う。通知オフで復旧しない場合の対策で WonderLinko.Desktop に変更
-                kwargs = {
-                    "app_id": "WonderLinko.Desktop",
-                    "title": title or "Wonder Linko",
-                    "msg": message,
-                }
-                if icon_path:
-                    kwargs["icon"] = icon_path
-                toast = Notification(**kwargs)
-                toast.add_actions(label="開く", launch=url)
-                toast.show()
-                return
-            except Exception:
-                pass
-        # 2) win10toast-click（トースト本体クリックで開く）
+        # winotify（「開く」ボタンでURLを開く・ワンクリックで確実・アイコン指定可）
         try:
-            from win10toast_click import ToastNotifier
+            from winotify import Notification
 
-            toaster = ToastNotifier()
+            icon_path = _get_toast_icon_path()
+            # app_id を変えると Windows が「別アプリ」と扱う。通知オフで復旧しない場合の対策で WonderLinko.Desktop に変更
             kwargs = {
-                "title": title or "リン子のお知らせ",
-                "msg": message + ("\n（クリックで開く）" if url else ""),
-                "duration": duration_sec,
-                "threaded": True,
+                "app_id": "WonderLinko.Desktop",
+                "title": title or "Wonder Linko",
+                "msg": message,
             }
+            if icon_path:
+                kwargs["icon"] = icon_path
+            toast = Notification(**kwargs)
             if url:
-                kwargs["callback_on_click"] = _open_last_notification_url
-            toaster.show_toast(**kwargs)
-            return
-        except Exception:
-            pass
-        # 3) フォールバック: win10toast（表示のみ・トレイの「最後のお知らせを開く」で開く）
-        try:
-            from win10toast import ToastNotifier
-
-            toaster = ToastNotifier()
-            toaster.show_toast(
-                title=title or "Wonder Linko",
-                msg=message
-                + ("\n（トレイの「最後のお知らせを開く」で開く）" if url else ""),
-                duration=duration_sec,
-                threaded=True,
-            )
+                toast.add_actions(label="開く", launch=url)
+            toast.show()
             return
         except Exception:
             pass

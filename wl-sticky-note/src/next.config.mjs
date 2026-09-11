@@ -6,10 +6,9 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const nextConfig = {
   basePath,
   async redirects() {
-    // basePath あり（本番 /board）のときは /board を /board/wl へ
-    const dest = basePath ? `${basePath}/wl` : '/board/wl';
+    // Next.js の redirects 内の destination にも basePath が自動付与されるため '/wl' とします
     return [
-      { source: '/', destination: dest, permanent: false },
+      { source: '/', destination: '/wl', permanent: false },
     ];
   },
   async rewrites() {
