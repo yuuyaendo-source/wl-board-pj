@@ -14,7 +14,7 @@
 
 `board-system/nginx/nginx.conf`（開発）・`nginx.conf.production-server`（本番）・`staging.conf`・`wl-sticky-note/src/nginx.conf` はいずれも上記パスを参照しています。別のサーバや別ユーザで運用する場合は、証明書パスと `server_name` を環境に合わせて書き換えてください。
 
-※ linko-system（AI-Board）は別 FQDN（`linko-board.internal.wonder-link.com`）で、同じ証明書ディレクトリを参照しています。
+※ linko-system（AI-Board）は別 FQDN（`linkosys.internal.wonder-link.com`）で、同じ証明書ディレクトリを参照しています。
 
 ---
 

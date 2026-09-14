@@ -730,7 +730,7 @@ class TestLinkoCardsUrl(unittest.TestCase):
     def test_prefers_board_system_email(self):
         url = build_linko_cards_url(
             {
-                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "linko_server_url": "https://linkosys.internal.wonder-link.com",
                 "board_system_email": "asakawa@example.com",
                 "face_registry_person_id": "浅川久司",
                 "display_name": "浅川",
@@ -738,14 +738,14 @@ class TestLinkoCardsUrl(unittest.TestCase):
         )
         self.assertEqual(
             url,
-            "https://linko-board.internal.wonder-link.com/entrance/me/cards"
+            "https://linkosys.internal.wonder-link.com/entrance/me/cards"
             "?email=asakawa%40example.com",
         )
 
     def test_falls_back_to_face_registry_person_id(self):
         url = build_linko_cards_url(
             {
-                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "linko_server_url": "https://linkosys.internal.wonder-link.com",
                 "board_system_email": "",
                 "face_registry_person_id": "浅川久司",
                 "display_name": "浅川",
@@ -753,7 +753,7 @@ class TestLinkoCardsUrl(unittest.TestCase):
         )
         self.assertTrue(
             url.startswith(
-                "https://linko-board.internal.wonder-link.com/entrance/me/cards?"
+                "https://linkosys.internal.wonder-link.com/entrance/me/cards?"
             )
         )
         self.assertIn("employee_id=", url)
@@ -3187,7 +3187,7 @@ def _board_user_id(cfg: Optional[dict] = None) -> Optional[int]:
 
 def _tts_url() -> Optional[str]:
     """linko-system の TTS エンドポイント URL。
-    linko_server_url (例 https://linko-board.internal.wonder-link.com) に /api/v2/tts を付ける。
+    linko_server_url (例 https://linkosys.internal.wonder-link.com) に /api/v2/tts を付ける。
     linko_server_url 未設定なら None (= 音声なし)。
     """
     cfg = load_config()
@@ -4156,7 +4156,7 @@ def _get_defaults():
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
         "board_system_email": "",  # Board System ログイン時のメール（セルフ顔登録などのプリフィル用）
         # linko-system (AI-Board) の Socket.IO サーバ URL。features.visitor_notify=True のときに接続して来客通知を受ける
-        "linko_server_url": "https://linko-board.internal.wonder-link.com",
+        "linko_server_url": "https://linkosys.internal.wonder-link.com",
         # linko-system 管理 API 用（管理者 PC の config.json のみ。MSI 同梱しない）
         "linko_admin_token": "",
         # 機能フラグ。v2 で追加。基本 OFF でユーザーが任意で ON にする (詳細は docs/v2_拡張計画.md)。
@@ -4572,7 +4572,7 @@ def get_board_system_login_email(cfg=None) -> str:
   "open_personal_on_start": false,
   "personal_path": "",
   "ai_board_url": "https://wlboardsys.internal.wonder-link.com/",
-  "linko_server_url": "https://linko-board.internal.wonder-link.com",
+  "linko_server_url": "https://linkosys.internal.wonder-link.com",
   "features": {
     "taskbar_mode": false,
     "linko_avatar": false,

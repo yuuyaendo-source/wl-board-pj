@@ -79,7 +79,7 @@ def _board_user_id(cfg: Optional[dict] = None) -> Optional[int]:
 
 def _tts_url() -> Optional[str]:
     """linko-system の TTS エンドポイント URL。
-    linko_server_url (例 https://linko-board.internal.wonder-link.com) に /api/v2/tts を付ける。
+    linko_server_url (例 https://linkosys.internal.wonder-link.com) に /api/v2/tts を付ける。
     linko_server_url 未設定なら None (= 音声なし)。
     """
     cfg = load_config()

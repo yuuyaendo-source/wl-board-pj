@@ -44,6 +44,7 @@ def _ensure_config_file():
         except Exception:
             pass
 
+
 CALENDAR_REMIND_MINUTES_MIN = 1
 CALENDAR_REMIND_MINUTES_MAX = 15
 CALENDAR_REMIND_MINUTES_DEFAULT = 15
@@ -145,7 +146,7 @@ def _get_defaults():
         "board_system_personal_id": "",  # メールログインで取得した user id。設定時は「パーソナルを開く」で Board System のパーソナルを開く
         "board_system_email": "",  # Board System ログイン時のメール（セルフ顔登録などのプリフィル用）
         # linko-system (AI-Board) の Socket.IO サーバ URL。features.visitor_notify=True のときに接続して来客通知を受ける
-        "linko_server_url": "https://linko-board.internal.wonder-link.com",
+        "linko_server_url": "https://linkosys.internal.wonder-link.com",
         # linko-system 管理 API 用（管理者 PC の config.json のみ。MSI 同梱しない）
         "linko_admin_token": "",
         # 機能フラグ。v2 で追加。基本 OFF でユーザーが任意で ON にする (詳細は docs/v2_拡張計画.md)。

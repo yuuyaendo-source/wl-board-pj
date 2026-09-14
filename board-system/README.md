@@ -45,7 +45,7 @@ board-system/
 | Google OAuth コールバック | `/auth/google/callback` |
 | デスクトップ更新 | `/api/bs/desktop-app/latest.json` |
 
-同一 LAN 上の linko-system（`https://linko-board.internal.wonder-link.com/`）とユーザー DB・顔/音声登録 API を共有。
+同一 LAN 上の linko-system（`https://linkosys.internal.wonder-link.com/`）とユーザー DB・顔/音声登録 API を共有。
 
 ## 起動（開発時）
 

@@ -266,7 +266,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 | 付箋ボード | `https://wlboardsys.internal.wonder-link.com/board/wl` | ミニポート投稿・トレイ「付箋」 |
 | Board System API | `https://wlboardsys.internal.wonder-link.com/api/bs` | パーソナル・ブレスト・リマインド |
 | Board System フロント | `…/boards/personal/{id}` | パーソナルボード表示 |
-| linko-system | `https://linko-board.internal.wonder-link.com` | 来客 Socket.IO・TTS・顔/音声 API |
+| linko-system | `https://linkosys.internal.wonder-link.com` | 来客 Socket.IO・TTS・顔/音声 API |
 | デスクトップ更新 | `…/api/bs/desktop-app/latest.json` | MSI 自動更新 |
 
 `config_loader.py` の defaults に本番 URL が入っている。開発時は `config.json` または環境変数で上書き。

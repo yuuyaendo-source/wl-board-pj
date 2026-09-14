@@ -12,7 +12,7 @@
 
 | ホスト（IP） | リポジトリ / サービス | FQDN |
 | -------------- | ------------------------ | ------ |
-| **172.16.1.161** | linko-system（AI-Board） | <https://linko-board.internal.wonder-link.com/> |
+| **172.16.1.161** | linko-system（AI-Board） | <https://linkosys.internal.wonder-link.com/> |
 | **172.16.1.83**（または 84） | wl-board-pj（付箋ボード・Board System） | <https://wlboardsys.internal.wonder-link.com/> |
 
 - 上記の **wl-board-pj 用サーバ** に本手順で Docker をデプロイする。

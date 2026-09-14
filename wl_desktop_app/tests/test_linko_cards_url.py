@@ -15,7 +15,7 @@ class TestLinkoCardsUrl(unittest.TestCase):
     def test_prefers_board_system_email(self):
         url = build_linko_cards_url(
             {
-                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "linko_server_url": "https://linkosys.internal.wonder-link.com",
                 "board_system_email": "asakawa@example.com",
                 "face_registry_person_id": "浅川久司",
                 "display_name": "浅川",
@@ -23,14 +23,14 @@ class TestLinkoCardsUrl(unittest.TestCase):
         )
         self.assertEqual(
             url,
-            "https://linko-board.internal.wonder-link.com/entrance/me/cards"
+            "https://linkosys.internal.wonder-link.com/entrance/me/cards"
             "?email=asakawa%40example.com",
         )
 
     def test_falls_back_to_face_registry_person_id(self):
         url = build_linko_cards_url(
             {
-                "linko_server_url": "https://linko-board.internal.wonder-link.com",
+                "linko_server_url": "https://linkosys.internal.wonder-link.com",
                 "board_system_email": "",
                 "face_registry_person_id": "浅川久司",
                 "display_name": "浅川",
@@ -38,7 +38,7 @@ class TestLinkoCardsUrl(unittest.TestCase):
         )
         self.assertTrue(
             url.startswith(
-                "https://linko-board.internal.wonder-link.com/entrance/me/cards?"
+                "https://linkosys.internal.wonder-link.com/entrance/me/cards?"
             )
         )
         self.assertIn("employee_id=", url)
