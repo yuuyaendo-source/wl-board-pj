@@ -5,7 +5,7 @@ config.json の改ざんや Socket.IO 由来の click_url により、社外へ�
 ブラウザを誘導されないよう、HTTP(S) 先をホワイトリストで制限する。
 
 無効化 (開発のみ): 環境変数 ``WLINKO_DISABLE_URL_ALLOWLIST=1``
-追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.242,dev.example.com``
+追加ホスト: ``WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.161,dev.example.com``
 または config.json の ``security.allowed_hosts`` / ``security.allowed_host_suffixes``
 """
 from __future__ import annotations

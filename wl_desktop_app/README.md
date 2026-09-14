@@ -327,7 +327,7 @@ Google API はデスクトップから直接呼ばない。Board System サー�
 
 `WLINKO_USER_ID`, `BOARD_SYSTEM_URL`, `LINKO_SERVER_URL`, `LINKO_ADMIN_TOKEN`, `MINI_PORT_API_URL`, `AI_BOARD_URL`, `POSTIT_BOARD_URL`
 
-開発 LAN 例: `WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.242`, `WLINKO_ALLOW_PRIVATE_IPS=1`
+開発 LAN 例: `WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.161`, `WLINKO_ALLOW_PRIVATE_IPS=1`
 
 本番テンプレート: `config.production.example.json`
 
@@ -454,10 +454,12 @@ cd wl_desktop_app
    （これにより、`cert/WonderLink_CodeSigning.pfx` と `cert/WonderLink_InternalRoot.cer` が生成されます）
 2. **パスワードの設定**:
    プロジェクトルートの `.env` ファイルに、1で入力したパスワードを設定します。
+
    ```env
    # 証明書のエクスポート用パスワード (build_msi.ps1 の自動署名で使用)
    CERT_PASSWORD=入力したパスワード
    ```
+
 3. **ビルドの実行**:
    以降は `.\build_msi.ps1` を実行するだけで、自動的に証明書とパスワードを読み込んで署名が行われます。
 

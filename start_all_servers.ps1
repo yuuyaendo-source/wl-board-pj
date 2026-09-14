@@ -68,7 +68,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Servers Startup Complete" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Local:  Web App http://localhost:3000  |  AI-Board http://localhost:5000" -ForegroundColor Yellow
-Write-Host "CATO:   Web App http://172.16.1.242:3000  |  AI-Board http://172.16.1.242:5000" -ForegroundColor Cyan
-Write-Host "  (from CATO-connected PCs, use 172.16.1.242 instead of localhost)" -ForegroundColor Gray
+Write-Host "CATO:   Web App http://172.16.1.161:3000  |  AI-Board http://172.16.1.161:5000" -ForegroundColor Cyan
+Write-Host "  (from CATO-connected PCs, use 172.16.1.161 instead of localhost)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Each server is running in a separate window. Press Ctrl+C in each to stop." -ForegroundColor Gray
