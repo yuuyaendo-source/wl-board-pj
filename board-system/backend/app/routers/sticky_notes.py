@@ -228,6 +228,7 @@ class CreatePersonalNoteBody(BaseModel):
     owner_id: int
     content: str
     due_date: str | None = None
+    lane: Lane | None = None  # 追加: クライアントからの配置先レーン指定を受け取る
 
 
 @router.post("/create_personal", response_model=StickyNoteResponse, status_code=201)
@@ -261,7 +262,8 @@ async def create_personal_note(
     db.add(note)
     await db.flush()
 
-    initial_lane = Lane.INBOX
+    # 修正: body.lane の指定があればそれを優先する
+    initial_lane = body.lane or Lane.INBOX
     if parsed_due_date and parsed_due_date <= _get_jst_today():
         initial_lane = Lane.TODAY
 
