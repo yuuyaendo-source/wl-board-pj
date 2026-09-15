@@ -32,13 +32,7 @@ def _get_jst_today() -> DateType:
 
 
 async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
-    """期限連動移動ロジック:
-    - DONE レーンにある配置は絶対に対象外（何もしない）
-    - is_manually_moved_to_today が True の配置は判定をスキップ
-    - days <= 0 (期限切れ・今日): TODAY
-    - 0 < days < 30 (短期): [1, 2, 3, 4, 5, 10, 20] 日前なら TODAY、それ以外は INBOX
-    - days >= 30 (長期): days % 30 == 0 なら TODAY、それ以外は INBOX
-    """
+    """期限連動移動ロジック"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -96,6 +90,7 @@ def _note_response(note: StickyNote) -> StickyNoteResponse:
         postit_board_id=note.postit_board_id,
         postit_note_id=note.postit_note_id,
         due_date=due_date_str,
+        is_personal_only=getattr(note, "is_personal_only", False),
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -123,9 +118,6 @@ async def get_sticky_notes(
 async def import_from_postit(
     body: ImportFromPostitBody, db: AsyncSession = Depends(get_db)
 ):
-    """【課題1対応】付箋ボードからの同期・再取り込み時に is_personal_only を反映し、
-    パーソナル専用付箋の場合は TASK ボードへ配置せずスキップする。
-    """
     import_count = 0
     skip_count = 0
 
@@ -165,7 +157,6 @@ async def import_from_postit(
         db.add(note)
         await db.flush()
 
-        # パーソナル専用フラグがオフの場合のみタスクボードへ配置
         if not is_personal:
             placement = BoardPlacement(
                 note_id=note.id,
@@ -222,7 +213,6 @@ async def create_sticky_note(
     db.add(placement)
     await db.flush()
 
-    # パーソナル専用でない場合のみ AI 振り分けを実行
     if not note.is_personal_only:
         from app.services.orchestrator import process_new_note_ai
 
@@ -244,9 +234,7 @@ class CreatePersonalNoteBody(BaseModel):
 async def create_personal_note(
     body: CreatePersonalNoteBody, db: AsyncSession = Depends(get_db)
 ):
-    """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）
-    ※ AI 振り分け（process_new_note_ai）は呼ばない。
-    """
+    """パーソナルボードから直接付箋を作成する。"""
     result = await db.execute(select(User).where(User.id == body.owner_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -304,7 +292,6 @@ class SyncFromPostitBody(BaseModel):
 async def sync_from_postit(
     body: SyncFromPostitBody, db: AsyncSession = Depends(get_db)
 ):
-    """付箋ボード側で追記・更新された content / due_date を反映"""
     result = await db.execute(
         select(StickyNote).where(
             StickyNote.postit_board_id == body.board_id,

@@ -22,7 +22,6 @@ interface SummaryTodayItem {
   end?: string;
 }
 
-/** mutation 直後の refetch で古いレスポンスが返るのを防ぐため、少し待ってから再取得する */
 const REFETCH_DELAY_MS = 120;
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -41,7 +40,6 @@ function personalCardColor(
   return "blue";
 }
 
-/** 表示順: 応援要請 → Today → タスク → Done */
 const LANES: { key: LaneType; label: string }[] = [
   { key: "HELP_REQUEST", label: "応援要請" },
   { key: "TODAY", label: "Today" },
@@ -116,34 +114,11 @@ export default function PersonalBoardView({
 
   const handlePost = useCallback(
     async (text: string) => {
-      // 1リクエストで create + Personal 配置（move_to_personal の 404 を防ぐ）
-      const placement = await api.stickyNotes.createPersonal({
+      await api.stickyNotes.createPersonal({
         content: text,
         owner_id: ownerId,
         lane: "TODAY",
       });
-      const noteId = placement.note_id;
-      const placementId = placement.id;
-      setByLane((prev) => ({
-        ...prev,
-        TODAY: [
-          {
-            id: placementId,
-            note_id: noteId,
-            board_type: "PERSONAL",
-            owner_id: ownerId,
-            lane: "TODAY",
-            position_x: null,
-            position_y: null,
-            matrix_quadrant: null,
-            sort_order: 0,
-            note_content: text,
-            note_status: "ACTIVE",
-            is_from_task: false,
-          } as PlacementWithNote,
-          ...prev.TODAY,
-        ],
-      }));
       await delay(REFETCH_DELAY_MS);
       await fetchPersonal();
     },
@@ -203,10 +178,8 @@ export default function PersonalBoardView({
       setError(null);
       try {
         if (isFromTask) {
-          // タスク由来の付箋: パーソナル配置のみ削除（StickyNote本体は残す）
           await api.boardPlacements.delete(placementId);
         } else {
-          // パーソナル独自の付箋: StickyNote ごと削除
           await api.stickyNotes.delete(noteId);
         }
         await delay(REFETCH_DELAY_MS);
@@ -218,7 +191,6 @@ export default function PersonalBoardView({
     [fetchPersonal]
   );
 
-  /** 付箋をタスクボードへ。Task 由来・パーソナル投稿どちらも releaseToTask(noteId) で統一（404 回避） */
   const handleReleaseToTask = useCallback(
     async (noteId: number) => {
       setError(null);
@@ -233,7 +205,6 @@ export default function PersonalBoardView({
     [fetchPersonal]
   );
 
-  /** 期限（due_date）変更。YYYY-MM-DD 文字列または ""（クリア）を受け取る */
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
       try {
@@ -257,7 +228,6 @@ export default function PersonalBoardView({
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      {/* スクロール時も入力・投稿・ゴミ箱・タスクボードへが追従する */}
       <div className="sticky top-[52px] z-10 -mx-6 bg-white px-6 pb-4 pt-2 shadow-[0_1px_0_0_var(--border)]">
         <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
         <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
@@ -320,9 +290,8 @@ function PersonalTrashDropZone({
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
-        over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
-      }`}
+      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -359,9 +328,8 @@ function PersonalTaskReleaseDropZone({ onDropToTask }: { onDropToTask: (noteId: 
 
   return (
     <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50" : "border-zinc-300 bg-zinc-100"
-      }`}
+      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${over ? "border-[var(--primary)] bg-green-50" : "border-zinc-300 bg-zinc-100"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -429,7 +397,6 @@ function PersonalCalendarPanel({
           }
         }
       } catch {
-        // 未連携・オフライン時はキャッシュ表示のまま
       }
     };
     const id = window.setInterval(pollLive, CALENDAR_LIVE_POLL_MS);
@@ -455,12 +422,10 @@ function PersonalCalendarPanel({
           setLiveEvents(data.events);
         }
       } catch {
-        // ignore
       }
       await onRefresh();
       if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
     } catch {
-      // ignore
     } finally {
       setRefreshing(false);
     }
@@ -564,9 +529,8 @@ function LaneColumn({
   return (
     <div
       ref={columnRef}
-      className={`rounded-xl border-2 border-dashed border-[var(--border)] p-4 transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50/50" : "bg-white"
-      }`}
+      className={`rounded-xl border-2 border-dashed border-[var(--border)] p-4 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : "bg-white"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -576,24 +540,23 @@ function LaneColumn({
         {placements.map((p) => (
           <div key={p.id} data-placement-id={p.id}>
             <NoteCard
-            placement={p}
-            draggable
-            showPersonalBadge={
-              p.is_from_task === false &&
-              lane !== "HELP_REQUEST" &&
-              !isCalendarPlacement(p.placement_source)
-            }
-            showCalendarBadge={isCalendarPlacement(p.placement_source)}
-            cardColor={personalCardColor(lane, p)}
-            dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
-            onAppendContent={onAppendContent}
-            onDueDateChange={onDueDateChange}
-            onDragEnd={onRefresh}
-          />
+              placement={p}
+              draggable
+              showPersonalBadge={
+                p.is_from_task === false &&
+                lane !== "HELP_REQUEST" &&
+                !isCalendarPlacement(p.placement_source)
+              }
+              showCalendarBadge={isCalendarPlacement(p.placement_source)}
+              cardColor={personalCardColor(lane, p)}
+              dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
+              onAppendContent={onAppendContent}
+              onDueDateChange={onDueDateChange}
+              onDragEnd={onRefresh}
+            />
           </div>
         ))}
       </div>
     </div>
   );
 }
-

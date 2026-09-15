@@ -2879,7 +2879,6 @@ async def update_board_placement(
     prev_matrix = placement.matrix_quadrant
     if body.lane is not None:
         placement.lane = body.lane
-        # PERSONAL ボードでの手動レーン変更時にフラグを制御
         if placement.board_type == BoardType.PERSONAL:
             if body.lane == Lane.TODAY:
                 placement.is_manually_moved_to_today = True
@@ -2894,8 +2893,6 @@ async def update_board_placement(
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
 
-    # Personal の DONE ↔ 他レーン変更時に Task の matrix_quadrant（5=完了）を連動
-    # Personal で応援要請へ移動したらタスクボードにも載せ、以後タスクとして扱う
     if placement.board_type == BoardType.PERSONAL and body.lane is not None:
         r_task = await db.execute(
             select(BoardPlacement).where(
@@ -2920,7 +2917,6 @@ async def update_board_placement(
             elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
                 task_placement.matrix_quadrant = 4
 
-    # Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻す（色がグレー→緑に）
     if (
         placement.board_type == BoardType.TASK
         and body.matrix_quadrant is not None
@@ -2944,14 +2940,31 @@ async def update_board_placement(
 
 @router.delete("/{placement_id}", status_code=204)
 async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
-    """配置1件削除（付箋は削除されない）。"""
+    """配置1件削除（付箋は削除されない）。
+    【課題2対応】パーソナル配置の削除（ゴミ箱への投入）時にタスクボード側のステータスを完了(5)へ更新する。
+    """
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
+
+    # パーソナルボード上の配置がゴミ箱へ投入された場合、タスクボード上も「完了（5）」に更新
+    if placement.board_type == BoardType.PERSONAL:
+        r_task = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.TASK,
+                BoardPlacement.owner_id.is_(None),
+            )
+        )
+        task_placement = r_task.scalar_one_or_none()
+        if task_placement:
+            task_placement.matrix_quadrant = 5
+
     await db.delete(placement)
+    await db.commit()
     return None
 </file>
 
@@ -4250,7 +4263,7 @@ def _get_jst_today() -> DateType:
 
 
 async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
-    """改善計画6に基づく期限連動移動ロジック:
+    """期限連動移動ロジック:
     - DONE レーンにある配置は絶対に対象外（何もしない）
     - is_manually_moved_to_today が True の配置は判定をスキップ
     - days <= 0 (期限切れ・今日): TODAY
@@ -4275,15 +4288,12 @@ async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
     today = _get_jst_today()
 
     for p in placements:
-        # DONE レーンにあるタスクは期限切れであっても移動しない
         if p.lane == Lane.DONE or p.lane == "DONE":
             continue
-        # 手動移動済みフラグが ON の場合はスキップ
         if p.is_manually_moved_to_today:
             continue
 
         if not note.due_date:
-            # 期限がクリアされた場合、TODAY にあれば INBOX に戻す
             if p.lane == Lane.TODAY:
                 p.lane = Lane.INBOX
             continue
@@ -4344,6 +4354,9 @@ async def get_sticky_notes(
 async def import_from_postit(
     body: ImportFromPostitBody, db: AsyncSession = Depends(get_db)
 ):
+    """【課題1対応】付箋ボードからの同期・再取り込み時に is_personal_only を反映し、
+    パーソナル専用付箋の場合は TASK ボードへ配置せずスキップする。
+    """
     import_count = 0
     skip_count = 0
 
@@ -4364,7 +4377,6 @@ async def import_from_postit(
         existing_note = result.scalar_one_or_none()
 
         if existing_note:
-            # 既存付箋で due_date が変更されている場合は更新
             if item.due_date is not None and existing_note.due_date != parsed_due_date:
                 existing_note.due_date = parsed_due_date
                 await db.flush()
@@ -4372,23 +4384,28 @@ async def import_from_postit(
             skip_count += 1
             continue
 
+        is_personal = getattr(item, "is_personal_only", False)
+
         note = StickyNote(
             content=item.text or "（テキストなし）",
             postit_board_id=body.board_id,
             postit_note_id=str(item.id),
             due_date=parsed_due_date,
+            is_personal_only=is_personal,
         )
         db.add(note)
         await db.flush()
 
-        placement = BoardPlacement(
-            note_id=note.id,
-            board_type=BoardType.TASK,
-            matrix_quadrant=1,
-            sort_order=0,
-            placement_source="postit",
-        )
-        db.add(placement)
+        # パーソナル専用フラグがオフの場合のみタスクボードへ配置
+        if not is_personal:
+            placement = BoardPlacement(
+                note_id=note.id,
+                board_type=BoardType.TASK,
+                matrix_quadrant=1,
+                sort_order=0,
+                placement_source="postit",
+            )
+            db.add(placement)
 
         if parsed_due_date:
             await apply_due_date_rules_for_note(note.id, db)
@@ -4419,6 +4436,9 @@ async def create_sticky_note(
         postit_board_id=body.postit_board_id,
         postit_note_id=body.postit_note_id,
         due_date=parsed_due_date,
+        is_personal_only=(
+            body.personal_only if body.personal_only is not None else False
+        ),
     )
     db.add(note)
     await db.flush()
@@ -4433,9 +4453,12 @@ async def create_sticky_note(
     db.add(placement)
     await db.flush()
 
-    from app.services.orchestrator import process_new_note_ai
+    # パーソナル専用でない場合のみ AI 振り分けを実行
+    if not note.is_personal_only:
+        from app.services.orchestrator import process_new_note_ai
 
-    await process_new_note_ai(note.id, db)
+        await process_new_note_ai(note.id, db)
+
     await apply_due_date_rules_for_note(note.id, db)
     await db.commit()
     await db.refresh(note)
@@ -4453,8 +4476,7 @@ async def create_personal_note(
     body: CreatePersonalNoteBody, db: AsyncSession = Depends(get_db)
 ):
     """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）
-    ※ AI 振り分け（process_new_note_ai）は呼ばない。パーソナル投稿は個人メモ用途であり、
-      全体タスクボードへの自動配置は行わない（バグ修正: 2026-09-15）。
+    ※ AI 振り分け（process_new_note_ai）は呼ばない。
     """
     result = await db.execute(select(User).where(User.id == body.owner_id))
     user = result.scalar_one_or_none()
@@ -4477,6 +4499,7 @@ async def create_personal_note(
         postit_board_id=None,
         postit_note_id=None,
         due_date=parsed_due_date,
+        is_personal_only=True,
     )
     db.add(note)
     await db.flush()
@@ -4495,8 +4518,6 @@ async def create_personal_note(
     db.add(placement)
     await db.flush()
 
-    # パーソナル投稿では process_new_note_ai を呼ばず、TASK ボードへの配置は行わない。
-    # 期限ルールの適用のみ実行する。
     await apply_due_date_rules_for_note(note.id, db)
     await db.commit()
     await db.refresh(note)
@@ -4567,7 +4588,6 @@ def _notify_postit_note(
     text: str | None = None,
     due_date: str | None = None,
 ) -> None:
-    """付箋ボード (wl-sticky-note) へ content / due_date の変更を通知"""
     import json
     import urllib.request
     from app.config import settings
@@ -4598,11 +4618,6 @@ def _notify_postit_note(
 async def update_sticky_note(
     note_id: int, body: StickyNoteUpdate, db: AsyncSession = Depends(get_db)
 ):
-    """付箋の content / status / due_date を更新。
-    - due_date 変更時、is_manually_moved_to_today フラグを False に一括リセット
-    - 改善計画6のルールに従い、パーソナル配置のレーンを自動判定して移動
-    - 付箋ボード（wl-sticky-note）へ content / due_date の変更を通知
-    """
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -4634,20 +4649,17 @@ async def update_sticky_note(
     await db.flush()
 
     if due_date_changed:
-        # 手動移動フラグの一括リセット（改善計画6）
         await db.execute(
             sa_update(BoardPlacement)
             .where(BoardPlacement.note_id == note_id)
             .values(is_manually_moved_to_today=False)
         )
         await db.flush()
-        # 最新の due_date に基づきパーソナル配置のレーンルールを適用
         await apply_due_date_rules_for_note(note_id, db)
 
     await db.commit()
     await db.refresh(note)
 
-    # 付箋ボード (wl-sticky-note) への通知同期
     if note.postit_board_id and note.postit_note_id:
         text_to_send = note.content if body.content is not None else None
         due_date_to_send = (
@@ -4705,8 +4717,8 @@ async def delete_sticky_notes_by_postit(
 
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    """タスクボード等でのゴミ箱ドラッグ時用。StickyNote を削除。付箋ボード上はグレー化（アーカイブ）"""
     import logging
+
     _logger = logging.getLogger("uvicorn")
 
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
@@ -4724,19 +4736,24 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     if postit_board_id and postit_note_id:
         _logger.info(
             "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
-            postit_board_id, postit_note_id
+            postit_board_id,
+            postit_note_id,
         )
         try:
-            await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
+            await asyncio.to_thread(
+                _notify_postit_archive, postit_board_id, postit_note_id
+            )
             _logger.info("[delete_sticky_note] グレー化通知完了")
         except Exception as e:
             _logger.warning(
-                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s", e
+                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s",
+                e,
             )
     else:
         _logger.info(
             "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
-            postit_board_id, postit_note_id
+            postit_board_id,
+            postit_note_id,
         )
 
 
@@ -4810,7 +4827,6 @@ async def copy_to_team(
     if not note:
         raise HTTPException(status_code=404, detail="Sticky note not found")
 
-    # 多対多（user_teams）に対応したメンバー取得クエリ
     result = await db.execute(
         select(User).where(User.teams.any(Team.id == body.team_id))
     )

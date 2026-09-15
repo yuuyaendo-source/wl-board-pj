@@ -16,7 +16,7 @@ class StickyNoteCreate(BaseModel):
     personal_only: bool | None = None
     due_date: str | None = Field(
         default=None,
-        validation_alias=AliasChoices('due_date', 'dueDate'),
+        validation_alias=AliasChoices("due_date", "dueDate"),
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 
@@ -34,6 +34,7 @@ class StickyNoteResponse(BaseModel):
     author_id: int | None
     status: NoteStatus
     due_date: str | None = None  # YYYY-MM-DD 形式。
+    is_personal_only: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -53,7 +54,7 @@ class ImportFromPostitItem(BaseModel):
     text: str
     due_date: str | None = Field(
         default=None,
-        validation_alias=AliasChoices('due_date', 'dueDate'),
+        validation_alias=AliasChoices("due_date", "dueDate"),
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
 

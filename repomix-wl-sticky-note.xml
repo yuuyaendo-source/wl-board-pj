@@ -2426,12 +2426,25 @@ export default function StickyNote({
     const noteRef = useRef(null);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
+    // ドラッグ中のパフォーマンス最適化用Ref
+    const dragOffset = useRef({ x: 0, y: 0 });
+    const initialPos = useRef({ x: note.x, y: note.y });
+
     const isLarge = note.ratioW && note.ratioW >= 0.2;
     const daysLeft = calcDaysLeft(dueDateVal);
 
     useEffect(() => {
         setTempDueDate(note.dueDate ?? "");
     }, [note.dueDate]);
+
+    // ドラッグ中でない場合は props の座標・選択状態をDOMへ同期
+    useEffect(() => {
+        if (!isDragging && noteRef.current) {
+            noteRef.current.style.left = `${note.x}px`;
+            noteRef.current.style.top = `${note.y}px`;
+            noteRef.current.style.transform = `scale(1)`;
+        }
+    }, [note.x, note.y, isDragging]);
 
     const handleMouseDown = (e) => {
         if (onMouseDown) onMouseDown(e);
@@ -2457,6 +2470,8 @@ export default function StickyNote({
 
         setIsDragging(true);
         lastMousePos.current = { x: e.clientX, y: e.clientY };
+        dragOffset.current = { x: 0, y: 0 };
+        initialPos.current = { x: note.x, y: note.y };
     };
 
     const handleTouchStart = (e) => {
@@ -2470,6 +2485,8 @@ export default function StickyNote({
         setIsDragging(true);
         const touch = e.touches[0];
         lastMousePos.current = { x: touch.clientX, y: touch.clientY };
+        dragOffset.current = { x: 0, y: 0 };
+        initialPos.current = { x: note.x, y: note.y };
     };
 
     useEffect(() => {
@@ -2480,15 +2497,46 @@ export default function StickyNote({
             const dy = (e.clientY - lastMousePos.current.y) / scale;
             lastMousePos.current = { x: e.clientX, y: e.clientY };
 
-            if (onMoveSelectedNotes) {
-                onMoveSelectedNotes(note.id, dx, dy);
-            } else {
-                onUpdate({ ...note, x: note.x + dx, y: note.y + dy });
+            dragOffset.current.x += dx;
+            dragOffset.current.y += dy;
+
+            // ReactのStateを即時更新せず、DOMを直接操作してフレームレートを向上
+            if (noteRef.current) {
+                const newX = initialPos.current.x + dragOffset.current.x;
+                const newY = initialPos.current.y + dragOffset.current.y;
+                noteRef.current.style.left = `${newX}px`;
+                noteRef.current.style.top = `${newY}px`;
+                noteRef.current.style.transform = `scale(1.05)`;
+            }
+
+            if (isSelected && onMoveSelectedNotes) {
+                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
+                selectedEls.forEach(el => {
+                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
+                        const currentLeft = parseFloat(el.style.left) || 0;
+                        const currentTop = parseFloat(el.style.top) || 0;
+                        el.style.left = `${currentLeft + dx}px`;
+                        el.style.top = `${currentTop + dy}px`;
+                    }
+                });
             }
         };
 
         const handleMouseUp = () => {
-            setIsDragging(false);
+            if (isDragging) {
+                setIsDragging(false);
+                const dx = dragOffset.current.x;
+                const dy = dragOffset.current.y;
+
+                // ドラッグ終了時にまとめて1回だけサーバー更新・ステート更新
+                if (dx !== 0 || dy !== 0) {
+                    if (onMoveSelectedNotes && isSelected) {
+                        onMoveSelectedNotes(note.id, dx, dy);
+                    } else {
+                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
+                    }
+                }
+            }
         };
 
         const handleTouchMove = (e) => {
@@ -2500,15 +2548,44 @@ export default function StickyNote({
             const dy = (touch.clientY - lastMousePos.current.y) / scale;
             lastMousePos.current = { x: touch.clientX, y: touch.clientY };
 
-            if (onMoveSelectedNotes) {
-                onMoveSelectedNotes(note.id, dx, dy);
-            } else {
-                onUpdate({ ...note, x: note.x + dx, y: note.y + dy });
+            dragOffset.current.x += dx;
+            dragOffset.current.y += dy;
+
+            if (noteRef.current) {
+                const newX = initialPos.current.x + dragOffset.current.x;
+                const newY = initialPos.current.y + dragOffset.current.y;
+                noteRef.current.style.left = `${newX}px`;
+                noteRef.current.style.top = `${newY}px`;
+                noteRef.current.style.transform = `scale(1.05)`;
+            }
+
+            if (isSelected && onMoveSelectedNotes) {
+                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
+                selectedEls.forEach(el => {
+                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
+                        const currentLeft = parseFloat(el.style.left) || 0;
+                        const currentTop = parseFloat(el.style.top) || 0;
+                        el.style.left = `${currentLeft + dx}px`;
+                        el.style.top = `${currentTop + dy}px`;
+                    }
+                });
             }
         };
 
         const handleTouchEnd = () => {
-            setIsDragging(false);
+            if (isDragging) {
+                setIsDragging(false);
+                const dx = dragOffset.current.x;
+                const dy = dragOffset.current.y;
+
+                if (dx !== 0 || dy !== 0) {
+                    if (onMoveSelectedNotes && isSelected) {
+                        onMoveSelectedNotes(note.id, dx, dy);
+                    } else {
+                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
+                    }
+                }
+            }
         };
 
         if (isDragging) {
@@ -2524,7 +2601,7 @@ export default function StickyNote({
             window.removeEventListener("touchmove", handleTouchMove);
             window.removeEventListener("touchend", handleTouchEnd);
         };
-    }, [isDragging, note, onUpdate, onMoveSelectedNotes, scale]);
+    }, [isDragging, note, onUpdate, onMoveSelectedNotes, scale, isSelected]);
 
     const togglePin = () => {
         onUpdate({ ...note, pinned: !note.pinned });
