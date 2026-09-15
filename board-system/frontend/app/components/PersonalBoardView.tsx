@@ -113,11 +113,12 @@ export default function PersonalBoardView({
   );
 
   const handlePost = useCallback(
-    async (text: string) => {
+    async (text: string, dueDate?: string | null) => {
       await api.stickyNotes.createPersonal({
         content: text,
         owner_id: ownerId,
         lane: "TODAY",
+        due_date: dueDate || undefined,
       });
       await delay(REFETCH_DELAY_MS);
       await fetchPersonal();

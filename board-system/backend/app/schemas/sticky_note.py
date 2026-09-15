@@ -20,7 +20,10 @@ class StickyNoteCreate(BaseModel):
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
     # --- フロントエンドからの誤送信（パーソナル投稿）を吸収するためのフィールド ---
-    owner_id: int | None = None
+    owner_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("owner_id", "ownerId"),
+    )
     lane: str | None = None
 
 
