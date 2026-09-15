@@ -190,6 +190,44 @@ async def create_sticky_note(
                 detail="due_date は YYYY-MM-DD 形式で指定してください",
             )
 
+    # --- フロントエンドのAPI送信先間違いを吸収してパーソナル投稿として処理 ---
+    if body.owner_id is not None:
+        note = StickyNote(
+            content=body.content,
+            author_id=body.owner_id,
+            postit_board_id=None,
+            postit_note_id=None,
+            due_date=parsed_due_date,
+            is_personal_only=True,
+        )
+        db.add(note)
+        await db.flush()
+
+        try:
+            initial_lane = Lane(body.lane) if body.lane else Lane.INBOX
+        except ValueError:
+            initial_lane = Lane.INBOX
+
+        if parsed_due_date and parsed_due_date <= _get_jst_today():
+            initial_lane = Lane.TODAY
+
+        placement = BoardPlacement(
+            note_id=note.id,
+            board_type=BoardType.PERSONAL,
+            owner_id=body.owner_id,
+            lane=initial_lane,
+            sort_order=0,
+            is_manually_moved_to_today=(initial_lane == Lane.TODAY),
+        )
+        db.add(placement)
+        await db.flush()
+
+        await apply_due_date_rules_for_note(note.id, db)
+        await db.commit()
+        await db.refresh(note)
+        return _note_response(note)
+
+    # --- 以下、通常のTask/Mainへの投稿処理 ---
     note = StickyNote(
         content=body.content,
         author_id=body.author_id,
@@ -228,7 +266,7 @@ class CreatePersonalNoteBody(BaseModel):
     owner_id: int
     content: str
     due_date: str | None = None
-    lane: Lane | None = None  # クライアントからの配置先レーン指定を受け取る
+    lane: Lane | None = None
 
 
 @router.post("/create_personal", response_model=StickyNoteResponse, status_code=201)
@@ -262,7 +300,6 @@ async def create_personal_note(
     db.add(note)
     await db.flush()
 
-    # body.lane の指定があればそれを優先する
     initial_lane = body.lane or Lane.INBOX
     if parsed_due_date and parsed_due_date <= _get_jst_today():
         initial_lane = Lane.TODAY

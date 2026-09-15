@@ -19,6 +19,10 @@ class StickyNoteCreate(BaseModel):
         validation_alias=AliasChoices("due_date", "dueDate"),
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
+    # --- フロントエンドからの誤送信（パーソナル投稿）を吸収するためのフィールド ---
+    owner_id: int | None = None
+    lane: str | None = None
+
 
 class StickyNoteUpdate(BaseModel):
     content: str | None = None
