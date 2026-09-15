@@ -58,6 +58,7 @@ export default function StickyNote({
             noteRef.current.style.left = `${note.x}px`;
             noteRef.current.style.top = `${note.y}px`;
             noteRef.current.style.transform = `scale(1)`;
+            noteRef.current.style.willChange = "auto";
         }
     }, [note.x, note.y, isDragging]);
 
@@ -105,116 +106,64 @@ export default function StickyNote({
     };
 
     useEffect(() => {
-        const handleMouseMove = (e) => {
+        const moveSelectedNotes = (dx, dy) => {
+            if (!isSelected || !onMoveSelectedNotes) return;
+            document
+                .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
+                .forEach((el) => {
+                    if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
+                    el.style.left = `${(parseFloat(el.style.left) || 0) + dx}px`;
+                    el.style.top = `${(parseFloat(el.style.top) || 0) + dy}px`;
+                });
+        };
+
+        const moveDrag = (clientX, clientY) => {
             if (!isDragging) return;
-
-            const dx = (e.clientX - lastMousePos.current.x) / scale;
-            const dy = (e.clientY - lastMousePos.current.y) / scale;
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
-
+            const dx = (clientX - lastMousePos.current.x) / scale;
+            const dy = (clientY - lastMousePos.current.y) / scale;
+            lastMousePos.current = { x: clientX, y: clientY };
             dragOffset.current.x += dx;
             dragOffset.current.y += dy;
 
-            // ReactのStateを即時更新せず、DOMを直接操作してフレームレートを向上
+            // left/top の更新は毎回レイアウトを発生させるため、操作中は transform のみを更新する。
             if (noteRef.current) {
-                const newX = initialPos.current.x + dragOffset.current.x;
-                const newY = initialPos.current.y + dragOffset.current.y;
-                noteRef.current.style.left = `${newX}px`;
-                noteRef.current.style.top = `${newY}px`;
-                noteRef.current.style.transform = `scale(1.05)`;
+                noteRef.current.style.willChange = "transform";
+                noteRef.current.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0) scale(1.05)`;
             }
-
-            if (isSelected && onMoveSelectedNotes) {
-                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
-                selectedEls.forEach(el => {
-                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
-                        const currentLeft = parseFloat(el.style.left) || 0;
-                        const currentTop = parseFloat(el.style.top) || 0;
-                        el.style.left = `${currentLeft + dx}px`;
-                        el.style.top = `${currentTop + dy}px`;
-                    }
-                });
-            }
+            moveSelectedNotes(dx, dy);
         };
 
-        const handleMouseUp = () => {
-            if (isDragging) {
-                setIsDragging(false);
-                const dx = dragOffset.current.x;
-                const dy = dragOffset.current.y;
-
-                // ドラッグ終了時にまとめて1回だけサーバー更新・ステート更新
-                if (dx !== 0 || dy !== 0) {
-                    if (onMoveSelectedNotes && isSelected) {
-                        onMoveSelectedNotes(note.id, dx, dy);
-                    } else {
-                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
-                    }
-                }
+        const finishDrag = () => {
+            if (!isDragging) return;
+            setIsDragging(false);
+            const { x: dx, y: dy } = dragOffset.current;
+            if (dx === 0 && dy === 0) return;
+            if (onMoveSelectedNotes && isSelected) {
+                onMoveSelectedNotes(note.id, dx, dy);
+                return;
             }
+            onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
         };
 
+        const handleMouseMove = (e) => moveDrag(e.clientX, e.clientY);
         const handleTouchMove = (e) => {
-            if (!isDragging) return;
             e.preventDefault();
-
             const touch = e.touches[0];
-            const dx = (touch.clientX - lastMousePos.current.x) / scale;
-            const dy = (touch.clientY - lastMousePos.current.y) / scale;
-            lastMousePos.current = { x: touch.clientX, y: touch.clientY };
-
-            dragOffset.current.x += dx;
-            dragOffset.current.y += dy;
-
-            if (noteRef.current) {
-                const newX = initialPos.current.x + dragOffset.current.x;
-                const newY = initialPos.current.y + dragOffset.current.y;
-                noteRef.current.style.left = `${newX}px`;
-                noteRef.current.style.top = `${newY}px`;
-                noteRef.current.style.transform = `scale(1.05)`;
-            }
-
-            if (isSelected && onMoveSelectedNotes) {
-                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
-                selectedEls.forEach(el => {
-                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
-                        const currentLeft = parseFloat(el.style.left) || 0;
-                        const currentTop = parseFloat(el.style.top) || 0;
-                        el.style.left = `${currentLeft + dx}px`;
-                        el.style.top = `${currentTop + dy}px`;
-                    }
-                });
-            }
-        };
-
-        const handleTouchEnd = () => {
-            if (isDragging) {
-                setIsDragging(false);
-                const dx = dragOffset.current.x;
-                const dy = dragOffset.current.y;
-
-                if (dx !== 0 || dy !== 0) {
-                    if (onMoveSelectedNotes && isSelected) {
-                        onMoveSelectedNotes(note.id, dx, dy);
-                    } else {
-                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
-                    }
-                }
-            }
+            if (touch) moveDrag(touch.clientX, touch.clientY);
         };
 
         if (isDragging) {
             window.addEventListener("mousemove", handleMouseMove);
-            window.addEventListener("mouseup", handleMouseUp);
+            window.addEventListener("mouseup", finishDrag);
             window.addEventListener("touchmove", handleTouchMove, { passive: false });
-            window.addEventListener("touchend", handleTouchEnd);
+            window.addEventListener("touchend", finishDrag);
         }
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
+            window.removeEventListener("mouseup", finishDrag);
             window.removeEventListener("touchmove", handleTouchMove);
-            window.removeEventListener("touchend", handleTouchEnd);
+            window.removeEventListener("touchend", finishDrag);
         };
     }, [isDragging, note, onUpdate, onMoveSelectedNotes, scale, isSelected]);
 

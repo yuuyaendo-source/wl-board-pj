@@ -133,14 +133,15 @@ _icon = None
 _miniport_window = None
 _miniport_visible = True
 
-# 単一インスタンス制御 (課題4: ファイルロック方式への変更)
+# 単一インスタンス制御（Windows は OS 名前付き Mutex、その他はファイルロック）
 _SINGLE_INSTANCE_FD = None
+_SINGLE_INSTANCE_MUTEX = None
 _SHOW_REQUEST_STOP = False
 
 
 def cleanup_resources():
     """リソース（トレイアイコン・ミニポートウィンドウ・ファイルロック）を確実に破棄する"""
-    global _icon, _miniport_window, _SINGLE_INSTANCE_FD
+    global _icon, _miniport_window, _SINGLE_INSTANCE_FD, _SINGLE_INSTANCE_MUTEX
     if _icon is not None:
         try:
             _icon.stop()
@@ -162,6 +163,14 @@ def cleanup_resources():
             _SINGLE_INSTANCE_FD = None
         except Exception:
             pass
+    if _SINGLE_INSTANCE_MUTEX is not None:
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.CloseHandle(_SINGLE_INSTANCE_MUTEX)
+        except Exception:
+            pass
+        _SINGLE_INSTANCE_MUTEX = None
 
 
 def on_closing():
@@ -193,31 +202,33 @@ def _show_request_path() -> str:
 
 
 def _acquire_single_instance_lock() -> bool:
-    """【課題4対応】msvcrt ファイルロックを用いた安全・確実な単一インスタンス制御。
-    ネットワーク遮断やファイアウォール設定の影響を受けず、クラッシュ時の古いファイルも上書き取得する。
+    """OSが終了時に解放するロックで単一インスタンスを保証する。
+    Windows は名前付き Mutex を使い、クラッシュ後にロックファイルが残っても
+    次回起動を妨げない。
     """
-    global _SINGLE_INSTANCE_FD
+    global _SINGLE_INSTANCE_FD, _SINGLE_INSTANCE_MUTEX
 
     lock_dir = _show_request_dir()
     lock_file = os.path.join(lock_dir, "WonderLinko.lock")
 
     if sys.platform == "win32":
-        import msvcrt
-
         try:
-            # ロックファイルを開く（存在しなければ作成、存在すれば上書き用に開く）
-            fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
-            # 先頭1バイトを非ブロック排他ロック
-            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            _SINGLE_INSTANCE_FD = fd
+            # ファイルロックはアプリ更新・ネットワークドライブ等で不安定になることが
+            # あるため、OS がプロセス終了時に必ず解放する名前付き Mutex を使う。
+            import ctypes
+
+            mutex_name = "Local\\WonderLinko.Desktop.SingleInstance"
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.CreateMutexW(None, False, mutex_name)
+            if not handle:
+                return False
+            ERROR_ALREADY_EXISTS = 183
+            if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return False
+            _SINGLE_INSTANCE_MUTEX = handle
             return True
-        except (OSError, IOError):
-            # 他のプロセスがロック中の場合
-            if "fd" in locals():
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
+        except Exception:
             return False
     else:
         # 非Windows環境でのフォールバック (fcntl)
@@ -889,6 +900,7 @@ def main():
             on_notifications_toggle=_miniport_on_notifications_toggle,
             get_notifications_enabled=_miniport_get_notifications_enabled,
         )
+        notifications.set_ui_dispatch(lambda callback: _miniport_window.after(0, callback))
         _miniport_visible = True
 
         try:

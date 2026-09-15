@@ -475,7 +475,7 @@ async def update_sticky_note(
     return _note_response(note)
 
 
-def _notify_postit_archive(board_id: str, note_id: str) -> None:
+def _notify_postit_archive(board_id: str, note_id: str) -> bool:
     import json
     import urllib.request
     from app.config import settings
@@ -488,9 +488,9 @@ def _notify_postit_archive(board_id: str, note_id: str) -> None:
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            pass
+            return 200 <= resp.status < 300
     except Exception:
-        pass
+        return False
 
 
 @router.delete("/by_postit", status_code=204)
@@ -525,32 +525,31 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     postit_board_id = note.postit_board_id
     postit_note_id = note.postit_note_id
 
-    await db.delete(note)
-    await db.commit()
-    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
-
     if postit_board_id and postit_note_id:
         _logger.info(
             "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
             postit_board_id,
             postit_note_id,
         )
-        try:
-            await asyncio.to_thread(
-                _notify_postit_archive, postit_board_id, postit_note_id
-            )
-            _logger.info("[delete_sticky_note] グレー化通知完了")
-        except Exception as e:
-            _logger.warning(
-                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s",
-                e,
-            )
+        archived = await asyncio.to_thread(
+            _notify_postit_archive, postit_board_id, postit_note_id
+        )
+        if not archived:
+            # 先に外部付箋を非対象化できなければ、定期インポートでの復活を防ぐため
+            # ローカル削除も行わない。呼び出し側は再試行できる。
+            _logger.warning("[delete_sticky_note] グレー化通知失敗。削除を中止します")
+            raise HTTPException(status_code=502, detail="連携先の付箋をアーカイブできませんでした。再試行してください")
+        _logger.info("[delete_sticky_note] グレー化通知完了")
     else:
         _logger.info(
             "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
             postit_board_id,
             postit_note_id,
         )
+
+    await db.delete(note)
+    await db.commit()
+    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
 
 @router.post("/{note_id}/move_to_personal", response_model=BoardPlacementResponse)

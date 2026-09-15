@@ -10,6 +10,13 @@ import sys
 
 _last_notification_url = None
 _fallback_toasts = []
+_ui_dispatch = None
+
+
+def set_ui_dispatch(dispatch) -> None:
+    """Tk のメインスレッドでフォールバック通知を作るためのディスパッチャー。"""
+    global _ui_dispatch
+    _ui_dispatch = dispatch if callable(dispatch) else None
 
 
 def are_enabled(cfg=None) -> bool:
@@ -188,6 +195,15 @@ def _close_fallback_toast(win):
         _fallback_toasts.remove(win)
 
 
+def _schedule_fallback_toast(title: str, message: str, url: str | None, duration_sec: int) -> None:
+    """通知元スレッドにかかわらず、Tk のUIスレッドで代替トーストを表示する。"""
+    show = lambda: _show_fallback_toast(title, message, url, duration_sec)
+    if _ui_dispatch is not None:
+        _ui_dispatch(show)
+        return
+    show()
+
+
 def show_toast(
     title: str,
     message: str,
@@ -242,8 +258,7 @@ def show_toast(
             except Exception:
                 print(_err_msg, flush=True)
 
-            # winotify 失敗時は自前UIのフォールバック通知を呼ぶ
-            _show_fallback_toast(title, message, url, duration_sec)
+            _schedule_fallback_toast(title, message, url, duration_sec)
             return
 
     print(f"[Notify] {title}: {message}")

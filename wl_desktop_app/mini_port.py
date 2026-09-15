@@ -54,6 +54,18 @@ def _sticky_note_api_url():
     return f"{base}/api/sticky_notes"
 
 
+def _personal_sticky_note_api_url(cfg):
+    """ログイン済みユーザー用の Board System 投稿 API を返す。"""
+    base = (get_effective_board_system_url(cfg) or "").rstrip("/")
+    owner_id = cfg.get("board_system_personal_id")
+    if not base or owner_id is None:
+        return None, None
+    try:
+        return f"{base}/sticky_notes/create_personal", int(owner_id)
+    except (TypeError, ValueError):
+        return None, None
+
+
 def _board_id():
     """送信先ボード ID（例: wl）。"""
     cfg = load_config()
@@ -113,14 +125,28 @@ def _prompt_email_and_resolve_personal(parent=None):
         return None
 
 
-def _send_content(text: str) -> Tuple[bool, str]:
-    """付箋ボード API (POST /api/sticky_notes) に boardId + note 形式で送信。"""
-    text = (text or "").strip()
-    if not text:
-        return False, "入力が空です"
+def _post_personal_note(url: str, owner_id: int, text: str, cfg: dict) -> Tuple[bool, str]:
+    """Board System のパーソナルレーンへ投稿する。"""
+    try:
+        from security import assert_http_url
+
+        assert_http_url(url, cfg, purpose="board_system_personal_post")
+        response = requests.post(
+            url,
+            json={"owner_id": owner_id, "content": text, "lane": "TODAY"},
+            timeout=10,
+        )
+        if response.status_code in (200, 201):
+            return True, "パーソナルボードに投稿しました"
+        return False, f"パーソナル投稿に失敗しました ({response.status_code})"
+    except Exception as exc:
+        return False, f"パーソナル投稿に失敗しました: {str(exc)[:80]}"
+
+
+def _post_legacy_note(text: str, cfg: dict) -> Tuple[bool, str]:
+    """ログイン前の互換動作として、従来の付箋ボードへ投稿する。"""
     url = _sticky_note_api_url()
     board_id = _board_id()
-    cfg = load_config()
     author = (cfg.get("display_name") or "").strip() or "Mini-Port"
     note_id = f"miniport-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
     note = {
@@ -140,17 +166,30 @@ def _send_content(text: str) -> Tuple[bool, str]:
     except ValueError as e:
         return False, f"送信先が許可されていません: {str(e)[:80]}"
     try:
-        r = requests.post(url, json={"boardId": board_id, "note": note}, timeout=10)
-        if r.status_code in (200, 201):
+        response = requests.post(url, json={"boardId": board_id, "note": note}, timeout=10)
+        if response.status_code in (200, 201):
             return True, "送信しました"
         try:
-            body = (r.text or "")[:120].strip()
+            body = (response.text or "")[:120].strip()
             detail = f" {body}" if body else ""
         except Exception:
             detail = ""
-        return False, f"エラー: {r.status_code}{detail}"
+        return False, f"エラー: {response.status_code}{detail}"
     except requests.exceptions.RequestException as e:
         return False, f"接続エラー: {str(e)[:80]}"
+
+
+def _send_content(text: str) -> Tuple[bool, str]:
+    """ログイン済みなら Personal、それ以外は従来の付箋ボードへ投稿する。"""
+    text = (text or "").strip()
+    if not text:
+        return False, "入力が空です"
+
+    cfg = load_config()
+    personal_url, owner_id = _personal_sticky_note_api_url(cfg)
+    if personal_url:
+        return _post_personal_note(personal_url, owner_id, text, cfg)
+    return _post_legacy_note(text, cfg)
 
 
 def _linko_icon_path() -> str:
