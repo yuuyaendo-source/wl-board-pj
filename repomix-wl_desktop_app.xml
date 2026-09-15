@@ -1603,6 +1603,17 @@ def _acquire_single_instance_lock() -> bool:
     """127.0.0.1 のソケットバインドにより単一インスタンスを保証。
     ctypes / CreateMutexW を使わずに安全に二重起動を防止する。
 
+    [修正 2026-09-15] 複数ポート候補の問題修正:
+    旧実装では候補ポートを順番にバインドし、最初に空いたポートを使っていた。
+    そのため3プロセスが起動すると各自が別ポートを掴んで全員が「正規インスタンス」と
+    判断してしまい、トレイアイコンが複数作成される問題があった。
+
+    新実装:
+    1. まず全候補ポートへ TCP 接続を試みる（接続成功 = 先発プロセスが存在）
+    2. 接続できたものが1つでもあれば False を返す（重複起動）
+    3. 接続できなければ最初の候補ポートにバインドする（リッスン開始）
+    4. バインドに失敗した場合も False を返す（念のため）
+
     戻り値:
         True  ロック取得成功 (自プロセスが正規の起動主体)
         False 他プロセスが既に取得済み (自プロセスは終了すべき)
@@ -1610,6 +1621,20 @@ def _acquire_single_instance_lock() -> bool:
     global _SINGLE_INSTANCE_SOCKET
     import socket
 
+    # Step 1: 先発プロセスの存在確認（接続テスト）
+    for port in _SINGLE_INSTANCE_PORTS:
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.settimeout(0.3)
+            result = probe.connect_ex(("127.0.0.1", port))
+            probe.close()
+            if result == 0:
+                # 接続成功 = 既に先発プロセスがこのポートをリッスン中
+                return False
+        except Exception:
+            pass
+
+    # Step 2: 先発プロセスが存在しない場合は最初のポートにバインドしてロックを取得
     for port in _SINGLE_INSTANCE_PORTS:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1621,12 +1646,11 @@ def _acquire_single_instance_lock() -> bool:
             _SINGLE_INSTANCE_SOCKET = s
             return True
         except (OSError, socket.error):
-            # このポートがバインドできない場合は次の候補ポートを試す
             continue
         except Exception:
             continue
 
-    # すべての候補ポートでバインドできなかった場合は二重起動と判断
+    # すべての候補ポートでバインドできなかった場合は念のため False
     return False
 
 
@@ -8839,8 +8863,14 @@ def show_toast(
                 toast.add_actions(label="開く", launch=url)
             toast.show()
             return
-        except Exception:
-            pass
+        except Exception as _toast_err:
+            # 通知が出ない原因を診断できるようにログを残す（バグ修正: 2026-09-15）
+            _err_msg = f"[Notify] winotify 失敗: {_toast_err}"
+            try:
+                from app_log import log_info
+                log_info(_err_msg)
+            except Exception:
+                print(_err_msg, flush=True)
     print(f"[Notify] {title}: {message}")
     if url:
         from security import safe_webbrowser_open

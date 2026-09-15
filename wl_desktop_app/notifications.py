@@ -8,8 +8,8 @@ import os
 import webbrowser
 import sys
 
-# 最後に表示したお知らせのURL（トーストクリック・トレイの「最後のお知らせを開く」で開く）
 _last_notification_url = None
+_fallback_toasts = []
 
 
 def are_enabled(cfg=None) -> bool:
@@ -61,8 +61,7 @@ def _get_toast_icon_path():
         path = ""
     except Exception:
         path = ""
-    # デフォルト: 新 assets/toast_icon.png を優先。なければ旧 top-level、最終フォールバックとして
-    # 緑の丸デザインの PNG を自動生成（exe 時は exe と同じフォルダ）
+
     try:
         from config_loader import get_app_base_dir
 
@@ -96,6 +95,99 @@ def _get_toast_icon_path():
     return os.path.abspath(default_path)
 
 
+def _show_fallback_toast(title: str, message: str, url: str, duration_sec: int):
+    """【課題3対応】winotify失敗・ブロック環境向けの自前UIトーストフォールバック。
+    フォーカスを奪わず、連続発生時は古いものを閉じてスタッキング表示を制御する。
+    """
+    import customtkinter as ctk
+
+    global _fallback_toasts
+
+    # 既存のトーストがあれば破棄（スタッキング制御）
+    for t in _fallback_toasts:
+        try:
+            t.destroy()
+        except Exception:
+            pass
+    _fallback_toasts.clear()
+
+    win = ctk.CTkToplevel()
+    win.title("Wonder Linko 通知")
+    win.overrideredirect(True)
+    win.attributes("-topmost", True)
+    try:
+        # フォーカスを奪わないための設定
+        win.attributes("-toolwindow", True)
+    except Exception:
+        pass
+
+    _fallback_toasts.append(win)
+
+    frame = ctk.CTkFrame(win, fg_color="#333333", corner_radius=8)
+    frame.pack(fill="both", expand=True)
+
+    lbl_title = ctk.CTkLabel(
+        frame,
+        text=title or "Wonder Linko",
+        font=("", 13, "bold"),
+        text_color="#ffffff",
+        anchor="w",
+    )
+    lbl_title.pack(fill="x", padx=12, pady=(12, 4))
+
+    lbl_msg = ctk.CTkLabel(
+        frame,
+        text=message,
+        font=("", 12),
+        text_color="#eeeeee",
+        anchor="w",
+        justify="left",
+    )
+    lbl_msg.pack(fill="x", padx=12, pady=(0, 12))
+
+    def _open_and_close():
+        if url:
+            from security import safe_webbrowser_open
+
+            safe_webbrowser_open(url)
+        try:
+            win.destroy()
+        except Exception:
+            pass
+
+    if url:
+        btn = ctk.CTkButton(
+            frame,
+            text="開く",
+            command=_open_and_close,
+            fg_color="#2563eb",
+            width=60,
+            height=24,
+        )
+        btn.pack(side="right", padx=12, pady=(0, 12))
+
+    win.update_idletasks()
+    w = win.winfo_reqwidth()
+    h = win.winfo_reqheight()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    x = sw - w - 20
+    y = sh - h - 60
+    win.geometry(f"{w}x{h}+{x}+{y}")
+
+    win.after(duration_sec * 1000, lambda: _close_fallback_toast(win))
+
+
+def _close_fallback_toast(win):
+    global _fallback_toasts
+    try:
+        win.destroy()
+    except Exception:
+        pass
+    if win in _fallback_toasts:
+        _fallback_toasts.remove(win)
+
+
 def show_toast(
     title: str,
     message: str,
@@ -125,12 +217,10 @@ def show_toast(
         return
 
     if sys.platform == "win32":
-        # winotify（「開く」ボタンでURLを開く・ワンクリックで確実・アイコン指定可）
         try:
             from winotify import Notification
 
             icon_path = _get_toast_icon_path()
-            # app_id を変えると Windows が「別アプリ」と扱う。通知オフで復旧しない場合の対策で WonderLinko.Desktop に変更
             kwargs = {
                 "app_id": "WonderLinko.Desktop",
                 "title": title or "Wonder Linko",
@@ -144,13 +234,18 @@ def show_toast(
             toast.show()
             return
         except Exception as _toast_err:
-            # 通知が出ない原因を診断できるようにログを残す（バグ修正: 2026-09-15）
-            _err_msg = f"[Notify] winotify 失敗: {_toast_err}"
+            _err_msg = f"[Notify] winotify 失敗: {_toast_err} -> 自前フォールバックUIを表示します"
             try:
                 from app_log import log_info
+
                 log_info(_err_msg)
             except Exception:
                 print(_err_msg, flush=True)
+
+            # winotify 失敗時は自前UIのフォールバック通知を呼ぶ
+            _show_fallback_toast(title, message, url, duration_sec)
+            return
+
     print(f"[Notify] {title}: {message}")
     if url:
         from security import safe_webbrowser_open

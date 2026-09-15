@@ -127,7 +127,6 @@ async def update_board_placement(
     prev_matrix = placement.matrix_quadrant
     if body.lane is not None:
         placement.lane = body.lane
-        # PERSONAL ボードでの手動レーン変更時にフラグを制御
         if placement.board_type == BoardType.PERSONAL:
             if body.lane == Lane.TODAY:
                 placement.is_manually_moved_to_today = True
@@ -142,8 +141,6 @@ async def update_board_placement(
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
 
-    # Personal の DONE ↔ 他レーン変更時に Task の matrix_quadrant（5=完了）を連動
-    # Personal で応援要請へ移動したらタスクボードにも載せ、以後タスクとして扱う
     if placement.board_type == BoardType.PERSONAL and body.lane is not None:
         r_task = await db.execute(
             select(BoardPlacement).where(
@@ -168,7 +165,6 @@ async def update_board_placement(
             elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
                 task_placement.matrix_quadrant = 4
 
-    # Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻す（色がグレー→緑に）
     if (
         placement.board_type == BoardType.TASK
         and body.matrix_quadrant is not None
@@ -192,12 +188,29 @@ async def update_board_placement(
 
 @router.delete("/{placement_id}", status_code=204)
 async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
-    """配置1件削除（付箋は削除されない）。"""
+    """配置1件削除（付箋は削除されない）。
+    【課題2対応】パーソナル配置の削除（ゴミ箱への投入）時にタスクボード側のステータスを完了(5)へ更新する。
+    """
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
+
+    # パーソナルボード上の配置がゴミ箱へ投入された場合、タスクボード上も「完了（5）」に更新
+    if placement.board_type == BoardType.PERSONAL:
+        r_task = await db.execute(
+            select(BoardPlacement).where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.TASK,
+                BoardPlacement.owner_id.is_(None),
+            )
+        )
+        task_placement = r_task.scalar_one_or_none()
+        if task_placement:
+            task_placement.matrix_quadrant = 5
+
     await db.delete(placement)
+    await db.commit()
     return None

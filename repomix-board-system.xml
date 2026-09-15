@@ -4452,7 +4452,10 @@ class CreatePersonalNoteBody(BaseModel):
 async def create_personal_note(
     body: CreatePersonalNoteBody, db: AsyncSession = Depends(get_db)
 ):
-    """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）"""
+    """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）
+    ※ AI 振り分け（process_new_note_ai）は呼ばない。パーソナル投稿は個人メモ用途であり、
+      全体タスクボードへの自動配置は行わない（バグ修正: 2026-09-15）。
+    """
     result = await db.execute(select(User).where(User.id == body.owner_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -4492,9 +4495,8 @@ async def create_personal_note(
     db.add(placement)
     await db.flush()
 
-    from app.services.orchestrator import process_new_note_ai
-
-    await process_new_note_ai(note.id, db)
+    # パーソナル投稿では process_new_note_ai を呼ばず、TASK ボードへの配置は行わない。
+    # 期限ルールの適用のみ実行する。
     await apply_due_date_rules_for_note(note.id, db)
     await db.commit()
     await db.refresh(note)
@@ -4704,6 +4706,9 @@ async def delete_sticky_notes_by_postit(
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     """タスクボード等でのゴミ箱ドラッグ時用。StickyNote を削除。付箋ボード上はグレー化（アーカイブ）"""
+    import logging
+    _logger = logging.getLogger("uvicorn")
+
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -4714,9 +4719,25 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(note)
     await db.commit()
+    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
     if postit_board_id and postit_note_id:
-        await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
+        _logger.info(
+            "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
+            postit_board_id, postit_note_id
+        )
+        try:
+            await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
+            _logger.info("[delete_sticky_note] グレー化通知完了")
+        except Exception as e:
+            _logger.warning(
+                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s", e
+            )
+    else:
+        _logger.info(
+            "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
+            postit_board_id, postit_note_id
+        )
 
 
 @router.post("/{note_id}/move_to_personal", response_model=BoardPlacementResponse)
@@ -10289,10 +10310,16 @@ export default function PersonalBoardView({
   );
 
   const handleTrashDrop = useCallback(
-    async (noteId: number) => {
+    async (placementId: number, noteId: number, isFromTask: boolean) => {
       setError(null);
       try {
-        await api.stickyNotes.delete(noteId);
+        if (isFromTask) {
+          // タスク由来の付箋: パーソナル配置のみ削除（StickyNote本体は残す）
+          await api.boardPlacements.delete(placementId);
+        } else {
+          // パーソナル独自の付箋: StickyNote ごと削除
+          await api.stickyNotes.delete(noteId);
+        }
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
@@ -10378,16 +10405,15 @@ export default function PersonalBoardView({
   );
 }
 
-function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
+function PersonalTrashDropZone({
+  onDrop,
+}: {
+  onDrop: (placementId: number, noteId: number, isFromTask: boolean) => void;
+}) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    const isFromTask = e.dataTransfer.getData("isFromTask");
-    if (isFromTask === "true") {
-      e.dataTransfer.dropEffect = "none";
-      return;
-    }
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
@@ -10395,10 +10421,12 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setOver(false);
-    if (e.dataTransfer.getData("isFromTask") === "true") return;
-    // noteId を優先。一部ブラウザで drop 時に getData("noteId") が空になる場合があるため placementId をフォールバック（API が placement から note を解決）
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
-    if (noteId) onDrop(Number(noteId));
+    const placementIdStr = e.dataTransfer.getData("placementId");
+    const noteIdStr = e.dataTransfer.getData("noteId") || placementIdStr;
+    const isFromTask = e.dataTransfer.getData("isFromTask") === "true";
+    if (placementIdStr && noteIdStr) {
+      onDrop(Number(placementIdStr), Number(noteIdStr), isFromTask);
+    }
   };
 
   return (
@@ -10411,7 +10439,7 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
       onDrop={handleDrop}
     >
       <span>🗑️</span>
-      <span>ゴミ箱（Personalで作った付箋のみ）</span>
+      <span>ゴミ箱</span>
     </div>
   );
 }
