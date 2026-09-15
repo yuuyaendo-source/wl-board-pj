@@ -13115,8 +13115,7 @@ services:
     build:
       context: ../wl-sticky-note/src
       args:
-        # NEXT_PUBLIC_BASE_PATH に変数名を合わせ、デフォルト値を空文字 "" に修正します
-        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH:-""}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH}
     container_name: linko-sticky-note-${COLOR}
     ports:
       - "127.0.0.1:${PORT_STICKY}:3000"

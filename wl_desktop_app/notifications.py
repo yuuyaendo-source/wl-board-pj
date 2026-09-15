@@ -143,8 +143,14 @@ def show_toast(
                 toast.add_actions(label="開く", launch=url)
             toast.show()
             return
-        except Exception:
-            pass
+        except Exception as _toast_err:
+            # 通知が出ない原因を診断できるようにログを残す（バグ修正: 2026-09-15）
+            _err_msg = f"[Notify] winotify 失敗: {_toast_err}"
+            try:
+                from app_log import log_info
+                log_info(_err_msg)
+            except Exception:
+                print(_err_msg, flush=True)
     print(f"[Notify] {title}: {message}")
     if url:
         from security import safe_webbrowser_open

@@ -71,8 +71,10 @@ if getattr(sys, "frozen", False):
         sys.path.insert(0, _lib_dir)
     _diagnostic_frozen_env()
 
+import atexit
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -146,6 +148,36 @@ _SINGLE_INSTANCE_PORTS = [50050, 50051, 50052]
 _SHOW_REQUEST_STOP = False
 
 
+def cleanup_resources():
+    """リソース（トレイアイコン・ミニポートウィンドウ）を確実に破棄する"""
+    global _icon, _miniport_window
+    if _icon is not None:
+        try:
+            _icon.stop()
+        except Exception:
+            pass
+    if _miniport_window is not None:
+        try:
+            _miniport_window.quit()
+            _miniport_window.destroy()
+        except Exception:
+            pass
+
+
+def on_closing():
+    """強制終了/WM_CLOSE要求時のフック"""
+    cleanup_resources()
+    sys.exit(0)
+
+
+# イベントハンドラの登録
+atexit.register(cleanup_resources)
+try:
+    signal.signal(signal.SIGTERM, lambda sig, frame: on_closing())
+except Exception:
+    pass
+
+
 def _show_request_dir() -> str:
     """show_request / pid ファイルの置き場所。LOCALAPPDATA があれば優先、無ければユーザーホーム配下。"""
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -165,6 +197,17 @@ def _acquire_single_instance_lock() -> bool:
     """127.0.0.1 のソケットバインドにより単一インスタンスを保証。
     ctypes / CreateMutexW を使わずに安全に二重起動を防止する。
 
+    [修正 2026-09-15] 複数ポート候補の問題修正:
+    旧実装では候補ポートを順番にバインドし、最初に空いたポートを使っていた。
+    そのため3プロセスが起動すると各自が別ポートを掴んで全員が「正規インスタンス」と
+    判断してしまい、トレイアイコンが複数作成される問題があった。
+
+    新実装:
+    1. まず全候補ポートへ TCP 接続を試みる（接続成功 = 先発プロセスが存在）
+    2. 接続できたものが1つでもあれば False を返す（重複起動）
+    3. 接続できなければ最初の候補ポートにバインドする（リッスン開始）
+    4. バインドに失敗した場合も False を返す（念のため）
+
     戻り値:
         True  ロック取得成功 (自プロセスが正規の起動主体)
         False 他プロセスが既に取得済み (自プロセスは終了すべき)
@@ -172,6 +215,20 @@ def _acquire_single_instance_lock() -> bool:
     global _SINGLE_INSTANCE_SOCKET
     import socket
 
+    # Step 1: 先発プロセスの存在確認（接続テスト）
+    for port in _SINGLE_INSTANCE_PORTS:
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.settimeout(0.3)
+            result = probe.connect_ex(("127.0.0.1", port))
+            probe.close()
+            if result == 0:
+                # 接続成功 = 既に先発プロセスがこのポートをリッスン中
+                return False
+        except Exception:
+            pass
+
+    # Step 2: 先発プロセスが存在しない場合は最初のポートにバインドしてロックを取得
     for port in _SINGLE_INSTANCE_PORTS:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -183,12 +240,11 @@ def _acquire_single_instance_lock() -> bool:
             _SINGLE_INSTANCE_SOCKET = s
             return True
         except (OSError, socket.error):
-            # このポートがバインドできない場合は次の候補ポートを試す
             continue
         except Exception:
             continue
 
-    # すべての候補ポートでバインドできなかった場合は二重起動と判断
+    # すべての候補ポートでバインドできなかった場合は念のため False
     return False
 
 
@@ -511,10 +567,11 @@ def quit_app(icon, item):
     """終了。"""
     if _miniport_window is not None:
         try:
-            _miniport_window.after(0, _miniport_window.quit)
+            _miniport_window.after(0, on_closing)
         except Exception:
-            pass
-    icon.stop()
+            on_closing()
+    else:
+        on_closing()
 
 
 def _test_postit_connection(*args):
@@ -808,7 +865,9 @@ def _sync_startup_setting():
             if _config.get("startup_enabled") is not False:
                 _config["startup_enabled"] = False
                 save_config(_config)
-                log_info("[startup] タスクマネージャーでの無効化状態を検知し、設定を OFF に同期しました")
+                log_info(
+                    "[startup] タスクマネージャーでの無効化状態を検知し、設定を OFF に同期しました"
+                )
         elif not shortcut_exists:
             # ショートカット未作成かつタスクマネージャー無効化なし（新規インストール・初回起動等）
             if _config.get("startup_enabled", True):
@@ -901,6 +960,12 @@ def main():
             get_notifications_enabled=_miniport_get_notifications_enabled,
         )
         _miniport_visible = True
+
+        # タスクキル等による強制終了への備え (WM_DELETE_WINDOWフック)
+        try:
+            _miniport_window.protocol("WM_DELETE_WINDOW", on_closing)
+        except Exception:
+            pass
     except Exception as e:
         _miniport_window = None
         _miniport_visible = False

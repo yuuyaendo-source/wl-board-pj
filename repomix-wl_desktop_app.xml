@@ -129,6 +129,7 @@ docs/
 scripts/
   generate_cert.ps1
   install.bat
+  uninstall.bat
 tests/
   test_calendar_remind.py
   test_chat_panel_layout.py
@@ -633,6 +634,32 @@ if %errorlevel% equ 0 (
     echo [ERROR] インストール中にエラーが発生しました (ErrorCode: %errorlevel%)。
     pause
 )
+</file>
+
+<file path="scripts/uninstall.bat">
+@echo off
+echo アプリを終了しています...
+:: 通常終了要求（/f なし: WM_CLOSE を送信）
+taskkill /im WonderLinko.exe >nul 2>&1
+:: 3秒待機して atexit/Tkinterフック を走らせる
+timeout /t 3 /nobreak >nul
+:: 残っていれば強制終了
+taskkill /f /im WonderLinko.exe >nul 2>&1
+
+echo スタートアップのショートカットを削除しています...
+:: ユーザーディレクトリを列挙して各プロファイルのショートカットを削除 (ワイルドカード制約回避)
+FOR /D %%U IN ("C:\Users\*") DO (
+    IF EXIST "%%U\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Wonder Linko.lnk" (
+        del /Q "%%U\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Wonder Linko.lnk" >nul 2>&1
+    )
+)
+
+echo アプリケーションをアンインストールしています...
+:: wmic を使用してプロダクト名からサイレントアンインストールを実行
+wmic product where "name='WonderLinkoDesktop'" call uninstall /nointeractive >nul 2>&1
+
+echo アンインストールが完了しました。
+pause
 </file>
 
 <file path="tests/test_calendar_remind.py">
@@ -1450,8 +1477,10 @@ if getattr(sys, "frozen", False):
         sys.path.insert(0, _lib_dir)
     _diagnostic_frozen_env()
 
+import atexit
 import logging
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -1523,6 +1552,36 @@ _miniport_visible = True
 _SINGLE_INSTANCE_SOCKET = None
 _SINGLE_INSTANCE_PORTS = [50050, 50051, 50052]
 _SHOW_REQUEST_STOP = False
+
+
+def cleanup_resources():
+    """リソース（トレイアイコン・ミニポートウィンドウ）を確実に破棄する"""
+    global _icon, _miniport_window
+    if _icon is not None:
+        try:
+            _icon.stop()
+        except Exception:
+            pass
+    if _miniport_window is not None:
+        try:
+            _miniport_window.quit()
+            _miniport_window.destroy()
+        except Exception:
+            pass
+
+
+def on_closing():
+    """強制終了/WM_CLOSE要求時のフック"""
+    cleanup_resources()
+    sys.exit(0)
+
+
+# イベントハンドラの登録
+atexit.register(cleanup_resources)
+try:
+    signal.signal(signal.SIGTERM, lambda sig, frame: on_closing())
+except Exception:
+    pass
 
 
 def _show_request_dir() -> str:
@@ -1890,10 +1949,11 @@ def quit_app(icon, item):
     """終了。"""
     if _miniport_window is not None:
         try:
-            _miniport_window.after(0, _miniport_window.quit)
+            _miniport_window.after(0, on_closing)
         except Exception:
-            pass
-    icon.stop()
+            on_closing()
+    else:
+        on_closing()
 
 
 def _test_postit_connection(*args):
@@ -2187,7 +2247,9 @@ def _sync_startup_setting():
             if _config.get("startup_enabled") is not False:
                 _config["startup_enabled"] = False
                 save_config(_config)
-                log_info("[startup] タスクマネージャーでの無効化状態を検知し、設定を OFF に同期しました")
+                log_info(
+                    "[startup] タスクマネージャーでの無効化状態を検知し、設定を OFF に同期しました"
+                )
         elif not shortcut_exists:
             # ショートカット未作成かつタスクマネージャー無効化なし（新規インストール・初回起動等）
             if _config.get("startup_enabled", True):
@@ -2280,6 +2342,12 @@ def main():
             get_notifications_enabled=_miniport_get_notifications_enabled,
         )
         _miniport_visible = True
+
+        # タスクキル等による強制終了への備え (WM_DELETE_WINDOWフック)
+        try:
+            _miniport_window.protocol("WM_DELETE_WINDOW", on_closing)
+        except Exception:
+            pass
     except Exception as e:
         _miniport_window = None
         _miniport_visible = False
@@ -4054,6 +4122,7 @@ def _ensure_config_file():
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception:
             pass
+
 
 CALENDAR_REMIND_MINUTES_MIN = 1
 CALENDAR_REMIND_MINUTES_MAX = 15

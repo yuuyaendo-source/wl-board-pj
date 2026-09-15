@@ -199,10 +199,16 @@ export default function PersonalBoardView({
   );
 
   const handleTrashDrop = useCallback(
-    async (noteId: number) => {
+    async (placementId: number, noteId: number, isFromTask: boolean) => {
       setError(null);
       try {
-        await api.stickyNotes.delete(noteId);
+        if (isFromTask) {
+          // タスク由来の付箋: パーソナル配置のみ削除（StickyNote本体は残す）
+          await api.boardPlacements.delete(placementId);
+        } else {
+          // パーソナル独自の付箋: StickyNote ごと削除
+          await api.stickyNotes.delete(noteId);
+        }
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
@@ -288,16 +294,15 @@ export default function PersonalBoardView({
   );
 }
 
-function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
+function PersonalTrashDropZone({
+  onDrop,
+}: {
+  onDrop: (placementId: number, noteId: number, isFromTask: boolean) => void;
+}) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    const isFromTask = e.dataTransfer.getData("isFromTask");
-    if (isFromTask === "true") {
-      e.dataTransfer.dropEffect = "none";
-      return;
-    }
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
@@ -305,10 +310,12 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setOver(false);
-    if (e.dataTransfer.getData("isFromTask") === "true") return;
-    // noteId を優先。一部ブラウザで drop 時に getData("noteId") が空になる場合があるため placementId をフォールバック（API が placement から note を解決）
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
-    if (noteId) onDrop(Number(noteId));
+    const placementIdStr = e.dataTransfer.getData("placementId");
+    const noteIdStr = e.dataTransfer.getData("noteId") || placementIdStr;
+    const isFromTask = e.dataTransfer.getData("isFromTask") === "true";
+    if (placementIdStr && noteIdStr) {
+      onDrop(Number(placementIdStr), Number(noteIdStr), isFromTask);
+    }
   };
 
   return (
@@ -321,7 +328,7 @@ function PersonalTrashDropZone({ onDrop }: { onDrop: (noteId: number) => void })
       onDrop={handleDrop}
     >
       <span>🗑️</span>
-      <span>ゴミ箱（Personalで作った付箋のみ）</span>
+      <span>ゴミ箱</span>
     </div>
   );
 }

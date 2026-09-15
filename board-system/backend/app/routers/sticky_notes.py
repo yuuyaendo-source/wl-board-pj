@@ -234,7 +234,10 @@ class CreatePersonalNoteBody(BaseModel):
 async def create_personal_note(
     body: CreatePersonalNoteBody, db: AsyncSession = Depends(get_db)
 ):
-    """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）"""
+    """パーソナルボードから直接付箋を作成する。初期レーンは INBOX（期限が今日以前なら TODAY）
+    ※ AI 振り分け（process_new_note_ai）は呼ばない。パーソナル投稿は個人メモ用途であり、
+      全体タスクボードへの自動配置は行わない（バグ修正: 2026-09-15）。
+    """
     result = await db.execute(select(User).where(User.id == body.owner_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -274,9 +277,8 @@ async def create_personal_note(
     db.add(placement)
     await db.flush()
 
-    from app.services.orchestrator import process_new_note_ai
-
-    await process_new_note_ai(note.id, db)
+    # パーソナル投稿では process_new_note_ai を呼ばず、TASK ボードへの配置は行わない。
+    # 期限ルールの適用のみ実行する。
     await apply_due_date_rules_for_note(note.id, db)
     await db.commit()
     await db.refresh(note)
@@ -486,6 +488,9 @@ async def delete_sticky_notes_by_postit(
 @router.delete("/{note_id}", status_code=204)
 async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     """タスクボード等でのゴミ箱ドラッグ時用。StickyNote を削除。付箋ボード上はグレー化（アーカイブ）"""
+    import logging
+    _logger = logging.getLogger("uvicorn")
+
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -496,9 +501,25 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(note)
     await db.commit()
+    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
     if postit_board_id and postit_note_id:
-        await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
+        _logger.info(
+            "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
+            postit_board_id, postit_note_id
+        )
+        try:
+            await asyncio.to_thread(_notify_postit_archive, postit_board_id, postit_note_id)
+            _logger.info("[delete_sticky_note] グレー化通知完了")
+        except Exception as e:
+            _logger.warning(
+                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s", e
+            )
+    else:
+        _logger.info(
+            "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
+            postit_board_id, postit_note_id
+        )
 
 
 @router.post("/{note_id}/move_to_personal", response_model=BoardPlacementResponse)
