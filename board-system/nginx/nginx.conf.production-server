@@ -54,11 +54,20 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
-        location /board/ {
+        # ★修正: スラッシュなしの /board に変更（/board と /board/ 両方に対応）
+        location /board {
             proxy_pass http://current_sticky;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # ★追加: wl-sticky-note 用の Next.js アセットルーティング
+        location /_next/ {
+            proxy_pass http://current_sticky/_next/;
+            proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Forwarded-Proto $scheme;
         }
