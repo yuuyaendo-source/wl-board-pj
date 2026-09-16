@@ -535,11 +535,11 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
             _notify_postit_archive, postit_board_id, postit_note_id
         )
         if not archived:
-            # 先に外部付箋を非対象化できなければ、定期インポートでの復活を防ぐため
-            # ローカル削除も行わない。呼び出し側は再試行できる。
-            _logger.warning("[delete_sticky_note] グレー化通知失敗。削除を中止します")
-            raise HTTPException(status_code=502, detail="連携先の付箋をアーカイブできませんでした。再試行してください")
-        _logger.info("[delete_sticky_note] グレー化通知完了")
+            _logger.warning(
+                "[delete_sticky_note] グレー化通知に失敗しましたが、タスクボード上の削除を継続します"
+            )
+        else:
+            _logger.info("[delete_sticky_note] グレー化通知完了")
     else:
         _logger.info(
             "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
