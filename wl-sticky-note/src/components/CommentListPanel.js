@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "./CommentListPanel.module.css";
 
 export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, onUngroupNotes, onClose }) {
-    const [selectedNotes, useState] = useState([]);
+    const [selectedNotes, setSelectedNotes] = useState([]);
 
     const toggleSelection = (noteId) => {
         if (selectedNotes.includes(noteId)) {
