@@ -11,7 +11,7 @@ import sys
 from cx_Freeze import Executable, setup
 
 include_files = []
-# 重要: config.json は msi にバンドルしない。
+# 重要: config.json は msi にバンドルしない設計 (v3.1.4 以降)。
 # msi の上書きインストールで既存ユーザの設定 (features.visitor_notify 等) が
 # リセットされる事故を防ぐため。
 # 新規インストール時は config_loader.py の defaults (= 本番 URL) で動作。
@@ -47,6 +47,14 @@ if os.path.exists("docs/Windows通知がオフになった場合.md"):
 if os.path.exists("docs/通知設定をリセットする.ps1"):
     include_files.append(
         ("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1")
+    )
+# 証明書ファイルを MSI 内に同梱
+if os.path.exists("cert/WonderLink_InternalRoot.cer"):
+    include_files.append(
+        (
+            "cert/WonderLink_InternalRoot.cer",
+            "cert/WonderLink_InternalRoot.cer",
+        )
     )
 
 # PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
@@ -156,6 +164,31 @@ bdist_msi_options = {
     "summary_data": {
         "author": "Wonder Linko",
         "comments": "Personal Linko Agent - 付箋お知らせ・パーソナルモード",
+    },
+    # カスタムアクション設定:
+    # 1. KillProcessOnUninstall: アンインストール時 (Sequence 1501) にプロセスを自動終了
+    # 2. InstallCertOnUpdate: 新規/アップデート時 (Sequence 6500) に証明書を Root および TrustedPublisher へ自動追加
+    "data": {
+        "CustomAction": [
+            (
+                "KillProcessOnUninstall",
+                1062,
+                None,
+                'Set wmi = GetObject("winmgmts:\\\\.\\root\\cimv2"): '
+                "Set procs = wmi.ExecQuery(\"Select * from Win32_Process Where Name = 'WonderLinko.exe'\"): "
+                "For Each p in procs: p.Terminate(): Next",
+            ),
+            (
+                "InstallCertOnUpdate",
+                1138,
+                "SystemFolder",
+                'cmd.exe /c "certutil -addstore -f Root "[TARGETDIR]cert\\WonderLink_InternalRoot.cer" & certutil -addstore -f TrustedPublisher "[TARGETDIR]cert\\WonderLink_InternalRoot.cer""',
+            ),
+        ],
+        "InstallExecuteSequence": [
+            ("KillProcessOnUninstall", 'REMOVE="ALL"', 1501),
+            ("InstallCertOnUpdate", 'NOT REMOVE="ALL"', 6500),
+        ],
     },
 }
 

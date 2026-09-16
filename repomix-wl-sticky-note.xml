@@ -1,10 +1,10 @@
-This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
 
 <file_summary>
 This section contains a summary of this file.
 
 <purpose>
-This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+This file contains a packed representation of the entire repository's contents.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 </purpose>
@@ -32,7 +32,6 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: **/*.md
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -41,6 +40,11 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+docs/
+  AI-Board・Desktopアプリの開発の進め方.md
+  デプロイ手順.md
+  開発の進め方.md
+  本番連携の整理.md
 src/
   app/
     [id]/
@@ -100,13 +104,740 @@ src/
   nginx.versioned.conf.example
   nodemon.json
   package.json
+  README.md
   server.js
   start_server.ps1
 .cursorignore.txt
+README.md
+機能追加指示書1.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="docs/AI-Board・Desktopアプリの開発の進め方.md">
+# AI-Board・Desktopアプリの開発の進め方
+
+wl-sticky-note（本番: <http://wl-sticky-note.local/board/wl）と連携する> **AI-Board** と **Desktopアプリ** の開発・配布の進め方を整理したドキュメントです。
+
+---
+
+## 1. 方針の整理
+
+| アプリ | 開発の進め方 | ゴール |
+|--------|--------------|--------|
+| **Desktopアプリ** | 本番の sticky-note への連携が確認できたら、**一旦メンバーにアプリとして配布**する。 | メンバーがトレイで付箋お知らせ・パーソナルモードを利用できるようにする。 |
+| **AI-Board** | **本番の sticky-note との連携を確認しながら**開発を進める。 | 本番の付箋ボード（board: wl）に付箋を送信・AIコメント連携ができるようにする。 |
+
+---
+
+## 2. Desktopアプリの進め方
+
+### 2.1 本番 sticky-note 連携の確認
+
+本番の付箋ボード（<http://wl-sticky-note.local/board/wl）と連携できることを確認してから配布する。>
+
+1. **設定を本番向けにする**
+   - `config.json` の `postit_board_url`: `http://wl-sticky-note.local/`
+   - `postit_board_id`: `wl`
+   - （任意）`ai_board_url` を本番の AI-Board URL に変更
+
+2. **動作確認**
+   - Desktopアプリを起動（`.\start_app.ps1` など）
+   - トレイの「アイコンクリックで開く」で **<http://wl-sticky-note.local/board/wl>** が開くこと
+   - 本番の付箋ボードに新付箋を追加し、一定時間後に「新しい付箋が投稿されました」トーストが出ること（ポーリング連携）
+   - トーストをクリックして該当ボードが開くこと
+
+3. **問題なければ「本番連携OK」として配布準備へ**
+
+### 2.2 メンバーへの配布
+
+**配布物**: **MSI**（推奨）または 02_3_WL_Desktop_app フォルダ（ZIP）
+
+**前提**: メンバーのPCは **本番の付箋ボード（wl-sticky-note.local）にネットワークからアクセスできる**こと。**会社ポリシーで exe 直接実行が不可**なため、**MSI 形式**またはフォルダ＋起動手順で配布する。
+
+**MSI 形式で配布（推奨）**
+
+1. 開発側: 本番向けの `config.json`（`postit_board_url`: `http://wl-sticky-note.local/`、`postit_board_id`: `wl`）を 02_3_WL_Desktop_app に置く。
+2. `cd 02_3_WL_Desktop_app` のうえで `.\build_msi.ps1` を実行。`dist\WonderLinko.msi` が生成される。
+3. **WonderLinko.msi** を配布。メンバーは MSI を実行してインストール（Python 不要）。インストール後、トレイにアイコンが出ればOK。必要に応じてインストール先の `config.json` で `user_id` を変更。
+
+**フォルダ＋起動手順で配布**
+
+1. 02_3_WL_Desktop_app を ZIP などで配布（`.venv` は含めずにOK）
+2. メンバーに依頼する内容:
+   - Python 3.10 以上をインストール
+   - 解凍したフォルダで `.\start_app.ps1` を実行（初回は venv 作成・pip install が走る）
+   - トレイにアイコンが出ればOK。必要に応じて `config.json` の `user_id` を変更
+3. 本番向けの初期設定として、`config.json` に以下を入れた状態で配布するとよい:
+   - `postit_board_url`: `http://wl-sticky-note.local/`
+   - `postit_board_id`: `wl`
+
+### 2.3 開発時の注意
+
+- **ローカル開発**: `postit_board_url` を `http://127.0.0.1:3000/` にし、ローカルの wl-sticky-note で確認
+- **配布用**: 上記のとおり本番 URL・board_id `wl` を入れた状態でパッケージ化する
+
+---
+
+## 3. AI-Board の進め方
+
+### 3.1 本番 sticky-note との連携を確認しながら開発
+
+本番の付箋ボード（<http://wl-sticky-note.local/board/wl）に付箋を送り、AIコメント連携まで確認できるようにする。>
+
+1. **本番向けの設定**
+   - `src/config.json` の `board_id`: `wl`
+   - 環境変数 **`POSTIT_BOARD_URL=http://wl-sticky-note.local`** を設定（.env またはシステム環境変数）
+   - これで付箋検知・Webアプリからの送信先が本番の sticky-note になる
+
+2. **連携確認の手順**
+   - 本番の付箋ボードをブラウザで開く: <http://wl-sticky-note.local/board/wl>
+   - AI-Board（Flask）と付箋検知（sticky_note_detector.py）を、上記設定で起動
+   - 付箋検知で検出した付箋が本番ボード「wl」に追加されること、AI-Board 経由でコメントが返ることなどを確認
+
+3. **開発の進め方**
+   - 機能追加・修正はローカルで行い、**本番の sticky-note（wl）向けに送信できる状態**で都度確認する
+   - 本番サーバ（wl-sticky-note.local）にネットワークからアクセスできる開発環境であれば、`POSTIT_BOARD_URL=http://wl-sticky-note.local` のまま開発・検証できる
+   - 本番にアクセスできない環境では、一度ローカルで sticky-note（localhost:3000）と連携確認し、本番デプロイ後に本番 URL で再確認する
+
+### 3.2 環境切り替えの整理
+
+| 確認したい相手 | board_id | POSTIT_BOARD_URL |
+|----------------|----------|------------------|
+| ローカルの sticky-note | wl（または開発用ID） | 未設定 or <http://localhost:3000> |
+| 本番の sticky-note | wl | <http://wl-sticky-note.local> |
+
+---
+
+## 4. 共通：本番連携の確認チェックリスト
+
+- [ ] **付箋ボード本番**が <http://wl-sticky-note.local/board/wl> で開ける
+- [ ] **Desktopアプリ**: `postit_board_url` 本番、`postit_board_id`: wl で、トレイからボードが開ける／新付箋でトーストが出る
+- [ ] **AI-Board**: `POSTIT_BOARD_URL=http://wl-sticky-note.local`、`board_id`: wl で、本番ボードに付箋が送られる／AIコメントが連携する
+
+---
+
+## 5. まとめ
+
+- **Desktopアプリ**: 本番 sticky-note 連携を確認 → 問題なければ **MSI 形式**（推奨）または **フォルダ＋起動手順**でメンバーに配布する（会社ポリシーにより exe 単体配布は行わず、MSI または Python 起動とする）。
+- **AI-Board**: **本番の sticky-note（board: wl）への送信・連携を確認しながら**開発。`POSTIT_BOARD_URL` と `board_id` で本番向けに切り替えて検証する。
+
+関連: wl-sticky-note 本体の開発フローは **`docs/開発の進め方.md`** を参照してください。
+</file>
+
+<file path="docs/デプロイ手順.md">
+# wl-sticky-note デプロイ手順（正規版）
+
+本ドキュメントは **wl-sticky-note（付箋ボード）** の正規版をサーバにデプロイする手順です。
+
+- **サーバ**: IP `172.16.1.203` / ドメイン `wlboardsys.internal.wonder-link.com`
+- **リポジトリ**: wl-board-pj (サーバ上では `/var/www/wlinko-pj` として配置)
+- **対象ディレクトリ**: `/var/www/wlinko-pj/wl-sticky-note`
+
+**付箋ボードと Board System をまとめて本番デプロイする場合**は、リポジトリルートの **docs/本番デプロイ手順.md** を参照してください。
+
+---
+
+## 1. 前提条件
+
+- Ubuntu Server（20.04 LTS 以降推奨）
+- SSH と sudo が使えること
+
+---
+
+## 2. サーバに SSH 接続
+
+```bash
+ssh user@172.16.1.203
+# または
+ssh user@wlboardsys.internal.wonder-link.com
+```
+
+---
+
+## 3. リポジトリのクローン（初回のみ）
+
+プロジェクト全体を `/var/www/wlinko-pj` にクローンします。
+※すでにクローン済みの場合は「4. デプロイの実行」へ進んでください。
+
+```bash
+# ディレクトリの準備
+sudo mkdir -p /var/www
+sudo chown $USER:$USER /var/www
+cd /var/www
+
+# プロジェクト全体をクローン
+git clone https://github.com/wonder-link-dev/wl-board-pj.git wlinko-pj
+```
+
+---
+
+## 4. デプロイの実行
+
+アプリ本体は `wl-sticky-note/src` にあります。**必ず `src` ディレクトリの中に移動してから** `deploy.sh` を実行してください。
+
+```bash
+# 必ず src の中へ移動する（超重要）
+cd /var/www/wlinko-pj/wl-sticky-note/src
+
+# 実行権限を付与
+chmod +x deploy.sh
+
+# デプロイ実行（Node.js / PM2 / Nginx のインストール〜起動まで行う）
+./deploy.sh
+```
+
+`deploy.sh` が行うこと:
+
+- システム更新・curl / git / nginx のインストール
+- Node.js 20.x LTS のインストール（未導入時）
+- PM2 のインストール（未導入時）
+- `npm install` / `npm run build`
+- PM2 で `wl-sticky-note` として起動（ポート 3000）
+- Nginx の設定（`wlboardsys.internal.wonder-link.com` / `172.16.1.203` → 3000）
+- ファイアウォールで 80/443 番を許可
+
+---
+
+## 5. アクセス確認
+
+デプロイ完了後、以下でアクセスできます。
+
+- **<https://wlboardsys.internal.wonder-link.com>**
+- **<https://172.16.1.203>**
+
+本番の連携先ボード（AI-Board・Desktopアプリ）: **<https://wlboardsys.internal.wonder-link.com/board/wl>**
+
+---
+
+## 5.5 AI-Board 連携（付箋追加を AI-Board に通知）
+
+付箋を追加したときに AI-Board に表示・リン子が反応するには、**付箋ボードが動いているサーバ**の `src/.env` に以下を設定し、PM2 を再起動してください。
+
+1. `src` ディレクトリに移動します（`cd /var/www/wlinko-pj/wl-sticky-note/src`）。
+2. `.env` がなければ `cp .env.production.example .env` で作成し、次の2行を追加または編集します。
+   - `AI_BOARD_URL=https://wlboardsys.internal.wonder-link.com`（AI-Board の本番 URL）
+   - HTTPS かつ自己証明書のときのみ `AI_BOARD_INSECURE_SSL=1`
+3. 依存関係の更新と再起動:
+
+   ```bash
+   npm install
+   pm2 restart wl-sticky-note --update-env
+   ```
+
+- **AI_BOARD_URL**: AI-Board の本番 URL（例: **`https://wlboardsys.internal.wonder-link.com`**）。
+- **AI_BOARD_INSECURE_SSL=1**: AI-Board が HTTPS かつ自己証明書のときのみ必須（付けないと「Failed to notify AI-Board: fetch failed」になる）。
+
+再起動後、`pm2 logs wl-sticky-note` で `AI-Board URL: https://wlboardsys.internal.wonder-link.com` と出ていれば .env が読まれています。
+
+---
+
+## 6. 今後の更新（コードの反映）
+
+修正を反映するときは、プロジェクトのルートで Pull し、再度ビルド・再起動します。
+
+```bash
+# プロジェクト全体を最新化
+cd /var/www/wlinko-pj
+git pull origin main
+
+# アプリのディレクトリへ移動
+cd wl-sticky-note/src
+
+# pull 後は .next を消してからビルド（Next.js のエラーを防ぐ）
+rm -rf .next
+npm install
+npm run build
+pm2 restart wl-sticky-note --update-env
+```
+
+- **`rm -rf .next`**: 古いビルドキャッシュを削除します。pull 後に「This is a bug in Next.js」などが出る場合は必須です。
+
+---
+
+## 7. 運用コマンド
+
+| 目的 | コマンド |
+| ------ | ---------- |
+| ログ確認 | `pm2 logs wl-sticky-note` |
+| 再起動 | `pm2 restart wl-sticky-note` |
+| 停止 | `pm2 stop wl-sticky-note` |
+| 起動 | `pm2 start wl-sticky-note` |
+| Nginx 状態 | `sudo systemctl status nginx` |
+| Nginx 再読込 | `sudo systemctl reload nginx` |
+
+---
+
+## 8. トラブルシューティング
+
+### pull 後に「This is a bug in Next.js」が出る
+
+古い `.next` ビルドが残っていると発生します。**クリーンビルド**してください。
+
+```bash
+cd /var/www/wlinko-pj/wl-sticky-note/src
+
+rm -rf .next
+npm install
+npm run build
+pm2 restart wl-sticky-note --update-env
+```
+
+### npm install 時に package.json が見つからないエラーが出る
+
+`deploy.sh` などを実行する際、`wl-sticky-note` 直下で実行していませんか？
+必ず `cd /var/www/wlinko-pj/wl-sticky-note/src` を行い、**`src` ディレクトリの中で実行**してください。
+
+# wl-sticky-note デプロイ手順（正規版）
+
+本ドキュメントは **wl-sticky-note（付箋ボード）** の正規版をサーバにデプロイする手順です。
+
+- **サーバ**: IP `172.16.1.203` / ドメイン `wlboardsys.internal.wonder-link.com`
+- **リポジトリ**: wlinko-pj（02_1_sticky-note をその中から取得）
+- **clone 対象**: 02_1_sticky-note のみ（sparse-checkout 使用）
+
+**付箋ボードと Board System をまとめて本番デプロイする場合**は、リポジトリルートの **docs/本番デプロイ手順.md** を参照してください。
+
+---
+
+## 1. 前提条件
+
+- Ubuntu Server（20.04 LTS 以降推奨）
+- SSH と sudo が使えること
+- Git 2.25 以上（sparse-checkout 用）
+
+---
+
+## 2. サーバに SSH 接続
+
+```bash
+ssh user@172.16.1.203
+# または
+ssh user@wlboardsys.internal.wonder-link.com
+```
+
+---
+
+## 3. 02_1_sticky-note を clone する
+
+wlinko-pj リポジトリ全体ではなく、**02_1_sticky-note のみ**をワーキングツリーに取り出します。
+
+```bash
+# ディレクトリ作成
+sudo mkdir -p /var/www/wl-sticky-note
+sudo chown $USER:$USER /var/www/wl-sticky-note
+cd /var/www/wl-sticky-note
+
+# wlinko-pj を sparse で clone
+# ※ YOUR_ORG を実際の GitHub ユーザー/組織名に置き換えてください
+git clone --filter=blob:none --sparse https://github.com/wonder-link-dev/wl-board-pj.git .
+
+# 02_1_sticky-note だけをチェックアウト
+git sparse-checkout set 02_1_sticky-note
+git checkout
+```
+
+この結果、`/var/www/wl-sticky-note/02_1_sticky-note/` の下にファイルが並びます（README.md, docs/, src/ など）。
+
+---
+
+## 4. デプロイの実行
+
+アプリ本体は `02_1_sticky-note/src` にあります。ここで `deploy.sh` を実行します。
+
+```bash
+cd /var/www/wl-sticky-note/02_1_sticky-note/src
+
+# 実行権限を付与
+chmod +x deploy.sh
+
+# デプロイ実行（Node.js / PM2 / Nginx のインストール〜起動まで行う）
+./deploy.sh
+```
+
+`deploy.sh` が行うこと:
+
+- システム更新・curl / git / nginx のインストール
+- Node.js 20.x LTS のインストール（未導入時）
+- PM2 のインストール（未導入時）
+- `npm install` / `npm run build`
+- PM2 で `wl-sticky-note` として起動（ポート 3000）
+- Nginx の設定（`wlboardsys.internal.wonder-link.com` / `172.16.1.203` → 3000）
+- ファイアウォールで 80 番を許可（ufw 使用時）
+
+---
+
+## 5. アクセス確認
+
+デプロイ完了後、以下でアクセスできます。
+
+- **<https://wlboardsys.internal.wonder-link.com>**
+- **<https://172.16.1.203>**
+
+本番の連携先ボード（AI-Board・Desktopアプリ）: **<https://wlboardsys.internal.wonder-link.com/board/wl>**
+
+---
+
+## 5.5 AI-Board 連携（付箋追加を AI-Board に通知）
+
+付箋を追加したときに AI-Board に表示・リン子が反応するには、**付箋ボードが動いているサーバ**の `src/.env` に以下を設定し、PM2 を再起動してください。
+
+1. `src` ディレクトリに移動（`02_1_sticky-note/src` または `releases/02_1_sticky-note/src`）。
+2. `.env` がなければ `cp .env.production.example .env` で作成し、次の2行を追加または編集する。
+   - `AI_BOARD_URL=https://wlboardsys.internal.wonder-link.com`（AI-Board の本番 URL）
+   - HTTPS かつ自己証明書のときのみ `AI_BOARD_INSECURE_SSL=1`
+3. 依存関係の更新と再起動:
+
+   ```bash
+   npm install
+   pm2 restart wl-sticky-note --update-env
+   ```
+
+- **AI_BOARD_URL**: AI-Board の本番 URL（例: **`https://wlboardsys.internal.wonder-link.com`**）。
+- **AI_BOARD_INSECURE_SSL=1**: AI-Board が HTTPS かつ自己証明書のときのみ必須（付けないと「Failed to notify AI-Board: fetch failed」になる）。
+
+再起動後、`pm2 logs wl-sticky-note` で `AI-Board URL: https://wlboardsys.internal.wonder-link.com` と出ていれば .env が読まれています。
+
+---
+
+## 6. 今後の更新（コードの反映）
+
+修正を反映するときは、同じディレクトリで pull し、再度ビルド・再起動します。
+
+```bash
+cd /var/www/wl-sticky-note
+git pull
+
+cd 02_1_sticky-note/src
+# pull 後は .next を消してからビルド（Next.js のエラーを防ぐ）
+rm -rf .next
+npm install
+npm run build
+pm2 restart wl-sticky-note --update-env
+```
+
+- **`rm -rf .next`**: 古いビルドキャッシュを削除します。pull 後に「This is a bug in Next.js」などが出る場合は必須です。
+- sparse-checkout の設定はそのままなので、`git pull` で 02_1_sticky-note 以下だけが更新されます。
+
+---
+
+## 7. 運用コマンド
+
+| 目的 | コマンド |
+| ------ | ---------- |
+| ログ確認 | `pm2 logs wl-sticky-note` |
+| 再起動 | `pm2 restart wl-sticky-note` |
+| 停止 | `pm2 stop wl-sticky-note` |
+| 起動 | `pm2 start wl-sticky-note` |
+| Nginx 状態 | `sudo systemctl status nginx` |
+| Nginx 再読込 | `sudo systemctl reload nginx` |
+
+---
+
+## 8. トラブルシューティング
+
+### pull 後に「This is a bug in Next.js」が出る
+
+古い `.next` ビルドが残っていると発生します。**クリーンビルド**してください。
+
+```bash
+cd /var/www/wl-sticky-note/02_1_sticky-note/src
+# または releases の場合: cd /var/www/wl-sticky-note/releases/02_1_sticky-note/src
+
+rm -rf .next
+npm install
+npm run build
+pm2 restart wl-sticky-note --update-env
+```
+
+---
+
+## 9. 補足
+
+- **clone するのは 02_1_sticky-note のみ**: `git sparse-checkout set 02_1_sticky-note` により、wlinko-pj の他のディレクトリはワーキングツリーに含まれません。
+- **本番 API**: 付箋ボードのサマリーは `GET /api/boards/wl/summary`、付箋追加は `POST /api/sticky_notes`。Desktop アプリ・AI-Board の連携は `docs/本番連携の整理.md` を参照。
+</file>
+
+<file path="docs/開発の進め方.md">
+# wl-sticky-note 開発の進め方（ローカル・本番の整理）
+
+今回のデプロイで **wl-sticky-note** は **ローカル環境** と **本番環境** の 2 つが存在する状態になりました。今後の開発をどう進めるかを整理したドキュメントです。
+
+---
+
+## 1. 環境の整理
+
+| 環境 | 場所 | URL（付箋ボード） | 用途 |
+|------|------|-------------------|------|
+| **ローカル** | 開発PC（wlinko-pj リポジトリ内の 02_1_sticky-note） | <http://localhost:3000> | 日々の開発・動作確認 |
+| **本番** | サーバ 172.16.1.203（wlboardsys.internal.wonder-link.com） | <https://wlboardsys.internal.wonder-link.com> / <https://wlboardsys.internal.wonder-link.com/board/wl> | 実際の利用・AI-Board・Desktopアプリの連携先 |
+
+- **本番の連携先ボード**: `wl` → <https://wlboardsys.internal.wonder-link.com/board/wl（AI-Board・Desktopアプリはここを向く）>
+- ローカルでは `localhost:3000` で開発し、本番ではサーバ上の 02_1_sticky-note を `wlboardsys.internal.wonder-link.com` で公開する想定です。
+
+---
+
+## 2. 開発フローのイメージ
+
+```
+[ローカル開発] → [動作確認] → [Git に push] → [本番サーバで pull & デプロイ]
+```
+
+1. **ローカルで開発** … 02_1_sticky-note のコードを編集（wlinko-pj リポジトリ内）
+2. **ローカルで動作確認** … `cd src` → `npm run dev` で <http://localhost:3000> を確認
+3. **Git に push** … wlinko-pj のリモート（GitHub 等）に push
+4. **本番サーバで反映** … サーバで `git pull` し、ビルド・再起動（後述）
+
+---
+
+## 3. Git の進め方（推奨）
+
+- **main（または main 相当）**: 本番に反映してよい状態を置く
+- **開発用ブランチ**（任意）: 機能追加・修正は `feature/xxx` や `develop` で行い、確認後に main にマージしてもよい
+- **タグ**（任意）: 本番反映のタイミングで `v1.0.1` のようにタグを打つと、どのコミットが本番か追いやすい
+
+運用例:
+
+- 小規模なら **main のみ**で開発し、問題なければそのまま本番で `git pull` する
+- 複数人・大きな変更なら **feature ブランチ**で開発 → main にマージ → 本番で `git pull origin main` する
+
+---
+
+## 4. 本番への反映手順
+
+修正を本番環境に反映するときは、**本番サーバ**で次を実行します。
+
+```bash
+# サーバに SSH
+ssh user@172.16.1.203
+# または
+ssh user@wlboardsys.internal.wonder-link.com
+
+# 02_1_sticky-note のみが clone されているディレクトリへ
+cd /var/www/wl-sticky-note
+git pull
+
+# ビルドと再起動
+cd 02_1_sticky-note/src
+npm install
+npm run build
+pm2 restart wl-sticky-note
+```
+
+- 初回デプロイ時と同じく、**02_1_sticky-note だけ**が sparse-checkout されているので、`git pull` で 02_1_sticky-note 以下だけが更新されます。
+- 依存関係の追加・変更をした場合は必ず `npm install` を実行してください。
+
+---
+
+## 5. 連携アプリ（AI-Board・Desktop）の環境切り替え
+
+| アプリ | ローカルで開発・確認するとき | 本番で使うとき |
+| -------- | ------------------------------ | ---------------- |
+| **付箋ボード（wl-sticky-note）** | <http://localhost:3000> | <https://wlboardsys.internal.wonder-link.com> |
+| **AI-Board** | 付箋送信先: localhost:3000 / board_id: wl（または開発用ID） | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com`、`config.json` の `board_id`: `wl` |
+| **Desktopアプリ** | `postit_board_url`: <http://127.0.0.1:3000/、`postit_board_id`>: wl（または開発用） | `postit_board_url`: <https://wlboardsys.internal.wonder-link.com/、`postit_board_id`>: wl |
+
+- **ローカルで付箋ボード＋AI-Board＋Desktop をまとめて試す**: 付箋ボードを localhost:3000 で起動し、AI-Board と Desktop は付箋ボードURLを localhost のままにしておく。
+- **本番**: 上表のとおり、AI-Board は `POSTIT_BOARD_URL`、Desktop は `config.json` の `postit_board_url` で **<https://wlboardsys.internal.wonder-link.com/>** を指定し、いずれも **board_id: wl** で <https://wlboardsys.internal.wonder-link.com/board/wl> を連携先にする。
+
+---
+
+## 6. 困ったときの確認リスト
+
+| 確認項目 | ローカル | 本番 |
+| ---------- | ---------- | ------ |
+| 付箋ボードが起動しているか | `npm run dev`（src で） | `pm2 list` → wl-sticky-note、`pm2 logs wl-sticky-note` |
+| ボード wl が存在するか | <http://localhost:3000/board/wl> で開けるか | <https://wlboardsys.internal.wonder-link.com/board/wl> で開けるか |
+| AI-Board の送信先 | 環境変数未設定 or localhost:3000 | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` |
+| Desktop のポーリング先 | config で localhost:3000 | config で <https://wlboardsys.internal.wonder-link.com/、postit_board_id>: wl |
+| サーバの 02_1_sticky-note の更新 | — | `cd /var/www/wl-sticky-note && git pull` で最新化 |
+
+---
+
+## 7. まとめ
+
+- **開発はローカル**で行い、**本番はサーバ上の 02_1_sticky-note**（sparse-checkout）を更新する形で進める。
+- 反映の流れは「**ローカルで commit → push → 本番サーバで pull → npm install & build → pm2 restart**」。
+- 本番の連携先は **<https://wlboardsys.internal.wonder-link.com/board/wl>** に統一し、AI-Board・Desktopアプリは本番ではこのURL（および board_id: wl）を向くように設定する。
+
+初回デプロイの詳細は **`docs/デプロイ手順_初回.md`**、本番反映のコマンドは **`docs/デプロイ手順_初回.md` の「6. 今後の更新」** を参照してください。
+
+---
+
+## 8. AI-Board・Desktopアプリの開発・配布
+
+- **Desktopアプリ**: 本番 sticky-note 連携を確認できたら、一旦メンバーにアプリとして配布する想定。
+- **AI-Board**: 本番の sticky-note（board: wl）との連携を確認しながら開発を進める。
+
+詳細は **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照してください。
+</file>
+
+<file path="docs/本番連携の整理.md">
+# 本番 Sticky-note と AI-Board・Desktop の連携整理
+
+本番の Sticky-note を使いながら、AI-Board と Desktop アプリの両方が連携した状態を実現するための整理です。
+
+---
+
+## 1. 現状
+
+### できていること
+
+| 項目 | 内容 |
+| ------ | ------ |
+| **Sticky-note** | 本番環境で稼働（例: <http://wl-sticky-note.local/board/wl）> |
+| **AI-Board** | 本番は **<http://wlboardsys.local>** で稼働（サーバー移動後。DNS または hosts で名前解決） |
+| **Desktop アプリ** | 本番の Sticky-note に接続・アクセス可能（`postit_board_url` 本番設定） |
+
+### できていないこと（設定後は解消）
+
+| 項目 | 内容 |
+|------|------|
+| **Sticky-note → AI-Board の付箋連携** | 本番で付箋を追加したときに AI-Board へ通知するには、付箋ボードの .env に **`AI_BOARD_URL`**（AI-Board の本番URL）を設定する。`add-note` 時に `/api/receive_note` を呼ぶ実装済み。 |
+| **付箋追加時の通知** | Sticky-note に付箋が追加されても、Desktop に「新しい付箋が投稿されました」が届かない（ポーリング先・ネットワーク・初回タイミングのいずれか要確認） |
+
+---
+
+## 2. やりたいこと
+
+**本番の Sticky-note を使いながら、AI-Board と Desktop アプリの両方が連携した状態にする。**
+
+- **Desktop**: 本番ボードを開く・新付箋でトースト通知
+- **AI-Board**: カメラ検知した付箋を本番 Sticky-note（board: wl）に送信し、AI コメント連携
+- **Sticky-note**: 本番で付箋の一元管理（Web で追加した付箋も、AI-Board から送った付箋も同じボードに表示）
+
+**リン子連携の詳細**（いつリン子がコメント・発声するか）は **02_2_AI-Board/docs/リン子連携仕様.md** を参照。
+
+---
+
+## 3. 技術的なポイント
+
+| 役割 | 対象 | 内容 |
+| ------ | ------ | ------ |
+| **付箋の送信先** | AI-Board → Sticky-note | 環境変数 `POSTIT_BOARD_URL`（本番: `http://wl-sticky-note.local`）。付箋検知・Web アプリからの送信先。 |
+| **付箋の参照元** | Desktop → Sticky-note | `config.json` の `postit_board_url` と監視対象ボードID。**`postit_board_ids`**（配列）を指定すると複数ボードを監視し、いずれかに新付箋があればトースト。未設定時は **`postit_board_id`** のみ。 |
+| **ボード ID** | 共通 | 本番では `board_id: wl`（<http://wl-sticky-note.local/board/wl）> |
+
+- **Sticky-note 側**: `GET /api/boards/:id/summary` でサマリー（付箋数・最終付箋時刻）を返す。Desktop はこれを一定間隔でポーリング。
+- **AI-Board 側**: 付箋検知時に `POST {POSTIT_BOARD_URL}/api/sticky_notes` で本番に送信するには、`POSTIT_BOARD_URL=http://wl-sticky-note.local` の設定が必要。
+
+---
+
+## 4. やること・確認チェックリスト
+
+**本番用設定例ファイル**  
+
+- **AI-Board**: `02_2_AI-Board/.env.production.example` をコピーして `.env` にし、`GEMINI_API_KEY` 等を設定  
+- **付箋ボード (wl-sticky-note)**: `02_1_sticky-note/src/.env.production.example` をコピーして `src/.env` にし、**`AI_BOARD_URL`** を AI-Board の本番 URL に（例: **`http://wlboardsys.local`**）。HTTPS かつ自己証明書の場合は **`AI_BOARD_INSECURE_SSL=1`** を設定（付けないと receive_note が呼ばれず付箋・リン子が反応しない）。  
+- **Desktopアプリ**: `02_3_WL_Desktop_app/config.production.example.json` を参考に `config.json` を設定  
+
+### 4.1 AI-Board と Sticky-note の付箋連携（AI-Board → 本番送信）
+
+- [ ] AI-Board の環境変数に **`POSTIT_BOARD_URL=http://wl-sticky-note.local`** を設定（.env または起動時）
+- [ ] `src/config.json` の **`board_id`** が **`wl`** になっている
+- [ ] AI-Board 起動後、付箋検知で本番の <http://wl-sticky-note.local/board/wl> に付箋が追加されることを確認
+
+### 4.2 Desktop の付箋通知（本番ボードの新付箋でトースト）
+
+- [ ] Desktop の **`config.json`** で  
+  - **`postit_board_url`**: 本番（例: `http://wl-sticky-note.local/`）  
+  - **`postit_board_id`**: トレイクリックで開くデフォルト（本番: **`wl`**）  
+  - **`postit_board_ids`**: （任意）新付箋を監視するボードIDの**配列**。例: `["wl", "board_2"]`。未設定時は `postit_board_id` のみ監視。**複数ボードのいずれかに付箋が追加されても通知**される。  
+  - **`postit_poll_interval_sec`**: **60** 以上（0 だとポーリング無効）
+- [ ] **Desktop アプリを動かしている PC** から、ブラウザや `curl` で  
+  **<http://wl-sticky-note.local/api/boards/wl/summary>** にアクセスできること（同じネットワーク・DNS または hosts で `wl-sticky-note.local` が解決できること）
+- [ ] 本番ボードに新付箋を追加し、約 1 分以内に「新しい付箋が投稿されました」トーストが出ることを確認
+
+### 4.3 まとめの確認
+
+- [ ] 本番の付箋ボード（<http://wl-sticky-note.local/board/wl）が開ける>
+- [ ] Desktop: トレイから本番ボードが開ける／新付箋でトーストが出る
+- [ ] AI-Board: 本番ボードに付箋が送られる／AI コメント連携が動く
+
+---
+
+## 5. 付箋通知が届かないときの切り分け
+
+1. **ポーリングが無効になっていないか**  
+   `postit_poll_interval_sec` が 0 だと通知は出ません。60 など 10 以上を指定してください。
+
+2. **初回ポーリングまで最大 1 分かかる**  
+   起動後、最初の 1 回は「現状の把握」のみで通知は出ません。その後のポーリングで「付箋数や最終付箋時刻が増えた」ときに通知されます。起動直後に付箋を追加した場合は、次のポーリング（最大で約 1 分後）で通知が出る想定です。
+
+3. **ネットワーク**  
+   Desktop を動かしている PC から、本番 Sticky-note に到達できるか確認してください。  
+   - ブラウザで <http://wl-sticky-note.local/board/wl> を開けるか  
+   - `curl http://wl-sticky-note.local/api/boards/wl/summary` で JSON が返るか  
+
+   同じネットワークにない場合や名前解決できない場合は、hosts の設定やネットワーク構成の見直しが必要です。
+
+4. **接続テスト**  
+   Desktop アプリのトレイメニューに **「付箋ボード接続テスト」** を追加済み。これを実行すると、現在の設定で付箋ボードに接続できるか・失敗時は理由（タイムアウト／接続できません／404 など）がトーストで表示されます。通知が届かないときはまずここで接続を確認してください。
+
+5. **付箋をどこに投稿しているか**  
+   Desktop の通知は **レガシー付箋ボード**（例: <http://wl-sticky-note.local/board/wl）の「付箋数・最終投稿時刻」の変化をポーリングして検知しています。>  
+   **Board System**（タスクボード /boards/taskboard やメインボードなど）にだけ投稿している場合、レガシー板「wl」の内容は変わらないため、通知は出ません。  
+   通知を出したい場合は、**付箋をレガシー板 wl に投稿**する（ブラウザで /board/wl を開いて付箋を足す、または AI-Board／カメラ経由で wl に送る）必要があります。
+
+---
+
+## 6. /api/boards/wl/summary および /api/boards/wl/notes が 404 になる場合
+
+本番で `http://wl-sticky-note.local/api/boards/wl/summary` や **`/api/boards/wl/notes`**（AI-Board の付箋全件取得）が 404 になる主な原因は次の2つです。
+
+### 6.1 まず /api/health で切り分けする
+
+**<http://wl-sticky-note.local/api/health>** にアクセスしてください。
+
+- **200 で `{"ok":true,"message":"Express API is running"}` が返る**  
+  → Express（server.js）は動いている。6.2 へ（ボード "wl" の有無を確認）。
+
+- **404 が返る**  
+  → Express の API が届いていない。**6.3 へ**（本番の起動方法・デプロイを確認）。  
+  **AI-Board の「付箋を全件取得」** で `board wl not found (404)` と出る場合も、**server.js が動いていない**か Nginx が Sticky-note（current_sticky）に振っていない可能性が高いです。
+
+### 6.2 ボード "wl" がまだ存在しない（/api/health は 200 の場合）
+
+Sticky-note では、**ボードは初回アクセス時に作成**されます。誰も `http://wl-sticky-note.local/board/wl` を開いたことがないと、ボード "wl" が boards.json に存在せず、summary API は 404（Board wl not found）を返します。
+
+**対処**: ブラウザで **<http://wl-sticky-note.local/board/wl>** を **1回開く**。これでボード "wl" が作成され、以降は `/api/boards/wl/summary` が 200 で応答します。
+
+### 6.3 本番が server.js を動かしていない（/api/health が 404 の場合）
+
+`/api/boards/:id/summary` と `/api/health` は **Express（server.js）** で定義されています。本番で **server.js が動いていない**（古いデプロイや `next start` のみの起動など）と、これらの API は存在せず 404 になります。
+
+**対処**:
+
+1. **最新コードでデプロイし直す**  
+   サーバで `02_1_sticky-note/src` に移動し、`git pull` のうえ再度ビルド・再起動する。
+
+   ```bash
+   cd /var/www/wl-sticky-note/02_1_sticky-note/src
+   git pull
+   npm run build
+   pm2 restart wl-sticky-note
+   ```
+
+2. **PM2 で server.js が動いているか確認する**  
+
+   ```bash
+   pm2 list
+   pm2 show wl-sticky-note
+   ```  
+
+   `script` が **server.js** になっていること、`ecosystem.config.js` を読んで起動していることを確認する。`next start` だけの起動になっていないようにする。
+
+3. **再デプロイ後、もう一度確認**  
+   - <http://wl-sticky-note.local/api/health> → 200  
+   - <http://wl-sticky-note.local/board/wl> を1回開いたあと  
+   - <http://wl-sticky-note.local/api/boards/wl/summary> → 200  
+   - **AI-Board から付箋取得する場合**: <https://wlboardsys.../api/boards/wl/notes> → 200（JSON の notes 配列が返る）
+
+---
+
+関連: [AI-Board・Desktopアプリの開発の進め方](./AI-Board・Desktopアプリの開発の進め方.md)
+</file>
 
 <file path="src/app/[id]/page.js">
 // wl-sticky-note/src/app/[id]/page.js
@@ -2443,6 +3174,7 @@ export default function StickyNote({
             noteRef.current.style.left = `${note.x}px`;
             noteRef.current.style.top = `${note.y}px`;
             noteRef.current.style.transform = `scale(1)`;
+            noteRef.current.style.willChange = "auto";
         }
     }, [note.x, note.y, isDragging]);
 
@@ -2490,116 +3222,64 @@ export default function StickyNote({
     };
 
     useEffect(() => {
-        const handleMouseMove = (e) => {
+        const moveSelectedNotes = (dx, dy) => {
+            if (!isSelected || !onMoveSelectedNotes) return;
+            document
+                .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
+                .forEach((el) => {
+                    if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
+                    el.style.left = `${(parseFloat(el.style.left) || 0) + dx}px`;
+                    el.style.top = `${(parseFloat(el.style.top) || 0) + dy}px`;
+                });
+        };
+
+        const moveDrag = (clientX, clientY) => {
             if (!isDragging) return;
-
-            const dx = (e.clientX - lastMousePos.current.x) / scale;
-            const dy = (e.clientY - lastMousePos.current.y) / scale;
-            lastMousePos.current = { x: e.clientX, y: e.clientY };
-
+            const dx = (clientX - lastMousePos.current.x) / scale;
+            const dy = (clientY - lastMousePos.current.y) / scale;
+            lastMousePos.current = { x: clientX, y: clientY };
             dragOffset.current.x += dx;
             dragOffset.current.y += dy;
 
-            // ReactのStateを即時更新せず、DOMを直接操作してフレームレートを向上
+            // left/top の更新は毎回レイアウトを発生させるため、操作中は transform のみを更新する。
             if (noteRef.current) {
-                const newX = initialPos.current.x + dragOffset.current.x;
-                const newY = initialPos.current.y + dragOffset.current.y;
-                noteRef.current.style.left = `${newX}px`;
-                noteRef.current.style.top = `${newY}px`;
-                noteRef.current.style.transform = `scale(1.05)`;
+                noteRef.current.style.willChange = "transform";
+                noteRef.current.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0) scale(1.05)`;
             }
-
-            if (isSelected && onMoveSelectedNotes) {
-                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
-                selectedEls.forEach(el => {
-                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
-                        const currentLeft = parseFloat(el.style.left) || 0;
-                        const currentTop = parseFloat(el.style.top) || 0;
-                        el.style.left = `${currentLeft + dx}px`;
-                        el.style.top = `${currentTop + dy}px`;
-                    }
-                });
-            }
+            moveSelectedNotes(dx, dy);
         };
 
-        const handleMouseUp = () => {
-            if (isDragging) {
-                setIsDragging(false);
-                const dx = dragOffset.current.x;
-                const dy = dragOffset.current.y;
-
-                // ドラッグ終了時にまとめて1回だけサーバー更新・ステート更新
-                if (dx !== 0 || dy !== 0) {
-                    if (onMoveSelectedNotes && isSelected) {
-                        onMoveSelectedNotes(note.id, dx, dy);
-                    } else {
-                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
-                    }
-                }
+        const finishDrag = () => {
+            if (!isDragging) return;
+            setIsDragging(false);
+            const { x: dx, y: dy } = dragOffset.current;
+            if (dx === 0 && dy === 0) return;
+            if (onMoveSelectedNotes && isSelected) {
+                onMoveSelectedNotes(note.id, dx, dy);
+                return;
             }
+            onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
         };
 
+        const handleMouseMove = (e) => moveDrag(e.clientX, e.clientY);
         const handleTouchMove = (e) => {
-            if (!isDragging) return;
             e.preventDefault();
-
             const touch = e.touches[0];
-            const dx = (touch.clientX - lastMousePos.current.x) / scale;
-            const dy = (touch.clientY - lastMousePos.current.y) / scale;
-            lastMousePos.current = { x: touch.clientX, y: touch.clientY };
-
-            dragOffset.current.x += dx;
-            dragOffset.current.y += dy;
-
-            if (noteRef.current) {
-                const newX = initialPos.current.x + dragOffset.current.x;
-                const newY = initialPos.current.y + dragOffset.current.y;
-                noteRef.current.style.left = `${newX}px`;
-                noteRef.current.style.top = `${newY}px`;
-                noteRef.current.style.transform = `scale(1.05)`;
-            }
-
-            if (isSelected && onMoveSelectedNotes) {
-                const selectedEls = document.querySelectorAll(`[data-sticky-note="true"].${styles.selected}`);
-                selectedEls.forEach(el => {
-                    if (el !== noteRef.current && !el.classList.contains(styles.pinned)) {
-                        const currentLeft = parseFloat(el.style.left) || 0;
-                        const currentTop = parseFloat(el.style.top) || 0;
-                        el.style.left = `${currentLeft + dx}px`;
-                        el.style.top = `${currentTop + dy}px`;
-                    }
-                });
-            }
-        };
-
-        const handleTouchEnd = () => {
-            if (isDragging) {
-                setIsDragging(false);
-                const dx = dragOffset.current.x;
-                const dy = dragOffset.current.y;
-
-                if (dx !== 0 || dy !== 0) {
-                    if (onMoveSelectedNotes && isSelected) {
-                        onMoveSelectedNotes(note.id, dx, dy);
-                    } else {
-                        onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
-                    }
-                }
-            }
+            if (touch) moveDrag(touch.clientX, touch.clientY);
         };
 
         if (isDragging) {
             window.addEventListener("mousemove", handleMouseMove);
-            window.addEventListener("mouseup", handleMouseUp);
+            window.addEventListener("mouseup", finishDrag);
             window.addEventListener("touchmove", handleTouchMove, { passive: false });
-            window.addEventListener("touchend", handleTouchEnd);
+            window.addEventListener("touchend", finishDrag);
         }
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
+            window.removeEventListener("mouseup", finishDrag);
             window.removeEventListener("touchmove", handleTouchMove);
-            window.removeEventListener("touchend", handleTouchEnd);
+            window.removeEventListener("touchend", finishDrag);
         };
     }, [isDragging, note, onUpdate, onMoveSelectedNotes, scale, isSelected]);
 
@@ -4990,6 +5670,114 @@ server {
 }
 </file>
 
+<file path="src/README.md">
+# wl-sticky-note（付箋ボード）— アプリ本体
+
+Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋ボードアプリケーション。
+
+- **プロジェクト名**: wl-sticky-note
+- **本番サーバ**: 172.16.1.203 / wlboardsys.internal.wonder-link.com
+
+---
+
+## 機能
+
+- 付箋の作成・編集・移動・削除（ボードから削除）
+- 9色のカラーパレット・ピン留め
+- 付箋のグループ化
+- ボード名の保存・ボードのダウンロード・インポート
+- リアルタイム同期（複数ユーザー対応）
+- AI-Board・Desktopアプリとの連携API
+- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Linko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は <https://wlboardsys.internal.wonder-link.com/boards）。**本番では同一> FQDN の `/boards` に設定し、必ず再ビルドすること。** 付箋ボードと Board System を同一サーバでデプロイする手順はリポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+
+---
+
+## 開発環境
+
+### 必要なもの
+
+- Node.js 18.x 以上
+- npm 9.x 以上
+
+### セットアップ・起動
+
+```bash
+npm install
+npm run dev
+```
+
+ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。ボード例: [http://localhost:3000/board/wl](http://localhost:3000/board/wl)
+
+---
+
+## 本番デプロイ
+
+- **付箋ボード＋Board System を同一サーバで運用**: リポジトリルートの **[docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md)** を参照（02_1_sticky-note と board-system の clone・ビルド・PM2・Nginx の一連手順）。
+- **付箋ボード単体**: プロジェクトルート [docs/デプロイ手順.md](../docs/デプロイ手順.md) を参照。
+
+### 単体デプロイの手順の概要
+
+1. サーバに SSH 接続
+2. `/var/www/wl-sticky-note` に wlinko-pj を sparse-checkout で clone（02_1_sticky-note のみ）
+3. 本ディレクトリ（`02_1_sticky-note/src`）で `./deploy.sh` を実行
+
+`deploy.sh` は Node.js / PM2 / Nginx のインストール、ビルド、起動、Nginx 設定まで行います。
+
+### 運用コマンド
+
+```bash
+pm2 logs wl-sticky-note    # ログ確認
+pm2 restart wl-sticky-note # 再起動
+pm2 stop wl-sticky-note    # 停止
+sudo systemctl status nginx # Nginx 状態
+```
+
+### 更新時の反映
+
+```bash
+cd /var/www/wl-sticky-note
+git pull
+cd 02_1_sticky-note/src   # releases の場合は releases/02_1_sticky-note/src
+rm -rf .next
+npm install
+npm run build
+pm2 restart wl-sticky-note --update-env
+```
+
+`.env` の `NEXT_PUBLIC_*` を変更した場合は必ず再ビルドすること。
+
+---
+
+## プロジェクト構造
+
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── page.js            # ボード一覧
+│   └── board/[id]/        # 動的ボードページ
+├── components/             # React コンポーネント
+│   ├── BoardCanvas.js     # メインボードキャンバス
+│   ├── StickyNote.js      # 付箋コンポーネント
+│   ├── Toolbar.js         # ツールバー
+│   ├── CommentListPanel.js
+│   └── ...
+├── server.js               # Express + Socket.IO サーバー
+├── ecosystem.config.js     # PM2 設定
+├── nginx.conf              # Nginx 設定
+├── deploy.sh               # デプロイスクリプト
+└── package.json
+```
+
+---
+
+## 技術スタック
+
+- **フロントエンド**: Next.js 16.x, React 19.x
+- **バックエンド**: Express.js, Socket.IO
+- **プロセス管理**: PM2
+- **Webサーバー**: Nginx
+</file>
+
 <file path="src/server.js">
 // サーバー設定
 // Next.js + Express + Socket.IO を組み合わせたWebアプリケーションサーバー
@@ -5598,6 +6386,173 @@ Thumbs.db
 .csv
 .jsonl
 # ※ もし設定用のJSONまで無視されたくない場合は .json は除外しないでください
+</file>
+
+<file path="README.md">
+# wl-sticky-note（付箋ボード）
+
+リアルタイム協調型のブレインストーミング・付箋ボードアプリです。Next.js + Express + Socket.IO で構成され、複数人で同じボード上に付箋を追加・編集・移動できます。AI-Board・デスクトップアプリとの連携APIを提供します。
+
+- **プロジェクト名**: wl-sticky-note
+- **本番サーバ**: IP `172.16.1.203` / ドメイン `wlboardsys.internal.wonder-link.com`
+- **本番ボード（連携先）**: **<https://wlboardsys.internal.wonder-link.com/board/wl>** … AI-Board・Desktopアプリの連携先。本番ではこのボードID `wl` を使用する。
+- **Board System との本番同一サーバ運用**: 付箋ボードと Board System（Task / Personal / Meeting）を同一サーバで動かす場合は、**wlinko-pj ルートの [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** に従う（02_1_sticky-note と board-system をまとめて clone・ビルド・Nginx 設定）。単体デプロイの場合は下記「本番デプロイ」を参照。
+- **リポジトリ**: GitHub の **wlinko-pj** 内に 02_1_sticky-note があります。サーバでは sparse-checkout で 02_1_sticky-note と board-system の両方を取得してデプロイする構成も可。
+
+---
+
+## 主な機能
+
+- **付箋** … 作成・編集・移動・9色のカラーパレット・ピン留め・ボードから削除
+- **ボード** … 複数ボード対応・ボード名の保存・ダウンロード・インポート
+- **協調** … Socket.IO によるリアルタイム同期（複数ユーザー同時編集）
+- **グループ化** … 付箋のコメント一覧からグルーピング・解除
+- **連携** … AI-Board への付箋送信、デスクトップアプリ向けサマリーAPI（新付箋通知）
+
+---
+
+## 必要な環境
+
+- Node.js 18.x 以上
+- npm 9.x 以上
+
+---
+
+## クイックスタート（ローカル開発）
+
+アプリのソースは `src/` にあります。
+
+```powershell
+cd src
+npm install
+npm run dev
+```
+
+または:
+
+```powershell
+cd src
+.\start_server.ps1
+```
+
+起動後、ブラウザで **<http://localhost:3000>** を開き、ボード一覧からボードを選ぶか、`/board/<ボードID>` にアクセスしてください。
+
+---
+
+## 本番デプロイ
+
+- **付箋ボード＋Board System を同一サーバで運用する場合**: リポジトリルートの **[docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md)** を参照（推奨。clone・付箋ボード deploy・Board System backend/frontend・Nginx の一連手順）。
+- **付箋ボード単体のみデプロイする場合**: [docs/デプロイ手順.md](docs/デプロイ手順.md) を参照。サーバで 02_1_sticky-note のみ clone（sparse-checkout）、`src/deploy.sh` で Node.js / PM2 / Nginx のセットアップ〜起動。アクセス: <https://wlboardsys.internal.wonder-link.com>
+
+---
+
+## プロジェクト構成
+
+```
+02_1_sticky-note/
+├── README.md           # 本ファイル
+├── docs/               # 設計書・デプロイ手順
+│   ├── デプロイ手順.md   # 本番デプロイ（正規版）
+│   ├── 本番連携の整理.md
+│   └── AI-Board・Desktopアプリの開発の進め方.md
+└── src/                # アプリ本体
+    ├── app/            # Next.js App Router（画面）
+    ├── components/     # React コンポーネント
+    ├── server.js       # Express + Socket.IO サーバー
+    ├── boards.json     # ボードデータ（自動作成）
+    ├── package.json
+    ├── deploy.sh       # 本番デプロイ用スクリプト
+    └── README.md       # 開発・デプロイの詳細
+```
+
+---
+
+## 環境変数
+
+`src/.env` に以下を設定できます（任意）。`src/.env.example` をコピーして編集してください。
+
+| 変数 | 説明 | 例 |
+| ------ | ------ | ----- |
+| `PORT` | サーバーのポート | `3001` |
+| `NODE_ENV` | 実行環境 | `production` |
+| `AI_BOARD_URL` | AI-Board のベースURL（付箋連携用） | 本番: `http://wlboardsys.local` / ローカル: `http://127.0.0.1:5000` |
+| `BOARD_SYSTEM_API_URL` | Board System API の URL（連携用） | 本番: `http://127.0.0.1:8000` |
+| `NEXT_PUBLIC_BOARD_SYSTEM_URL` | Board System フロントの URL（ツールバー「Board System」のリンク先）。**ビルド時に埋め込まれるため変更時は再ビルド必須** | 本番: `https://wlboardsys.internal.wonder-link.com/boards` |
+
+---
+
+## 提供API（他システム連携用）
+
+| メソッド | パス | 説明 |
+| ---------- | ------ | ------ |
+| GET | `/api/health` | 死活確認（Express API 稼働確認用） |
+| GET | `/api/boards/:id/summary` | ボードのサマリー（付箋数・最終付箋時刻）。Desktopアプリのポーリング用 |
+| GET | `/api/boards/:id/notes` | **付箋全件取得**。`{ boardId, notes: [{ id, text, author, createdAt }] }` を返す。AI-Board の「付箋を全件取得」ボタン用。 |
+| POST | `/api/sticky_notes` | 付箋を追加・更新。AI-Board のカメラ検知付箋送信用 |
+| POST | `/api/boards/:id/clear` | 指定ボードの付箋・線を全削除 |
+
+- **本番連携先ボード**: `wl` → <http://wl-sticky-note.local/board/wl>
+- **本番と AI-Board・Desktop の連携**: [docs/本番連携の整理.md](docs/本番連携の整理.md) を参照
+
+---
+
+## 関連アプリ
+
+- **AI-Board** … 付箋をカメラで検知して本アプリに送信、AIコメント・音声生成。また `GET /api/boards/:id/notes` で付箋を全件取得し、ローテーション表示する「付箋を全件取得」ボタンを提供。
+- **Wonder Linko Desktop App** … 付箋ボードをポーリングし、新付箋時にトースト通知
+
+---
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+| -------------- | ------ |
+| [docs/デプロイ手順.md](docs/デプロイ手順.md) | 本番デプロイ（正規版・唯一の手順） |
+| [docs/本番連携の整理.md](docs/本番連携の整理.md) | 本番と AI-Board・Desktop の連携・チェックリスト |
+| [docs/AI-Board・Desktopアプリの開発の進め方.md](docs/AI-Board・Desktopアプリの開発の進め方.md) | Desktop 配布・AI-Board の本番連携 |
+| [docs/開発の進め方.md](docs/開発の進め方.md) | ローカル開発フロー・本番反映 |
+| [src/README.md](src/README.md) | 開発・デプロイの詳細・プロジェクト構造 |
+</file>
+
+<file path="機能追加指示書1.md">
+# 目的
+
+Next.jsアプリ (`src/app`) 内に、Three.jsを使って3Dキャラクター(VRM)を表示するコンポーネントを作成したいです。
+これにより、外部アプリを使わずにブラウザ上でアバターを表示させます。
+
+# 指示
+
+## 1. ライブラリのインストール
+
+ターミナルで以下のコマンドを実行するよう指示、または実行してください。
+`npm install three @types/three @react-three/fiber @react-three/drei @pixiv/three-vrm`
+
+## 2. アバター表示コンポーネントの作成
+
+`src/components/AvatarCanvas.tsx` (または .js) を新規作成し、以下の機能を実装してください。
+
+- **Canvas設定:**
+  - 背景は透明 (`alpha: true`, `gl={{ alpha: true }}`) にする。
+  - カメラ位置を調整し、モデルのバストアップ（胸から上）が右下に映るようにする。
+- **VRMモデルの読み込み:**
+  - `@react-three/fiber` の `useLoader` と `three/examples/jsm/loaders/GLTFLoader` を使用。
+  - ローダーに `@pixiv/three-vrm` の `VRMLoaderPlugin` を登録して `.vrm` ファイルをパース可能にする。
+  - モデルのパスは `/avatar.vrm` (publicフォルダ直下) とする。
+- **ライト設定:**
+  - キャラクターが暗くならないよう、`ambientLight` と `directionalLight` を適切に配置する。
+- **コンポーネント構成:**
+  - `AvatarModel`: VRMを読み込んで表示する内部コンポーネント。
+  - `AvatarCanvas`: Canvas全体をラップし、画面の「右下」に固定表示 (`position: fixed; bottom: 0; right: 0;`) するスタイルを適用したコンポーネント。z-indexは付箋より手前（または奥、指定可能に）にする。
+
+## 3. 全体レイアウトへの配置
+
+`src/app/layout.tsx` (または `page.tsx` の適切な場所) に `<AvatarCanvas />` を追加し、
+どのページを開いても画面右下にアバターが常駐するようにしてください。
+
+# 注意点
+
+- Next.js の App Router (Server Components) を使用しているため、Three.js を使うコンポーネントにはファイルの先頭に `'use client';` を必ず付けてください。
+- VRM読み込み時にエラーが出ないよう、非同期読み込みの `Suspense` でラップするなどの配慮をしてください。
 </file>
 
 </files>

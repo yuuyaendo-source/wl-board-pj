@@ -1,10 +1,10 @@
-This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
 
 <file_summary>
 This section contains a summary of this file.
 
 <purpose>
-This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+This file contains a packed representation of the entire repository's contents.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 </purpose>
@@ -32,7 +32,6 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: **/*.md
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -124,7 +123,14 @@ assets/
 cert/
   WonderLink_InternalRoot.cer
 docs/
+  MSI起動エラー_デバイス側の確認.md
+  v2_拡張計画.md
+  v3_リリース手順.md
+  Windows通知がオフになった場合.md
   更新チェック用JSONの例.json
+  指示書_音声セルフ登録_Phase2.md
+  指示書_顔セルフ登録_Phase1.md
+  指示書_顔複数登録対応.md
   通知設定をリセットする.ps1
 scripts/
   generate_cert.ps1
@@ -167,6 +173,7 @@ mini_port.py
 network_readiness.py
 notifications.py
 postit_poll.py
+README.md
 remind_notify.py
 requirements.txt
 security.py
@@ -490,11 +497,1854 @@ if __name__ == "__main__":
     main()
 </file>
 
+<file path="docs/MSI起動エラー_デバイス側の確認.md">
+# MSI インストール後の起動エラー（デバイス側の確認）
+
+「`ImportError: cannot import name '_imaging' from 'PIL'`」が出る場合、**デバイス（実行するPC）側**に原因がある可能性があります。
+
+## 0. 「以前のインストールで残った .pyd」について
+
+インストール先の `lib\PIL\_imaging.cp312-win_amd64.pyd` が**以前のアプリインストール時に置かれたもの**で、**今回の MSI には同梱されていない**場合があります。その場合、次で配布用 MSI を正しく作り直してください。
+
+1. **ビルド環境**で `pip install Pillow` を実行し、Pillow が入っていることを確認する。
+2. **`.\build_msi.ps1`** を実行する。  
+   - ビルド完了時に「PIL _imaging: bundled (_imaging.cp312-win_amd64.pyd)」と出ていれば、この MSI には .pyd が含まれています。  
+   - 「_imaging*.pyd が build に含まれていません」でエラーになる場合は、同梱漏れなので MSI を配布しないでください。
+3. **インストール側**では、可能なら一度アンインストールしてから新しい MSI でクリーンインストールする。
+
+---
+
+## 1. 診断ログで確認する
+
+MSI インストール後、一度でも exe を起動している場合、次のファイルが作成されています。
+
+- **場所**: インストール先フォルダ（WonderLinko.exe と同じフォルダ）
+- **ファイル名**: `WonderLinko_diagnostic.txt`
+
+この中に次のような情報が書かれます。
+
+- `exe_dir` … exe のフォルダ
+- `lib_dir exists` … `lib` フォルダがあるか
+- `lib/PIL exists` … `lib\PIL` フォルダがあるか
+- `lib/PIL files` … `lib\PIL` 内のファイル一覧
+- `_imaging*.pyd` … 必須の C 拡張ファイルが含まれているか
+- PIL 読み込みに失敗した場合、そのエラー内容とデバイス側の確認ポイント
+
+**確認してほしいこと**
+
+- `lib/PIL exists: True` かつ `_imaging*.pyd` に 1 つ以上ファイル名が列挙されているか  
+  → 含まれていなければ、ビルド／MSI の同梱ミスの可能性
+- `lib/PIL exists: True` で `_imaging*.pyd` も列挙されているのにエラーになる  
+  → デバイス側の要因が高い（下記 2〜4 を確認）
+
+## 2. デバイス側で考えられる要因
+
+| 要因 | 内容・対処 |
+| ------ | ------------ |
+| **Visual C++ Redistributable 未導入** | PIL の `_imaging.pyd` は C 拡張のため、Microsoft Visual C++ 再頒布パッケージが必要です。未導入の場合は [Microsoft の公式ページ](https://learn.microsoft.com/ja-jp/cpp/windows/latest-supported-vc-redist) から「x64」用をインストールして再起動し、exe を再度実行してください。 |
+| **ウイルス対策・セキュリティ** | 一部のセキュリティソフトが `.pyd` を「不審な DLL」としてブロック・隔離することがあります。除外設定に「インストール先フォルダ」や「WonderLinko.exe」を追加するか、一時的に無効にして起動できるか試してください。 |
+| **インストール先の権限** | インストール先（例: `%LocalAppData%\WonderLink\WonderLinko`）やその中の `lib\PIL` が読み取り不可・削除されていると失敗します。フォルダのプロパティで権限を確認し、`lib\PIL` に `_imaging*.pyd` が実際に存在するかも確認してください。 |
+| **別 PC へのコピー** | MSI を別 PC にコピーしてインストールした場合、上記の VC++ Redist やセキュリティソフトの違いで、ビルドした PC では動いてもその PC では動かないことがあります。 |
+
+## 3. 手動で確認する項目
+
+1. **インストール先を開く**  
+   例: ユーザー単位インストールなら  
+   `C:\Users\<ユーザー名>\AppData\Local\WonderLink\WonderLinko`
+
+2. **次のフォルダ・ファイルがあるか確認**
+   - `lib` フォルダ
+   - `lib\PIL` フォルダ
+   - `lib\PIL\_imaging.cp3XX-win_amd64.pyd`（XX は Python のマイナーバージョン。例: 312）
+
+3. **`_imaging*.pyd` が無い場合**  
+   ビルド時の同梱漏れの可能性があります。`setup.py` の PIL の `include_files` と、ビルド出力の `build\...\lib\PIL\` に `.pyd` が含まれているか確認してください。
+
+4. **`_imaging*.pyd` はあるのにエラーになる場合**  
+   VC++ Redistributable のインストールと、ウイルス対策の除外設定を優先して確認してください。
+
+## 4. まとめ
+
+- **同じエラーが続く場合でも、デバイス側の要因は十分あり得ます。**
+- 起動時に `WonderLinko_diagnostic.txt` が出力されるので、その内容で「同梱されているか」と「デバイス側か」を切り分けてください。
+- エラー時にはメッセージボックスで上記の確認ポイントを案内します。
+</file>
+
+<file path="docs/v2_拡張計画.md">
+# デスクトップアプリ v2 拡張計画
+
+2026-05-27 議論まとめ
+
+## 背景
+
+- 内部ドメインを `wonder-link.co.jp` → `wonder-link.com` に移行する作業に併せて、デスクトップアプリの **新 msi をビルド・配布する必要が発生**
+- せっかく再配布するので、**機能拡張を 1 つのリリースにまとめる**方針
+- 配布対象: 社内 10 人
+- 利用形態: 社内 LAN ＋ 社外も CATO 経由で社内サーバに到達可
+
+## 目的
+
+社員ひとりひとりの「業務サポート的なリン子」をデスクトップに常駐させる。受付業務だけでなく、業務全般のブレスト相手・通知ハブとして機能させる。
+
+## 検討中の機能
+
+### 1. タスクバー配置オプション
+
+**現状**: フローティングなミニポートのみ。
+**追加**: 通常の Window としてタスクバーにも出せるモードを設ける。
+
+- 設定で `floating_mini` / `taskbar_window` を排他切替
+- 両方同時表示は UI が散漫になるので避ける
+
+### 2. リン子 2D アバター表示
+
+**理由**: 3D (VRM) は GPU 描画コスト・起動時間・配布バイナリサイズの問題があり、デスクトップ常駐には不適。
+
+**採用方針**: **PNG セット (表情切替)** + 喋り中に口パク 2-3 枚をスイッチ。
+
+| 候補 | 描画コスト | 表現力 | 実装コスト |
+| --- | --- | --- | --- |
+| 静止画 + 表情切替 (PNG) | 極小 | 中 | 小 |
+| GIF / PNG 連番 | 小 | 中 | 小 |
+| Live2D | 中 | 高 | 大 |
+| Lottie (JSON) | 小 | 中 | 中 |
+
+将来 Live2D に格上げできるよう「表情キーで画像を差し替える」構造で抽象化する。
+
+### 3. ブレスト機能 (チャット + 音声)
+
+**業務サポート用途**。雑談ではなく、社内情報を引いた回答が出せる **RAG ベースのアシスタント**を目指す。
+
+**アーキテクチャ方針**:
+
+- LLM / STT / TTS は **既存リン子サーバ (172.16.1.161) を流用** (Ollama + VOICEVOX + GPT-SoVITS + Whisper)
+- ただし **受付業務との競合を避けるため、ブレスト用に LLM 別建ても検討**
+- デスクトップ側は薄い **WebSocket / Streaming クライアント**
+
+**RAG の情報源候補** (優先度順):
+
+| 情報源 | 接続難度 | 業務インパクト |
+| --- | --- | --- |
+| board-system DB (付箋・議事録・ToDo) | 低 (SQL 直接) | 中 |
+| Google Drive (docs / sheets) | 中 (既存 SA あり) | 高 |
+| Google Calendar | 低 (既存統合あり) | 中 |
+| Gmail | 中〜高 (権限・プライバシー) | 高 |
+| Chatwork メッセージ履歴 | 中 (API あり) | 中 |
+| 社内 wiki / Confluence | ?(有無不明) | ? |
+
+**最小有用版**: board-system DB + Google Drive。Embedding は **bge-m3** クラスを Ollama で動かし、ベクタ DB は **PGVector** (既存 postgres に拡張) または **Qdrant** (別建て)。
+
+### 4. 来客通知 (デスクトップ音声 + 視覚)
+
+**現状**: Chatwork 通知のみ。
+**追加**: デスクトップアプリでリン子が音声でお知らせ + トースト通知。
+
+- **方針**: linko-system が来客検知時に発行している SocketIO イベント (`ai_comment` 等) に、デスクトップアプリも subscribe
+- 通知音声は linko 本体で生成済みの WAV を URL 経由で取得して再生 (リアルタイム生成不要)
+- **Chatwork 通知とは併用** (連携ハブとしてのコンセプト)
+- Python `python-socketio` クライアント + `win10toast` 等
+
+### 5. 全機能 OFF / opt-in
+
+すべての新機能は `config.json` の `features` フラグで OFF 既定:
+
+```json
+"features": {
+  "taskbar_mode": false,
+  "linko_avatar": false,
+  "visitor_notify": false,
+  "brainstorm": false
+}
+```
+
+- 設定ダイアログ (customtkinter) で個別 ON/OFF
+- ON のときだけ Socket.IO 接続を張る → サーバ無駄接続を回避
+
+### 6. アプリアイコン変更
+
+- 既存 VRM リン子のキャプチャを加工して .ico/.png 作成
+- PyInstaller の `--icon` + msi (WiX) のアイコン + Window / Tray アイコンを統一
+
+## ユーザ判断 (2026-05-27)
+
+| 質問 | 回答 |
+| --- | --- |
+| 通知対象 PC 数 | 10 人 (Socket.IO 接続は技術的に楽勝) |
+| ブレストの方向性 | 業務サポート + **RAG で社内情報** / LLM 別建ても検討 |
+| 来客通知の運用 | **Chatwork と併用** (連携ハブのコンセプト) |
+| 自動更新 | **既存 `update_check_url` を活かす**。今回は最初の 1 回だけ手動配布で旧→新ドメインの橋渡し |
+| 社外利用 | **CATO 経由で社内アクセス可**。CATO 接続必須を要件にする |
+
+## 全体ロードマップ
+
+| Phase | 内容 | 期間目安 | 配布方法 |
+| --- | --- | --- | --- |
+| **1** | アイコン変更 + 設定 UI + opt-in トグル枠 + 旧→新 URL の手動配布版 msi | 1-2 日 | **手動配布** |
+| **2** | リン子 2D アバター (PNG 表情 + 口パク) | 2-3 日 | 自動更新 |
+| **3** | 来客通知 (Socket.IO subscribe + 音声再生 + トースト) | 2-3 日 | 自動更新 |
+| **4** | タスクバーモード切替 | 1 日 | 自動更新 |
+| **5a** | ブレスト チャット (LLM 直叩き、RAG なし) | 3-5 日 | 自動更新 |
+| **5b** | RAG: board-system DB のベクタ化 + 検索 | 1 週間 | 自動更新 |
+| **5c** | RAG: Google Drive 取り込み | 1 週間〜 | 自動更新 |
+| **5d** | 音声対話 (mic 入力 + STT + Streaming TTS) | 1 週間 | 自動更新 |
+
+**Phase 1 + 4 を最初の手動配布 msi に同梱** → 「旧 cert 期限切れで自動更新が動かない問題」を一発解消、以降の Phase 2-5 はサーバ側の `latest.json` 更新で段階配布できる。
+
+## Phase 1 着手内容
+
+1. 新アイコン (.ico/.png) を VRM リン子のキャプチャから作成 → `assets/` に配置
+2. `config.json` に `features` セクションを追加
+3. `config_loader.py` に features ヘルパー関数を追加 (`is_feature_enabled("...")`)
+4. 設定ダイアログ (customtkinter) を新規実装 — チェックボックスで個別 ON/OFF
+5. ミニポート右クリック または トレイメニューから設定ダイアログを開く動線
+6. `version.py` の version bump
+7. PyInstaller + WiX で msi ビルド + `latest.json` 更新
+8. **手動配布**: 10 人に新版を案内 (旧 cert 期限切れで自動更新は今回限り動かない)
+
+## アイコンの方針
+
+**採用**: 既存 VRM リン子のキャプチャ + 加工。
+
+- linko-system の frontend_v2 で動いている VRM をブラウザでキャプチャ
+- 顔アップで切り抜き → Photoshop / Affinity / GIMP で輪郭・背景処理
+- .ico (16/32/48/256 マルチサイズ) + .png (各種サイズ) を書き出し
+
+## 未確定事項 / 後で詰める
+
+- **ブレスト用 LLM サーバを別建てするか**: 受付業務との競合が運用上どの程度起きるかで判断。Phase 5a 開始時に再度議論
+- **RAG のベクタ DB**: PGVector or Qdrant の選定。Phase 5b 開始時
+- **設定ダイアログのレイアウト・UX**: Phase 1 着手時に簡易モックを作って合意取り
+- **アイコンのデザイン素材**: VRM のどのポーズ・表情をベースにするか。Phase 1 着手時に linko の VRM を起動して候補出し
+- **来客通知の音声**: 既存 WAV の流用か、新規生成か。Phase 3 開始時
+- **Live2D 化のタイミング**: PNG セットで十分かどうかは Phase 2 リリース後に評価
+
+## 参考
+
+- 既存ファイル: `app.py` / `mini_port.py` / `config_loader.py` / `notifications.py` / `update_checker.py` / `version.py`
+- 自動更新の仕組み: `update_check_url` (`https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json`) を polling → 新版検出で msi ダウンロード + 更新
+- リン子サーバ (`172.16.1.161`): Ollama / VOICEVOX / GPT-SoVITS / Whisper / Flask + SocketIO
+- board-system (`172.16.1.203`): FastAPI + Postgres (付箋・タスクボード・カレンダー記憶)
+</file>
+
+<file path="docs/v3_リリース手順.md">
+# Wonder Linko Desktop v3.0.0 リリース手順
+
+2026-05-27 リリース。**最初の手動配布**が必要 (旧 cert 期限切れで自動更新が動かないため)。
+
+## 何が変わったか (v2.2.2 → v3.0.0)
+
+1. **内部ドメイン移行**: `wonder-link.co.jp` → `wonder-link.com`
+   - `update_check_url` も `.com` に。旧 cert 期限切れ + 旧ドメイン廃止後でも更新が走る
+2. **新アイコン**: VRM リン子から作成した 2D アイコンを assets/ に同梱
+   - exe / msi / トレイ / トースト / ミニポート 全部統一
+3. **features セクション**: opt-in 機能フラグ枠を追加 (全 OFF 既定)
+   - `taskbar_mode` / `linko_avatar` / `visitor_notify` / `brainstorm`
+4. **設定ダイアログ**: トレイ「設定...」/ ミニポート右クリック「設定...」から開く
+
+## 事前準備 (Linux 側で完了済み)
+
+- [x] コード変更を main にコミット・push 済み (`3312a1e`, `4b454b4` 他)
+- [x] `wl_desktop_app/version.py` を `3.0.0` に bump 済み
+- [x] `board-system/backend/desktop_app_releases/latest.json` を `3.0.0` に更新済み
+- [x] `wl_desktop_app/assets/` に新アイコンセット
+- [x] `wl_desktop_app/config.production.example.json` 更新済み
+
+## Windows 側でやること
+
+### A. ビルド環境準備
+
+- Windows PC (Python 3.12 以上)
+- リポジトリを git clone (or pull で最新化)
+- PowerShell 起動
+
+### B. config.json を本番値に置き換える
+
+```powershell
+cd wl-board-pj\wl_desktop_app
+Copy-Item config.production.example.json config.json -Force
+notepad config.json   # `_description` を消す/必要なら手調整
+```
+
+cx_Freeze は **ビルド時の `config.json` をそのまま msi にバンドル**する。
+本番 URL が入った状態でビルドすること。
+
+### C. MSI ビルド
+
+```powershell
+cd wl-board-pj\wl_desktop_app
+.\build_msi.ps1
+```
+
+出力: `dist\WonderLinko.msi`
+
+ビルドスクリプトは `cx_Freeze` / `freeze-core` を pip install したあと
+`python setup.py bdist_msi` を実行する。**`_imaging*.pyd` がバンドルに
+含まれていないと配布禁止** (build_msi.ps1 が自動でチェック)。
+
+### D. ローカルで msi を確認 (推奨)
+
+1. インストール: `dist\WonderLinko.msi` をダブルクリック
+2. インストール先: `%LOCALAPPDATA%\WonderLink\WonderLinko`
+3. デスクトップにできたショートカットから起動
+4. トレイにリン子アイコンが出ること
+5. 右クリック「設定...」で設定ダイアログが開くこと
+6. トレイ「アプリをアップデート」をクリック → 「更新なし: 現在=3.0.0 最新=3.0.0」
+   (= 自動更新の経路が動いている)
+
+### E. 本番サーバに msi をアップロード + blue/green デプロイ
+
+**重要な前提:** backend Dockerfile が `COPY . .` で `desktop_app_releases/` を
+**イメージにビルド時焼き込み**している。
+ホスト側のファイルを差し替えただけでは、稼働中のコンテナからは見えない。
+**必ず blue/green deploy.sh を走らせてイメージを作り直す**こと。
+
+#### E-1. ホスト側のファイルを最新化
+
+```bash
+ssh devuser01@wlboardsys-app-01
+cd /var/www/wlinko-pj
+git pull   # latest.json (3.0.0) と version.py bump を取得
+ls -la board-system/backend/desktop_app_releases/
+```
+
+#### E-2. msi をホストに転送
+
+```powershell
+# Windows 側 (ビルド PC)
+scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
+```
+
+ホスト側で `WonderLinko.msi` と `latest.json` が同じ desktop_app_releases/ にあることを確認。
+
+#### E-3. blue/green デプロイ (deploy.sh)
+
+```bash
+cd /var/www/wlinko-pj/board-system
+./deploy/deploy.sh
+```
+
+deploy.sh の動作:
+
+1. 現在の active 色 (`/etc/nginx/conf.d/active_env.conf` で判定) を確認
+2. **反対色のコンテナを `docker compose ... up -d --build`** で新規構築
+   - この時点で新 `latest.json` / `WonderLinko.msi` がイメージに焼き込まれる
+3. 新コンテナの `/health` をヘルスチェック
+4. alembic migration 実行
+5. `active_env.conf` を新色のポートに書き換え + `sudo systemctl reload nginx`
+6. 旧色のコンテナを停止
+
+⚠️ **やってはいけないこと:**
+
+- `docker compose -f docker-compose.prod.yml up -d --build linko-backend-blue` を
+  直接叩く → サービス名と container_name が異なるので意図しない動作になる
+- ホスト側 `desktop_app_releases/latest.json` だけ書き換えて再ビルド忘れ → 反映されない
+
+#### E-4. 反映確認
+
+```bash
+curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
+# → 新 version が返ってくる
+
+# コンテナ内も確認
+NEW_BACKEND=$(docker ps --format '{{.Names}}' | grep "^linko-backend-")
+docker exec "$NEW_BACKEND" cat /app/desktop_app_releases/latest.json
+
+# msi も配信されているか
+curl -sI https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi | head -3
+# → 200 OK
+```
+
+#### E-5. (Tips) build cache に注意
+
+`COPY . .` が `CACHED` のまま走ると、新 `latest.json` がイメージに入らないことがある。
+deploy.sh で `desktop_app_releases/` の中身変更だけだと cache 判定が曖昧になる場合があるので、
+反映されない症状が出たら `--no-cache` で backend を再ビルド:
+
+```bash
+cd /var/www/wlinko-pj/board-system
+docker compose -f docker-compose.prod.yml -p board-system-blue build --no-cache backend
+docker compose -f docker-compose.prod.yml -p board-system-blue up -d backend
+```
+
+### F. 10 人へ手動配布 (今回限り)
+
+旧 v2.x.x のインストール環境は **旧 `.co.jp` URL を見るため自動更新できない**。
+今回のみ、Chatwork 等で次の案内を送る:
+
+```
+Wonder Linko デスクトップアプリを v3.0.0 にアップデートします。
+ドメイン移行に伴い、今回だけ手動でインストールが必要です。
+
+1. https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi からダウンロード
+2. .msi をダブルクリックしてインストール (上書きインストールでOK)
+3. インストール後はトレイのリン子アイコンが新デザインに変わっていれば成功
+
+設定はそのまま引き継がれます。
+以降のアップデートは自動で行われます (`設定...` → トレイ「アプリをアップデート」でも手動チェック可)。
+```
+
+### G. 配布後の動作確認
+
+- 数台にインストールして:
+  - トレイアイコンが新リン子になっている
+  - トレイ右クリック「設定...」が動く
+  - 「アプリをアップデート」で「更新なし: 現在=3.0.0 最新=3.0.0」
+- 何台か実機で 1 日経過観察。通知系・付箋投稿系が壊れていないことを確認
+
+## v3.0.1 (auto-update 初回実証)
+
+クリック起動のたびにミニポート/トレイが増殖するバグを修正。**この版は手動配布せず、
+v3.0.0 端末の自動更新で配布**することで auto-update 経路を初めて実証する。
+
+修正内容:
+
+- Windows named mutex (`Local\\WonderLinkoDesktopAppSingleInstance`) で単一インスタンス
+  保証
+- 重複起動を検知したら `%LOCALAPPDATA%\\WonderLink\\show_request` を作成して自プロセス
+  終了。先発プロセスは 1 秒ごとにこのファイルを監視し、検出したらミニポートを前面化
+
+ビルド & 配布手順は下記「次回以降のリリース手順」と同じ。
+
+## 次回以降のリリース手順 (v3.0.1+)
+
+旧ドメイン期限切れ問題はもう無いので、**手動配布は今回限り**。今後は次の 7 ステップ:
+
+### 1. 開発側 (dev WSL)
+
+```bash
+# (a) コード変更を commit
+git add ...
+git commit -m "..."
+
+# (b) version.py bump (例 3.0.0 → 3.0.1)
+sed -i 's/__version__ = "3\.0\.0"/__version__ = "3.0.1"/' wl_desktop_app/version.py
+
+# (c) latest.json を同じ version に更新
+sed -i 's/"version": "3\.0\.0"/"version": "3.0.1"/' board-system/backend/desktop_app_releases/latest.json
+
+# (d) commit & push
+git add wl_desktop_app/version.py board-system/backend/desktop_app_releases/latest.json
+git commit -m "release(desktop): vX.Y.Z bump"
+git push origin main
+```
+
+### 2. Windows ビルド PC
+
+```powershell
+cd path\to\wl-board-pj
+git pull
+
+cd wl_desktop_app
+# v3.1.4 以降: config.json は msi にバンドルしない設計のため、
+# Copy-Item config.production.example.json config.json -Force は **不要**。
+# defaults が本番 URL になっているので、ビルド前の追加作業なし。
+
+.\build_msi.ps1
+# 出力: dist\WonderLinko.msi
+```
+
+### 3. msi を本番サーバへ転送
+
+**運用ルール**: ロールバック用に過去版を残せるよう、サーバ上では **バージョン付き** ファイル名で配置する。
+`latest.json` の `url` も同じファイル名を指すこと。
+
+```powershell
+# バージョン付き名 (例: 3.1.0) で配置
+scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko_3.1.0.msi
+```
+
+そして dev リポジトリの `latest.json` の `url` も同じファイル名にして commit + push:
+
+```json
+{
+  "version": "3.1.0",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.1.0.msi"
+}
+```
+
+⚠️ ファイル名と `latest.json` の `url` が一致していないと、クライアントは 404 を受けて
+**「更新あり」のトーストは出るがダウンロードに失敗してインストールが走らない**。
+
+### 4. 本番サーバで git pull
+
+```bash
+ssh devuser01@wlboardsys-app-01
+cd /var/www/wlinko-pj
+git pull   # latest.json bump を取得
+```
+
+### 5. 反映 (v3.2.3 以降: bind mount 化で deploy.sh 不要)
+
+`desktop_app_releases/` は backend コンテナに bind mount されているので、
+手順 3 (scp) + 手順 4 (git pull で latest.json 更新) だけで **即反映**。
+deploy.sh は不要 (frontend/backend のコード変更時のみ実行)。
+
+```bash
+# 通常は何もしなくてよい。確認だけ:
+curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
+```
+
+⚠️ bind mount を初めて有効化するときだけ、1 度 `./deploy/deploy.sh`
+(または `docker compose ... up -d`) で compose 変更を反映すること。
+
+### 6. 反映確認
+
+```bash
+curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
+# 新 version が返れば成功
+```
+
+### 7. ユーザー側
+
+- 何もしなくて OK。次回アプリ起動時に自動チェック → アップデート
+- 「すぐ反映したい」なら、トレイ → 「アプリをアップデート」を手動クリック
+- v3.0.1 以降は単一インスタンス制御により、クリック連打しても増殖しない
+
+## 共通の落とし穴
+
+| 症状 | 原因 | 対処 |
+| --- | --- | --- |
+| ホストの `latest.json` を更新したのに `curl` で旧 version が返る | backend Dockerfile が `COPY . .` でイメージにファイルを焼き込んでいるため、コンテナ再ビルド前は反映されない | `./deploy/deploy.sh` を走らせる (本書 E-3) |
+| deploy.sh が `Health check failed` で落ちる | 新コンテナの 8010 or 8020 が他プロセスに占有 / DB が落ちている | `docker ps` で他のコンテナを確認・整理 (空サフィックスのゴミコンテナ等) |
+| `docker compose ... up -d --build linko-backend-blue` を直接叩いて反映されない | サービス名は `backend`、container_name は `linko-backend-${COLOR}`。サービス名で指定するか deploy.sh を使う | `./deploy/deploy.sh` を使う |
+| deploy.sh のビルドで `COPY . .` が CACHED されて新 latest.json が入らない | docker buildx の cache 判定 | `docker compose ... -p board-system-<color> build --no-cache backend` |
+| 旧 v2.x.x が auto-update に反応しない | 旧 `update_check_url` が `.co.jp` を見ており、cert 期限切れ + DNS 撤去後は到達不能 | v3.0.0 を手動配布で新 URL へ橋渡し (済) |
+| ショートカット連打でミニポート/トレイが増殖 | 単一インスタンス制御の欠落 | v3.0.1 で修正済み |
+| 「更新あり」トーストは出るがダウンロードが走らない | サーバの msi ファイル名と `latest.json` の `url` が不一致 (404) | サーバ上のファイル名と `latest.json` の `url` を揃える (バージョン付き名で統一) |
+| 新規依存 (例: python-socketio) が msi にバンドルされない | ビルド時に `pip install -r requirements.txt` が走っていない / setup.py の includes に未追加 | (1) build_msi.ps1 が requirements.txt を install しているか (2) setup.py の `includes` / `packages` に新規パッケージ追加。build_msi.ps1 末尾の検証で socketio/engineio ディレクトリ存在チェック済 |
+| auto-update 後にユーザ設定 (features 等) が初期値に戻る | msi に `config.json` をバンドルしていて、上書きインストールで既存設定が消える | **v3.1.4 で修正済**: setup.py から config.json バンドルを除外し、config_loader の defaults を本番 URL に。既存ユーザの config.json は msi で触られない |
+
+## ロールバック
+
+- 旧 msi (v2.2.2) は msi のキャッシュにあるはずだが、念のため Git の `git show HEAD~:wl_desktop_app/version.py` を確認しながら旧 commit に checkout して旧 msi をビルドする手順を用意しておく
+- 旧版を再配布する場合は `latest.json` を旧 version に戻すだけで全端末がダウングレード自動更新する (`is_newer` は新→旧でも `True` を返さないので注意)
+  - 強制ダウングレードしたい場合は、ユーザー側で msi を手動再インストール
+</file>
+
+<file path="docs/Windows通知がオフになった場合.md">
+# Windows の通知をオフにしたあと、再度オンにする方法
+
+Wonder Linko のトースト通知を Windows の設定で一度オフにすると、**アプリ側からはオンに戻せません**。アンインストールして再インストールしても、**Windows が「このアプリの通知はオフ」という設定を覚えている**ため、そのままでは通知は出ません。
+
+## 対処方法（Windows の設定で通知をオンに戻す）
+
+### Windows 11 の場合
+
+1. **設定** を開く（Win + I など）
+2. **システム** → **通知**
+3. 「**通知を表示するアプリ**」または「**アプリの通知**」の一覧で、次のいずれかを探す：
+   - **Wonder Linko**
+   - **Wonder Linko**
+   - **WonderLinko.exe**
+   - **Python**（exe の種類によって表示名が異なる場合があります）
+4. 該当アプリのスイッチを **オン** にする
+5. 一覧にアプリ名が出てこない場合：
+   - いったん **「アプリやその他の送信者からの通知を取得する」** をオンにする
+   - Wonder Linko を起動し、トレイメニューから **「テストお知らせ（付箋ボードURL付き）」** を実行する
+   - 再度 設定 > システム > 通知 を開くと、アプリが一覧に表示されることがあります
+
+### Windows 10 の場合
+
+1. **設定** を開く
+2. **システム** → **通知とアクション**
+3. 「**送信ごとの通知の受信設定**」またはアプリ一覧で、上記と同様に **Wonder Linko / Wonder Linko / WonderLinko** を探す
+4. オフになっている場合は **オン** に変更する
+
+### それでも表示されない場合
+
+- **集中モード（応答不可モード）** がオンになっていないか確認する（タスクバー右下のベルアイコン）
+- **通知の音** がミュートになっていないか確認する
+- PC を再起動してから、もう一度「テストお知らせ」を試す
+
+---
+
+## アプリ一覧に出てこない場合（レジストリで通知設定をリセット）
+
+設定の通知一覧に Wonder Linko が出てこない場合、**Windows が通知を「オフ」として覚えているレジストリを削除**すると、次回の通知から再有効化されることがあります。
+
+### 方法A: 手動でレジストリを編集する
+
+1. **レジストリエディター** を開く（スタートメニューで「regedit」と入力して実行。管理者権限の確認が出たら「はい」）
+2. 次のキーに移動する：
+
+   ```
+   HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings
+   ```
+
+3. その下の **サブキー** を確認する。次のような名前のキーがあれば、それが Wonder Linko の通知設定の可能性があります：
+   - `Wonder Linko`
+   - `WonderLinko`
+   - `WonderLinkoDesktop`
+   - または `Python` など（環境によって異なります）
+4. 該当しそうなキーを **右クリック → 削除** する（不確かな場合は削除せず、方法Bのスクリプトを利用してください）
+5. レジストリエディターを閉じ、**Wonder Linko を終了してから再起動**する
+6. トレイメニューから **「テストお知らせ（付箋ボードURL付き）」** を実行し、通知が表示されるか確認する
+
+### 方法B: PowerShell で通知設定をリセットする
+
+**`通知設定をリセットする.ps1`** を用意しています。**Wonder Linko を終了した状態で**、PowerShell で次を実行してください。
+
+- **MSI でインストールした場合**: インストール先フォルダ（WonderLinko.exe があるフォルダ）の `docs` サブフォルダにスクリプトがあります。
+- **開発環境**: プロジェクトの `02_3_WL_Desktop_app\docs` フォルダにあります。
+
+```powershell
+# 例: インストール先が C:\Users\<ユーザー名>\AppData\Local\WonderLink\WonderLinko の場合
+cd "$env:LOCALAPPDATA\WonderLink\WonderLinko\docs"
+.\通知設定をリセットする.ps1
+```
+
+実行後、Wonder Linko を起動し、「テストお知らせ」で通知を試してください。
+
+※ レジストリを変更します。心配な場合は先に方法Aで該当キーを確認してからにしてください。
+
+---
+
+## レジストリ削除でも改善しない場合（アプリの更新で通知IDを変える）
+
+上記のレジストリ削除を試しても通知が復活しない場合、**アプリ側で通知に使う「アプリID」を変更**したバージョンに更新することで改善することがあります。Windows はアプリIDごとに通知のオン/オフを覚えているため、**新しいIDを使うと「別アプリ」として扱われ、通知が再有効化**されます。
+
+- **対応済み**: 新版の Wonder Linko では、通知用のアプリID を **`WonderLinko.Desktop`** に変更しています。
+- **手順**: 最新の MSI で再インストール（または上書きインストール）し、アプリを起動して「テストお知らせ」を実行してみてください。通知が表示されれば、設定の通知一覧に「WonderLinko.Desktop」等が現れることがあります。
+- 今後、同じ事象になった場合は再度アプリIDを変更した版を配布する対応が可能です。
+
+---
+
+## なぜアンインストールでは直らないか
+
+Windows は「どのアプリの通知を表示するか」を **アプリごとに** 記憶しています。この設定は **アプリのインストールフォルダとは別**（レジストリや Windows の内部設定）に保存されるため、アプリをアンインストールしてもリセットされません。再インストールすると同じアプリとして扱われ、**オフのまま**の設定が引き継がれます。
+
+そのため、通知を再度使うには **Windows の「設定」で該当アプリの通知をオンに戻す**必要があります。
+</file>
+
 <file path="docs/更新チェック用JSONの例.json">
 {
   "version": "1.0.1",
   "url": "https://example.com/wonderlinko/WonderLinko.msi"
 }
+</file>
+
+<file path="docs/指示書_音声セルフ登録_Phase2.md">
+# 指示書: 音声セルフ登録 Phase 2（メール OTP 共通 + チャレンジ録音 + 音声開錠）
+
+作成: 2026-06-01 / 対象: **linko-system**（API・話者照合・開錠）+ **wl_desktop_app**（UI）  
+前提: 顔セルフ登録 Phase 1（v3.8.x）完了。管理者経路の `voiceData` 保存（WAV）は実装済みだが **話者照合エンジンは未実装**。
+
+## 背景・目的
+
+エントランス開錠は現状 **顔認証のみ**（`FaceService` → Alligate `remote-unlock`）。  
+社員が各自 PC から **本人確認付きで声紋を登録**し、エントランスで **顔または声** で開錠できるようにする。
+
+なりすまし対策は **開錠側（Alligate / linko）** でも入れるが、**登録経路のリスクを先に下げる**。
+
+### 合意済み設計判断（2026-06-01）
+
+| # | 決定内容 |
+|---|----------|
+| 1 | エントランス認証モード初期値: **`face_or_voice`**（顔のみ / 声のみ / 顔または声） |
+| 2 | OTP: **顔と共通 1 回**（同一 challenge / verify、トークン scope を拡張） |
+| 3 | セルフ登録: **チャレンジ付きライブ録音 3 サンプル**、**ファイルアップロード不可** |
+
+---
+
+## Phase 分割
+
+| Phase | 内容 | 成果 |
+| ------- | ------ | ------ |
+| **2a** | 音声セルフ登録（OTP 共通・チャレンジ録音・embedding 保存） | 社員 PC から声紋登録 |
+| **2b** | 話者照合エンジン（ECAPA-TDNN 等）本番化・閾値調整 | 照合スコアが安定 |
+| **2c** | エントランス音声 verify + **`face_or_voice` 開錠** | 登録音声で開錠 |
+
+本書は **2a を主**、2b/2c の API・設定骨格まで記載する。
+
+---
+
+## 全体フロー（2a: セルフ登録）
+
+```
+[社員 PC] 設定 →「自分の声を登録」（または顔登録完了後に続けて）
+    → 同意チェック（音声専用文言）
+    → メール入力 → POST /self_register/start   ← 顔と同一 API
+    → OTP 入力   → POST /self_register/verify → self_register_token (scope に voice_put)
+    → GET /self_register/voice/challenges → 3 件のチャレンジフレーズ
+    → 各サンプル: フレーズ表示 → ライブ録音（約4秒）→ PUT /voice?self_register=1
+    → サーバ: 品質ゲート → embedding 抽出 → voice_embeddings 追記
+    → 完了
+```
+
+顔のみ / 声のみ / 両方の組み合わせ:
+
+| パターン | OTP | トークン scope | UI |
+| ---------- | ----- | ---------------- | ----- |
+| 顔のみ | 1 回 | `face_put` | 既存 Phase 1 |
+| 声のみ | 1 回 | `voice_put` | 本 Phase 2a |
+| 両方 | **1 回** | `face_put`, `voice_put` | 顔 3 枚 → 続けて声 3 サンプル（同一セッション） |
+
+```mermaid
+sequenceDiagram
+    participant U as Wonder Linko
+    participant L as linko-system
+    participant M as メール
+
+    U->>L: POST /self_register/start {email}
+    L->>M: OTP 送信
+    U->>L: POST /self_register/verify {challenge_id, otp}
+    L-->>U: {token, scope:[face_put,voice_put], person_id}
+    U->>L: GET /self_register/voice/challenges
+    L-->>U: [{challenge_id, phrase_ja}, x3]
+    loop 3 サンプル
+        U->>U: ライブ録音（フレーズ読み上げ）
+        U->>L: PUT /voice?self_register=1 + challenge_id + voiceData
+        L->>L: 品質ゲート + embedding
+    end
+```
+
+---
+
+## 設計原則
+
+| 原則 | 内容 |
+| ------ | ------ |
+| OTP 共通 | `start` / `verify` は顔 Phase 1 と **同一エンドポイント**。サービス名は `self_register` に統合（後方互換で `self_face_registration` 設定キーは残してよい） |
+| 最小権限 | トークン scope: `face_put` / `voice_put`。URL の `person_id` はトークンと一致必須 |
+| ライブ録音のみ | セルフ経路は **WAV ファイル選択不可**（管理者経路のみファイル可） |
+| チャレンジ必須 | 各サンプルはサーバ発行の **ランダム数字入りフレーズ** をその場で読み上げ |
+| embedding はサーバ側 | クライアントは WAV のみ送信。ベクトルは linko 上で抽出 |
+| 社内ネットワーク | 既存 `_ip_allowed` を流用 |
+| 開錠は別 Phase | 2c で `face_or_voice`。Alligate 側 anti-spoof と役割分担 |
+
+---
+
+## 登録経路セキュリティ（なりすましリスク低減）
+
+| ID | 対策 | 実装 Phase |
+| ---- | ------ | ------------ |
+| S1 | メール OTP（既存） | 2a |
+| S2 | セルフ: ファイルアップロード不可 | 2a |
+| S3 | チャレンジフレーズ（例: 「リン子、今日は **4827** と申します」） | 2a |
+| S4 | 3 サンプル（チャレンジごとに数字変更） | 2a |
+| S5 | サーバ品質ゲート（長さ・無音・クリッピング・最小 SNR） | 2a |
+| S6 | embedding サーバ抽出のみ | 2a/2b |
+| S7 | scope 限定トークン + TTL 15 分 | 2a |
+| S8 | IP allowlist + レート制限 + 監査ログ | 2a |
+| S9 | 音声専用 `consent_text_ja` | 2a |
+| S10 | セルフ UI から登録 WAV の再生・再取得不可 | 2a |
+
+---
+
+## バックエンド API 仕様（linko-system）
+
+ベース URL: `{linko_server_url}/api/face_registry`
+
+### 設定（business_settings.json）
+
+既存 `self_face_registration` を拡張するか、並列キー `self_voice_registration` を追加する。**OTP/SMTP/レート制限は共有**。
+
+```json
+{
+  "self_face_registration": {
+    "enabled": false,
+    "otp_required": true,
+    "otp_ttl_seconds": 600,
+    "otp_max_attempts": 3,
+    "token_ttl_seconds": 900,
+    "staff_only": true,
+    "consent_text_ja": "…顔…",
+    "rate_limit_per_email_per_hour": 5,
+    "rate_limit_per_ip_per_hour": 20
+  },
+  "self_voice_registration": {
+    "enabled": false,
+    "consent_text_ja": "登録する音声は、エントランス等での本人確認・開錠のために利用されます。…",
+    "enrollment_samples_required": 3,
+    "challenge_digits": 4,
+    "min_duration_sec": 2.5,
+    "max_duration_sec": 8.0,
+    "max_embeddings": 5
+  },
+  "devices": {
+    "entrance_face_unlock": { "enabled": true, "liveness": false },
+    "entrance_voice_unlock": {
+      "enabled": false,
+      "auth_mode": "face_or_voice",
+      "min_similarity": 0.72,
+      "challenge_digits": 4,
+      "cooldown_sec": 30,
+      "max_attempts_per_minute": 5
+    }
+  }
+}
+```
+
+| キー | 既定 | 説明 |
+| ------ | ------ | ------ |
+| `self_voice_registration.enabled` | `false` | 音声セルフ登録マスター |
+| `consent_text_ja` | （文言） | 音声登録同意文 |
+| `enrollment_samples_required` | `3` | 1 セッションで必要なサンプル数 |
+| `challenge_digits` | `4` | チャレンジに埋め込む乱数桁数 |
+| `max_embeddings` | `5` | 顔と同型 FIFO 上限 |
+| `entrance_voice_unlock.auth_mode` | `face_or_voice` | `face_only` / `voice_only` / `face_or_voice` / `face_and_voice`（将来） |
+| `entrance_voice_unlock.min_similarity` | `0.72` | 開錠閾値（登録より厳しめにチューニング） |
+
+`/admin` 業務設定 UI にトグル・同意文・`auth_mode` 選択を追加。
+
+---
+
+### `GET /self_register/status`（拡張）
+
+**Response 200**（追加フィールド）
+
+```json
+{
+  "enabled": true,
+  "face_enabled": true,
+  "voice_enabled": true,
+  "otp_required": true,
+  "consent_text_ja": "…顔…",
+  "voice_consent_text_ja": "…声…",
+  "max_face_embeddings_hint": 5,
+  "max_voice_embeddings_hint": 5,
+  "voice_samples_required": 3
+}
+```
+
+- `enabled`: 顔または声のいずれかが ON なら true（UI 入口用）
+- `face_enabled` / `voice_enabled`: 個別フラグ
+
+---
+
+### `POST /self_register/verify`（拡張）
+
+成功時トークンの **scope** を機能 ON 状態に応じて付与:
+
+```json
+{
+  "p": "<person_id>",
+  "scope": ["face_put", "voice_put"],
+  "c": "<challenge_id>"
+}
+```
+
+追加レスポンスフィールド:
+
+```json
+{
+  "has_voice": false,
+  "scopes": ["face_put", "voice_put"]
+}
+```
+
+- 顔のみ ON → `["face_put"]`
+- 声のみ ON → `["voice_put"]`
+- 両方 ON → `["face_put", "voice_put"]`
+
+---
+
+### `GET /self_register/voice/challenges`（新規）
+
+**認証**: 有効な `self_register_token` + `voice_put` scope + IP allowlist
+
+**Query**: なし（1 セッション 3 チャレンジを一括発行）
+
+**Response 200**
+
+```json
+{
+  "ok": true,
+  "session_id": "uuid",
+  "challenges": [
+    {
+      "challenge_id": "uuid-1",
+      "phrase_ja": "リン子、今日は 4827 と申します",
+      "index": 1
+    },
+    {
+      "challenge_id": "uuid-2",
+      "phrase_ja": "リン子、確認のため 9153 と申します",
+      "index": 2
+    },
+    {
+      "challenge_id": "uuid-3",
+      "phrase_ja": "リン子、登録のため 6042 と申します",
+      "index": 3
+    }
+  ],
+  "expires_in": 900
+}
+```
+
+- チャレンジは **verify 成功後 1 回のみ** 発行（再 GET で同じ session を返すか、失効まで再利用可 — 実装は前者推奨）
+- 数字は `secrets` で生成、セッション内で重複しない
+
+**Response 403** — scope なし / 機能 OFF / トークン無効
+
+---
+
+### `PUT /face_registry/<person_id>/voice?self_register=1`（拡張）
+
+既存 admin 経路に加え、セルフ登録分岐を追加。
+
+**認証**
+
+| 経路 | 条件 |
+|------|------|
+| 管理者 | 現状どおり `_admin_face_registry_auth()` |
+| **セルフ登録** | `?self_register=1` + トークン + `voice_put` scope + person_id 一致 |
+
+**Request**
+
+```json
+{
+  "voiceData": "data:audio/wav;base64,...",
+  "challenge_id": "uuid-1",
+  "enroll_session_id": "uuid"
+}
+```
+
+**サーバ処理順**
+
+1. 認証・scope・person_id 一致
+2. `enroll_session_id` / `challenge_id` が有効セッションに属するか
+3. **チャレンジ未使用**（1 challenge = 1 PUT）
+4. WAV 検証（既存: MIME, RIFF, 長さ）
+5. **品質ゲート**（`min_duration_sec`, 無音率, クリッピング率, 簡易 SNR）
+6. **embedding 抽出**（Phase 2b エンジン。2a 初期は stub で保存のみ可とし、2b で必須化）
+7. `voice_embeddings` 追記（最大 5 FIFO）、`voiceData` 更新、gallery 退避
+8. チャレンジを consumed にマーク
+9. 監査ログ `self_register_voice_put`
+
+**Response 200**
+
+```json
+{
+  "ok": true,
+  "voice_embeddings_count": 3,
+  "samples_completed": 2,
+  "samples_required": 3
+}
+```
+
+**Response 400** — 品質ゲート失敗（理由コード: `too_short` / `too_quiet` / `clipped` / `invalid_wav`）  
+**Response 403** — チャレンジ不一致・再利用・scope 不足  
+**Response 401** — トークン期限切れ
+
+**セルフ登録で拒否**
+
+- DELETE voice → admin のみ
+- ファイルアップロード UI 経路 → セルフクライアントに存在しない
+
+---
+
+### ストレージ拡張（face_registry.json）
+
+person レコードに追加:
+
+```json
+{
+  "voiceData": "data:audio/wav;base64,...",
+  "voice_gallery": [{"dataUrl": "...", "ts": "..."}],
+  "voice_embeddings": [[0.1, 0.2, ...]],
+  "voice_embeddings_count": 3,
+  "voice_enrolled_at": "2026-06-01T12:00:00+09:00"
+}
+```
+
+- `voice_embeddings`: float 配列のリスト（L2 正規化済み）
+- 最大件数: `self_voice_registration.max_embeddings`（既定 5、FIFO）
+
+---
+
+### 監査ログ（追加 action）
+
+- `self_register_voice_challenges_issued`
+- `self_register_voice_put`（quality_ok, embedding_count_after, challenge_id）
+- `self_register_voice_quality_rejected`
+
+---
+
+## Phase 2b: 話者照合エンジン
+
+### 推奨
+
+- **SpeechBrain ECAPA-TDNN** を ONNX 化し linko サーバ CPU 推論
+- 入出力: 16 kHz mono WAV → 192 次元程度の embedding
+- 照合: 登録ベクトル群との **コサイン類似度 max**（顔 best-match と同型）
+
+### モジュール
+
+- `src/webapp/services/speaker_verification_service.py`（新規）
+  - `extract_embedding(wav_bytes) -> list[float]`
+  - `verify_speaker(person_id, wav_bytes) -> (score, matched_index)`
+  - `quality_check(wav_bytes, settings) -> (ok, reason)`
+
+Phase 2a リリース時点でエンジン未導入の場合は **品質ゲート + WAV 保存のみ** とし、2b デプロイ後に一括で embedding バックフィル CLI を用意してもよい。
+
+---
+
+## Phase 2c: エントランス音声開錠
+
+### フロー
+
+```
+Entrance 待機
+  → auth_mode=face_or_voice: 顔認識 OR 「音声で開錠」ボタン
+  → TTS: 「次の数字を読んでください: 7391」
+  → ブラウザ MediaRecorder 3〜5 秒
+  → POST /api/entrance/voice_verify {audio, challenge_id}
+  → 話者スコア >= min_similarity → unlock_door_for_person()
+```
+
+### `POST /api/entrance/voice_verify`（新規・概要）
+
+- チャレンジは **毎回新規**（登録時とは別）
+- クールダウン 30 秒（顔と共有 person 単位）
+- 試行回数制限（5/分）
+- killswitch: `entrance_voice_unlock.enabled`
+- Alligate `remote-unlock` は既存 `unlock_door_for_person` 経路を共用
+
+### auth_mode
+
+| 値 | 挙動 |
+| ---- | ------ |
+| `face_only` | 現状維持 |
+| `voice_only` | 音声のみ |
+| **`face_or_voice`** | **どちらか成功で開錠（初期値）** |
+| `face_and_voice` | 将来: 両方成功必須 |
+
+---
+
+## デスクトップアプリ仕様（wl_desktop_app）
+
+### 機能フラグ
+
+```json
+"features": {
+  "face_registry_self": false,
+  "voice_registry_self": false
+}
+```
+
+設定画面:
+
+- 「自分の顔を登録…」（既存）
+- 「**自分の声を登録…**」（`voice_registry_self` ON 時）
+- 両方 ON かつ同一 OTP 後: 顔完了 → 「続けて声を登録しますか？」
+
+### 新規ファイル（案）
+
+| ファイル | 役割 |
+| ---------- | ------ |
+| `voice_registry_self_client.py` | challenges GET, voice PUT self |
+| `voice_registry_self_dialog.py` | 同意 → OTP（顔ダイアログ再利用可）→ チャレンジ録音 |
+| `voice_capture.py` | 拡張: チャレンジ表示付き `VoiceCaptureDialog` |
+
+### VoiceCaptureDialog 拡張（セルフ用）
+
+- コンストラクタ: `challenge_phrase: str`, `sample_index: int`, `sample_total: int`
+- **ファイル選択ボタンなし**
+- 表示: 大きく `phrase_ja`、カウントダウン 3・2・1 → 約 4 秒録音
+- 1 サンプル完了 → 次チャレンジへ（同一 enroll_session）
+
+### クライアント API ラッパー
+
+```python
+def get_voice_challenges(cfg, token: str) -> dict: ...
+def upload_voice_self(cfg, person_id, token, session_id, challenge_id, data_url) -> dict: ...
+def upload_voices_self_serial(...) -> tuple[int, int, str | None]: ...
+```
+
+顔の `face_registry_self_client.py` と同型。OTP 部分は **共有**（顔ダイアログを import して voice ステップのみ追加でも可）。
+
+---
+
+## 実装タスク一覧
+
+### linko-system
+
+| # | タスク |
+| --- | -------- |
+| L1 | `self_voice_registration` 設定 + `/admin` UI |
+| L2 | `self_register/status`・`verify` の scope 拡張（face/voice 個別 enabled） |
+| L3 | `GET /self_register/voice/challenges` + セッションストア |
+| L4 | `PUT /voice?self_register=1` + challenge 検証 |
+| L5 | 品質ゲート（`upload_validation` 拡張） |
+| L6 | `voice_embeddings` ストレージ + FIFO |
+| L7 | 監査ログ |
+| L8 | **2b** `speaker_verification_service` + embedding 抽出 |
+| L9 | **2c** `entrance_voice_unlock` 設定 + `voice_verify` + `FaceService` 連携 |
+| L10 | 単体テスト（scope/challenge/quality/列挙対策） |
+
+### wl_desktop_app
+
+| # | タスク |
+| --- | -------- |
+| D1 | `features.voice_registry_self` + 設定 UI |
+| D2 | `voice_registry_self_client.py` |
+| D3 | `voice_registry_self_dialog.py`（OTP は顔と共有） |
+| D4 | `VoiceCaptureDialog` チャレンジ・3 サンプル対応 |
+| D5 | 顔登録完了後の「声も登録」導線（同一 token セッション） |
+| D6 | `version.py` bump（例: v3.9.0 = 2a 完了） |
+| D7 | 手動受け入れテスト |
+
+---
+
+## やらないこと（本 Phase スコープ外）
+
+- Web ブラウザからのセルフ登録（デスクトップのみ）
+- セルフ登録での WAV ファイルアップロード
+- `face_and_voice` 同時必須開錠（将来）
+- 社員名簿の新規作成（既存 person + メール必須）
+- Linux / Mac 向け録音（配布先 Windows 前提。開発 README に明記）
+
+---
+
+## 受け入れ基準
+
+### Phase 2a
+
+1. admin_token **なし**で OTP 後に **チャレンジ付き 3 サンプル** 登録できる
+2. ファイルアップロード経路がセルフ UI に **存在しない**
+3. 品質ゲート不合格時、理由付きで再録音を促せる
+4. `/manager` で「声紋 N/5」（2b 後）または voice 登録済み表示
+5. 顔+声 **同一 OTP** で連続登録できる（scope 両方）
+6. 他人の person_id / 他人の challenge では PUT 不可（403）
+7. 管理者経路（voice PUT admin）は従来どおり
+
+### Phase 2c
+
+1. `auth_mode=face_or_voice` で **顔または声** のどちらかで開錠
+2. エントランスは **毎回別チャレンジ**（登録サンプルの再生では開錠不可）
+3. `entrance_voice_unlock.enabled=false` で音声開錠のみ停止（顔は維持）
+
+---
+
+## テスト観点（手動）
+
+| # | 手順 | 期待 |
+| --- | ------ | ------ |
+| T1 | voice OFF | 案内して終了 |
+| T2 | OTP → 3 サンプル | voice_embeddings 3/5 |
+| T3 | チャレンジ文言を読まず無音 | 400 quality rejected |
+| T4 | 同一 challenge を 2 回 PUT | 403 |
+| T5 | 顔 3 枚 → 同一 token で声 3 サンプル | 両方登録 |
+| T6 | トークン期限切れ後 PUT | 401 |
+| T7 | **2c** 登録者がエントランスでチャレンジ読み上げ | 開錠 |
+| T8 | 未登録者 | 拒否、受付へ |
+
+---
+
+## 参考: 関連ファイル
+
+### linko-system
+
+- `routes/api_face.py` — voice PUT、self_register 拡張
+- `services/self_face_registration_service.py` — OTP/トークン（→ `self_register_service` へリネーム検討）
+- `face_registry_storage.py` — voiceData / voice_embeddings
+- `services/face_service.py` — 開錠（2c）
+- `services/upload_validation.py` — WAV 検証
+
+### wl_desktop_app
+
+- `voice_capture.py` / `VoiceCaptureDialog` — 録音 UI
+- `face_registry_self_dialog.py` — OTP ウィザード（共有）
+- `face_registry_client.py` — admin voice CRUD
+- `docs/指示書_顔セルフ登録_Phase1.md` — OTP テンプレート
+
+---
+
+## バージョン・リリース
+
+| マイルストーン | バージョン目安 | 内容 |
+| ---------------- | ---------------- | ------ |
+| 2a 完了 | **v3.9.0** | 音声セルフ登録 |
+| 2b 完了 | v3.9.x / linko のみ | embedding エンジン |
+| 2c 完了 | v3.10.0 + linko | エントランス音声開錠 |
+
+- linko-system と wl_desktop_app は **API 先行または同時デプロイ**
+- 運用: `/admin` で `self_voice_registration.enabled` ON → 各 PC で `voice_registry_self` ON
+- 開錠: `entrance_voice_unlock.enabled` は **2c 完了後** に本番 ON（初期 `auth_mode=face_or_voice`）
+</file>
+
+<file path="docs/指示書_顔セルフ登録_Phase1.md">
+# 指示書: 顔セルフ登録 Phase 1（メール OTP + デスクトップ）
+
+作成: 2026-06-01 / 対象: **linko-system**（API・設定）+ **wl_desktop_app**（UI）  
+前提: 顔複数枚登録（連写3枚＋眼鏡追加）は v3.7.5 で管理者経路に実装済み。本 Phase 1 は**一般社員が自分の PC から同じ撮影 UX で登録**できるようにする。
+
+## 背景・目的
+
+現状、顔登録は **管理者 PC**（`linko_admin_token` + `face_registry_manage`）または **linko `/manager`** のみ。  
+一般社員の PC には admin トークンを配布できないため、**本人確認付きの別認証経路**が必要。
+
+Phase 1 のゴール:
+
+1. 社員が Wonder Linko 設定から「自分の顔を登録」を開始できる（機能フラグ ON 時のみ）
+2. **社内メール + ワンタイムパスワード（OTP）** で本人確認
+3. 確認後に発行された **短期トークン** で、**自分の `person_id` に対する顔 PUT のみ**許可
+4. 撮影 UX は管理者と同じ（連写3枚 → 眼鏡追加確認 → 任意1枚）
+
+音声セルフ登録・Web 版・エントランス UI・Board OAuth 連携は **Phase 2 以降**（本書スコープ外）。
+
+---
+
+## 全体フロー
+
+```
+[社員 PC] 設定 →「自分の顔を登録」
+    → 同意チェック
+    → メール入力 → POST /self_register/start
+    → OTP 入力   → POST /self_register/verify → self_register_token
+    → FaceCaptureDialog 連写3枚
+    → PUT /face_registry/<id>?self_register=1 （各枚、トークン付き）
+    → 眼鏡追加確認 → 任意で1枚モード再撮影
+    → 完了
+```
+
+```mermaid
+sequenceDiagram
+    participant U as Wonder Linko
+    participant L as linko-system
+    participant M as メール
+
+    U->>L: GET /self_register/status
+    L-->>U: enabled, consent_text
+    U->>L: POST /self_register/start {email}
+    L->>M: OTP 送信
+    L-->>U: {challenge_id, email_masked}
+    U->>L: POST /self_register/verify {challenge_id, otp}
+    L-->>U: {self_register_token, person_id, person_name, expires_in}
+    loop 連写3枚 + 任意1枚
+        U->>L: PUT /face_registry/{id}?self_register=1
+    end
+```
+
+---
+
+## 設計原則
+
+| 原則 | 内容 |
+| ------ | ------ |
+| オプトイン | サーバ `self_face_registration.enabled` + クライアント `face_registry_self`、いずれも既定 **OFF** |
+| admin トークン不要 | 社員 PC の `config.json` に `linko_admin_token` は置かない |
+| 最小権限 | トークンは **当該 person の顔 PUT のみ**。他者・DELETE・PATCH・POST は不可 |
+| 社内ネットワーク | 既存 `_ip_allowed`（LAN / `LINKO_ADMIN_ALLOW_IPS`）を流用 |
+| 撮影の再利用 | `FaceCaptureDialog` / `upload_faces_serial` のロジックを共有（新規実装は認証ウィザードのみ） |
+
+---
+
+## バックエンド API 仕様（linko-system 新規・変更）
+
+ベース URL: `{linko_server_url}/api/face_registry`
+
+既存の顔 PUT 挙動（embedding 追記・最大5件 FIFO・gallery 退避）は **変更しない**。認証分岐のみ追加する。
+
+### 設定参照
+
+`business_settings.json`（`load_business_settings_file`）に以下を追加。`/admin` の業務設定 UI にトグルを追加する。
+
+```json
+{
+  "self_face_registration": {
+    "enabled": false,
+    "otp_required": true,
+    "otp_ttl_seconds": 600,
+    "otp_length": 6,
+    "otp_max_attempts": 3,
+    "token_ttl_seconds": 900,
+    "staff_only": true,
+    "consent_text_ja": "登録する顔画像は、入退室・執務室モード等での本人確認のために利用されます。…",
+    "rate_limit_per_email_per_hour": 5,
+    "rate_limit_per_ip_per_hour": 20
+  }
+}
+```
+
+| キー | 既定 | 説明 |
+| ------ | ------ | ------ |
+| `enabled` | `false` | 機能マスタースイッチ |
+| `otp_required` | `true` | `false` のときは start 直後にトークン発行（開発用。本番は true 推奨） |
+| `otp_ttl_seconds` | `600` | OTP 有効期限（10分） |
+| `otp_max_attempts` | `3` | challenge あたりの OTP 試行上限 |
+| `token_ttl_seconds` | `900` | `self_register_token` 有効期限（15分） |
+| `staff_only` | `true` | `is_staff=false` の person はセルフ登録不可 |
+| `consent_text_ja` | （文言） | クライアントが表示する同意文 |
+| `rate_limit_*` | 上記 | メール/IP 単位の start 回数制限 |
+
+**OTP 送信**: Phase 1 では linko 側に SMTP 設定を追加するか、既存のメール送信基盤があれば流用。未設定時は `start` が `503` を返し、管理者に設定を促す（サイレント失敗にしない）。
+
+---
+
+### `GET /api/face_registry/self_register/status`
+
+セルフ登録 UI の初期表示用。**認証不要**（IP 制限のみ）。
+
+**Response 200**
+
+```json
+{
+  "enabled": true,
+  "otp_required": true,
+  "consent_text_ja": "…",
+  "max_embeddings_hint": 5
+}
+```
+
+`enabled: false` のときも 200 で返す（クライアントはボタンを無効化）。
+
+---
+
+### `POST /api/face_registry/self_register/start`
+
+OTP 送信（または challenge 作成）を開始する。
+
+**前提チェック（順）**
+
+1. `self_face_registration.enabled`
+2. `_ip_allowed(client_ip)`
+3. レート制限（email / IP）
+4. `email` 形式妥当
+5. `GET /api/face_registry/lookup?email=` 相当で person 存在
+6. `staff_only` 時は `is_staff === true`
+
+**Request**
+
+```json
+{
+  "email": "tanaka@example.com"
+}
+```
+
+**Response 200（常に同形 — メール列挙対策）**
+
+```json
+{
+  "ok": true,
+  "challenge_id": "uuid-v4",
+  "email_masked": "t***@example.com",
+  "otp_ttl_seconds": 600,
+  "message": "登録可能な場合、メールに確認コードを送信しました。"
+}
+```
+
+- person が存在しない・staff_only 違反・レート制限でも **同じ 200 応答**（OTP は送らない、challenge は無効化または即失効）
+- 内部ログにのみ理由を記録
+
+**Response 403** — IP 不許可  
+**Response 503** — 機能 OFF または OTP 送信基盤未設定
+
+---
+
+### `POST /api/face_registry/self_register/verify`
+
+OTP を検証し、`self_register_token` を発行する。
+
+**Request**
+
+```json
+{
+  "challenge_id": "uuid-v4",
+  "otp": "123456"
+}
+```
+
+**Response 200**
+
+```json
+{
+  "ok": true,
+  "self_register_token": "<signed-token>",
+  "person_id": "uuid",
+  "person_name": "田中 太郎",
+  "has_face": false,
+  "expires_in": 900
+}
+```
+
+| フィールド | 説明 |
+|------------|------|
+| `has_face` | 既に顔ありなら UI で「追加登録」文言に切替 |
+| `self_register_token` | 以降の PUT に付与。署名は `URLSafeTimedSerializer`、salt は entrance 用と別（例: `linko-self-face-register-v1`） |
+
+**Response 403** — OTP 不正・期限切れ・試行超過・challenge 無効  
+**Response 429** — 試行回数超過
+
+**トークン payload（署名前）**
+
+```json
+{
+  "p": "<person_id>",
+  "scope": ["face_put"],
+  "challenge_id": "<uuid>"
+}
+```
+
+---
+
+### `PUT /api/face_registry/<person_id>?self_register=1`（既存エンドポイント拡張）
+
+顔 data URL を登録。既存の admin 経路・`entrance_register` 経路に加え、第3の認証分岐を追加する。
+
+**認証（いずれか1つ — 既存維持 + 新規）**
+
+| 経路 | 条件 |
+| ------ | ------ |
+| 管理者 | `_ip_allowed` + `_token_check_passes()`（現状どおり） |
+| エントランス再登録 | `?entrance_register=1` + PIN + `verification_token` + **hasFace 必須**（現状どおり） |
+| **セルフ登録（新規）** | `?self_register=1` + 有効な `self_register_token` + URL の `person_id` がトークンと一致 |
+
+**セルフ登録時のヘッダ（推奨）**
+
+```
+X-Linko-Self-Register-Token: <self_register_token>
+```
+
+body に `"self_register_token": "..."` でも可（ヘッダ優先）。
+
+**Request body**（既存と同じ）
+
+```json
+{
+  "faceData": "data:image/jpeg;base64,..."
+}
+```
+
+**Response** — 既存 PUT と同じ（200 + person サマリ）。embedding 追記ロジックは共通。
+
+**セルフ登録で拒否する操作**
+
+- 他者の `person_id` への PUT → 403
+- DELETE / PATCH / POST → 従来どおり admin のみ（セルフトークンでは不可）
+- トークン期限切れ → 401
+- `self_face_registration.enabled === false` → 403
+
+**トークン失効（推奨）**
+
+- オプション A: 有効期限内は複数枚 PUT 可能（連写3枚に必要）— **Phase 1 はこちら**
+- オプション B: 初回 PUT 後に失効 — 連写と相性が悪いため Phase 1 では採用しない
+
+---
+
+### 監査ログ
+
+`self_register/start`・`verify` 成功・各 `PUT ?self_register=1` 成功時にサーバログまたは専用監査テーブルへ記録する。
+
+最低限のフィールド:
+
+```
+ts, person_id, email_hash, client_ip, action, embedding_count_after, user_agent
+```
+
+`action` 例: `self_register_start` | `self_register_verify_ok` | `self_register_face_put`
+
+既存 `FaceConsentLog` と統合できるなら `decision=granted`, `method=self_register_desktop` で追記。
+
+---
+
+## デスクトップアプリ仕様（wl_desktop_app）
+
+### 機能フラグ
+
+`config.json` → `features.face_registry_self`（既定 `false`）
+
+`config_loader.py` の `DEFAULT_FEATURES` に追加。
+
+設定画面（`settings_dialog.py`）の `_FEATURES` に項目追加:
+
+| key | ラベル | 説明 |
+|-----|--------|------|
+| `face_registry_self` | 自分の顔を登録 | 社内メールで本人確認後、自分の顔を登録します。要: linko 名簿にメール登録済み・社内ネットワーク。 |
+
+**`linko_admin_token` は不要。** `linko_server_url` は必須。
+
+### 新規ファイル
+
+| ファイル | 役割 |
+|----------|------|
+| `face_registry_self_client.py` | `get_status`, `start`, `verify`, `update_face_self` |
+| `face_registry_self_dialog.py` | ウィザード UI（下記ワイヤー） |
+
+### 既存ファイルの変更
+
+| ファイル | 変更内容 |
+| ---------- | ---------- |
+| `settings_dialog.py` | フラグ +「自分の顔を登録…」ボタン |
+| `face_registry_admin_dialog.py` | （任意）`FaceCaptureDialog` を import 可能なまま維持。アップロード完了・眼鏡プロンプトを共通関数化して self からも呼ぶ |
+| `face_registry_client.py` | 変更なし（admin 専用のまま）。self 用は別クライアント |
+
+### クライアント API ラッパー（`face_registry_self_client.py`）
+
+```python
+def get_self_register_status(cfg: dict) -> dict: ...
+def start_self_register(cfg: dict, email: str) -> dict: ...
+def verify_self_register(cfg: dict, challenge_id: str, otp: str) -> dict: ...
+def update_face_self(cfg: dict, person_id: str, token: str, face_data_url: str) -> dict: ...
+def upload_faces_self_serial(cfg, person_id, token, urls) -> tuple[int, int, Optional[str]]: ...
+```
+
+`update_face_self` は `PUT {base}/api/face_registry/{id}?self_register=1` に  
+`X-Linko-Self-Register-Token` を付与。`security.validate_http_url` を流用。
+
+---
+
+## 画面ワイヤー（デスクトップ）
+
+共通: CustomTkinter トップレベル、`attributes("-topmost", True)`、幅 480〜520px。
+
+---
+
+### 画面 0: 入口（設定ダイアログ内）
+
+```
+┌─ Wonder Linko 設定 ─────────────────────────┐
+│  …                                          │
+│  機能 (任意でON)                            │
+│  ☐ 自分の顔を登録                           │
+│                                             │
+│  [ 自分の顔を登録… ]  ← face_registry_self  │
+│                         が ON のとき有効    │
+│  …                                          │
+│  [保存]  [キャンセル]                       │
+└─────────────────────────────────────────────┘
+```
+
+- ボタン押下で `FaceSelfRegisterDialog` を開く
+- 事前に `GET self_register/status` を呼び、`enabled=false` なら  
+  「管理者がセルフ登録を有効にしていません」と表示して終了
+
+---
+
+### 画面 1: 説明 + 同意
+
+```
+┌─ 自分の顔を登録 ────────────────────────────┐
+│                                             │
+│  入退室・執務室モードなどで使う顔データを     │
+│  登録します。                                 │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │ （consent_text_ja をスクロール表示）  │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ☐ 上記に同意して登録を続ける               │
+│                                             │
+│  撮影は連写3枚です。照合データは最大5件。     │
+│                                             │
+│              [キャンセル]  [次へ →]         │
+│                           （同意ON時のみ）   │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+### 画面 2: メール入力
+
+```
+┌─ 本人確認（1/2）────────────────────────────┐
+│                                             │
+│  社内名簿に登録されているメールアドレスを     │
+│  入力してください。確認コードを送信します。   │
+│                                             │
+│  メールアドレス                              │
+│  ┌─────────────────────────────────────┐   │
+│  │ tanaka@example.com                    │   │
+│  └─────────────────────────────────────┘   │
+│  ※ Board ログイン済みならメールをプリフィル  │
+│                                             │
+│  ステータス: （空）                          │
+│                                             │
+│              [← 戻る]  [コードを送信]        │
+└─────────────────────────────────────────────┘
+```
+
+- `POST start` 成功後、画面 3 へ
+- エラー時も「送信しました」系メッセージを優先（列挙対策と整合）
+
+---
+
+### 画面 3: OTP 入力
+
+```
+┌─ 本人確認（2/2）────────────────────────────┐
+│                                             │
+│  t***@example.com に送信した6桁のコードを     │
+│  入力してください。                           │
+│                                             │
+│  確認コード                                  │
+│  ┌─────────────────────────────────────┐   │
+│  │  ● ● ● ● ● ●                        │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  残り時間: 9:42                              │
+│                                             │
+│  [コードを再送信]                            │
+│                                             │
+│              [← 戻る]  [確認]               │
+└─────────────────────────────────────────────┘
+```
+
+- `POST verify` 成功 → `self_register_token` / `person_id` / `person_name` を保持 → 画面 4 へ
+- 失敗: 「コードが正しくありません」（試行残数があれば表示）
+
+---
+
+### 画面 4: 撮影（既存 `FaceCaptureDialog` をそのまま使用）
+
+```
+┌─ 顔を撮影 — 田中 太郎（連写3枚）────────────┐
+│  「撮影して登録」で自動連写3枚します。        │
+│  各枚の前にカウントダウンがあります。       │
+│ ┌─────────────────────────────────────┐    │
+│ │         （カメラプレビュー）          │    │
+│ └─────────────────────────────────────┘    │
+│  少しだけ左を向いてください … 2              │
+│                                             │
+│ [撮影して登録] [画像ファイルを選択] [キャンセル]│
+└─────────────────────────────────────────────┘
+```
+
+- `burst_count=3`、`on_captured` → `upload_faces_self_serial`
+- ファイル選択は **1枚のみ**（管理者経路と同様）。眼鏡プロンプトは3枚バースト成功時のみ
+- 完了メッセージは管理者と同型（`○○の顔を3枚登録しました` / 部分成功）
+
+---
+
+### 画面 5: 眼鏡追加（既存 messagebox）
+
+```
+┌─ 追加撮影 ─────────────────────────────────┐
+│  眼鏡をかけて撮影した場合、外した状態でもう   │
+│  1枚追加すると認識率が上がります。           │
+│  追加撮影しますか？                          │
+│                                             │
+│              [いいえ]    [はい]              │
+└─────────────────────────────────────────────┘
+```
+
+「はい」→ `FaceCaptureDialog(burst_count=1)` を再表示（トークンは同一セッション内で有効）
+
+---
+
+### 画面 6: 完了
+
+```
+┌─ 登録完了 ─────────────────────────────────┐
+│                                             │
+│  田中 太郎 さんの顔を登録しました。          │
+│  照合データは管理者画面で N/5 と確認できます。│
+│                                             │
+│                        [閉じる]             │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## 実装タスク一覧
+
+### linko-system
+
+| # | タスク |
+| --- | -------- |
+| L1 | `business_settings` に `self_face_registration` 追加 + 正規化 |
+| L2 | `/admin` 業務設定 UI（有効化・同意文・OTP 設定） |
+| L3 | OTP チャレンジストア（メモリ or Redis。単一インスタンスならメモリで可） |
+| L4 | OTP メール送信（SMTP 設定 or 既存基盤） |
+| L5 | `GET /self_register/status` |
+| L6 | `POST /self_register/start`（列挙対策・レート制限） |
+| L7 | `POST /self_register/verify` + トークン発行 |
+| L8 | `PUT ?self_register=1` 分岐 + ヘッダ検証 |
+| L9 | 監査ログ |
+| L10 | 単体テスト（トークン不一致・期限切れ・staff_only・IP 拒否） |
+
+### wl_desktop_app
+
+| # | タスク |
+| --- | -------- |
+| D1 | `features.face_registry_self` + 設定 UI |
+| D2 | `face_registry_self_client.py` |
+| D3 | `face_registry_self_dialog.py`（画面 1〜3, 6） |
+| D4 | 撮影・アップロード・眼鏡プロンプト接続（`FaceCaptureDialog` 再利用） |
+| D5 | Board ログイン済みメールのプリフィル（`board_system` 経由の email が取れなければ手入力のみ） |
+| D6 | `version.py` bump（例: v3.8.0） |
+| D7 | 手動受け入れテスト（下記） |
+
+---
+
+## やらないこと（Phase 1 スコープ外）
+
+- 音声セルフ登録
+- Web `/self-register` ページ
+- Board System Google OAuth による OTP 省略
+- エントランス `ReceptionFloatActions` の顔登録スタブ実装
+- 管理者招待リンク方式（Phase 1b 候補として別指示書可）
+- クライアント側の顔検出品質チェック（ガイダンス文言のみ）
+- 社員の新規名簿作成（セルフ登録は **既存 person 必須**。未登録者は管理者が Workspace 同期 or `/manager` で追加）
+
+---
+
+## 受け入れ基準
+
+1. **機能 OFF** 時、設定のボタンまたはサーバ応答で「利用不可」と分かる
+2. admin_token **なし**の社員 PC から、メール OTP 後に連写 **3枚** 登録でき、`/manager` で該当者が「照合データ 3/5」になる
+3. 眼鏡追加で **4/5** まで増える
+4. **他人の person_id** に PUT できない（トークン改ざんで 403）
+5. **未登録メール** で start しても、攻撃者にメール存在が漏れない（応答は常に同形）
+6. 社外 IP からは start/verify/PUT が拒否される
+7. 管理者経路（`face_registry_manage` + admin_token）は **従来どおり** 動作する
+8. 既に5件の社員が追加してもエラーにならず FIFO で頭打ち
+
+---
+
+## テスト観点（手動）
+
+| # | 手順 | 期待結果 |
+| --- | ------ | ---------- |
+| T1 | フラグ OFF でボタン | 案内メッセージで終了 |
+| T2 | 名簿未登録メールで start | 200 同形、OTP は届かない |
+| T3 | 正しいメール + OTP | verify 成功、撮影へ |
+| T4 | 誤 OTP 3回 | 429/403、再 start が必要 |
+| T5 | 連写3枚 | 3/5 表示 |
+| T6 | 眼鏡追加1枚 | 4/5 |
+| T7 | トークン期限切れ後に PUT | 401、再 verify を促す |
+| T8 | 管理者が同社員を追加撮影 | 従来 admin 経路で問題なし |
+
+---
+
+## 参考: 関連ファイル
+
+### linko-system（新規・変更）
+
+- `src/webapp/routes/api_face.py` — エンドポイント追加・PUT 分岐
+- `src/webapp/services/business_hours_service.py` — settings 正規化
+- `src/webapp/static/js/admin-business-settings.js` — admin UI
+- `src/webapp/services/auth.py` — `_ip_allowed` 流用
+- `src/webapp/face_registry_storage.py` — `get_person_by_email`（既存）
+
+### wl_desktop_app（新規・変更）
+
+- `face_registry_self_client.py` — **新規**
+- `face_registry_self_dialog.py` — **新規**
+- `face_registry_admin_dialog.py` — `FaceCaptureDialog`（再利用）
+- `face_registry_client.py` — admin 専用（変更なし）
+- `settings_dialog.py` / `config_loader.py`
+- `webcam_capture.py` — 変更なし
+
+### 既存ドキュメント
+
+- `docs/指示書_顔複数登録対応.md` — 撮影 UX・PUT 挙動の前提
+
+---
+
+## バージョン・リリース
+
+- linko-system と wl_desktop_app は **セットでデプロイ**（API 先行または同時）
+- デスクトップ: `version.py` を Phase 1 完了時に bump（例: **v3.8.0**）
+- 運用: `/admin` で `self_face_registration.enabled` を ON にしてから、各 PC で `face_registry_self` を ON
+</file>
+
+<file path="docs/指示書_顔複数登録対応.md">
+# 指示書: 顔登録の複数枚対応（連写3枚＋眼鏡あり/なし）
+
+作成: 2026-06-12 / 対象リポジトリ: wl_desktop_app / バックエンド側（linko-system）は対応済み
+
+## 背景・目的
+
+顔認識バックエンド（linko-system）は、登録APIを呼ぶたびに照合用データ（embedding）を
+**1人あたり最大5件まで蓄積**し、照合は「最も似ている1件」とのベストマッチで行う。
+角度・照明・眼鏡あり/なしのバリエーションを登録するほど認識率が上がる。
+
+現在のデスクトップアプリは **1回の操作で1枚しか登録しない**ため、この恩恵を受けられて
+いない。本対応で「撮影1回の操作で自動連写3枚＋眼鏡使用者は外してもう1枚」を登録できる
+ようにする。**バックエンドAPIの変更は不要**（既存APIを複数回呼ぶだけ）。
+
+## バックエンドAPI仕様（変更不要・このまま使う）
+
+ベース: `{base}/api/face_registry`（`face_registry_client.py` の `_api_root` / `_admin_headers` を流用）
+
+| API | 挙動 |
+| --- | --- |
+| `PUT /api/face_registry/<person_id>` body `{"faceData": "<data URL>"}` | **呼ぶたびに** embedding を追記（最大5件、超えたら古い順に削除=FIFO）。表示用写真は最新に上書きされ、旧写真は `face_gallery` に履歴退避（最大20件） |
+| `GET /api/face_registry` | `persons[]` に `face_embeddings_count` / `face_embeddings_v2_count` / `face_gallery_count` を含む。トップレベルに `embeddings_key`（現エンジンの照合キー）。`embeddings_key == "face_embeddings_v2"` なら `face_embeddings_v2_count` を表示に使う（2026-06-12 追加済み） |
+| `GET /api/face_registry/<person_id>` | 上記サマリに加え `faceData`（現在の写真 data URL）と `face_gallery: [{dataUrl, ts}]`（履歴） |
+
+注意: **顔が写っていない画像を PUT してもサーバは 200 を返す**（embedding は保存されず
+サーバログに警告が出るだけ）。クライアントでの検知はできないため、撮影ガイダンスで
+「顔を枠の中央に」と誘導する（後述）。
+
+## 実装タスク
+
+### 1. `FaceCaptureDialog`（face_registry_admin_dialog.py）を連写対応にする
+
+- 「撮影して登録」ボタン1回で **3枚を自動連写**する（間隔 0.8〜1.0 秒）。
+- 連写中はステータスラベルでガイダンスを出す:
+  1枚目「正面を向いてください」→ 2枚目「少しだけ左を向いてください」→
+  3枚目「少しだけ右を向いてください」。各撮影前に短いカウントダウン（例: ラベルに 3,2,1）。
+- 実装は `webcam_capture.capture_jpeg_data_url(self._cap)` を3回呼ぶだけでよい
+  （`after()` でスケジュールし、UIスレッドをブロックしない）。
+- `on_captured` コールバックのシグネチャを `Callable[[str], None]` →
+  `Callable[[list[str]], None]`（data URL のリスト）に変更する。
+  ファイル選択（`_on_pick_file`）経路は従来どおり1枚（リスト1件）でよい。
+
+### 2. アップロード処理（`_open_capture` 内 `_upload`）を複数枚対応にする
+
+- 受け取った data URL リストを**直列で** `face_registry_client.update_face()` に渡す
+  （並列不要。1枚失敗したら同じ画像を1回だけリトライ、それでも失敗なら中断）。
+- 完了メッセージは部分成功が分かる形にする:
+  - 全成功: 「○○さんの顔を3枚登録しました。」
+  - 部分成功: 「2/3枚を登録しました（1枚は通信エラー）。」
+- 登録後は一覧を再読込（既存の `_reload_list`）。
+
+### 3. 眼鏡あり/なしの追加登録を促す
+
+- 3枚の登録完了後に確認ダイアログ:
+  「眼鏡をかけて撮影した場合、外した状態でもう1枚追加すると認識率が上がります。追加撮影しますか？」
+  （眼鏡なしで撮った人には不要な文言だが、判定はできないので一律でよい。
+  「いいえ」で終了、「はい」で `FaceCaptureDialog` を**1枚モード**で再度開き、追加1枚を PUT）。
+
+### 4. 一覧に「照合データ N/5」を表示する
+
+- `GET /api/face_registry` のレスポンスから `embeddings_key` を読み、
+  `face_embeddings_v2` なら各 person の `face_embeddings_v2_count`、
+  それ以外は `face_embeddings_count` を採用する。
+- 各社員行の表示を「顔登録済み」→「顔登録済み（照合データ N/5）」に変更。
+- ボタン文言「顔を変更」→「**顔を追加**」に変更（蓄積される動作と一致させる）。
+  ツールチップまたは説明文: 「撮影するたびに照合データが追加されます（最大5件。
+  古いものから入れ替わります）。表示写真は最新のものになります。」
+
+### 5. 「顔を確認」を履歴込みの一覧表示にする
+
+- 現状は `fetch_face_image_bytes()` で現在の1枚のみ表示。
+- `GET /api/face_registry/<id>` を呼び、`faceData`（現在）＋ `face_gallery[].dataUrl`（履歴）
+  をサムネイル一覧で表示する（ラベル: 「現在」「履歴 1」「履歴 2」…）。
+  タイトルに「登録画像（M枚）・照合データ N/5」を出す。
+- 工数を抑えたい場合の最低ライン: 現在の1枚表示のまま、タイトルに
+  「照合データ N/5・履歴M枚」の注記を追加するだけでも可。
+
+### 6. 社員自身のセルフ登録経路も同じ挙動にする
+
+- セルフ登録（社員が自分の顔を登録するフロー）が `FaceCaptureDialog` / `_upload` と
+  同じ経路を通っているなら、上記1〜3で自動的に複数枚対応になる。
+  別実装になっている場合は同じ「連写3枚＋眼鏡追加」仕様に合わせること。
+
+## やらないこと（スコープ外）
+
+- バックエンドAPIの変更・新設（不要）
+- クライアント側での顔検出による品質チェック（OpenCV等の追加依存は入れない。
+  ガイダンス文言での誘導に留める）
+- 5件を超えた場合の手動管理UI（FIFOで自動入れ替えに任せる）
+
+## 受け入れ基準
+
+1. 撮影操作1回で3枚が登録され、linko の `/manager` 画面で該当社員が
+   「照合データ 3/5」と表示される（バックエンド側は対応済み）
+2. 眼鏡追加撮影をすると 4/5 になる
+3. 既に5件登録済みの社員が追加しても5件で頭打ちになり、エラーにならない
+4. 通信エラーで途中失敗した場合、何枚まで登録できたかがメッセージで分かる
+5. ファイル選択（アップロード）経路は従来どおり1枚で動作する
+
+## 参考: 関連ファイル
+
+- `face_registry_admin_dialog.py` — `FaceCaptureDialog`（撮影UI）、`_open_capture`/`_upload`（登録処理）、一覧描画
+- `face_registry_client.py` — `update_face()`（PUT）、`list_persons()`、`fetch_face_image_bytes()`
+- `webcam_capture.py` — `capture_jpeg_data_url()`（1フレームJPEG化。変更不要）
 </file>
 
 <file path="docs/通知設定をリセットする.ps1">
@@ -1539,14 +3389,15 @@ _icon = None
 _miniport_window = None
 _miniport_visible = True
 
-# 単一インスタンス制御 (課題4: ファイルロック方式への変更)
+# 単一インスタンス制御（Windows は OS 名前付き Mutex、その他はファイルロック）
 _SINGLE_INSTANCE_FD = None
+_SINGLE_INSTANCE_MUTEX = None
 _SHOW_REQUEST_STOP = False
 
 
 def cleanup_resources():
     """リソース（トレイアイコン・ミニポートウィンドウ・ファイルロック）を確実に破棄する"""
-    global _icon, _miniport_window, _SINGLE_INSTANCE_FD
+    global _icon, _miniport_window, _SINGLE_INSTANCE_FD, _SINGLE_INSTANCE_MUTEX
     if _icon is not None:
         try:
             _icon.stop()
@@ -1568,6 +3419,14 @@ def cleanup_resources():
             _SINGLE_INSTANCE_FD = None
         except Exception:
             pass
+    if _SINGLE_INSTANCE_MUTEX is not None:
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.CloseHandle(_SINGLE_INSTANCE_MUTEX)
+        except Exception:
+            pass
+        _SINGLE_INSTANCE_MUTEX = None
 
 
 def on_closing():
@@ -1599,31 +3458,33 @@ def _show_request_path() -> str:
 
 
 def _acquire_single_instance_lock() -> bool:
-    """【課題4対応】msvcrt ファイルロックを用いた安全・確実な単一インスタンス制御。
-    ネットワーク遮断やファイアウォール設定の影響を受けず、クラッシュ時の古いファイルも上書き取得する。
+    """OSが終了時に解放するロックで単一インスタンスを保証する。
+    Windows は名前付き Mutex を使い、クラッシュ後にロックファイルが残っても
+    次回起動を妨げない。
     """
-    global _SINGLE_INSTANCE_FD
+    global _SINGLE_INSTANCE_FD, _SINGLE_INSTANCE_MUTEX
 
     lock_dir = _show_request_dir()
     lock_file = os.path.join(lock_dir, "WonderLinko.lock")
 
     if sys.platform == "win32":
-        import msvcrt
-
         try:
-            # ロックファイルを開く（存在しなければ作成、存在すれば上書き用に開く）
-            fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
-            # 先頭1バイトを非ブロック排他ロック
-            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            _SINGLE_INSTANCE_FD = fd
+            # ファイルロックはアプリ更新・ネットワークドライブ等で不安定になることが
+            # あるため、OS がプロセス終了時に必ず解放する名前付き Mutex を使う。
+            import ctypes
+
+            mutex_name = "Local\\WonderLinko.Desktop.SingleInstance"
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle = kernel32.CreateMutexW(None, False, mutex_name)
+            if not handle:
+                return False
+            ERROR_ALREADY_EXISTS = 183
+            if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return False
+            _SINGLE_INSTANCE_MUTEX = handle
             return True
-        except (OSError, IOError):
-            # 他のプロセスがロック中の場合
-            if "fd" in locals():
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
+        except Exception:
             return False
     else:
         # 非Windows環境でのフォールバック (fcntl)
@@ -2295,6 +4156,7 @@ def main():
             on_notifications_toggle=_miniport_on_notifications_toggle,
             get_notifications_enabled=_miniport_get_notifications_enabled,
         )
+        notifications.set_ui_dispatch(lambda callback: _miniport_window.after(0, callback))
         _miniport_visible = True
 
         try:
@@ -4269,6 +6131,18 @@ def load_config():
     cfg["linko_admin_token"] = (
         os.environ.get("LINKO_ADMIN_TOKEN", cfg.get("linko_admin_token", "")) or ""
     ).strip()
+
+    # --- マイグレーション処理：アップデート時の linko_server_url の自動修正 ---
+    needs_save = False
+
+    if cfg.get("linko_server_url") == "https://linko-board.internal.wonder-link.com":
+        cfg["linko_server_url"] = "https://linkosys.internal.wonder-link.com"
+        needs_save = True
+
+    if needs_save:
+        save_config(cfg)
+    # ----------------------------------------------------------------
+
     try:
         from security import sanitize_config_urls
 
@@ -7503,6 +9377,18 @@ def _sticky_note_api_url():
     return f"{base}/api/sticky_notes"
 
 
+def _personal_sticky_note_api_url(cfg):
+    """ログイン済みユーザー用の Board System 投稿 API を返す。"""
+    base = (get_effective_board_system_url(cfg) or "").rstrip("/")
+    owner_id = cfg.get("board_system_personal_id")
+    if not base or owner_id is None:
+        return None, None
+    try:
+        return f"{base}/sticky_notes/create_personal", int(owner_id)
+    except (TypeError, ValueError):
+        return None, None
+
+
 def _board_id():
     """送信先ボード ID（例: wl）。"""
     cfg = load_config()
@@ -7562,14 +9448,28 @@ def _prompt_email_and_resolve_personal(parent=None):
         return None
 
 
-def _send_content(text: str) -> Tuple[bool, str]:
-    """付箋ボード API (POST /api/sticky_notes) に boardId + note 形式で送信。"""
-    text = (text or "").strip()
-    if not text:
-        return False, "入力が空です"
+def _post_personal_note(url: str, owner_id: int, text: str, cfg: dict) -> Tuple[bool, str]:
+    """Board System のパーソナルレーンへ投稿する。"""
+    try:
+        from security import assert_http_url
+
+        assert_http_url(url, cfg, purpose="board_system_personal_post")
+        response = requests.post(
+            url,
+            json={"owner_id": owner_id, "content": text, "lane": "TODAY"},
+            timeout=10,
+        )
+        if response.status_code in (200, 201):
+            return True, "パーソナルボードに投稿しました"
+        return False, f"パーソナル投稿に失敗しました ({response.status_code})"
+    except Exception as exc:
+        return False, f"パーソナル投稿に失敗しました: {str(exc)[:80]}"
+
+
+def _post_legacy_note(text: str, cfg: dict) -> Tuple[bool, str]:
+    """ログイン前の互換動作として、従来の付箋ボードへ投稿する。"""
     url = _sticky_note_api_url()
     board_id = _board_id()
-    cfg = load_config()
     author = (cfg.get("display_name") or "").strip() or "Mini-Port"
     note_id = f"miniport-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
     note = {
@@ -7589,17 +9489,30 @@ def _send_content(text: str) -> Tuple[bool, str]:
     except ValueError as e:
         return False, f"送信先が許可されていません: {str(e)[:80]}"
     try:
-        r = requests.post(url, json={"boardId": board_id, "note": note}, timeout=10)
-        if r.status_code in (200, 201):
+        response = requests.post(url, json={"boardId": board_id, "note": note}, timeout=10)
+        if response.status_code in (200, 201):
             return True, "送信しました"
         try:
-            body = (r.text or "")[:120].strip()
+            body = (response.text or "")[:120].strip()
             detail = f" {body}" if body else ""
         except Exception:
             detail = ""
-        return False, f"エラー: {r.status_code}{detail}"
+        return False, f"エラー: {response.status_code}{detail}"
     except requests.exceptions.RequestException as e:
         return False, f"接続エラー: {str(e)[:80]}"
+
+
+def _send_content(text: str) -> Tuple[bool, str]:
+    """ログイン済みなら Personal、それ以外は従来の付箋ボードへ投稿する。"""
+    text = (text or "").strip()
+    if not text:
+        return False, "入力が空です"
+
+    cfg = load_config()
+    personal_url, owner_id = _personal_sticky_note_api_url(cfg)
+    if personal_url:
+        return _post_personal_note(personal_url, owner_id, text, cfg)
+    return _post_legacy_note(text, cfg)
 
 
 def _linko_icon_path() -> str:
@@ -8648,6 +10561,13 @@ import sys
 
 _last_notification_url = None
 _fallback_toasts = []
+_ui_dispatch = None
+
+
+def set_ui_dispatch(dispatch) -> None:
+    """Tk のメインスレッドでフォールバック通知を作るためのディスパッチャー。"""
+    global _ui_dispatch
+    _ui_dispatch = dispatch if callable(dispatch) else None
 
 
 def are_enabled(cfg=None) -> bool:
@@ -8826,6 +10746,15 @@ def _close_fallback_toast(win):
         _fallback_toasts.remove(win)
 
 
+def _schedule_fallback_toast(title: str, message: str, url: str | None, duration_sec: int) -> None:
+    """通知元スレッドにかかわらず、Tk のUIスレッドで代替トーストを表示する。"""
+    show = lambda: _show_fallback_toast(title, message, url, duration_sec)
+    if _ui_dispatch is not None:
+        _ui_dispatch(show)
+        return
+    show()
+
+
 def show_toast(
     title: str,
     message: str,
@@ -8880,8 +10809,7 @@ def show_toast(
             except Exception:
                 print(_err_msg, flush=True)
 
-            # winotify 失敗時は自前UIのフォールバック通知を呼ぶ
-            _show_fallback_toast(title, message, url, duration_sec)
+            _schedule_fallback_toast(title, message, url, duration_sec)
             return
 
     print(f"[Notify] {title}: {message}")
@@ -9033,6 +10961,495 @@ def start_postit_poll(config_getter, on_new_notes):
 
     t = threading.Thread(target=poll_loop, daemon=True)
     t.start()
+</file>
+
+<file path="README.md">
+# Wonder Linko Desktop App (DT_APP)
+
+社員 PC に常駐する「Personal Linko Agent」。**タスクトレイ常駐**＋起動時に **ミニポート**（付箋クイック投稿）を表示し、付箋ボード・Board System パーソナル・linko-system と連携する。
+
+来客通知・リン子アバター・ブレスト・タスク/カレンダーリマインド・顔/音声セルフ登録などは **`features.*` で任意に ON**（機能フラグは既定すべて OFF。`brainstorm_voice` のみ既定 ON）。
+
+> **バージョン:** `version.py` の `__version__` で一元管理（現行 **v3.9.8**）。MSI ビルドと自動更新チェックがこの値を参照する。
+
+---
+
+## 開発環境と利用環境
+
+| 区分 | 環境 |
+| ------ | ------ |
+| **開発** | Linux または Windows。`pip install -r requirements.txt` は Linux でそのまま実行可能（Windows 専用パッケージは自動スキップ）。**MSI ビルドは Windows のみ**。 |
+| **配布先** | **Windows 10/11** 推奨（トースト・MSI・スタートアップ登録・音声再生は Windows のみ）。 |
+| **Mac / Linux** | トレイ・ミニポート・API 連携は動作するが、トースト・音声・自動更新・スタートアップは無効またはフォールバック。 |
+| **モバイル** | デスクトップアプリは使わず、Board System のパーソナル等をブラウザで開く。 |
+
+---
+
+## アーキテクチャ概要
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  app.py（メインスレッド: MiniPortWindow.mainloop）              │
+│  ├─ mini_port.py      フローティング UI・付箋投稿・ホットキー   │
+│  ├─ settings_dialog.py  設定・機能フラグ・リマインド時刻        │
+│  ├─ chat_panel.py     ブレスト（SSE）・資料添付・カレンダー登録  │
+│  └─ *\_dialog.py      タスクリマインド / 顔・音声登録           │
+├─────────────────────────────────────────────────────────────┤
+│  pystray トレイ（別スレッド）                                   │
+├─────────────────────────────────────────────────────────────┤
+│  バックグラウンド（daemon スレッド）                            │
+│  ├─ postit_poll.py           付箋新着監視                       │
+│  ├─ task_remind_client.py    Today タスクリマインド             │
+│  ├─ calendar_notify_client.py  カレンダーリマインド             │
+│  ├─ visitor_notify_client.py   来客 Socket.IO                 │
+│  └─ update_checker.py        起動時更新チェック（1 回）         │
+└─────────────────────────────────────────────────────────────┘
+         │                    │                    │
+         ▼                    ▼                    ▼
+   付箋ボード API      Board System API      linko-system
+   (sticky_notes)       (/api/bs/...)         (Socket.IO / TTS / 顔音声)
+```
+
+### 主要モジュール
+
+| モジュール | 役割 |
+| ----------- | ------ |
+| `app.py` | 起動シーケンス、単一インスタンス、トレイ、各ポーリング起動 |
+| `config_loader.py` | `config.json` 読み書き、環境変数マージ、`features` ヘルパ |
+| `settings_dialog.py` | 設定ダイアログ（完全自動保存・即時反映、各機能フラグ ON/OFF、表示名編集等） |
+| `mini_port.py` | ミニポート UI、付箋 POST、パーソナルボードを開く |
+| `chat_panel.py` | リン子とのブレストチャット（SSE ストリーミング、Ctrl+Enter 送信、音声/添付） |
+| `notifications.py` | Windows トースト、最後のお知らせ URL 保持 |
+| `linko_avatar.py` / `speech_bubble.py` | 2D アバター（11 ポーズ・口パク・アイドル） |
+| `remind_notify.py` | タスク/カレンダー通知のトースト・吹き出し・TTS 統一配信 |
+| `audio_player.py` | WAV 再生、`linko_server_url/api/v2/tts` による読み上げ |
+| `security.py` | 外向き URL ホワイトリスト、`webbrowser.open` ガード |
+| `update_checker.py` / `startup.py` | MSI 自動更新、Windows スタートアップ登録（OSタスクマネージャー同期・自動登録） |
+
+---
+
+## 起動フロー
+
+```mermaid
+flowchart TD
+    A[app.py 起動] --> B{--after-update-wait?}
+    B -->|Yes| C[インストーラ終了待ち → 自己再起動]
+    B -->|No| D{単一インスタンスソケット}
+    D -->|既存あり| E[show_request → 前面化依頼 → 終了]
+    D -->|取得成功| F[load_config]
+    F --> G[表示名未設定 → 入力ダイアログ]
+    G --> H[Board 未ログイン → メールログイン促し（任意）]
+    H --> I[付箋ポーリング開始]
+    I --> I2[スタートアップ同期 _sync_startup_setting]
+    I2 --> J[MiniPortWindow 表示]
+    J --> K[トレイスレッド開始]
+    K --> L[タスク/カレンダー/来客ポーリング開始]
+    L --> M[更新チェック（バックグラウンド・UI なし）]
+    M --> N[mainloop]
+```
+
+**スタートアップ登録（自動起動・改善計画18）:** スタートアップフォルダ（`shell:startup`）へのショートカット配置により行います。既定は ON で、アプリ初回起動時に自動登録されます。タスクマネージャーでの無効化状態（`StartupApproved`）と双方向で安全に同期され、ユーザーがOS側で無効化した場合はアプリ側が勝手に再登録しないセキュリティ設計を採用しています。
+
+**設定画面（完全自動保存・改善計画18）:** 設定ダイアログの「保存」「キャンセル」ボタンは廃止され、チェックボックスや選択肢の変更、およびテキスト入力フィールドからのフォーカスアウト／Enterキー押下により即座に設定ファイルへ反映・保存されます。
+
+**単一インスタンス:** 2 回目以降の起動は新プロセスを起動せず、ローカルソケット排他制御と `show_request` により既存インスタンスのミニポートを前面化する。
+
+---
+
+## 常時動作（設定不要・既定 ON）
+
+| 機能 | 操作 / トリガー | 処理 | 連携先 |
+| ------ | ---------------- | ------ | -------- |
+| **ミニポート** | 起動時に表示。✕ / 右クリックで非表示 | 付箋テキスト入力・投稿 | `POST …/api/sticky_notes` |
+| **付箋投稿** | 「投稿」または Ctrl+Enter | `display_name` 付きで POST | `mini_port_api_url` から base 導出 |
+| **パーソナルボード** | 「ボード」クリック | ブラウザで `/boards/personal/{id}` を開く | 未ログイン時 `GET …/users/by_email` |
+| **付箋新着通知** | 60 秒間隔ポーリング（`0` で無効） | 件数/更新時刻変化 → トースト | `GET …/api/boards/{id}/summary` |
+| **タスクトレイ** | 左クリック「開く」 | `tray_click_action` に従い URL を開く | 付箋 / パーソナル / 最後のお知らせ |
+| **通知 ON/OFF** | ミニポート 🔔 / 右クリック | `notifications_enabled` をトグル | ローカル config のみ |
+| **設定** | トレイ「設定…」/ ミニポート ⚙ | `open_settings_dialog()`（自動保存・即時反映） | — |
+| **前面化** | トレイ「ミニポートを表示」/ 重複起動時 | ミニポートを前面表示（※誤検知防止のためグローバルホットキーは廃止） | — |
+| **表示名** | 初回起動時 | 付箋投稿者名を入力・保存 | `display_name` |
+| **Board ログイン** | 初回起動時（任意） | メール → personal_id 保存 | `board_system_personal_id` 等 |
+| **PC 起動時自動起動** | 既定 ON（初回自動登録・OS同期） | スタートアップフォルダ（ショートカット・OS設定同期） | Windows のみ |
+| **自動更新チェック** | 起動時 1 回 | 更新あっても **ダイアログは出さない**（ログのみ） | `update_check_url` |
+
+### トレイメニュー（最小構成）
+
+| メニュー | 動作 |
+| ---------- | ------ |
+| **開く**（デフォルト） | `tray_click_action`: 付箋ボード / パーソナル / 最後のお知らせ |
+| **設定…** | 設定ダイアログ |
+| **ミニポートを表示** | 非表示中のミニポートを再表示 |
+| **終了** | アプリ終了 |
+
+> 通知 ON/OFF・アップデート確認・Board ログイン・機能フラグは **ミニポート / 設定画面** に集約済み（旧トレイメニュー項目は削除）。
+
+### ミニポート右クリックメニュー
+
+通知 ON/OFF・設定…・ミニポートを非表示
+
+---
+
+## 任意機能（`features.*`）
+
+すべて設定ダイアログで ON/OFF。**既定は OFF**（`brainstorm_voice` のみ **ON**）。
+
+| キー | 既定 | 有効時の動作 | 前提 |
+| ------ | ------ | ------------- | ------ |
+| `linko_avatar` | OFF | ミニポートをマスコットレイアウト（264×224）。アバター・吹き出し・口パク | — |
+| `visitor_notify` | OFF | linko-system へ Socket.IO 接続、`visitor_arrived` → トースト | `linko_server_url`、社内 LAN |
+| `visitor_notify_sound` | OFF | 来客時に受付と同じ WAV を再生 | `visitor_notify` ON、Windows |
+| `brainstorm` | OFF | アバタークリック → ブレストチャットパネル（SSE） | `board_system_url`、Board ログイン推奨 |
+| `brainstorm_voice` | **ON** | ブレスト応答を文単位 TTS 読み上げ | `brainstorm` OFF なら実質無効 |
+| `task_remind` | OFF | Today タスクを定時リマインド | `board_system_personal_id` |
+| `calendar_notify` | OFF | Google 連携済みユーザーの予定を N 分前に通知 | 同上 |
+| `calendar_create` | OFF | ブレスト中に予定登録を提案 → 確認 UI → Google カレンダー | 同上 + Google 連携 |
+| `remind_voice` | OFF | タスク/カレンダーリマインドを TTS 読み上げ | `linko_server_url` |
+| `face_registry_manage` | OFF | 管理者向け社員・顔・音声名簿管理 | `linko_admin_token` |
+| `face_registry_self` | OFF | メール OTP → 顔 3 枚登録 | linko 名簿にメール登録済み |
+| `voice_registry_self` | OFF | 同一 OTP → 声紋 3 回登録 | 顔登録と共通 OTP |
+| `taskbar_mode` | OFF | **設定 UI にのみ存在（コード未参照・未実装）** | — |
+
+`visitor_notify` の ON/OFF 変更は設定保存時に Socket.IO 接続を即時切替する。
+
+---
+
+## 機能別フロー
+
+### 付箋新着通知
+
+```
+postit_poll（max(10, postit_poll_interval_sec) 秒）
+  → GET {postit_board_url}/api/boards/{id}/summary
+  → notesCount / lastNoteAt が変化
+  → トースト「新しい付箋が投稿されました」（クリックでボード URL）
+```
+
+監視対象: `postit_board_ids`（未設定時は `postit_board_id` のみ）。
+
+### 来客通知（`visitor_notify`）
+
+```
+Socket.IO connect(linko_server_url)
+  → event "visitor_arrived" { title, message, click_url, audio_url }
+  → トースト（クリックで click_url、未設定時 /entrance）
+  → [visitor_notify_sound] play_linko_audio(audio_url)
+```
+
+接続失敗時は 5→10→20→30 秒のバックオフで再接続。
+
+### タスクリマインド（`task_remind`）
+
+```
+poll 30 秒
+  → JST で active_slot_now（task_remind_times の各時刻 ±15 分）
+  → 平日のみ / 休止日 / 通知 OFF / 未ログイン → スキップ
+  → GET /api/personal/{owner}/task_reminders/pending?slot=
+  → POST .../shown_slot
+  → ダイアログ表示（継続 / 完了 / 相談）
+  → deliver_remind（トースト + remind_voice または linko_avatar 吹き出し）
+  → POST .../ack (continue|done)
+  → [相談 + brainstorm] open_chat_panel_with_task
+```
+
+設定: `task_remind_times`（カンマ区切り複数可）、`task_remind_weekdays_only`、設定画面「今日はタスクリマインドを止める」。
+
+### カレンダーリマインド（`calendar_notify`）
+
+```
+poll 60 秒
+  → calendar_remind_minutes_before_list の各 offset（例 [15, 5]）ごとに
+     GET /api/personal/{owner}/calendar_reminders/pending?minutes_before=
+  → 該当予定を順次トースト表示（複数件は 12 秒間隔）
+  → POST .../calendar_reminders/shown?minutes_before=
+  → deliver_remind
+```
+
+Google API はデスクトップから直接呼ばない。Board System サーバ側で Google 連携。
+
+### ブレスト（`brainstorm`）
+
+```
+アバタークリック → open_chat_panel()
+  → POST /api/bs/brainstorm（SSE ストリーミング）
+  → [calendar_create] payload に calendar_create_enabled
+  → action_proposal → 確認カード → POST .../brainstorm/calendar/confirm|cancel
+  → [brainstorm_voice] POST linko_server_url/api/v2/tts → WAV 再生
+  → PDF/Word/テキスト添付（端末内テキスト抽出）
+  → 「付箋にする」→ mini_port 経由で sticky_notes POST
+```
+
+`brainstorm` OFF 時のアバタークリックは挨拶吹き出し＋口パクのみ。  
+チャットパネル内のメッセージ送信は「送信」ボタンのほか、`Ctrl + Enter` キーに対応しています（入力欄上部に「Ctrl + Enter で送信」のヒントを表示）。
+
+### 顔セルフ登録（`face_registry_self`）
+
+```
+設定 →「自分の顔を登録…」
+  → GET  /api/face_registry/self_register/status
+  → POST /api/face_registry/self_register/start {email}
+  → POST /api/face_registry/self_register/verify {otp}
+  → PUT  /api/face_registry/{person_id}?self_register=1 {faceData} ×3（Web カメラ）
+```
+
+### 音声セルフ登録（`voice_registry_self`）
+
+```
+設定 →「自分の声を登録…」（OTP は顔登録と共通）
+  → GET  /api/face_registry/self_register/voice/challenges
+  → PUT  /api/face_registry/{person_id}/voice {voiceData} ×3（マイク・チャレンジ付き）
+```
+
+### 管理者：社員・顔・音声管理（`face_registry_manage`）
+
+```
+設定 → linko 管理者トークン入力 →「社員・顔・音声の管理を開く…」
+  → linko_server_url/api/face_registry/*（X-Linko-Admin-Token）
+  → POST /api/workspace/directory_sync
+```
+
+---
+
+## バックグラウンド処理一覧
+
+| 処理 | 間隔 / 条件 | モジュール | 有効条件 |
+| ------ | ------------- | ------------ | ---------- |
+| 付箋ポーリング | `max(10, postit_poll_interval_sec)` 秒 | `postit_poll` | 間隔 > 0 |
+| タスクリマインド | 30 秒 | `task_remind_client` | `task_remind` + personal_id + 通知 ON + スロット内 |
+| カレンダーリマインド | 60 秒 | `calendar_notify_client` | `calendar_notify` + personal_id + 通知 ON |
+| 来客 Socket.IO | 常時接続 | `visitor_notify_client` | `visitor_notify` |
+| show_request 監視 | 1 秒 | `app.py` | 常時 |
+| 更新チェック | 起動時 1 回 | `update_checker` | `update_check_url` 設定時 |
+
+---
+
+## 外部連携
+
+### 連携先 URL（本番の目安）
+
+| サービス | URL（例） | 用途 |
+| ---------- | ----------- | ------ |
+| 付箋ボード | `https://wlboardsys.internal.wonder-link.com/board/wl` | ミニポート投稿・トレイ「付箋」 |
+| Board System API | `https://wlboardsys.internal.wonder-link.com/api/bs` | パーソナル・ブレスト・リマインド |
+| Board System フロント | `…/boards/personal/{id}` | パーソナルボード表示 |
+| linko-system | `https://linkosys.internal.wonder-link.com` | 来客 Socket.IO・TTS・顔/音声 API |
+| デスクトップ更新 | `…/api/bs/desktop-app/latest.json` | MSI 自動更新 |
+
+`config_loader.py` の defaults に本番 URL が入っている。開発時は `config.json` または環境変数で上書き。
+
+### Board System API（主要）
+
+| エンドポイント | 用途 |
+| ---------------- | ------ |
+| `GET /users/by_email` | メールログイン |
+| `GET /users/{id}` | メール取得（顔/音声登録プリフィル） |
+| `GET /api/personal/{owner}/task_reminders/pending` | タスクリマインド |
+| `POST …/shown_slot`, `…/shown`, `…/ack` | リマインド状態 |
+| `GET /api/personal/{owner}/calendar_reminders/pending` | カレンダー pending |
+| `POST …/calendar_reminders/shown` | カレンダー表示済み |
+| `POST /brainstorm` | ブレスト SSE |
+| `POST /brainstorm/calendar/confirm\|cancel` | カレンダー予定登録 |
+
+### linko-system API（主要）
+
+| 連携 | 用途 |
+| ------ | ------ |
+| Socket.IO `visitor_arrived` | 来客通知 |
+| `POST /api/v2/tts` | GPT-SoVITS 音声合成 |
+| `/api/face_registry/*` | 顔・音声登録（管理/セルフ） |
+
+---
+
+## 設定（config.json）
+
+設定ファイルの保存先は `%LOCALAPPDATA%\WonderLink\config.json` です（初回起動時に未配置の場合はデフォルト設定または同包雛形から自動生成）。**v3.1.4 以降、MSI に `config.json` はバンドルしない**（上書きインストールで設定が消える事故を防ぐ）。
+
+### 主要キー
+
+| キー | 説明 |
+| ------ | ------ |
+| `board_system_url` | Board System API ベース |
+| `board_system_personal_id` / `board_system_email` | メールログイン後に自動保存 |
+| `mini_port_api_url` | ミニポート投稿先（付箋ボードと同一ホスト） |
+| `linko_server_url` | linko-system（来客・TTS・顔/音声） |
+| `linko_admin_token` | 管理者 API トークン（MSI 同梱しない） |
+| `postit_board_id` / `postit_board_ids` | トレイで開くボード / 新付箋監視対象 |
+| `postit_poll_interval_sec` | 付箋ポーリング間隔（秒、`0` で無効） |
+| `tray_click_action` | `postit` / `personal` / `last_notification` |
+| `notifications_enabled` | アプリ内通知総合スイッチ（OS 通知設定とは別） |
+| `task_remind_times` | タスクリマインド時刻（例: `["13:00","17:00"]`、複数可） |
+| `task_remind_weekdays_only` | 平日のみリマインド |
+| `task_remind_paused_until` | リマインド休止日（`YYYY-MM-DD`、自動更新） |
+| `calendar_remind_minutes_before_list` | カレンダー「何分前」（1〜15、複数可。例: `[15, 5]`） |
+| `calendar_remind_minutes_before` | 後方互換（先頭 1 件） |
+| `update_check_url` | 自動更新 JSON の URL |
+| `update_network_check_url` | 起動時・ポーリング前の到達確認 URL（空なら `update_check_url` 等を自動選択。ping は使わない） |
+| `update_network_check_interval_sec` / `update_network_check_max_wait_sec` | 起動時更新チェック前の到達待ち |
+| `network_unreachable_backoff_sec` | CATO 未接続時、ポーリング再試行までの待ち（秒。既定 30） |
+| `features` | 上表の機能フラグ |
+| `security` | URL 許可リスト（`allowed_host_suffixes` 等） |
+
+### 環境変数
+
+`WLINKO_USER_ID`, `BOARD_SYSTEM_URL`, `LINKO_SERVER_URL`, `LINKO_ADMIN_TOKEN`, `MINI_PORT_API_URL`, `AI_BOARD_URL`, `POSTIT_BOARD_URL`
+
+開発 LAN 例: `WLINKO_EXTRA_ALLOWED_HOSTS=172.16.1.161`, `WLINKO_ALLOW_PRIVATE_IPS=1`
+
+本番テンプレート: `config.production.example.json`
+
+### レガシーキー（config に残ることがあるがコード未参照）
+
+`avatar_visible`, `sound_enabled`, `open_personal_on_start`
+
+---
+
+## セットアップ・起動
+
+**Linux（開発）:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
+
+**Windows:**
+
+```powershell
+cd wl_desktop_app
+.\start_app.ps1
+```
+
+---
+
+## 配布・インストール
+
+社内環境では **MSI 配布を標準** とします。誤検知対策のため、単一exeファイルの配布(`--onefile`)は廃止されました（改善計画16）。
+
+| 方式 | コマンド / 備考 |
+|------|-----------------|
+| **MSI（標準）** | Windows で `.\build_msi.ps1` → `dist\` に `WonderLinko.msi` と `install.bat` などが生成されます。 |
+
+ビルド前に `config.production.example.json` を `config.json` にコピーして本番 URL を確認すること（MSI には同梱されないが、開発ビルドの挙動確認用）。
+
+### 社内PCへのインストール手順（ユーザー向け）
+
+セキュリティソフトの誤検知や SmartScreen の警告を防ぐため、自己署名証明書を用いたインストールを行います（改善計画17）。
+
+1. 配布されたZIPファイルを**すべて展開（解凍）**します。
+2. フォルダ内の `install.bat` をダブルクリックして実行します。
+3. UAC（ユーザーアカウント制御）のプロンプト「このアプリがデバイスに変更を加えることを許可しますか？（Windows コマンド プロセッサ）」が表示されたら「はい」をクリックします。
+4. 自動的に証明書が登録され、MSIのインストールがバックグラウンドで進行します。完了メッセージが出たら終了です。
+
+> **注意:** ダウンロードしたZIPを解凍せずに直接実行するとエラーになります。また、SmartScreenの青い警告画面が出た場合は「詳細情報」→「実行」をクリックするか、ZIPファイルのプロパティを開き「許可する（ブロックの解除）」にチェックを入れてから展開してください。
+
+### 旧バージョンからの移行手順
+
+- **旧MSI版（AppDataインストール版）をご利用の方**:
+  必ず Windows の「設定」→「アプリ」から古い Wonder Linko を手動でアンインストールしてから、新バージョンをインストールしてください（上書き不可）。
+- **旧exe版をご利用の方**:
+  古い `WonderLinko.exe` を手動で削除し、スタートアップに登録している場合はショートカットも削除してください。
+
+---
+
+## 自動更新
+
+### クライアント側
+
+1. **起動時:** `update_check_url` を GET。更新があっても UI は出さない（v3 方針・ログのみ）
+2. **手動:** 設定 →「🔄 アップデート確認」→ 確認 → MSI ダウンロード・サイレントインストール → 自動再起動
+3. **`--after-update-wait=PID`:** 更新バッチ完了後の再起動経路
+
+### リリース側
+
+1. `version.py` の `__version__` を bump
+2. `board-system/backend/desktop_app_releases/latest.json` を同バージョンに更新
+3. Windows: `.\build_msi.ps1` → MSI 生成
+4. 本番サーバへ MSI を scp（例: `WonderLinko_3.9.8.msi`）
+5. **v3.2.3 以降:** `desktop_app_releases/` は bind mount のため **git pull + scp で即反映**（通常 deploy 不要）
+
+```json
+{
+  "version": "3.9.8",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi"
+}
+```
+
+`version` と `url` の MSI ファイル名は一致させること（不一致 → 404 で更新失敗）。
+
+詳細: `docs/v3_リリース手順.md`, `board-system/backend/desktop_app_releases/README.md`
+
+---
+
+## プラットフォーム差分
+
+| 機能 | Windows | Linux / Mac（開発） |
+| ------ | --------- | --------------------- |
+| 配布 | MSI 本番（Program Files） | 開発・検証のみ |
+| 単一インスタンス | ○（127.0.0.1 ソケット排他） | スキップ |
+| トースト | winotify | コンソール出力 |
+| 音声（winsound / TTS） | ○ | スキップ |
+| スタートアップ登録 | ショートカット配置（shell:startup・OS同期） | 常に無効 |
+| MSI 自動更新 | ○ | エラー |
+| Web カメラ / マイク登録 | OpenCV / sounddevice | プラットフォーム依存 |
+| 診断ログ `WonderLinko_diagnostic.txt` | `%LOCALAPPDATA%\WonderLink` | なし |
+
+---
+
+## セキュリティ・誤検知対策（改善計画14〜18対応）
+
+- **ビルド・配布方式の適正化（改善計画16）**: `--onefile` オプションによる自己解凍型バイナリ（ドロッパーとして誤検知されやすい）を廃止し、安全なディレクトリ配置型の MSI 配布へ一本化しました。
+- **自己署名証明書の導入（改善計画17）**: ビルド時にバイナリおよび MSI に自己署名証明書でコード署名を行います。ユーザーには `install.bat` を通じて証明書を Windows に登録させることで、SmartScreen の警告やヒューリスティック検知を回避しています。
+- **低レイヤ Win32 API (`ctypes`) の全廃（改善計画15）**: `ctypes` による `CreateMutexW`, `OpenProcess`, `MessageBoxW` などの低レベル API 呼び出しをコードベースから完全排除し、ソケットバインドによる二重起動防止や Tkinter によるダイアログ表示に移行しました。
+- **キーロガー誤検知対策（グローバルホットキー廃止・改善計画14/15）**: アンチウイルスによるキーロガー類似判定を根本的に防ぐため、グローバルホットキー監視（`pynput` および `RegisterHotKey`）を完全撤廃。ミニポート表示はトレイアイコン操作または重複起動時のシグナル連携（`show_request`）にて行います。
+- **スタートアップ登録の適正化とOS状態の同期（改善計画14/15/18）**: マルウェアの永続化と判定されやすい `winreg` による Run キー直接書き換えは行わず、Windows 標準のスタートアップフォルダ（`shell:startup`）へのショートカット（`.lnk`）配置方式を採用。既定で自動登録しつつ、タスクマネージャーの無効化状態（`StartupApproved`）を検知してアプリ側が勝手に再登録しない安全な同期機構を導入しています。
+- **旧式通知ライブラリの排除**: 古い Win32 API をフックする `win10toast` 系を全廃し、モダンな `winotify` に一本化しました。
+- **Program Files へのインストールとユーザーデータ領域の分離**: インストール先を `[ProgramFilesFolder]` に移行し、書き込み権限が必要な設定ファイル（`config.json`）やログ（`WonderLinko.log`）は `%LOCALAPPDATA%\WonderLink` 配下へ適正に分離しました。
+- **外向き通信制限**: 外向き HTTP は `security.py` のホワイトリストで制限。既定: `*.internal.wonder-link.com` + localhost。
+- **URLオープン検証**: `webbrowser.open` も同様に検証。Board personal_id は数字のみ許可。
+- **開発時の Defender 除外設定案内**:
+  開発環境（特に `build` や `dist` フォルダ配下）で誤判定による一時的なブロックが発生する場合は、Windows セキュリティの「ウイルスと脅威の防止」＞「設定の管理」＞「除外の追加または削除」にて、リポジトリの該当フォルダーを除外対象に追加してください。
+
+### 開発者向け：署名証明書のセットアップ
+
+**初回リリース（MSIビルド）時**には、事前に以下の手順で自己署名証明書の生成とパスワード設定が必要です。
+
+1. **証明書の生成**:
+   `scripts\generate_cert.ps1` を実行します。プロンプトが表示されるので、証明書のエクスポート用パスワード（任意の半角英数字）を入力します。
+   （これにより、`cert/WonderLink_CodeSigning.pfx` と `cert/WonderLink_InternalRoot.cer` が生成されます）
+2. **パスワードの設定**:
+   プロジェクトルートの `.env` ファイルに、1で入力したパスワードを設定します。
+
+   ```env
+   # 証明書のエクスポート用パスワード (build_msi.ps1 の自動署名で使用)
+   CERT_PASSWORD=入力したパスワード
+   ```
+
+3. **ビルドの実行**:
+   以降は `.\build_msi.ps1` を実行するだけで、自動的に証明書とパスワードを読み込んで署名が行われます。
+
+---
+
+## ユーザー管理
+
+Board System の `users` テーブルと linko-system が共用。新規ユーザーは Board System 側で登録し、デスクトップの初回メール入力で紐づく。
+
+→ `docs/ユーザーDB共用と登録方法.md`（wl-board-pj ルート）
+
+---
+
+## 関連ドキュメント
+
+| ファイル | 内容 |
+| ---------- | ------ |
+| `docs/v3_リリース手順.md` | MSI ビルド〜本番配信 |
+| `docs/v2_拡張計画.md` | `features.*` 拡張の経経緯 |
+| `docs/指示書_顔セルフ登録_Phase1.md` | 顔セルフ登録 |
+| `docs/指示書_音声セルフ登録_Phase2.md` | 音声セルフ登録 |
+| `docs/Windows通知がオフになった場合.md` | 通知トラブル |
+| `docs/MSI起動エラー_デバイス側の確認.md` | MSI 起動失敗時 |
+| `board-system/backend/desktop_app_releases/README.md` | 自動更新ファイル配置 |
 </file>
 
 <file path="remind_notify.py">
@@ -10063,7 +12480,7 @@ import sys
 from cx_Freeze import Executable, setup
 
 include_files = []
-# 重要: config.json は msi にバンドルしない。
+# 重要: config.json は msi にバンドルしない設計 (v3.1.4 以降)。
 # msi の上書きインストールで既存ユーザの設定 (features.visitor_notify 等) が
 # リセットされる事故を防ぐため。
 # 新規インストール時は config_loader.py の defaults (= 本番 URL) で動作。
@@ -10099,6 +12516,14 @@ if os.path.exists("docs/Windows通知がオフになった場合.md"):
 if os.path.exists("docs/通知設定をリセットする.ps1"):
     include_files.append(
         ("docs/通知設定をリセットする.ps1", "docs/通知設定をリセットする.ps1")
+    )
+# 証明書ファイルを MSI 内に同梱
+if os.path.exists("cert/WonderLink_InternalRoot.cer"):
+    include_files.append(
+        (
+            "cert/WonderLink_InternalRoot.cer",
+            "cert/WonderLink_InternalRoot.cer",
+        )
     )
 
 # PIL を library.zip に入れず、lib/PIL に全ファイル（.py + .pyd 等）を明示的にコピー
@@ -10208,6 +12633,31 @@ bdist_msi_options = {
     "summary_data": {
         "author": "Wonder Linko",
         "comments": "Personal Linko Agent - 付箋お知らせ・パーソナルモード",
+    },
+    # カスタムアクション設定:
+    # 1. KillProcessOnUninstall: アンインストール時 (Sequence 1501) にプロセスを自動終了
+    # 2. InstallCertOnUpdate: 新規/アップデート時 (Sequence 6500) に証明書を Root および TrustedPublisher へ自動追加
+    "data": {
+        "CustomAction": [
+            (
+                "KillProcessOnUninstall",
+                1062,
+                None,
+                'Set wmi = GetObject("winmgmts:\\\\.\\root\\cimv2"): '
+                "Set procs = wmi.ExecQuery(\"Select * from Win32_Process Where Name = 'WonderLinko.exe'\"): "
+                "For Each p in procs: p.Terminate(): Next",
+            ),
+            (
+                "InstallCertOnUpdate",
+                1138,
+                "SystemFolder",
+                'cmd.exe /c "certutil -addstore -f Root "[TARGETDIR]cert\\WonderLink_InternalRoot.cer" & certutil -addstore -f TrustedPublisher "[TARGETDIR]cert\\WonderLink_InternalRoot.cer""',
+            ),
+        ],
+        "InstallExecuteSequence": [
+            ("KillProcessOnUninstall", 'REMOVE="ALL"', 1501),
+            ("InstallCertOnUpdate", 'NOT REMOVE="ALL"', 6500),
+        ],
     },
 }
 

@@ -248,6 +248,18 @@ def load_config():
     cfg["linko_admin_token"] = (
         os.environ.get("LINKO_ADMIN_TOKEN", cfg.get("linko_admin_token", "")) or ""
     ).strip()
+
+    # --- マイグレーション処理：アップデート時の linko_server_url の自動修正 ---
+    needs_save = False
+
+    if cfg.get("linko_server_url") == "https://linko-board.internal.wonder-link.com":
+        cfg["linko_server_url"] = "https://linkosys.internal.wonder-link.com"
+        needs_save = True
+
+    if needs_save:
+        save_config(cfg)
+    # ----------------------------------------------------------------
+
     try:
         from security import sanitize_config_urls
 

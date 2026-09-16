@@ -1,10 +1,10 @@
-This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
 
 <file_summary>
 This section contains a summary of this file.
 
 <purpose>
-This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+This file contains a packed representation of the entire repository's contents.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 </purpose>
@@ -32,7 +32,6 @@ The content is organized as follows:
 <notes>
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Files matching these patterns are excluded: **/*.md
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -120,6 +119,7 @@ backend/
     scheduler.py
   desktop_app_releases/
     latest.json
+    README.md
   scripts/
     migrate_sqlite_to_pg.py
     seed_personal_members.py
@@ -133,12 +133,15 @@ backend/
   alembic.ini
   cato-ca.crt
   Dockerfile
+  README.md
   requirements.txt
 deploy/
   deploy-staging.sh
   deploy.sh
   rollback.sh
   stop-staging.sh
+docs/
+  デプロイとマイグレーション手順.md
 frontend/
   app/
     admin/
@@ -193,6 +196,7 @@ frontend/
   next.config.ts
   package.json
   postcss.config.mjs
+  README.md
   tsconfig.json
 nginx/
   nginx.conf
@@ -201,11 +205,13 @@ nginx/
   nginx.conf.production-server-no-staging
   staging.conf
 .env.example
+DEPLOY.md
 docker-compose.db.yml
 docker-compose.prod.yml
 docker-compose.staging.yml
 docker-compose.yml
 package.json
+README.md
 </directory_structure>
 
 <files>
@@ -4759,7 +4765,7 @@ async def update_sticky_note(
     return _note_response(note)
 
 
-def _notify_postit_archive(board_id: str, note_id: str) -> None:
+def _notify_postit_archive(board_id: str, note_id: str) -> bool:
     import json
     import urllib.request
     from app.config import settings
@@ -4772,9 +4778,9 @@ def _notify_postit_archive(board_id: str, note_id: str) -> None:
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
-            pass
+            return 200 <= resp.status < 300
     except Exception:
-        pass
+        return False
 
 
 @router.delete("/by_postit", status_code=204)
@@ -4809,32 +4815,31 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     postit_board_id = note.postit_board_id
     postit_note_id = note.postit_note_id
 
-    await db.delete(note)
-    await db.commit()
-    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
-
     if postit_board_id and postit_note_id:
         _logger.info(
             "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
             postit_board_id,
             postit_note_id,
         )
-        try:
-            await asyncio.to_thread(
-                _notify_postit_archive, postit_board_id, postit_note_id
-            )
-            _logger.info("[delete_sticky_note] グレー化通知完了")
-        except Exception as e:
-            _logger.warning(
-                "[delete_sticky_note] グレー化通知失敗 (付箋が再取り込みされる可能性あり): %s",
-                e,
-            )
+        archived = await asyncio.to_thread(
+            _notify_postit_archive, postit_board_id, postit_note_id
+        )
+        if not archived:
+            # 先に外部付箋を非対象化できなければ、定期インポートでの復活を防ぐため
+            # ローカル削除も行わない。呼び出し側は再試行できる。
+            _logger.warning("[delete_sticky_note] グレー化通知失敗。削除を中止します")
+            raise HTTPException(status_code=502, detail="連携先の付箋をアーカイブできませんでした。再試行してください")
+        _logger.info("[delete_sticky_note] グレー化通知完了")
     else:
         _logger.info(
             "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
             postit_board_id,
             postit_note_id,
         )
+
+    await db.delete(note)
+    await db.commit()
+    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
 
 @router.post("/{note_id}/move_to_personal", response_model=BoardPlacementResponse)
@@ -5905,7 +5910,10 @@ class StickyNoteCreate(BaseModel):
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
     # --- フロントエンドからの誤送信（パーソナル投稿）を吸収するためのフィールド ---
-    owner_id: int | None = None
+    owner_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("owner_id", "ownerId"),
+    )
     lane: str | None = None
 
 
@@ -7507,6 +7515,119 @@ def shutdown_scheduler() -> None:
 }
 </file>
 
+<file path="backend/desktop_app_releases/README.md">
+# Wonder Linko デスクトップアプリ 自動更新用リリース置き場
+
+このフォルダの **`WonderLinko.msi`** と **`latest.json`** を更新すると、
+デスクトップアプリの自動更新が走るようになります。
+
+## 配置ファイル
+
+| ファイル | 説明 |
+| --- | --- |
+| `latest.json` | 最新バージョン情報 (`version` と `url`) |
+| `WonderLinko.msi` | wl_desktop_app でビルドした MSI (`.\build_msi.ps1` で生成) |
+
+## latest.json 形式
+
+```json
+{
+  "version": "3.0.1",
+  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi"
+}
+```
+
+- `version`: `wl_desktop_app/version.py` と一致させる
+- `url`: クライアントが MSI を取得する **絶対 URL**
+
+## 反映方法 (v3.2.3 以降: bind mount 化)
+
+docker-compose.prod.yml で このフォルダを backend コンテナに **bind mount**
+しているため、**ホスト側のファイルを差し替えるだけで即反映** されます
+(backend 再ビルド・deploy.sh 不要)。
+
+```yaml
+# docker-compose.prod.yml backend.volumes
+- ./backend/desktop_app_releases:/app/desktop_app_releases
+```
+
+FastAPI の StaticFiles はリクエストごとにディスクを読むため、
+`latest.json` / `*.msi` を置けばコンテナ再起動すら不要です。
+
+⚠️ **初回のみ**: この bind mount を有効化するには 1 度だけ `./deploy/deploy.sh`
+(または `docker compose ... up -d`) で compose 変更を反映する必要があります。
+以降は git pull / scp だけで反映されます。
+
+### 旧仕様 (参考・v3.2.2 以前)
+
+bind mount 前は backend Dockerfile の `COPY . .` でイメージに焼き込んでいたため、
+ファイル差し替え後に deploy.sh で再ビルドが必須でした。「git pull / deploy.sh
+忘れで古い latest.json が配信され続ける」事故が頻発したため bind mount 化。
+
+## アップロード手順 (新バージョンリリース時)
+
+1. **開発側 (dev)**
+   - `wl_desktop_app/version.py` の `__version__` を bump (例: `3.0.0` → `3.0.1`)
+   - 本書の `latest.json` の `version` を同じ番号に
+   - git commit & push
+
+2. **Windows ビルド PC**
+
+   ```powershell
+   cd wl-board-pj\wl_desktop_app
+   Copy-Item config.production.example.json config.json -Force
+   .\build_msi.ps1     # → dist\WonderLinko.msi
+   ```
+
+3. **本番サーバへ転送**
+
+   ```powershell
+   scp dist\WonderLinko.msi devuser01@wlboardsys-app-01:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko.msi
+   ```
+
+4. **本番サーバで反映** (bind mount 化後)
+
+   ```bash
+   ssh devuser01@wlboardsys-app-01
+   cd /var/www/wlinko-pj
+   git pull                        # latest.json 更新を取得 → bind mount で即反映
+   # deploy.sh は不要 (frontend/backend のコード変更時のみ)
+   ```
+
+5. **反映確認**
+
+   ```bash
+   curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
+   # → 新 version が返れば成功
+   curl -sI https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko.msi | head -3
+   # → 200 OK
+   ```
+
+6. **クライアント側**
+   - 何もしなくて OK。次回起動時の自動チェックで取得 → サイレントインストール
+   - トレイ → 「アプリをアップデート」で即時チェックも可能
+
+## やってはいけないこと
+
+- ❌ `latest.json` だけ書き換えて backend 再ビルドしない (反映されない)
+- ❌ `docker compose ... up -d --build linko-backend-blue` を直接叩く
+  - サービス名は `backend`、container_name は `linko-backend-${COLOR}`。サービス名で指定するか deploy.sh を使う
+- ❌ ホスト nginx の reload を忘れる (deploy.sh の中で自動で行うが、手動デプロイ時は要注意)
+
+## クライアント側の設定
+
+デスクトップアプリの `config.json`:
+
+```json
+"update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json"
+```
+
+## 詳細な手順とトラブルシューティング
+
+`wl_desktop_app/docs/v3_リリース手順.md` を参照。
+deploy.sh の動作・ビルドキャッシュの罠・blue/green の正規フローを記載。
+</file>
+
 <file path="backend/scripts/migrate_sqlite_to_pg.py">
 #!/usr/bin/env python3
 """
@@ -8047,6 +8168,202 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
+<file path="backend/README.md">
+# Board System Backend (Wonder Linko)
+
+4ボード（Main / Task / Personal / Meeting）用の FastAPI バックエンド。  
+開発は SQLite（async）、**本番 Docker は PostgreSQL**（`docker-compose.prod.yml` + `docker-compose.db.yml`）。
+
+## 技術スタック
+
+- **Framework**: FastAPI
+- **ORM**: SQLAlchemy 2.0（非同期）
+- **DB ドライバ**: aiosqlite（SQLite）。本番は `postgresql+asyncpg` を想定
+- **設定**: pydantic-settings + .env
+- **AI**: 社内 Ollama（`OLLAMA_URL`）。自動仕分け・マトリクススコア・日次リセット・ブレスト・ニュース要約
+
+## セットアップ
+
+```bash
+cd board-system/backend
+python -m venv .venv
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate  # Linux/macOS
+pip install -r requirements.txt
+cp .env.example .env     # 必要に応じて編集
+```
+
+## 起動
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+- API: <http://localhost:8000>
+- ヘルス: <http://localhost:8000/health>
+
+## ディレクトリ構成
+
+```
+backend/
+├── alembic/
+│   ├── versions/      # マイグレーションスクリプト
+│   └── env.py         # 非同期対応
+├── app/
+│   ├── ai/            # Linko Core（triage, matrix, daily_reset）
+│   ├── config.py      # 設定（DATABASE_URL, GEMINI_API_KEY 等）
+│   ├── db.py          # 非同期エンジン・セッション・Base・seed
+│   ├── main.py        # FastAPI アプリ
+│   ├── models/        # User, Team, StickyNote, BoardPlacement
+│   ├── routers/       # users, teams, sticky_notes, boards, daily_reset
+│   └── schemas/       # Pydantic スキーマ
+├── scripts/           # seed_personal_members.py, seed_teams.py
+├── alembic.ini
+├── .env.example
+├── requirements.txt
+└── README.md
+```
+
+## マイグレーション
+
+```bash
+alembic upgrade head   # 最新まで適用
+alembic revision --autogenerate -m "説明"   # 変更から新規リビジョン生成
+```
+
+## API（フェーズ2・3 実装済み）
+
+| 種別 | メソッド | パス | 説明 |
+| ------ | ---------- | ------ | ------ |
+| 死活 | GET | `/health` | ヘルスチェック |
+| admin | GET | `/admin/llm` | 実効 LLM スロット・解決 URL・モデルモード（DB 上書きと env を表示） |
+| admin | PUT | `/admin/llm` | body `{"llm_target":1}` など 1〜3 で DB に保存即反映、`{"llm_target":null}` で DB 上書き解除（env の `LLM_TARGET` に従う） |
+| users | GET/POST | `/users` | 一覧・作成（`team_id` 対応） |
+| | PATCH | `/users/{id}` | ユーザー情報・所属チーム更新 |
+| teams | GET/POST | `/teams` | チーム一覧取得・新規チーム作成 |
+| | PATCH/DELETE | `/teams/{id}` | チーム名更新・チーム削除（メンバーの team_id は Set NULL） |
+| sticky_notes | GET/POST | `/sticky_notes` | 一覧・作成（作成時 MAIN＋**AI で Task/Personal にも自動配置**） |
+| | GET/PATCH/DELETE | `/sticky_notes/{id}` | 1件取得・更新・削除 |
+| | POST | `/sticky_notes/{id}/move_to_personal` | Personal に配置（body: `owner_id`, `lane`） |
+| | POST | `/sticky_notes/{id}/copy_to_team` | 指定チーム所属メンバー全員の Personal ボードへ付箋を一括コピー |
+| | POST | `/sticky_notes/{id}/release_to_task_board` | Task Board に配置 |
+| board_placements | GET/POST | `/board_placements` | 一覧（`?board_type=&owner_id=`）・作成 |
+| | GET/PATCH/DELETE | `/board_placements/{id}` | 1件取得・更新・削除 |
+| boards | GET | `/boards/main` | Main ボード View |
+| | GET | `/boards/task` | Task ボード View（5列対応。各配置に `taken_by`, `task_color` 付与） |
+| | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
+| | GET | `/boards/morning` | Meeting ボード View（MORNING 配置一覧。フロントは `/meeting`） |
+| brainstorm | POST | `/brainstorm` | デスクトップ向けブレスト（SSE ストリーミング） |
+| task_reminders | GET/POST | `/users/{id}/task_reminders/*` | デスクトップ向け Today タスクリマインド |
+| calendar_reminders | GET/POST | `/users/{id}/calendar_reminders/*` | デスクトップ向けカレンダーリマインド |
+| news | POST | `/news/fetch`, `/news/clear` | ニュース取得・クリア（スケジューラからも呼ばれる） |
+| auth_google | GET | `/auth/google`, `/auth/google/callback` | Google カレンダー OAuth |
+| daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧 |
+| daily_reset | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー |
+| daily_reset | POST | `/daily_reset/run_8am` | 8:00 日次処理（Meeting リセット + カレンダー同期） |
+
+- **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
+- **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
+- **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
+
+## フェーズ3: AI Worker（Linko Core）
+
+`OLLAMA_URL` を .env に設定すると以下が有効になる。
+
+1. **Auto-Triage（Logic 1）**  
+   `POST /sticky_notes` で Main に投稿すると、LLM が「タスクか情報か」「担当者明記か」を判定。  
+   タスク → **Task Board** に配置し、緊急度・重要度をスコアリング（position_x/y, matrix_quadrant）。  
+   担当者名あり → 該当ユーザー（`users.name` 部分一致）の **Personal Board Inbox** に配置。
+
+2. **Matrix Scoring（Logic 2）**  
+   Task Board に載せる際、LLM が緊急度・重要度を 0–100 で採点。  
+   position_x = 緊急度、position_y = 重要度。matrix_quadrant は 1–4 で自動算出（5=完了は Personal DONE 連動で設定）。
+
+3. **Daily Reset（Logic 3）**  
+   `GET /daily_reset/messages?owner_id=` で、そのユーザーの Personal Today レーンの付箋について  
+   「昨日の『〇〇』は持ち越しますか？」形式のメッセージを LLM で生成。
+
+4. **Meeting スナップショット**  
+   `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
+
+5. **Google カレンダー連携（今日の予定・Today）**  
+   - 取得範囲: **その日 0:00〜23:59**（`CALENDAR_TIMEZONE`、既定 Asia/Tokyo）。  
+   - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存し、**要約を P 付箋として Personal の Today レーンに配置**。  
+   - **毎日 8:00**: `POST /daily_reset/run_8am` を cron で呼ぶと、(1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に表示＆要約を P 付箋で Today レーンに配置。  
+   - **毎日 10:15**: `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー（Meeting ボードに反映）。  
+   - **日次スケジュール（日本時間）**: バックエンドに組み込みの APScheduler が **Asia/Tokyo** で動作。`SCHEDULER_ENABLED=true`（既定）のとき、**毎日 8:00 JST** に `run_8am`、**毎日 10:15 JST** に `sync_to_morning` を自サーバへ POST する。無効にする場合は `SCHEDULER_ENABLED=false`。`SCHEDULER_BASE_URL` で自サーバ URL を指定（既定: <http://127.0.0.1:8000）。>
+
+- 環境変数: `OLLAMA_URL`（必須・例: <http://172.16.1.161:11435/v1）、`OLLAMA_MODEL`（**省略可**・未設定時は> Ollama の `/api/tags` で **modified_at が最も新しいモデル**を採用し、失敗時は `/v1/models` を参照）。固定モデルにしたいときだけ指定。`OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS`（既定 600）で自動解決結果のキャッシュ時間を変更可能。社内 LLM Docker が複数ある場合は `LLM_TARGET=1|2|3` と `OLLAMA_URL_1..3` / 任意で `OLLAMA_MODEL_1..3`（番号別モデル固定時のみ）。詳細は `.env.example`。
+- **スケジューラ**: 日次 8:00 / 10:15 JST は **内蔵 APScheduler** で実行されるため、**外部 cron は不要**。Docker やリバースプロキシでアプリの URL が `http://127.0.0.1:8000` でない場合は、`.env` で `SCHEDULER_BASE_URL` をアプリから見た自サーバの URL に設定すること（例: `http://backend:8000`）。
+
+## 本番（Docker）
+
+**ホスト上で `pip install` する必要はありません。** `backend/Dockerfile` のビルド時に `requirements.txt` がインストールされます（PEP 668 の対象外）。
+
+更新手順の例（リポジトリの `docker-compose.prod.yml` / `deploy/deploy.sh` に合わせる）:
+
+```bash
+cd /var/www/wlinko-pj/board-system   # デプロイ先のパス
+docker compose -f docker-compose.prod.yml build backend
+docker compose -f docker-compose.prod.yml up -d backend   # 実際の -p やファイルは環境に合わせる
+# マイグレーション（backend コンテナ内）
+docker compose -f docker-compose.prod.yml exec backend alembic -c /app/alembic.ini upgrade head
+```
+
+- ログ: `docker compose ... logs -f backend`
+- 詳細はリポジトリの [DEPLOY.md](../DEPLOY.md) や [docs/デプロイとマイグレーション手順.md](../docs/デプロイとマイグレーション手順.md) を参照。
+
+## 本番（Ubuntu ホスト直起動・非 Docker）: 起動とログ
+
+- **ログはファイルに残さない**。確認時だけ別ターミナルで `tail -f` する想定。
+
+### 依存のインストール（Ubuntu 24.04 など PEP 668 対応 OS）
+
+システムの `python3` にそのまま `pip install` すると **`externally-managed-environment`** で拒否されます。**仮想環境内の pip** を使ってください。
+
+```bash
+cd /path/to/board-system/backend
+sudo apt install -y python3-venv python3-full   # 初回のみ（venv が無い場合）
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+alembic upgrade head
+```
+
+- systemd の `ExecStart` は **`/path/to/board-system/backend/.venv/bin/uvicorn`** のように venv 内のバイナリを指定する。
+
+### 起動（本番では --reload なし）
+
+```bash
+cd /path/to/board-system/backend
+source .venv/bin/activate
+# 別ターミナルで tail するため一時的に tee（ファイルは残さず /tmp でよい）
+uvicorn app.main:app --host 0.0.0.0 --port 8000 2>&1 | tee /tmp/board-backend.log
+```
+
+- `/tmp` は再起動で消えるのでログを残さない運用に適している。必要なら `tail -f /tmp/board-backend.log` で追う。
+
+### 別ターミナルでログを追う
+
+```bash
+tail -f /tmp/board-backend.log
+```
+
+- 直近から: `tail -n 100 -f /tmp/board-backend.log`
+- `Ctrl+C` で終了（バックエンドは止まらない）
+
+### systemd で運用する場合
+
+- ログは **journald** に出るので、別ターミナルで `journalctl -u board-system-api -f` で追える（ユニット名は環境に合わせる）。
+- 詳細は [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+
+## 引き継ぎ・本番
+
+- 本番デプロイ・運用: リポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+- systemd で `board-system-api` として uvicorn を常時起動。SQLite の書き込み権限（backend ディレクトリの chown）と uvicorn パスの確認が必要な場合あり（同ドキュメントのトラブルシューティング参照）。
+</file>
+
 <file path="backend/requirements.txt">
 # Board System (Wonder Linko) - Backend. Python 3.10+
 # FastAPI + async SQLAlchemy (SQLite, later PostgreSQL)
@@ -8347,6 +8664,202 @@ set -e
 APP_DIR="/var/www/wlinko-pj/board-system"
 docker compose -f "$APP_DIR/docker-compose.prod.yml" -f "$APP_DIR/docker-compose.staging.yml" -p board-system-staging down
 echo "Staging stopped."
+</file>
+
+<file path="docs/デプロイとマイグレーション手順.md">
+# デプロイとマイグレーション手順
+
+修正済みマイグレーション（`g7b8c9d0e1f2` の IF NOT EXISTS 対応）を本番に反映し、`alembic upgrade head` で同じ事象を防ぐ手順です。
+
+---
+
+## 前提
+
+- 本番サーバー: `wlboardsys-app-01`
+- プロジェクト配置: `/var/www/wlinko-pj`（または `wlinko-pj` を clone したディレクトリ）
+- バックエンドコンテナ: `linko-backend-blue`（`COLOR=blue` の場合）
+- バックエンドのコード: `board-system/backend` をビルドした Docker イメージ
+
+---
+
+## Step 1: ローカルで修正をコミット・プッシュ
+
+開発マシン（linko-system / wl-board-pj を編集している環境）で実施します。
+
+```bash
+cd /home/hisashi/dev/wl-board-pj
+
+# 変更確認
+git status
+git diff board-system/backend/alembic/versions/g7b8c9d0e1f2_add_oauth_pkce_state.py
+
+# コミット
+git add board-system/backend/alembic/versions/g7b8c9d0e1f2_add_oauth_pkce_state.py
+git commit -m "fix(alembic): oauth_pkce_state を CREATE TABLE IF NOT EXISTS に変更"
+
+# リモートへプッシュ（main またはデプロイ用ブランチ）
+git push origin main
+```
+
+※ リポジトリが GitHub / GitLab 等にある場合、プッシュ先は利用しているブランチに合わせてください。
+
+---
+
+## Step 2: 本番サーバーにログインし、リポジトリを更新
+
+本番サーバーで、デプロイ元のディレクトリに移動して pull します。
+
+```bash
+ssh devuser01@wlboardsys-app-01
+
+cd /var/www/wlinko-pj
+# または: cd /var/www/wl-board-pj  など、実際のプロジェクトパスに合わせる
+
+git pull origin main
+```
+
+※ デプロイ用ブランチが `main` でない場合は、そのブランチを pull してください。
+
+---
+
+## Step 3: バックエンドの Docker イメージを再ビルド
+
+Compose でバックエンドだけビルドし直します。本番用の compose ファイル名は環境に合わせて読み替えてください。
+
+```bash
+# board-system ディレクトリに移動
+cd /var/www/wlinko-pj/board-system
+# もしくは: cd board-system  など
+
+# 本番用 compose でバックエンドのみビルド（キャッシュを使わず最新コードで）
+docker compose -f docker-compose.prod.yml build --no-cache backend
+```
+
+- `COLOR` 等の環境変数が必要な場合は、`.env` を読み込むか、実行前に export してください。  
+  例: `export COLOR=blue` のうえで上記を実行。
+
+---
+
+## Step 4: バックエンドコンテナを新しいイメージで起動
+
+既存のバックエンドコンテナを止め、同じ compose で起動し直すと新しいイメージでコンテナが作られます。
+
+```bash
+# 同じ board-system ディレクトリで
+docker compose -f docker-compose.prod.yml up -d backend
+```
+
+- コンテナ名が `linko-backend-blue` のままになるよう、`COLOR=blue` 等の設定を合わせておいてください。
+- blue/green やロードバランサの切り替え手順がある場合は、その手順に従って「新しい backend」がトラフィックを受けるようにしてください。
+
+---
+
+## Step 5: コンテナ内でマイグレーションを実行
+
+新しいコンテナには修正済みの `g7b8c9d0e1f2_add_oauth_pkce_state.py` が含まれているので、`upgrade head` でエラーにならずに `placement_source` まで適用されます。
+
+```bash
+docker exec -it linko-backend-blue alembic -c /app/alembic.ini upgrade head
+```
+
+- 成功時は次のようなログが出ます:
+  - `Running upgrade f6a7b8c9d0e1 -> g7b8c9d0e1f2, add oauth_pkce_state ...`
+  - `Running upgrade g7b8c9d0e1f2 -> h8c9d0e1f2a3, add placement_source ...`
+- `oauth_pkce_state` が既に存在する場合は g7b8c9d0e1f2 でテーブル作成はスキップされ、続けて h8c9d0e1f2a3 で `board_placements.placement_source` が追加されます。
+
+---
+
+## 動作確認
+
+1. **API の応答確認**
+   - パーソナルボード: `GET /boards/personal?owner_id=5` が 500 ではなく 200 で返ること。
+   - 必要に応じてフロントからパーソナルボードを開いて表示を確認。
+
+2. **DB の確認（任意）**
+   - PostgreSQL に接続し、`board_placements` に `placement_source` カラムがあることを確認:
+
+   ```bash
+   docker exec -it linko-db psql -U linko_user -d linko_board_system -c '\d board_placements'
+   ```
+
+   - 一覧に `placement_source | character varying(32) | nullable` が出ていれば OK です。
+
+---
+
+## よくあるパターン（環境に応じて読み替え）
+
+| 項目 | 例 |
+| ------ | ----- |
+| Compose ファイル | `docker-compose.prod.yml` / `docker-compose.staging.yml` など |
+| 環境変数 | `COLOR=blue` を `.env` に書くか、`export` してから compose 実行 |
+| デプロイ用ブランチ | `main` / `master` / `release` など |
+| ビルドコマンド | `docker compose build backend` や CI で `docker build -f backend/Dockerfile .` など |
+
+---
+
+## トラブル時
+
+- **「relation oauth_pkce_state already exists」がまだ出る**  
+  → コンテナが古いイメージのままの可能性があります。  
+  `docker images` でイメージの作成日を確認し、Step 3 のビルド後に Step 4 で確実にそのイメージで起動しているか確認してください。
+
+- **「column board_placements.placement_source does not exist」がまだ出る**  
+  → Step 5 の `alembic upgrade head` がまだ実行されていないか、別の DB を見ている可能性があります。  
+  コンテナ内の `DATABASE_URL` と、実際にアプリが接続している DB が同じか確認し、再度 Step 5 を実行してください。
+
+- **stamp で合わせたあと、再度 upgrade head したい**  
+  → 既に `stamp g7b8c9d0e1f2` で合わせてある場合は、修正済みイメージをデプロイしたうえで、そのまま `alembic upgrade head` を実行すれば `h8c9d0e1f2a3` だけが適用されます。
+
+---
+
+## 付箋ボード（wl-sticky-note）のデータ永続化とバックアップ
+
+デプロイのたびに付箋が消えないよう、**blue/green で共有する外部ボリューム**を使い、**デプロイ前に自動バックアップ**するようにしています。
+
+### 初回のみ: 共有ボリュームの作成
+
+`docker-compose.prod.yml` で付箋データは `sticky_note_data` という**外部ボリューム**を参照します。**初回デプロイ前**にサーバーで 1 回だけ実行してください。
+
+```bash
+docker volume create sticky_note_data
+```
+
+既に blue または green で付箋データがある場合、`deploy.sh` が現在の色のボリュームから `sticky_note_data` へコピーするため、初回実行後も付箋は維持されます。
+
+### 自動バックアップ
+
+- **タイミング**: `deploy.sh` 実行時、新コンテナ起動前に「現在の付箋コンテナ」から `boards.json` をコピーします。
+- **保存先**: `board-system/backups/sticky-note/boards_YYYYMMDD_HHMMSS.json`
+- **保管数**: 直近 30 件を残し、それより古いファイルは自動削除されます。
+
+### 手動バックアップ
+
+```bash
+# 現在の付箋コンテナからコピー（blue の場合）
+docker cp linko-sticky-note-blue:/app/data/boards.json ./backups/sticky-note/boards_$(date +%Y%m%d_%H%M%S).json
+```
+
+### リストア（付箋データを戻す）
+
+1. 復元したいバックアップファイルを選ぶ（例: `board-system/backups/sticky-note/boards_20260306_120000.json`）。
+2. 共有ボリュームに書き込むため、一時コンテナでコピーします。
+
+```bash
+cd /var/www/wlinko-pj/board-system
+
+# 例: boards_20260306_120000.json を復元する場合
+docker run --rm \
+  -v "$(pwd)/backups/sticky-note/boards_20260306_120000.json:/src/boards.json:ro" \
+  -v sticky_note_data:/data \
+  alpine cp /src/boards.json /data/boards.json
+```
+
+1. 付箋コンテナを再起動すると、復元した内容が反映されます。
+
+```bash
+# 現在トラフィックを受けている方のコンテナを再起動（例: blue）
+docker restart linko-sticky-note-blue
+```
 </file>
 
 <file path="frontend/app/admin/system/page.tsx">
@@ -10325,11 +10838,12 @@ export default function PersonalBoardView({
   );
 
   const handlePost = useCallback(
-    async (text: string) => {
+    async (text: string, dueDate?: string | null) => {
       await api.stickyNotes.createPersonal({
         content: text,
         owner_id: ownerId,
         lane: "TODAY",
+        due_date: dueDate || undefined,
       });
       await delay(REFETCH_DELAY_MS);
       await fetchPersonal();
@@ -12463,6 +12977,62 @@ const config = {
 export default config;
 </file>
 
+<file path="frontend/README.md">
+# Board System Frontend (Wonder Linko)
+
+Next.js (App Router) + Tailwind CSS + Framer Motion。4ボード View と D&D、1行入力。**本番では basePath `/boards` でビルドし、同一サーバの付箋ボードと Nginx で共存。** 詳細は [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+
+## セットアップ
+
+**必ず `frontend` ディレクトリ内で npm を実行してください。** 親の `board-system` で実行すると `tailwindcss` が解決されずエラーになることがあります。
+
+```bash
+cd board-system/frontend
+npm install
+cp .env.local.example .env.local   # 必要に応じて NEXT_PUBLIC_API_URL を編集
+npm run dev
+```
+
+- フロント: <http://localhost:3000（単体）または> <http://localhost:3001（付箋ボード併用時）>
+- **各ボードはバックエンドが起動していないとエラーになります。** 先に `board-system/backend` で `uvicorn app.main:app --port 8000` を起動してください。トップページで「API 接続済み」と表示されれば OK。
+- ポート 8000 が使用中な場合: `uvicorn app.main:app --port 8001` で起動し、`.env.local` に `NEXT_PUBLIC_API_URL=http://localhost:8001` を設定。
+
+## ボード（開発状況・引き継ぎ用）
+
+| パス | 説明 |
+| ------ | ------ |
+| `/main` | Main Board（フリーキャンバス）。付箋をドラッグで配置。1行投稿。AI 仕分け付箋は ✨。 |
+| `/taskboard` | **Task Board（5列）**。左から「アイデア」「短期タスク」「長期タスク」「重要」「完了」。付箋ボードから取り込むはメニューバー。ゴミ箱・パーソナルへコピー（メンバードロップ）・**チームへ一括コピー（チームドロップ: 👥 ネットワーク等）**は sticky。付箋色：黄=未引き取り、緑=誰かが引き取り中、灰=誰かが Done。引き取り者を短縮名（例: 浅）で表示。 |
+| `/personal` | **Personal Board**。3レーン（Today / タスク / Done）。1行入力で投稿。付箋色：**緑**=タスクボードから取り込んだもの、**青**=パーソナルで投稿したもの、**灰**=Done。ゴミ箱・タスクリリースは横並び。タスクリリースで Personal 配置を削除すると Task ボードに戻る。 |
+| `/meeting` | **Meeting ボード**。参加者ごとに MORNING スナップショット。毎朝 10:15 反映 + ニュース要約。「今の Today を反映」テストボタンあり。 |
+| `メンバー・チーム管理` | ヘッダーの「メンバー管理」ボタンで開く 2 タブ形式ダイアログ。**メンバー管理**（ユーザー登録・編集・所属チーム選択・削除）と**チーム管理**（チーム新規追加・チーム名変更・チーム削除・所属メンバー確認）を提供。 |
+| `/admin/system` | LLM スロット切替などの管理 UI |
+
+- 本番では basePath `/boards` のため、実際の URL は `/boards`、`/boards/taskboard`、`/boards/personal/:slug`、`/boards/meeting`。
+
+## 環境変数
+
+| 変数 | 説明 | 例 |
+| ------ | ------ | ----- |
+| `NEXT_PUBLIC_API_URL` | バックエンド API の URL | 開発: `http://localhost:8000`、本番: `https://wlboardsys.internal.wonder-link.com/api/bs` |
+| `NEXT_PUBLIC_LEGACY_BOARD_URL` | 付箋ボード（02_1）の URL（Task の付箋取り込み用） | 本番: `https://wlboardsys.internal.wonder-link.com` |
+
+本番ビルド時は `NEXT_PUBLIC_API_URL` を本番の API ベース URL に設定すること。`next.config.ts` で `NODE_ENV=production` 時に basePath `/boards` が自動付与される。
+
+## 技術
+
+- Next.js 16 (App Router)
+- Tailwind CSS v4
+- Framer Motion（アニメーション）
+- HTML5 D&D（Task 列・Personal レーン・ゴミ箱・タスクリリース・メンバードロップ）
+- カスタム DnD 型 `application/x-board-task-release`（タスクリリース可否を dragover で判定するため）
+
+## 引き継ぎ・本番
+
+- 本番デプロイ・更新手順: リポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) の「9. 今後の更新」を参照。
+- ビルド前に `rm -rf .next` を推奨。PM2 で `board-system-frontend` として `npm start`（ポート 3001）を運用。
+</file>
+
 <file path="frontend/tsconfig.json">
 {
   "compilerOptions": {
@@ -13099,6 +13669,46 @@ OLLAMA_URL=http://172.16.1.161:11435/v1
 TOKEN_ENCRYPTION_KEY=YourSuperSecretKeyMustBe32Bytes!
 </file>
 
+<file path="DEPLOY.md">
+# Board System 本番デプロイ（Docker）— 要約
+
+本システム（付箋ボード + Board System）を Docker で本番運用する際の、**このディレクトリでの操作**の要約です。
+
+**手順の詳細（前提条件・リポジトリ配置・Nginx・マイグレーション・データ移行・ロールバック・運用・トラブルシューティング）はすべて [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) にあります。** 初回デプロイや運用で迷ったらそちらを参照してください。
+
+---
+
+## 構成の整理
+
+| 項目 | 内容 |
+|------|------|
+| アプリ（Blue/Green） | `docker-compose.prod.yml` |
+| DB | `docker-compose.db.yml`（PostgreSQL） |
+| デプロイ・ロールバック | `deploy/deploy.sh`、`deploy/rollback.sh` |
+| Nginx 設定例 | `nginx/nginx.conf` |
+
+本番では Nginx が Port **80 と 443** で受け、`active_env.conf` で Blue または Green のポートに振り分けます。**SSL（HTTPS）** は Let's Encrypt を利用します。証明書の取得・設定は [docs/SSL-Setup.md](../docs/SSL-Setup.md) を参照してください。
+
+---
+
+## よく使うコマンド
+
+| やりたいこと | コマンド |
+|--------------|----------|
+| 初回・コード更新のデプロイ | `cd deploy && ./deploy.sh` |
+| ロールバック | `cd deploy && ./rollback.sh` |
+| マイグレーション | `docker exec -it linko-backend-blue alembic upgrade head`（稼働中は blue または green） |
+| ログを見る | `docker logs -f linko-backend-blue`（または green） |
+| 稼働中環境の確認 | `cat /etc/nginx/conf.d/active_env.conf` |
+
+---
+
+## 参照
+
+- **詳細手順・運用・トラブルシューティング**: [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md)
+- **デプロイ・運用ドキュメントの索引**: [docs/デプロイ・運用.md](../docs/デプロイ・運用.md)
+</file>
+
 <file path="docker-compose.db.yml">
 # version は obsolete のため省略（Compose V2）
 
@@ -13380,6 +13990,204 @@ volumes:
     "start": "cd frontend && npm run start"
   }
 }
+</file>
+
+<file path="README.md">
+# Board System (Wonder Linko)
+
+付箋ボード（`wl-sticky-note`）と連携する統合ボードシステム。**Main / Task / Personal / Meeting** の 4 ボードを提供し、社内 LLM（Ollama）による自動仕分け・Google カレンダー連携・ニュース要約・デスクトップアプリ向け API を担う。
+
+**本番は Docker（Blue/Green）+ PostgreSQL** が標準。付箋ボードと同一サーバ（`wl-board-pj` / `172.16.1.203`）で `https://wlboardsys.internal.wonder-link.com/` に配信。
+
+## 構成
+
+```
+board-system/
+├── backend/     # FastAPI + SQLAlchemy（開発: SQLite / 本番: PostgreSQL）
+├── frontend/    # Next.js App Router + Tailwind（本番 basePath: /boards）
+├── deploy/      # deploy.sh / rollback.sh（Blue/Green）
+├── nginx/       # 本番リバースプロキシ設定例
+├── docker-compose.prod.yml
+├── docker-compose.db.yml
+└── README.md
+```
+
+## 開発状況（2026年6月時点）
+
+| 項目 | 状態 | 備考 |
+| ------ | ------ | ------ |
+| 4 ボード UI | 完了 | `/main` `/taskboard` `/personal/:slug` `/meeting` |
+| Task ボード | 完了 | 5 列（アイデア・短期・長期・重要・完了）。色・引き取り者表示。👥 チームへの付箋一括コピー |
+| Personal ボード | 完了 | Today / タスク / Done。Task 連動・Google カレンダー「今日の予定」 |
+| Meeting ボード | 完了 | 毎朝 10:15 に Personal Today を MORNING へコピー。ニュース要約付箋も反映 |
+| チーム管理 | 完了 | メンバー管理・チーム作成/編集/削除、チーム所属メンバー全員への一括コピー |
+| AI 自動仕分け | 完了 | Ollama（`OLLAMA_URL`）。Gemini は不使用 |
+| Google カレンダー | 完了 | OAuth 連携・今日の予定・デスクトップ向けリマインド API |
+| ブレスト API | 完了 | `POST /brainstorm`（SSE）。デスクトップアプリから利用 |
+| タスク/カレンダーリマインド | 完了 | デスクトップアプリがポーリングする API |
+| ニュース要約 | 完了 | スケジューラで取得・Meeting ボードへ配置 |
+| LLM 管理 UI | 完了 | `/boards/admin/system`（`LLM_TARGET` 切替等） |
+| デスクトップ MSI 配信 | 完了 | `/api/bs/desktop-app/*`（bind mount で即反映） |
+| 本番デプロイ | 完了 | Blue/Green + PostgreSQL。詳細は下記ドキュメント |
+
+## 本番 URL（Docker 構成）
+
+| 用途 | パス（FQDN 配下） |
+| ------ | ------------------- |
+| 付箋ボード | `/board/wl` 等 |
+| Board System フロント | `/boards` |
+| Board System API | `/api/bs` |
+| Google OAuth コールバック | `/auth/google/callback` |
+| デスクトップ更新 | `/api/bs/desktop-app/latest.json` |
+
+同一 LAN 上の linko-system（`https://linkosys.internal.wonder-link.com/`）とユーザー DB・顔/音声登録 API を共有。
+
+## 起動（開発時）
+
+**バックエンドを先に起動すること。**
+
+```bash
+# ターミナル 1
+cd board-system/backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # OLLAMA_URL 等
+uvicorn app.main:app --reload --port 8000
+
+# ターミナル 2
+cd board-system/frontend
+npm install && npm run dev
+```
+
+- フロント: <http://localhost:3000（単体）または> :3001（付箋ボード併用）
+- トップで「API 接続済み」と表示されれば OK
+
+**付箋ボード併用**: `wl-sticky-note` を 3000、board-system フロントを 3001。  
+`NEXT_PUBLIC_BOARD_SYSTEM_URL` / `NEXT_PUBLIC_LEGACY_BOARD_URL` で相互リンク。
+
+## ローカル Docker（付箋＋Board まとめて）
+
+```bash
+cd board-system
+cp .env.example .env
+docker compose up -d --build
+docker exec -it linko-backend alembic upgrade head   # 初回のみ
+```
+
+- Board System: <http://localhost:3010>
+- 付箋ボード: <http://localhost:3011>
+
+詳細: [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) のローカル確認セクション
+
+## 日次スケジューラ（内蔵 APScheduler・JST）
+
+`SCHEDULER_ENABLED=true`（既定）のとき、外部 cron 不要。
+
+| 時刻 (JST) | 処理 |
+| ------------ | ------ |
+| 毎日 8:00 | `POST /daily_reset/run_8am` — Meeting リセット + 全ユーザーの今日の予定取得・Today 付箋 |
+| 毎日 10:00 | `POST /news/clear` — ニュース付箋クリア |
+| 毎日 10:15 | `POST /daily_reset/sync_to_morning` — Personal Today → Meeting ボード |
+| 毎日 10:15 | `POST /news/fetch` — ニュース取得・要約を Meeting へ |
+
+Docker 内では `SCHEDULER_BASE_URL` をコンテナから見える自サーバ URL に設定（例: `http://127.0.0.1:8000`）。
+
+## 本番デプロイ・更新
+
+| やりたいこと | 参照 |
+| -------------- | ------ |
+| Docker 本番（推奨） | [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) |
+| 要約・よく使うコマンド | [DEPLOY.md](DEPLOY.md) |
+| 非 Docker（PM2） | [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md) |
+| ドキュメント索引 | [docs/デプロイ・運用.md](../docs/デプロイ・運用.md) |
+
+コード更新時の典型フロー（Docker）:
+
+```bash
+cd board-system/deploy && ./deploy.sh
+docker exec -it linko-backend-blue alembic upgrade head   # マイグレーションがある場合
+```
+
+デスクトップ MSI / `latest.json` の差し替えのみなら **deploy 不要**（`backend/desktop_app_releases/` の bind mount）。
+
+## Nginx の注意点：`rewrite` + URI 無し `proxy_pass` を使わない
+
+`location /api/bs/` は **URI 付き `proxy_pass`（末尾スラッシュあり）** で書くこと。`rewrite ... break` と URI 無し `proxy_pass` の組み合わせは **Ubuntu の nginx 1.24.0-2ubuntu7.16 以降で壊れる**（後述の障害事例）。
+
+```nginx
+# ✅ 正しい: location 名 /api/bs/ が機械的に除去される
+location /api/bs/ {
+    proxy_pass http://current_backend/;      # 末尾スラッシュ必須
+}
+
+# ❌ 禁止: 7.16 以降で転送先パスが破壊される
+location /api/bs/ {
+    rewrite ^/api/bs/(.*)$ /$1 break;
+    proxy_pass http://current_backend;       # URI 無し
+}
+```
+
+対応済み（2026-08-20 時点で `nginx/` 配下に旧パターンは残っていない）:
+`nginx.conf` / `nginx.conf.production-server` / `nginx.conf.production-server-no-staging` / `staging.conf`
+
+設定を追加・複製する際は `grep -rn 'rewrite .*break' nginx/` で旧パターンが混入していないか確認すること。
+
+### 障害事例: 2026-08-20 「全ページで Not Found」
+
+| 項目 | 内容 |
+|------|------|
+| 症状 | `/boards/taskboard` `/boards/meeting` 等で画面に「エラー: Not Found」。デスクトップアプリの自動更新も停止 |
+| 発生 | 2026-08-20 06:48（`unattended-upgrade` 実行時刻）以降のリクエストから |
+| 原因 | nginx が 1.24.0-2ubuntu7.15 → **7.16** に自動更新。CVE-2026-42533 の修正パッチ（7.15 で ABI 破壊のため一旦無効化 → 7.16 で再投入）が `ngx_http_script.c` / `ngx_http_rewrite_module.c` / `ngx_http_proxy_module.c` を変更し、`rewrite` + URI 無し `proxy_pass` の URI 受け渡しが破壊された |
+| 対処 | `location /api/bs/` を URI 付き `proxy_pass` に書き換え → `nginx -t && systemctl reload nginx` |
+
+補足:
+
+- **設定ファイルは一切変更されていなかった**（5月27日から未更新）。OS の自動更新のみが変化点。
+- Blue/Green の入れ替えでは直らない。nginx 側の色に依存しない共通設定の問題のため。
+- HTML（`/boards/*`）は 200 のまま正常配信されていたため、Next.js の 404 ページではなく、**API の 404 レスポンス `{"detail":"Not Found"}` をフロントがそのまま表示**していた（`frontend/lib/api.ts`）。API 障害が「NotFound」に見える点に注意。
+- 切り分けの決め手はバックエンドのアクセスログ。nginx が転送した実パスが `//api/b`（`/health` と同じ 7 バイト）のように、**長さは rewrite 後・中身は rewrite 前**という破壊のされ方をしていた。
+
+### 切り分け用コマンド
+
+```bash
+# API 経路が生きているか（200 が正常）
+curl -sk -o /dev/null -w '%{http_code}\n' https://wl-ai-board.internal.wonder-link.com/api/bs/health
+
+# nginx が実際に転送しているパスを見る（バックエンドのアクセスログ）
+docker logs --tail 50 linko-backend-blue     # または -green
+
+# 稼働中の設定と、自動更新の履歴
+sudo nginx -T | grep -B3 -A8 'location /api/bs'
+sudo nginx -T | grep -B3 -A3 'rewrite .* break'    # 他に同型パターンが無いか
+grep -B6 'nginx:amd64' /var/log/apt/history.log
+sudo journalctl -u nginx --since yesterday --no-pager
+```
+
+nginx は `unattended-upgrades` の対象。**本番サーバの nginx がメンテナンス時間帯（早朝）に自動更新・再起動される**ことを前提に運用すること。除外する場合は `/etc/apt/apt.conf.d/50unattended-upgrades` の `Unattended-Upgrade::Package-Blacklist` に `nginx` を追加する（セキュリティ更新が手動運用になるトレードオフあり）。
+
+## サブディレクトリ
+
+| ディレクトリ | README | 内容 |
+| -------------- | -------- | ------ |
+| [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker、マイグレーション |
+| [frontend/](frontend/README.md) | あり | Next.js、ボード別パス、環境変数 |
+| [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップ MSI 自動更新配信 |
+
+## 関連リポジトリ・サービス
+
+| コンポーネント | 場所 |
+| ---------------- | ------ |
+| 付箋ボード | `wl-board-pj/wl-sticky-note` |
+| デスクトップアプリ | `wl-board-pj/wl_desktop_app` |
+| AI 受付（リン子） | `linko-system`（別リポジトリ） |
+
+## 関連ドキュメント
+
+- [docs/本番設定の目安.md](../docs/本番設定の目安.md) — 本番 .env・URL の目安
+- [docs/Googleカレンダー連携の動作確認.md](../docs/Googleカレンダー連携の動作確認.md)
+- [docs/ユーザーDB共用と登録方法.md](../docs/ユーザーDB共用と登録方法.md)
+- [docs/開発・改善プラン/改善指示書11.md](../docs/開発・改善プラン/改善指示書11.md) — Task/Personal UI 仕様
 </file>
 
 </files>
