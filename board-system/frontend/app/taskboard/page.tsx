@@ -3,15 +3,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
+import {
+  fetchLegacyPostitNotes,
+  LEGACY_POSTIT_BOARD_ID,
+} from "@/lib/legacyPostit";
 import type { PlacementWithNote } from "@/lib/types";
 import type { Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
-
-const POSTIT_BOARD_URL =
-  process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000";
-const POSTIT_BOARD_ID = "wl";
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
 const REFETCH_DELAY_MS = 120;
@@ -32,15 +32,6 @@ const COLUMNS = [
   { id: "tasks", title: "タスク", targetQ: 2, droppable: true },
   { id: "done", title: "完了", targetQ: 5, droppable: true },
 ] as const;
-
-type PostitNote = {
-  id: string;
-  text: string;
-  author?: string;
-  createdAt?: number;
-  gray?: boolean;
-  dueDate?: string;
-};
 
 export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
@@ -97,18 +88,9 @@ export default function TaskBoardPage() {
     setImporting(true);
     setImportMessage(null);
     try {
-      const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
-      if (!res.ok) throw new Error("付箋ボードの取得に失敗しました");
-      const data = (await res.json()) as { notes: PostitNote[] };
-      const notes = (data.notes || [])
-        .filter((n) => !n.gray)
-        .map((n) => ({
-          id: String(n.id),
-          text: n.text || "",
-          due_date: n.dueDate ?? null,
-        }));
+      const notes = await fetchLegacyPostitNotes();
       const result = await api.stickyNotes.importFromPostit({
-        board_id: POSTIT_BOARD_ID,
+        board_id: LEGACY_POSTIT_BOARD_ID,
         notes,
       });
       const msg =
@@ -138,18 +120,9 @@ export default function TaskBoardPage() {
     if (!autoImportEnabled) return;
     const runImport = async () => {
       try {
-        const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { notes: PostitNote[] };
-        const notes = (data.notes || [])
-          .filter((n) => !n.gray)
-          .map((n) => ({
-            id: String(n.id),
-            text: n.text || "",
-            due_date: n.dueDate ?? null,
-          }));
+        const notes = await fetchLegacyPostitNotes();
         if (notes.length === 0) return;
-        await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
+        await api.stickyNotes.importFromPostit({ board_id: LEGACY_POSTIT_BOARD_ID, notes });
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch {

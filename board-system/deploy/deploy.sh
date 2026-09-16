@@ -142,6 +142,28 @@ docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T ba
 echo "Running team seeds..."
 docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" exec -T backend python scripts/seed_teams.py
 
+# ===== 改善計画21: 静的アセットのホストOS同期とクリーンアップ =====
+STATIC_DIR="/var/www/wlinko-pj/shared_static/frontend"
+mkdir -p "$STATIC_DIR"
+
+FRONTEND_CONTAINER=$(docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$NEW_COLOR" ps -q frontend)
+
+if [ -n "$FRONTEND_CONTAINER" ]; then
+    echo "Syncing static assets to host directory..."
+    # コンテナからホストOSのディレクトリへ直接上書きコピー
+    docker cp ${FRONTEND_CONTAINER}:/app/.next/static/. "$STATIC_DIR/"
+    # Nginxが安全に読み取れるようにパーミッションを調整 (ディレクトリは実行権限、ファイルは読み取り権限)
+    chmod -R a+rX "$STATIC_DIR"
+else
+    echo "Warning: Frontend container not found, skipping static assets sync."
+fi
+
+# クリーンアップ (14日以上古いファイルを削除し、空ディレクトリも整理)
+echo "Cleaning up old static assets..."
+find "$STATIC_DIR" -type f -mtime +14 -delete 2>/dev/null || true
+find "$STATIC_DIR" -type d -empty -delete 2>/dev/null || true
+# ==============================================================
+
 # Nginx切り替え
 echo "Switching traffic..."
 cat <<EOF > "$ACTIVE_ENV_FILE"

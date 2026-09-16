@@ -49,6 +49,19 @@ npm install
 echo -e "${YELLOW}🔨 Building Next.js application...${NC}"
 npm run build
 
+# ===== 改善計画21: 静的アセットのホストOS同期とクリーンアップ =====
+echo -e "${YELLOW}📂 Syncing sticky-note static assets to host directory...${NC}"
+STATIC_DIR_STICKY="/var/www/wlinko-pj/shared_static/sticky-note"
+mkdir -p "$STATIC_DIR_STICKY"
+# ビルドで生成された .next/static を蓄積ディレクトリにコピー
+cp -a .next/static/. "$STATIC_DIR_STICKY/"
+chmod -R a+rX "$STATIC_DIR_STICKY"
+
+echo -e "${YELLOW}🧹 Cleaning up old sticky-note static assets...${NC}"
+find "$STATIC_DIR_STICKY" -type f -mtime +14 -delete 2>/dev/null || true
+find "$STATIC_DIR_STICKY" -type d -empty -delete 2>/dev/null || true
+# ==============================================================
+
 # 7. Stop existing PM2 process (if any)
 echo -e "${YELLOW}🔄 Stopping existing process...${NC}"
 pm2 delete wl-sticky-note 2>/dev/null || true
