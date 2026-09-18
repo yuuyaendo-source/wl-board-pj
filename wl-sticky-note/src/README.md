@@ -1,77 +1,45 @@
-# wl-sticky-note（付箋ボード）— アプリ本体
+# wl-sticky-note（付箋ボード）— アプリ本体 (src)
 
-Next.js、Express、Socket.IO を使用したリアルタイム協調型付箋ボードアプリケーション。
+Next.js 16、Express、Socket.IO を組み合わせたリアルタイム協調型付箋ボードアプリケーションのソースコードです。
 
-- **プロジェクト名**: wl-sticky-note
-- **本番サーバ**: 172.16.1.203 / wlboardsys.internal.wonder-link.com
-
----
-
-## 機能
-
-- 付箋の作成・編集・移動・削除（ボードから削除）
-- 9色のカラーパレット・ピン留め
-- 付箋のグループ化
-- ボード名の保存・ボードのダウンロード・インポート
-- リアルタイム同期（複数ユーザー対応）
-- AI-Board・Desktopアプリとの連携API
-- **Board System（4ボード）へのリンク**: トップページとボード内ツールバー（📋）から、Board System (Wonder Linko) を別タブで開ける。`.env` の `NEXT_PUBLIC_BOARD_SYSTEM_URL` でリンク先を変更可能（未設定時は <https://wlboardsys.internal.wonder-link.com/boards）。**本番では同一> FQDN の `/boards` に設定し、必ず再ビルドすること。** 付箋ボードと Board System を同一サーバでデプロイする手順はリポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
+- **プロジェクト名**: `wl-sticky-note`
+- **本番サーバ**: `172.16.1.203` / `wlboardsys.internal.wonder-link.com`
+- **主要アクセス先**: `/board/wl`
 
 ---
 
-## 開発環境
+## 主な機能
 
-### 必要なもの
+- **付箋操作**: 作成・インライン編集・移動・削除、9色のカラーパレット、ピン留め、グループ化
+- **高速ドラッグレンダリング**: `useRef` による直接 DOM 操作により、ドラッグ中の不要な再レンダリングを防止
+- **Google Map風パン移動**: Spaceキー＋左ドラッグ、またはマウス中ボタンドラッグでキャンバス全体をスクロール
+- **カーソル中心のホイールズーム**: マウスホイールで 0.3x 〜 2.5x の滑らかな拡大・縮小
+- **矩形ドラッグ複数選択**: 空き領域ドラッグによる選択ボックス表示、複数付箋の一括選択（Shift追加/解除、Esc全解除）
+- **複数付箋の一括移動**: 選択状態の付箋をまとめてドラッグ移動（100ms スロットル同期）
+- **グレー付箋トグル切替**: ツールバーの 👁️/🙈 ボタンで完了済み付箋の表示／非表示を切り替え
+- **他システム連携 API**: Board System やデスクトップ常駐アプリとの REST API / Socket.IO 通信
+- **Board System への直接アクセス**: ツールバー（📋）から統合 4 ボードシステムを開くリンク
 
-- Node.js 18.x 以上
+---
+
+## 開発環境とローカル起動
+
+### 必要な環境
+
+- Node.js 20.x LTS 以上
 - npm 9.x 以上
 
-### セットアップ・起動
+### セットアップ & 起動
 
 ```bash
+cd wl-sticky-note/src
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。ボード例: [http://localhost:3000/board/wl](http://localhost:3000/board/wl)
-
----
-
-## 本番デプロイ
-
-- **付箋ボード＋Board System を同一サーバで運用**: リポジトリルートの **[docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md)** を参照（02_1_sticky-note と board-system の clone・ビルド・PM2・Nginx の一連手順）。
-- **付箋ボード単体**: プロジェクトルート [docs/デプロイ手順.md](../docs/デプロイ手順.md) を参照。
-
-### 単体デプロイの手順の概要
-
-1. サーバに SSH 接続
-2. `/var/www/wl-sticky-note` に wlinko-pj を sparse-checkout で clone（02_1_sticky-note のみ）
-3. 本ディレクトリ（`02_1_sticky-note/src`）で `./deploy.sh` を実行
-
-`deploy.sh` は Node.js / PM2 / Nginx のインストール、ビルド、起動、Nginx 設定まで行います。
-
-### 運用コマンド
-
-```bash
-pm2 logs wl-sticky-note    # ログ確認
-pm2 restart wl-sticky-note # 再起動
-pm2 stop wl-sticky-note    # 停止
-sudo systemctl status nginx # Nginx 状態
-```
-
-### 更新時の反映
-
-```bash
-cd /var/www/wl-sticky-note
-git pull
-cd 02_1_sticky-note/src   # releases の場合は releases/02_1_sticky-note/src
-rm -rf .next
-npm install
-npm run build
-pm2 restart wl-sticky-note --update-env
-```
-
-`.env` の `NEXT_PUBLIC_*` を変更した場合は必ず再ビルドすること。
+ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。  
+代表的なボード例: [http://localhost:3000/board/wl](http://localhost:3000/board/wl)
 
 ---
 
@@ -80,18 +48,18 @@ pm2 restart wl-sticky-note --update-env
 ```
 src/
 ├── app/                    # Next.js App Router
-│   ├── page.js            # ボード一覧
-│   └── board/[id]/        # 動的ボードページ
+│   ├── page.js             # ボード一覧画面
+│   ├── [id]/               # 動的ボード画面（パン移動、ズーム、矩形選択）
+│   └── globals.css         # スタイル定義
 ├── components/             # React コンポーネント
-│   ├── BoardCanvas.js     # メインボードキャンバス
-│   ├── StickyNote.js      # 付箋コンポーネント
-│   ├── Toolbar.js         # ツールバー
-│   ├── CommentListPanel.js
+│   ├── StickyNote.js       # 付箋コンポーネント（useRefドラッグ、選択状態、期限表示）
+│   ├── Toolbar.js          # ツールバー（ズーム、グレー切替、ボードリンク）
+│   ├── CommentListPanel.js # 付箋一覧サイドパネル
 │   └── ...
-├── server.js               # Express + Socket.IO サーバー
+├── server.js               # Express + Socket.IO サーバー（REST API、リアルタイム通信、データ永続化）
+├── deploy.sh               # ホストデプロイスクリプト（静的アセットホスト同期対応）
 ├── ecosystem.config.js     # PM2 設定
-├── nginx.conf              # Nginx 設定
-├── deploy.sh               # デプロイスクリプト
+├── nginx.conf              # Nginx 設定例
 └── package.json
 ```
 
@@ -99,7 +67,24 @@ src/
 
 ## 技術スタック
 
-- **フロントエンド**: Next.js 16.x, React 19.x
-- **バックエンド**: Express.js, Socket.IO
-- **プロセス管理**: PM2
-- **Webサーバー**: Nginx
+- **フロントエンド**: Next.js 16.x, React 19.x, Three.js (`@pixiv/three-vrm`)
+- **バックエンド**: Express.js 5.x, Socket.IO 4.x
+- **プロセス管理**: PM2（非 Docker 運用時）/ Docker Compose（本番コンテナ運用時）
+- **データストア**: `boards.json`（自動デバウンス保存）
+
+---
+
+## 単体デプロイ・更新コマンド（ホストOS実行時）
+
+```bash
+cd /var/www/wlinko-pj/wl-sticky-note/src
+npm install
+npm run build
+# 静的アセットのホスト同期
+mkdir -p /var/www/wlinko-pj/shared_static/sticky-note
+cp -a .next/static/. /var/www/wlinko-pj/shared_static/sticky-note/
+chmod -R a+rX /var/www/wlinko-pj/shared_static/sticky-note/
+pm2 restart wl-sticky-note --update-env
+```
+
+※ 本番環境で Docker Compose（Blue/Green）を用いる場合は、`board-system/deploy/deploy.sh` により付箋ボードのビルド・起動・バックアップ・静的アセット同期が一括実行されます。

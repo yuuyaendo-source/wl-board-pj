@@ -1,26 +1,38 @@
 # Board System Backend (Wonder Linko)
 
-4ボード（Main / Task / Personal / Meeting）用の FastAPI バックエンド。  
-開発は SQLite（async）、**本番 Docker は PostgreSQL**（`docker-compose.prod.yml` + `docker-compose.db.yml`）。
+4ボード（Main / Task / Personal / Meeting）用の FastAPI 非同期バックエンド。  
+開発は SQLite（aiosqlite）、**本番 Docker は PostgreSQL**（`postgresql+asyncpg`、`docker-compose.prod.yml` + `docker-compose.db.yml`）。
+
+---
 
 ## 技術スタック
 
-- **Framework**: FastAPI
-- **ORM**: SQLAlchemy 2.0（非同期）
-- **DB ドライバ**: aiosqlite（SQLite）。本番は `postgresql+asyncpg` を想定
-- **設定**: pydantic-settings + .env
+- **Framework**: FastAPI (Python 3.10+)
+- **ORM**: SQLAlchemy 2.0（完全非同期）
+- **DB ドライバ**: aiosqlite（SQLite） / asyncpg（PostgreSQL）
+- **マイグレーション**: Alembic
+- **セキュリティ・認証**: 簡易 JWT（管理者用）、`cryptography` / `sqlalchemy-utils`（Google OAuth トークンの AES-256 暗号化保存）
+- **設定管理**: pydantic-settings + .env
+- **スケジューラ**: APScheduler（内蔵・Asia/Tokyo）
 - **AI**: 社内 Ollama（`OLLAMA_URL`）。自動仕分け・マトリクススコア・日次リセット・ブレスト・ニュース要約
+
+---
 
 ## セットアップ
 
 ```bash
 cd board-system/backend
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # Linux/macOS
+# Windows: .venv\Scripts\activate / Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env     # 必要に応じて編集
+cp .env.example .env
 ```
+
+> [!IMPORTANT]
+> **`TOKEN_ENCRYPTION_KEY` の設定が必須です。**  
+> Google カレンダーの OAuth トークンを暗号化するため、`.env` 内の `TOKEN_ENCRYPTION_KEY` に **32 バイト以上** の文字列を必ず設定してください。未設定の場合は起動時にエラーとなりアプリが停止します。
+
+---
 
 ## 起動
 
@@ -28,166 +40,161 @@ cp .env.example .env     # 必要に応じて編集
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API: <http://localhost:8000>
-- ヘルス: <http://localhost:8000/health>
+- API ルート: <http://localhost:8000>
+- 死活確認: <http://localhost:8000/health>
+- Swagger UI (開発時): <http://localhost:8000/docs>
+
+---
 
 ## ディレクトリ構成
 
 ```
 backend/
 ├── alembic/
-│   ├── versions/      # マイグレーションスクリプト
-│   └── env.py         # 非同期対応
+│   ├── versions/      # マイグレーション履歴（is_personal_only, user_teams, admin_auth 等）
+│   └── env.py         # 非同期マイグレーション設定
 ├── app/
 │   ├── ai/            # Linko Core（triage, matrix, daily_reset）
-│   ├── config.py      # 設定（DATABASE_URL, GEMINI_API_KEY 等）
-│   ├── db.py          # 非同期エンジン・セッション・Base・seed
-│   ├── main.py        # FastAPI アプリ
-│   ├── models/        # User, Team, StickyNote, BoardPlacement
-│   ├── routers/       # users, teams, sticky_notes, boards, daily_reset
-│   └── schemas/       # Pydantic スキーマ
-├── scripts/           # seed_personal_members.py, seed_teams.py
+│   ├── config.py      # アプリ設定・環境変数バリデーション
+│   ├── db.py          # 非同期エンジン・セッション管理・シード初期化
+│   ├── main.py        # FastAPI エントリポイント・ルーター登録
+│   ├── models/        # SQLAlchemy モデル（User, Team, UserTeam, StickyNote, BoardPlacement 等）
+│   ├── routers/       # 各種 API ルーター（管理者認証, チーム, 付箋, ボード, スケジューラ等）
+│   ├── schemas/       # Pydantic スキーマ
+│   ├── services/      # LLM 連携・設定管理サービス
+│   └── scheduler.py   # 内蔵 APScheduler
+├── desktop_app_releases/ # デスクトップアプリ MSI・latest.json 配信用（bind mount）
+├── scripts/           # seed_teams.py 等のユーティリティ
 ├── alembic.ini
 ├── .env.example
 ├── requirements.txt
 └── README.md
 ```
 
+---
+
 ## マイグレーション
 
 ```bash
-alembic upgrade head   # 最新まで適用
-alembic revision --autogenerate -m "説明"   # 変更から新規リビジョン生成
+alembic upgrade head                       # 最新リビジョンまで適用
+alembic revision --autogenerate -m "説明"   # モデル変更から新規リビジョン生成
 ```
 
-## API（フェーズ2・3 実装済み）
+### 最新マイグレーション適用履歴
 
-| 種別 | メソッド | パス | 説明 |
-| ------ | ---------- | ------ | ------ |
-| 死活 | GET | `/health` | ヘルスチェック |
-| admin | GET | `/admin/llm` | 実効 LLM スロット・解決 URL・モデルモード（DB 上書きと env を表示） |
-| admin | PUT | `/admin/llm` | body `{"llm_target":1}` など 1〜3 で DB に保存即反映、`{"llm_target":null}` で DB 上書き解除（env の `LLM_TARGET` に従う） |
-| users | GET/POST | `/users` | 一覧・作成（`team_id` 対応） |
-| | PATCH | `/users/{id}` | ユーザー情報・所属チーム更新 |
-| teams | GET/POST | `/teams` | チーム一覧取得・新規チーム作成 |
-| | PATCH/DELETE | `/teams/{id}` | チーム名更新・チーム削除（メンバーの team_id は Set NULL） |
-| sticky_notes | GET/POST | `/sticky_notes` | 一覧・作成（作成時 MAIN＋**AI で Task/Personal にも自動配置**） |
-| | GET/PATCH/DELETE | `/sticky_notes/{id}` | 1件取得・更新・削除 |
-| | POST | `/sticky_notes/{id}/move_to_personal` | Personal に配置（body: `owner_id`, `lane`） |
-| | POST | `/sticky_notes/{id}/copy_to_team` | 指定チーム所属メンバー全員の Personal ボードへ付箋を一括コピー |
-| | POST | `/sticky_notes/{id}/release_to_task_board` | Task Board に配置 |
-| board_placements | GET/POST | `/board_placements` | 一覧（`?board_type=&owner_id=`）・作成 |
-| | GET/PATCH/DELETE | `/board_placements/{id}` | 1件取得・更新・削除 |
-| boards | GET | `/boards/main` | Main ボード View |
-| | GET | `/boards/task` | Task ボード View（5列対応。各配置に `taken_by`, `task_color` 付与） |
-| | GET | `/boards/personal?owner_id=` | Personal ボード View（`is_from_task` 付与） |
-| | GET | `/boards/morning` | Meeting ボード View（MORNING 配置一覧。フロントは `/meeting`） |
-| brainstorm | POST | `/brainstorm` | デスクトップ向けブレスト（SSE ストリーミング） |
-| task_reminders | GET/POST | `/users/{id}/task_reminders/*` | デスクトップ向け Today タスクリマインド |
-| calendar_reminders | GET/POST | `/users/{id}/calendar_reminders/*` | デスクトップ向けカレンダーリマインド |
-| news | POST | `/news/fetch`, `/news/clear` | ニュース取得・クリア（スケジューラからも呼ばれる） |
-| auth_google | GET | `/auth/google`, `/auth/google/callback` | Google カレンダー OAuth |
-| daily_reset | GET | `/daily_reset/messages?owner_id=` | 朝会用「持ち越しますか？」メッセージ一覧 |
-| daily_reset | POST | `/daily_reset/sync_to_morning` | 全ユーザーの Personal Today を MORNING にコピー |
-| daily_reset | POST | `/daily_reset/run_8am` | 8:00 日次処理（Meeting リセット + カレンダー同期） |
+- `m3n4o5p6q7r8_add_is_personal_only_to_sticky_notes.py`: パーソナル直接投稿付箋の AI 仕分けスキップフラグ追加
+- `l2m3n4o5p6q7_add_user_teams_and_admin_auth.py`: 複数チーム所属用 `user_teams` 中間テーブルおよび管理者認証基盤の追加
+- `k1l2m3n4o5p6_add_due_date_and_manually_moved_flag.py`: 付箋の期限日および手動移動フラグ追加
+- `e5f6a7b8c9d0_add_user_google_tokens.py`: Google OAuth トークン暗号化テーブル追加
 
-- **Task ボード**: `matrix_quadrant` は 1=アイデア、2=短期タスク、3=長期タスク、4=重要、5=完了。レスポンスに `taken_by`（引き取り者 id/name/name_short）、`task_color`（yellow/green/grey）を付与。
-- **Personal と Task の連動**: `PATCH /board_placements` で Personal の `lane` を DONE にすると、同一 note の TASK 配置の `matrix_quadrant` を 5（完了）に更新。DONE から INBOX/TODAY に戻すと TASK を 4（重要）に戻す。
-- **CORS**: 全オリジン許可（開発用）。本番では `allow_origins` を絞ること。
+---
 
-## フェーズ3: AI Worker（Linko Core）
+## 主要 API 一覧
 
-`OLLAMA_URL` を .env に設定すると以下が有効になる。
+### 1. 管理者認証・システム管理
 
-1. **Auto-Triage（Logic 1）**  
-   `POST /sticky_notes` で Main に投稿すると、LLM が「タスクか情報か」「担当者明記か」を判定。  
-   タスク → **Task Board** に配置し、緊急度・重要度をスコアリング（position_x/y, matrix_quadrant）。  
-   担当者名あり → 該当ユーザー（`users.name` 部分一致）の **Personal Board Inbox** に配置。
+| メソッド | パス | 認証 | 説明 |
+| :--- | :--- | :---: | :--- |
+| POST | `/admin/login` | 不要 | 管理者パスワード検証と JWT トークン発行（body: `{"password": "..."}`） |
+| GET | `/admin/llm` | **要Admin** | 現在の LLM スロット・実効 URL・解決モデル情報の取得 |
+| PUT | `/admin/llm` | **要Admin** | LLM スロットの動的切替（`{"llm_target": 1\|2\|3\|null}`） |
 
-2. **Matrix Scoring（Logic 2）**  
-   Task Board に載せる際、LLM が緊急度・重要度を 0–100 で採点。  
-   position_x = 緊急度、position_y = 重要度。matrix_quadrant は 1–4 で自動算出（5=完了は Personal DONE 連動で設定）。
+### 2. ユーザー & チーム管理 (N:M対応)
 
-3. **Daily Reset（Logic 3）**  
-   `GET /daily_reset/messages?owner_id=` で、そのユーザーの Personal Today レーンの付箋について  
-   「昨日の『〇〇』は持ち越しますか？」形式のメッセージを LLM で生成。
+| メソッド | パス | 認証 | 説明 |
+| :--- | :--- | :---: | :--- |
+| GET | `/users` | 不要 | ユーザー一覧取得（所属チームリスト `teams` を含む） |
+| GET | `/users/by_email` | 不要 | メールアドレスによるユーザー検索（デスクトップログイン用） |
+| GET | `/users/{id}` | 不要 | ユーザー個別取得 |
+| POST | `/users` | **要Admin** | ユーザー新規作成（複数チーム `team_ids` リスト指定対応） |
+| PATCH | `/users/{id}` | **要Admin** | ユーザー情報・所属チーム更新 |
+| DELETE | `/users/{id}` | **要Admin** | ユーザー削除 |
+| GET | `/teams` | 不要 | チーム一覧取得（所属メンバー数等を含む） |
+| POST | `/teams` | **要Admin** | チーム新規作成 |
+| PATCH | `/teams/{id}` | **要Admin** | チーム名更新 |
+| DELETE | `/teams/{id}` | **要Admin** | チーム削除（所属メンバーの紐付け解除） |
 
-4. **Meeting スナップショット**  
-   `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー。既存 MORNING は削除してから作成。本番では cron で毎朝 10:15 に実行する想定。
+### 3. 付箋 (Sticky Notes) & ボード配置
 
-5. **Google カレンダー連携（今日の予定・Today）**  
-   - 取得範囲: **その日 0:00〜23:59**（`CALENDAR_TIMEZONE`、既定 Asia/Tokyo）。  
-   - 手動: `POST /api/personal/{user_id}/calendar/refresh` で今日の予定を取得し、ローカル LLM で短縮文を生成して Today に保存し、**要約を P 付箋として Personal の Today レーンに配置**。  
-   - **毎日 8:00**: `POST /daily_reset/run_8am` を cron で呼ぶと、(1) Meeting ボードをリセット (2) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に表示＆要約を P 付箋で Today レーンに配置。  
-   - **毎日 10:15**: `POST /daily_reset/sync_to_morning` で全ユーザーの Personal Today を MORNING にコピー（Meeting ボードに反映）。  
-   - **日次スケジュール（日本時間）**: バックエンドに組み込みの APScheduler が **Asia/Tokyo** で動作。`SCHEDULER_ENABLED=true`（既定）のとき、**毎日 8:00 JST** に `run_8am`、**毎日 10:15 JST** に `sync_to_morning` を自サーバへ POST する。無効にする場合は `SCHEDULER_ENABLED=false`。`SCHEDULER_BASE_URL` で自サーバ URL を指定（既定: <http://127.0.0.1:8000）。>
+| メソッド | パス | 認証 | 説明 |
+| :--- | :--- | :---: | :--- |
+| GET | `/sticky_notes` | 不要 | 付箋一覧取得 |
+| POST | `/sticky_notes` | 不要 | 付箋作成（Main ボード配置 ＋ **AI 自動仕分けで Task/Personal にも配置**） |
+| POST | `/sticky_notes/create_personal` | 不要 | **Personal ボード直接投稿**（`is_personal_only=True`、AI仕分けをスキップし、タスク化を防ぐ） |
+| POST | `/sticky_notes/import_from_postit` | 不要 | 付箋ボードからの取り込み（`dueDate` / `due_date` エイリアス対応） |
+| PATCH | `/sticky_notes/sync_from_postit` | 不要 | 付箋ボードからの双方向同期 |
+| GET/PATCH | `/sticky_notes/{id}` | 不要 | 付箋の取得・本文や期限（`due_date`）の更新 |
+| DELETE | `/sticky_notes/{id}` | 不要 | 付箋削除（付箋ボードへ PATCH でグレー化通知を送信） |
+| POST | `/sticky_notes/{id}/move_to_personal` | 不要 | Personal ボードへの配置 |
+| POST | `/sticky_notes/{id}/copy_to_team` | 不要 | 指定チームに所属する全メンバーの Personal ボードへ付箋を一括コピー |
+| POST | `/sticky_notes/{id}/release_to_task_board` | 不要 | Personal 配置を解除し、Task ボードへ再配置 |
+| POST | `/board_placements/reorder_personal_lane` | 不要 | Personal ボード内の付箋並び順（`sort_order`）の一括更新 |
+| GET | `/boards/main` | 不要 | Main ボード表示用データ（フリーキャンバス座標） |
+| GET | `/boards/task` | 不要 | Task ボード表示用データ（5列、引き取り者、タスク色、期限情報） |
+| GET | `/boards/personal?owner_id=` | 不要 | Personal ボード表示用データ（Today / タスク / Done、期限情報） |
+| GET | `/boards/morning` | 不要 | Meeting ボード表示用データ（朝会スナップショット） |
 
-- 環境変数: `OLLAMA_URL`（必須・例: <http://172.16.1.161:11435/v1）、`OLLAMA_MODEL`（**省略可**・未設定時は> Ollama の `/api/tags` で **modified_at が最も新しいモデル**を採用し、失敗時は `/v1/models` を参照）。固定モデルにしたいときだけ指定。`OLLAMA_MODEL_AUTO_CACHE_TTL_SECONDS`（既定 600）で自動解決結果のキャッシュ時間を変更可能。社内 LLM Docker が複数ある場合は `LLM_TARGET=1|2|3` と `OLLAMA_URL_1..3` / 任意で `OLLAMA_MODEL_1..3`（番号別モデル固定時のみ）。詳細は `.env.example`。
-- **スケジューラ**: 日次 8:00 / 10:15 JST は **内蔵 APScheduler** で実行されるため、**外部 cron は不要**。Docker やリバースプロキシでアプリの URL が `http://127.0.0.1:8000` でない場合は、`.env` で `SCHEDULER_BASE_URL` をアプリから見た自サーバの URL に設定すること（例: `http://backend:8000`）。
+### 4. 日次リセット・タスクローテーション・スケジューラ
 
-## 本番（Docker）
+| メソッド | パス | 認証 | 説明 |
+| :--- | :--- | :---: | :--- |
+| POST | `/daily_reset/run_8am` | 不要 | 毎朝 8:00 日次処理（Meeting リセット + 今日の予定取得 + 期限 Today 移動 + **タスクローテーション**） |
+| POST | `/daily_reset/rotate_tasks` | 不要 | 停滞タスクローテーションの手動実行（クエリ `?force=true` 対応） |
+| POST | `/daily_reset/sync_to_morning` | 不要 | 全ユーザーの Personal Today を MORNING にスナップショットコピー |
+| POST | `/daily_reset/reset_meeting` | 不要 | Meeting ボードのクリア |
+| GET | `/daily_reset/messages?owner_id=` | 不要 | 朝会用「持ち越しますか？」メッセージ取得 |
 
-**ホスト上で `pip install` する必要はありません。** `backend/Dockerfile` のビルド時に `requirements.txt` がインストールされます（PEP 668 の対象外）。
+### 5. デスクトップアプリ連携・リマインド・ブレスト
 
-更新手順の例（リポジトリの `docker-compose.prod.yml` / `deploy/deploy.sh` に合わせる）:
+| メソッド | パス | 認証 | 説明 |
+| :--- | :--- | :---: | :--- |
+| GET | `/users/{id}/task_reminders/pending` | 不要 | Today タスクリマインド取得（期限警告情報 `due_date` 付与） |
+| POST | `/users/{id}/task_reminders/shown_slot` | 不要 | リマインド表示済み記録 |
+| POST | `/users/{id}/task_reminders/ack` | 不要 | リマインド応答（`continue` または `done`） |
+| GET | `/users/{id}/calendar_reminders/pending` | 不要 | カレンダーリマインド取得（N分前通知） |
+| POST | `/brainstorm` | 不要 | リン子とのブレストチャット（SSE ストリーミング） |
+| POST | `/brainstorm/calendar/confirm` | 不要 | ブレスト内で提案された Google カレンダー予定の登録承認 |
+
+---
+
+## AI Worker & ビジネスロジック
+
+### 1. Auto-Triage & Matrix Scoring
+
+`POST /sticky_notes` で付箋が投稿されると、ローカル LLM が内容を解析:
+
+- **タスクか情報か**: タスクの場合は Task Board に配置。
+- **マトリクススコアリング**: 緊急度と重要度を 0〜100 で採点し、象限 1〜4（1: アイデア、2: 短期、3: 長期、4: 重要）を決定。
+- **担当者判定**: `users.name` と一致する社員名が含まれている場合、その社員の Personal Board（INBOX）に自動配置。
+- ※ `POST /sticky_notes/create_personal` から投稿されたパーソナル専用付箋は、この AI 仕分けがスキップされます。
+
+### 2. 期限連動移動ルール (`apply_due_date_rules`)
+
+期限日（`due_date`）が設定されている Personal 付箋について:
+
+- **当日以前**（`days <= 0`）または **直前日数**（1, 2, 3, 4, 5, 10, 20日前、30の倍数日前）に該当する場合、自動的に `INBOX` から `TODAY` レーンへ移動。
+- 手動で移動されたフラグ（`is_manually_moved_to_today`）が立っている付箋は、ユーザーの意図を尊重して維持。
+
+### 3. 停滞タスクの自動ローテーション (`rotate_stale_tasks`)
+
+タスクボードおよびパーソナルボードが停滞するのを防ぐため、2日に1回（`run_8am` 実行時）自動実行:
+
+- **優先タスクの保護**: 期限が10日以内のタスクはローテーション対象外とし、先頭位置をキープ。
+- **Task Board**: 象限内に 11 件以上ある場合、先頭 10 件を末尾に移動。
+- **Personal Board**: INBOX 内に 4 件以上ある場合、先頭 3 件を末尾に移動。
+
+### 4. Google カレンダー連携とトークン暗号化
+
+- 取得範囲: Asia/Tokyo 基準の当日 0:00〜23:59。
+- セキュリティ: トークンは AES-256（`TOKEN_ENCRYPTION_KEY`）で DB に暗号化保存。復号失敗時は安全にレコードを初期化し再認証を促す。
+
+---
+
+## 本番（Docker）デプロイ
+
+ホスト側で Python 環境や pip をインストールする必要はありません。`backend/Dockerfile` ビルド時にコンテナ内部に環境が構築されます。
 
 ```bash
-cd /var/www/wlinko-pj/board-system   # デプロイ先のパス
-docker compose -f docker-compose.prod.yml build backend
-docker compose -f docker-compose.prod.yml up -d backend   # 実際の -p やファイルは環境に合わせる
-# マイグレーション（backend コンテナ内）
-docker compose -f docker-compose.prod.yml exec backend alembic -c /app/alembic.ini upgrade head
+cd /var/www/wlinko-pj/board-system/deploy
+./deploy.sh
 ```
-
-- ログ: `docker compose ... logs -f backend`
-- 詳細はリポジトリの [DEPLOY.md](../DEPLOY.md) や [docs/デプロイとマイグレーション手順.md](../docs/デプロイとマイグレーション手順.md) を参照。
-
-## 本番（Ubuntu ホスト直起動・非 Docker）: 起動とログ
-
-- **ログはファイルに残さない**。確認時だけ別ターミナルで `tail -f` する想定。
-
-### 依存のインストール（Ubuntu 24.04 など PEP 668 対応 OS）
-
-システムの `python3` にそのまま `pip install` すると **`externally-managed-environment`** で拒否されます。**仮想環境内の pip** を使ってください。
-
-```bash
-cd /path/to/board-system/backend
-sudo apt install -y python3-venv python3-full   # 初回のみ（venv が無い場合）
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
-alembic upgrade head
-```
-
-- systemd の `ExecStart` は **`/path/to/board-system/backend/.venv/bin/uvicorn`** のように venv 内のバイナリを指定する。
-
-### 起動（本番では --reload なし）
-
-```bash
-cd /path/to/board-system/backend
-source .venv/bin/activate
-# 別ターミナルで tail するため一時的に tee（ファイルは残さず /tmp でよい）
-uvicorn app.main:app --host 0.0.0.0 --port 8000 2>&1 | tee /tmp/board-backend.log
-```
-
-- `/tmp` は再起動で消えるのでログを残さない運用に適している。必要なら `tail -f /tmp/board-backend.log` で追う。
-
-### 別ターミナルでログを追う
-
-```bash
-tail -f /tmp/board-backend.log
-```
-
-- 直近から: `tail -n 100 -f /tmp/board-backend.log`
-- `Ctrl+C` で終了（バックエンドは止まらない）
-
-### systemd で運用する場合
-
-- ログは **journald** に出るので、別ターミナルで `journalctl -u board-system-api -f` で追える（ユニット名は環境に合わせる）。
-- 詳細は [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
-
-## 引き継ぎ・本番
-
-- 本番デプロイ・運用: リポジトリルート [docs/本番デプロイ手順.md](../../docs/本番デプロイ手順.md) を参照。
-- systemd で `board-system-api` として uvicorn を常時起動。SQLite の書き込み権限（backend ディレクトリの chown）と uvicorn パスの確認が必要な場合あり（同ドキュメントのトラブルシューティング参照）。

@@ -2,194 +2,198 @@
 
 付箋ボード（`wl-sticky-note`）と連携する統合ボードシステム。**Main / Task / Personal / Meeting** の 4 ボードを提供し、社内 LLM（Ollama）による自動仕分け・Google カレンダー連携・ニュース要約・デスクトップアプリ向け API を担う。
 
-**本番は Docker（Blue/Green）+ PostgreSQL** が標準。付箋ボードと同一サーバ（`wl-board-pj` / `172.16.1.203`）で `https://wlboardsys.internal.wonder-link.com/` に配信。
+**本番は Docker（Blue/Green）+ PostgreSQL** が標準。付箋ボードと同一サーバ（`wlboardsys-app-01` / `172.16.1.203`）で `https://wlboardsys.internal.wonder-link.com/` に配信。
+
+---
 
 ## 構成
 
 ```
 board-system/
-├── backend/     # FastAPI + SQLAlchemy（開発: SQLite / 本番: PostgreSQL）
-├── frontend/    # Next.js App Router + Tailwind（本番 basePath: /boards）
-├── deploy/      # deploy.sh / rollback.sh（Blue/Green）
-├── nginx/       # 本番リバースプロキシ設定例
-├── docker-compose.prod.yml
-├── docker-compose.db.yml
+├── backend/                # FastAPI + SQLAlchemy（開発: SQLite / 本番: PostgreSQL）
+│   ├── app/                # APIルーター、モデル、AI Worker、スケジューラ
+│   ├── alembic/            # DBマイグレーションスクリプト
+│   └── desktop_app_releases/ # デスクトップアプリ MSI/latest.json 配信用（bind mount）
+├── frontend/               # Next.js 16 App Router + Tailwind CSS v4（本番 basePath: /boards）
+├── deploy/                 # deploy.sh / rollback.sh（Blue/Green ゼロダウンタイム）
+├── nginx/                  # 本番リバースプロキシ設定（静的アセット直接配信対応）
+├── docker-compose.prod.yml # 本番アプリ用 Compose
+├── docker-compose.db.yml   # PostgreSQL DB用 Compose
 └── README.md
 ```
 
-## 開発状況（2026年6月時点）
+---
 
-| 項目 | 状態 | 備考 |
-| ------ | ------ | ------ |
-| 4 ボード UI | 完了 | `/main` `/taskboard` `/personal/:slug` `/meeting` |
-| Task ボード | 完了 | 5 列（アイデア・短期・長期・重要・完了）。色・引き取り者表示。👥 チームへの付箋一括コピー |
-| Personal ボード | 完了 | Today / タスク / Done。Task 連動・Google カレンダー「今日の予定」 |
-| Meeting ボード | 完了 | 毎朝 10:15 に Personal Today を MORNING へコピー。ニュース要約付箋も反映 |
-| チーム管理 | 完了 | メンバー管理・チーム作成/編集/削除、チーム所属メンバー全員への一括コピー |
-| AI 自動仕分け | 完了 | Ollama（`OLLAMA_URL`）。Gemini は不使用 |
-| Google カレンダー | 完了 | OAuth 連携・今日の予定・デスクトップ向けリマインド API |
-| ブレスト API | 完了 | `POST /brainstorm`（SSE）。デスクトップアプリから利用 |
-| タスク/カレンダーリマインド | 完了 | デスクトップアプリがポーリングする API |
-| ニュース要約 | 完了 | スケジューラで取得・Meeting ボードへ配置 |
-| LLM 管理 UI | 完了 | `/boards/admin/system`（`LLM_TARGET` 切替等） |
-| デスクトップ MSI 配信 | 完了 | `/api/bs/desktop-app/*`（bind mount で即反映） |
-| 本番デプロイ | 完了 | Blue/Green + PostgreSQL。詳細は下記ドキュメント |
+## 主な機能と開発状況（2026年9月現在）
+
+| 項目 | 状態 | 詳細 |
+| :--- | :--- | :--- |
+| **4 ボード UI** | 完了 | `/main`（全体構想・✨AI自動仕分け付箋）、`/taskboard`（5列）、`/personal/:id`（個別作業）、`/meeting`（朝会スナップショット） |
+| **Task ボード** | 完了 | 5列（アイデア・短期・長期・重要・完了）。色・引き取り者表示。👥 チーム所属メンバーへの付箋一括コピー。**期限バッジ（DueDateBadge）表示**。 |
+| **Personal ボード** | 完了 | Today / タスク / Done。Task 連動・Google カレンダー「今日の予定」。**パーソナル専用投稿（`is_personal_only`、AI仕分けスキップ）**。ゴミ箱ドロップ時の安全なアーカイブ。 |
+| **Meeting ボード** | 完了 | 毎朝 10:15 に Personal Today を MORNING へ自動コピー。期限バッジ・強調枠線表示。ニュース要約付箋の反映。 |
+| **複数チーム管理 (N:M)** | 完了 | `user_teams` 中間テーブルによる多対多所属対応。ユーザー一覧での色分けバッジ表示。チーム一括コピーの複数所属対応。 |
+| **管理者認証 (JWT)** | 完了 | `ADMIN_PASSWORD` に基づく JWT 認証（`POST /admin/login`）。ユーザー作成/削除、チーム作成/削除、LLM切替操作の保護。 |
+| **期限連動ルール** | 完了 | 期限（`due_date`）が当日または特定日数前（1〜5, 10, 20日前、30の倍数日前）のタスクを自動で Today レーンへ移動。 |
+| **タスクローテーション** | 完了 | 停滞タスクを自動で末尾に再配置（2日に1回、`run_8am` 実行時）。期限10日以内の優先タスクは先頭キープ。手動トリガー API（`/daily_reset/rotate_tasks`）完備。 |
+| **OAuthトークン暗号化** | 完了 | Google カレンダーのアクセストークン／リフレッシュトークンを AES-256 で暗号化保存（`TOKEN_ENCRYPTION_KEY` 必須）。 |
+| **AI 自動仕分け** | 完了 | 社内 Ollama（`OLLAMA_URL`）。Gemini は不使用。複数 LLM スロット切替（1〜3）対応。 |
+| **Google カレンダー** | 完了 | OAuth 連携・今日の予定・デスクトップ向けリマインド API（期限付き）。 |
+| **ブレスト API** | 完了 | `POST /brainstorm`（SSE ストリーミング）。デスクトップアプリから利用（カレンダー予定登録提案・音声読み上げ連携）。 |
+| **デスクトップ MSI 配信** | 完了 | `/api/bs/desktop-app/*`（ホストディレクトリの bind mount によりコンテナ再起動不要で即時反映）。 |
+| **本番ゼロダウンタイム** | 完了 | Blue/Green 切り替え + 静的アセット（`_next/static`）のホストOSディレクトリ永続化同期（改善計画21）。 |
+
+---
 
 ## 本番 URL（Docker 構成）
 
-| 用途 | パス（FQDN 配下） |
-| ------ | ------------------- |
+| 用途 | パス（FQDN: `wlboardsys.internal.wonder-link.com`） |
+| :--- | :--- |
 | 付箋ボード | `/board/wl` 等 |
-| Board System フロント | `/boards` |
-| Board System API | `/api/bs` |
+| Board System フロント | `/boards`（ルート `/` は `/boards/taskboard` に自動リダイレクト） |
+| Board System API | `/api/bs/`（末尾スラッシュ必須） |
 | Google OAuth コールバック | `/auth/google/callback` |
 | デスクトップ更新 | `/api/bs/desktop-app/latest.json` |
 
 同一 LAN 上の linko-system（`https://linkosys.internal.wonder-link.com/`）とユーザー DB・顔/音声登録 API を共有。
 
-## 起動（開発時）
+---
 
-**バックエンドを先に起動すること。**
+## 起動方法（ローカル開発時）
+
+**バックエンドを先に起動してください。**
+
+### ターミナル 1: バックエンド
 
 ```bash
-# ターミナル 1
 cd board-system/backend
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+# Windows: .venv\Scripts\activate / Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # OLLAMA_URL 等
-uvicorn app.main:app --reload --port 8000
+cp .env.example .env
 
-# ターミナル 2
-cd board-system/frontend
-npm install && npm run dev
+# 重要: .env 内の TOKEN_ENCRYPTION_KEY に 32 バイト以上の安全な文字列を設定
+uvicorn app.main:app --reload --port 8000
 ```
 
-- フロント: <http://localhost:3000（単体）または> :3001（付箋ボード併用）
-- トップで「API 接続済み」と表示されれば OK
+- API ルート: <http://localhost:8000>
+- 死活確認: <http://localhost:8000/health>
 
-**付箋ボード併用**: `wl-sticky-note` を 3000、board-system フロントを 3001。  
-`NEXT_PUBLIC_BOARD_SYSTEM_URL` / `NEXT_PUBLIC_LEGACY_BOARD_URL` で相互リンク。
+### ターミナル 2: フロントエンド
 
-## ローカル Docker（付箋＋Board まとめて）
+```bash
+cd board-system/frontend
+npm install
+cp .env.local.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev -- -p 3001
+```
+
+- フロントエンド: <http://localhost:3001>（単体時は 3000、付箋ボード併用時は 3001）
+- 開くと自動的に `/taskboard` へリダイレクトされます。
+
+---
+
+## ローカル Docker（付箋＋Board まとめて起動）
 
 ```bash
 cd board-system
 cp .env.example .env
 docker compose up -d --build
-docker exec -it linko-backend alembic upgrade head   # 初回のみ
+docker exec -it linko-backend alembic upgrade head   # 初回のみマイグレーション
 ```
 
-- Board System: <http://localhost:3010>
-- 付箋ボード: <http://localhost:3011>
+- **Board System フロント**: <http://localhost:3010>
+- **付箋ボード**: <http://localhost:3011/board/wl>
+- **Backend API**: <http://localhost:8010/health>
 
-詳細: [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) のローカル確認セクション
+詳細: [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md)
+
+---
 
 ## 日次スケジューラ（内蔵 APScheduler・JST）
 
-`SCHEDULER_ENABLED=true`（既定）のとき、外部 cron 不要。
+`SCHEDULER_ENABLED=true`（既定）のとき、外部 cron なしで動作します。
 
-| 時刻 (JST) | 処理 |
-| ------------ | ------ |
-| 毎日 8:00 | `POST /daily_reset/run_8am` — Meeting リセット + 全ユーザーの今日の予定取得・Today 付箋 |
-| 毎日 10:00 | `POST /news/clear` — ニュース付箋クリア |
-| 毎日 10:15 | `POST /daily_reset/sync_to_morning` — Personal Today → Meeting ボード |
-| 毎日 10:15 | `POST /news/fetch` — ニュース取得・要約を Meeting へ |
+| 時刻 (JST) | 処理 | エンドポイント |
+| :--- | :--- | :--- |
+| **毎日 8:00** | Meeting リセット + 全ユーザーの今日の予定取得 + 期限連動ルール適用 + **停滞タスクの自動ローテーション** | `POST /daily_reset/run_8am` |
+| **毎日 10:00** | ニュース付箋クリア | `POST /news/clear` |
+| **毎日 10:15** | Personal Today → Meeting ボード同期 | `POST /daily_reset/sync_to_morning` |
+| **毎日 10:15** | ニュース取得・要約を Meeting へ配置 | `POST /news/fetch` |
 
-Docker 内では `SCHEDULER_BASE_URL` をコンテナから見える自サーバ URL に設定（例: `http://127.0.0.1:8000`）。
+Docker 内では `SCHEDULER_BASE_URL` をコンテナ自身から到達可能な自サーバ URL（例: `http://127.0.0.1:8000`）に設定します。
 
-## 本番デプロイ・更新
+---
 
-| やりたいこと | 参照 |
-| -------------- | ------ |
-| Docker 本番（推奨） | [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) |
-| 要約・よく使うコマンド | [DEPLOY.md](DEPLOY.md) |
-| 非 Docker（PM2） | [docs/本番デプロイ手順.md](../docs/本番デプロイ手順.md) |
-| ドキュメント索引 | [docs/デプロイ・運用.md](../docs/デプロイ・運用.md) |
+## 本番デプロイ・更新手順
 
-コード更新時の典型フロー（Docker）:
+コード更新時の標準フロー（Docker Blue/Green）:
 
 ```bash
-cd board-system/deploy && ./deploy.sh
-docker exec -it linko-backend-blue alembic upgrade head   # マイグレーションがある場合
+cd /var/www/wlinko-pj/board-system/deploy
+./deploy.sh
 ```
 
-デスクトップ MSI / `latest.json` の差し替えのみなら **deploy 不要**（`backend/desktop_app_releases/` の bind mount）。
+`deploy.sh` は以下を自動で実行します:
 
-## Nginx の注意点：`rewrite` + URI 無し `proxy_pass` を使わない
+1. PostgreSQL の起動確認（`pg_isready` による待機ループ）
+2. 付箋データ（`boards.json`）の自動バックアップ（30世代保持）と共有ボリューム同期
+3. 新コンテナのビルド・起動・ヘルスチェック（`/health`）
+4. DB マイグレーション（`alembic upgrade head`）およびチームシード（`seed_teams.py`）
+5. **静的アセットのホスト同期**（`/var/www/wlinko-pj/shared_static/frontend`）および 14 日超の旧アセット自動削除（改善計画21）
+6. Nginx upstream 切り替え（`active_env.conf`）と Nginx リロード
+7. 旧コンテナの安全な停止
 
-`location /api/bs/` は **URI 付き `proxy_pass`（末尾スラッシュあり）** で書くこと。`rewrite ... break` と URI 無し `proxy_pass` の組み合わせは **Ubuntu の nginx 1.24.0-2ubuntu7.16 以降で壊れる**（後述の障害事例）。
+> [!TIP]
+> デスクトップアプリの MSI / `latest.json` の更新のみであれば、**`deploy.sh` の実行は不要**です（`backend/desktop_app_releases/` の bind mount により、ファイルを配置するだけで即時反映されます）。
+
+---
+
+## Nginx の注意点：`rewrite` + URI 無し `proxy_pass` の禁止
+
+`location /api/bs/` は **URI 付き `proxy_pass`（末尾スラッシュあり）** で記述してください。
 
 ```nginx
-# ✅ 正しい: location 名 /api/bs/ が機械的に除去される
+# ✅ 正しい設定: location /api/bs/ が自動除去されてバックエンドに渡る
 location /api/bs/ {
     proxy_pass http://current_backend/;      # 末尾スラッシュ必須
 }
 
-# ❌ 禁止: 7.16 以降で転送先パスが破壊される
+# ❌ 禁止: Ubuntu の nginx 更新パッチで URI 転送が破損する障害原因
 location /api/bs/ {
     rewrite ^/api/bs/(.*)$ /$1 break;
     proxy_pass http://current_backend;       # URI 無し
 }
 ```
 
-対応済み（2026-08-20 時点で `nginx/` 配下に旧パターンは残っていない）:
-`nginx.conf` / `nginx.conf.production-server` / `nginx.conf.production-server-no-staging` / `staging.conf`
+### 静的アセットの直接配信と 404 ハンドリング（改善計画21）
 
-設定を追加・複製する際は `grep -rn 'rewrite .*break' nginx/` で旧パターンが混入していないか確認すること。
+デプロイ直後に旧画面を開いていたユーザーが古い JS ファイルを要求した際、Next.js のフォールバック HTML が返却されて `SyntaxError`（`🔴 Offline`）になるのを防ぐため、Nginx が静的アセットを直接配信し、存在しない場合は純粋な 404 を返します。
 
-### 障害事例: 2026-08-20 「全ページで Not Found」
-
-| 項目 | 内容 |
-|------|------|
-| 症状 | `/boards/taskboard` `/boards/meeting` 等で画面に「エラー: Not Found」。デスクトップアプリの自動更新も停止 |
-| 発生 | 2026-08-20 06:48（`unattended-upgrade` 実行時刻）以降のリクエストから |
-| 原因 | nginx が 1.24.0-2ubuntu7.15 → **7.16** に自動更新。CVE-2026-42533 の修正パッチ（7.15 で ABI 破壊のため一旦無効化 → 7.16 で再投入）が `ngx_http_script.c` / `ngx_http_rewrite_module.c` / `ngx_http_proxy_module.c` を変更し、`rewrite` + URI 無し `proxy_pass` の URI 受け渡しが破壊された |
-| 対処 | `location /api/bs/` を URI 付き `proxy_pass` に書き換え → `nginx -t && systemctl reload nginx` |
-
-補足:
-
-- **設定ファイルは一切変更されていなかった**（5月27日から未更新）。OS の自動更新のみが変化点。
-- Blue/Green の入れ替えでは直らない。nginx 側の色に依存しない共通設定の問題のため。
-- HTML（`/boards/*`）は 200 のまま正常配信されていたため、Next.js の 404 ページではなく、**API の 404 レスポンス `{"detail":"Not Found"}` をフロントがそのまま表示**していた（`frontend/lib/api.ts`）。API 障害が「NotFound」に見える点に注意。
-- 切り分けの決め手はバックエンドのアクセスログ。nginx が転送した実パスが `//api/b`（`/health` と同じ 7 バイト）のように、**長さは rewrite 後・中身は rewrite 前**という破壊のされ方をしていた。
-
-### 切り分け用コマンド
-
-```bash
-# API 経路が生きているか（200 が正常）
-curl -sk -o /dev/null -w '%{http_code}\n' https://wl-ai-board.internal.wonder-link.com/api/bs/health
-
-# nginx が実際に転送しているパスを見る（バックエンドのアクセスログ）
-docker logs --tail 50 linko-backend-blue     # または -green
-
-# 稼働中の設定と、自動更新の履歴
-sudo nginx -T | grep -B3 -A8 'location /api/bs'
-sudo nginx -T | grep -B3 -A3 'rewrite .* break'    # 他に同型パターンが無いか
-grep -B6 'nginx:amd64' /var/log/apt/history.log
-sudo journalctl -u nginx --since yesterday --no-pager
+```nginx
+location /_next/static/ {
+    alias /var/www/wlinko-pj/shared_static/frontend/;
+    expires 365d;
+    access_log off;
+    try_files $uri =404;
+}
 ```
 
-nginx は `unattended-upgrades` の対象。**本番サーバの nginx がメンテナンス時間帯（早朝）に自動更新・再起動される**ことを前提に運用すること。除外する場合は `/etc/apt/apt.conf.d/50unattended-upgrades` の `Unattended-Upgrade::Package-Blacklist` に `nginx` を追加する（セキュリティ更新が手動運用になるトレードオフあり）。
+---
 
-## サブディレクトリ
+## サブディレクトリ README
 
 | ディレクトリ | README | 内容 |
-| -------------- | -------- | ------ |
-| [backend/](backend/README.md) | あり | FastAPI、API 一覧、AI Worker、マイグレーション |
-| [frontend/](frontend/README.md) | あり | Next.js、ボード別パス、環境変数 |
-| [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップ MSI 自動更新配信 |
+| :--- | :--- | :--- |
+| [backend/](backend/README.md) | あり | FastAPI、全 API 一覧、管理者認証、AI Worker、マイグレーション |
+| [frontend/](frontend/README.md) | あり | Next.js 16、4ボード仕様、チーム管理UI、環境変数 |
+| [backend/desktop_app_releases/](backend/desktop_app_releases/README.md) | あり | デスクトップ MSI 自動更新配信仕様（bind mount） |
 
-## 関連リポジトリ・サービス
-
-| コンポーネント | 場所 |
-| ---------------- | ------ |
-| 付箋ボード | `wl-board-pj/wl-sticky-note` |
-| デスクトップアプリ | `wl-board-pj/wl_desktop_app` |
-| AI 受付（リン子） | `linko-system`（別リポジトリ） |
+---
 
 ## 関連ドキュメント
 
-- [docs/本番設定の目安.md](../docs/本番設定の目安.md) — 本番 .env・URL の目安
+- [docs/本番デプロイ手順_Docker.md](../docs/本番デプロイ手順_Docker.md) — 本番 Docker 詳細手順
 - [docs/Googleカレンダー連携の動作確認.md](../docs/Googleカレンダー連携の動作確認.md)
 - [docs/ユーザーDB共用と登録方法.md](../docs/ユーザーDB共用と登録方法.md)
-- [docs/開発・改善プラン/改善指示書11.md](../docs/開発・改善プラン/改善指示書11.md) — Task/Personal UI 仕様
+- [docs/開発・改善プラン/遠藤改善内容/改善計画21_アセット欠落対策とゼロダウンタイム化_ホストOS対応版.md](../docs/開発・改善プラン/遠藤改善内容/改善計画21_アセット欠落対策とゼロダウンタイム化_ホストOS対応版.md)
