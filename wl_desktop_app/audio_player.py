@@ -1,15 +1,8 @@
 # -*- coding: utf-8 -*-
-"""リン子音声の共有プレイヤ。
-
-linko-system が配信する WAV (来客通知の audio_url・ブレストチャットの TTS など) を
-ダウンロードし、URL 許可リストで検証したうえで winsound で再生する (Windows のみ)。
-``features.linko_avatar`` 有効時は WAV の長さに合わせて吹き出し + 口パクを同期させる。
-
-- play_linko_audio: ダウンロード→非同期再生 (来客通知・全文一括用)。
-- download_linko_wav / play_wav: 文単位ストリーミング再生のため fetch と play を分離した部品。
-"""
+"""リン子音声の共有プレイヤ。"""
 from __future__ import annotations
 
+import glob
 import os
 import sys
 import tempfile
@@ -19,12 +12,13 @@ from typing import Optional, Tuple
 
 try:
     import requests
-except ImportError:  # pragma: no cover
+except ImportError:
     requests = None
 
 try:
     from app_log import log_info, log_warn
-except Exception:  # pragma: no cover
+except Exception:
+
     def log_info(msg: str) -> None:
         print(msg, flush=True)
 
@@ -32,20 +26,46 @@ except Exception:  # pragma: no cover
         print(msg, flush=True)
 
 
+def get_audio_temp_prefix() -> str:
+    """自プロセスの PID をプレフィックスに含めて他プロセスと独立管理。"""
+    return f"linko_audio_{os.getpid()}_"
+
+
+def cleanup_temp_audio_files(only_current_pid: bool = True) -> None:
+    """
+    一時音声ファイル（*.wav）を削除する。
+    only_current_pid=True : 自身のPIDのファイルのみ削除（アプリ終了時用。既定）
+    only_current_pid=False: 過去の強制終了ゴミを含めてすべての自アプリ一時ファイルを削除（アプリ起動時用）
+    """
+    if only_current_pid:
+        pattern = os.path.join(tempfile.gettempdir(), f"{get_audio_temp_prefix()}*.wav")
+    else:
+        pattern = os.path.join(tempfile.gettempdir(), "linko_audio_*.wav")
+
+    for path in glob.glob(pattern):
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
+
+
 def _resolve_url(audio_url: str, log_prefix: str) -> Optional[str]:
-    """相対 URL を linko_server_url で補完し、許可リストで検証して絶対 URL を返す。"""
     full_url = audio_url
     if not urllib.parse.urlparse(full_url).scheme:
         try:
             from config_loader import load_config
 
-            base = (load_config().get("linko_server_url") or "").rstrip("/")
+            base = (load_config().get("linko_server_url") or "").strip().rstrip("/")
         except Exception:
             base = ""
         if base:
-            full_url = base + (audio_url if audio_url.startswith("/") else "/" + audio_url)
+            full_url = base + (
+                audio_url if audio_url.startswith("/") else "/" + audio_url
+            )
         else:
-            log_warn(f"{log_prefix} audio_url が相対だが linko_server_url 未設定: {audio_url}")
+            log_warn(
+                f"{log_prefix} audio_url が相対だが linko_server_url 未設定: {audio_url}"
+            )
             return None
 
     try:
@@ -65,10 +85,7 @@ def _resolve_url(audio_url: str, log_prefix: str) -> Optional[str]:
 def download_linko_wav(
     audio_url: str, log_prefix: str = "[audio]", timeout: int = 20
 ) -> Optional[Tuple[str, Optional[float]]]:
-    """audio_url の WAV をダウンロードして一時ファイルへ保存。(path, duration_sec) を返す。
-
-    失敗時は None。呼び出し側で path を再生後に削除すること。
-    """
+    """audio_url の WAV をダウンロードして一時ファイルへ保存。"""
     if requests is None:
         return None
     full_url = _resolve_url(audio_url, log_prefix)
@@ -81,9 +98,12 @@ def download_linko_wav(
         log_warn(f"{log_prefix} 音声ダウンロード失敗 ({full_url}): {e}")
         return None
 
-    fd, path = tempfile.mkstemp(suffix=".wav", prefix="linko_audio_")
+    fd, path = tempfile.mkstemp(suffix=".wav", prefix=get_audio_temp_prefix())
+    os.close(
+        fd
+    )  # Windows でのファイルロックを防ぐため即座にファイルディスクリプタを閉じる
+
     try:
-        os.close(fd)
         with open(path, "wb") as f:
             f.write(r.content)
     except Exception as e:
@@ -97,6 +117,7 @@ def download_linko_wav(
     duration_sec = None
     try:
         import wave as _wave
+
         with _wave.open(path, "rb") as _wf:
             _frames = _wf.getnframes()
             _rate = _wf.getframerate()
@@ -108,20 +129,24 @@ def download_linko_wav(
 
 
 def _start_avatar(text: str, duration_sec: Optional[float], log_prefix: str) -> None:
-    """features.linko_avatar=True なら 吹き出し + 口パク を音声長に同期して開始。"""
     try:
         from notifications import are_enabled
+
         if not are_enabled():
             return
     except Exception:
         pass
     try:
         from config_loader import is_feature_enabled
+
         if is_feature_enabled("linko_avatar"):
             import linko_avatar
+
             if linko_avatar.is_ready():
                 if duration_sec is not None and duration_sec > 0:
-                    linko_avatar.say(text=text, duration_sec=duration_sec, base_pose="normal")
+                    linko_avatar.say(
+                        text=text, duration_sec=duration_sec, base_pose="normal"
+                    )
                 else:
                     linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
     except Exception as e:
@@ -135,11 +160,7 @@ def play_wav(
     blocking: bool = False,
     log_prefix: str = "[audio]",
 ) -> None:
-    """一時 WAV を winsound で再生 (Windows のみ)。再生後に一時ファイルを削除する。
-
-    - blocking=False: SND_ASYNC で再生し、30 秒後に削除 (来客通知・単発用)。
-    - blocking=True : 再生完了までブロックし、終了後すぐ削除 (文ストリーミングの順次再生用)。
-    """
+    """一時 WAV を winsound で再生 (Windows のみ)。"""
     if sys.platform != "win32":
         log_info(f"{log_prefix} 音声再生は Windows のみ対応 (開発環境ではスキップ)。")
         try:
@@ -152,7 +173,7 @@ def play_wav(
         import winsound
 
         if blocking:
-            winsound.PlaySound(path, winsound.SND_FILENAME)  # 再生完了までブロック
+            winsound.PlaySound(path, winsound.SND_FILENAME)
             try:
                 os.unlink(path)
             except Exception:
@@ -162,6 +183,7 @@ def play_wav(
 
             def _cleanup():
                 import time as _t
+
                 _t.sleep(30)
                 try:
                     os.unlink(path)
@@ -180,6 +202,7 @@ def play_wav(
 def _tts_api_url() -> Optional[str]:
     try:
         from config_loader import load_config
+
         base = (load_config().get("linko_server_url") or "").strip().rstrip("/")
     except Exception:
         base = ""
@@ -187,7 +210,6 @@ def _tts_api_url() -> Optional[str]:
 
 
 def speak_text(text: str, log_prefix: str = "[remind_voice]") -> None:
-    """linko-system TTS で短文を読み上げる (タスク/カレンダーリマインド用)。remind_voice は呼び出し側で確認。"""
     if requests is None or not (text or "").strip():
         return
     url = _tts_api_url()
@@ -197,6 +219,7 @@ def speak_text(text: str, log_prefix: str = "[remind_voice]") -> None:
     try:
         from config_loader import load_config
         from security import assert_http_url
+
         assert_http_url(url, load_config(), purpose="remind_tts")
     except ValueError as e:
         log_warn(f"{log_prefix} TTS URL 拒否: {e}")
@@ -222,18 +245,28 @@ def speak_text(text: str, log_prefix: str = "[remind_voice]") -> None:
     if not res:
         return
     path, duration_sec = res
-    play_wav(path, text=text.strip(), duration_sec=duration_sec, blocking=False, log_prefix=log_prefix)
+    play_wav(
+        path,
+        text=text.strip(),
+        duration_sec=duration_sec,
+        blocking=False,
+        log_prefix=log_prefix,
+    )
 
 
-def play_linko_audio(audio_url: str, text: str = "", log_prefix: str = "[audio]") -> None:
-    """audio_url の WAV をダウンロードして winsound で非同期再生する (来客通知・全文一括用)。
-
-    失敗時は警告ログを残して静かに return (呼び出し側を壊さない)。
-    """
+def play_linko_audio(
+    audio_url: str, text: str = "", log_prefix: str = "[audio]"
+) -> None:
     if requests is None:
         return
     res = download_linko_wav(audio_url, log_prefix=log_prefix)
     if not res:
         return
     path, duration_sec = res
-    play_wav(path, text=text, duration_sec=duration_sec, blocking=False, log_prefix=log_prefix)
+    play_wav(
+        path,
+        text=text,
+        duration_sec=duration_sec,
+        blocking=False,
+        log_prefix=log_prefix,
+    )

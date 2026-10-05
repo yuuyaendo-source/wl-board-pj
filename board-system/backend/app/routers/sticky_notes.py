@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 from datetime import date as DateType, datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from app.config import settings
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, StickyNote, User, Team
+from app.models import BoardPlacement, BoardType, StickyNote, Team, User
 from app.models.board_placement import Lane
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
@@ -24,6 +25,7 @@ from app.schemas.sticky_note import (
 )
 
 router = APIRouter(prefix="/sticky_notes", tags=["sticky_notes"])
+logger = logging.getLogger(__name__)
 
 
 def _get_jst_today() -> DateType:
@@ -94,6 +96,49 @@ def _note_response(note: StickyNote) -> StickyNoteResponse:
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
+
+
+async def _notify_postit_note_async(
+    request: Request,
+    board_id: str,
+    note_id: str,
+    text: str | None = None,
+    due_date: str | None = None,
+) -> None:
+    """request.app.state から共有クライアントを取得し非同期で付箋ボードへ通知。"""
+    url = (
+        f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
+    )
+    payload = {}
+    if text is not None:
+        payload["text"] = text
+    if due_date is not None:
+        payload["due_date"] = due_date
+
+    if not payload:
+        return
+
+    try:
+        client = request.app.state.http_client
+        await client.patch(url, json=payload, timeout=5.0)
+    except Exception as e:
+        logger.warning(f"付箋ボード更新通知失敗: {e}")
+
+
+async def _notify_postit_archive_async(
+    request: Request, board_id: str, note_id: str
+) -> bool:
+    """request.app.state から共有クライアントを取得し非同期でグレー化通知を送信。"""
+    url = (
+        f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
+    )
+    try:
+        client = request.app.state.http_client
+        resp = await client.patch(url, json={"gray": True}, timeout=5.0)
+        return 200 <= resp.status_code < 300
+    except Exception as e:
+        logger.warning(f"グレー化通知送信失敗: {e}")
+        return False
 
 
 @router.get("", response_model=list[StickyNoteResponse])
@@ -178,7 +223,7 @@ async def import_from_postit(
 
 @router.post("", response_model=StickyNoteResponse, status_code=201)
 async def create_sticky_note(
-    body: StickyNoteCreate, db: AsyncSession = Depends(get_db)
+    request: Request, body: StickyNoteCreate, db: AsyncSession = Depends(get_db)
 ):
     parsed_due_date = None
     if body.due_date:
@@ -254,7 +299,7 @@ async def create_sticky_note(
     if not note.is_personal_only:
         from app.services.orchestrator import process_new_note_ai
 
-        await process_new_note_ai(note.id, db)
+        await process_new_note_ai(request, note.id, db)
 
     await apply_due_date_rules_for_note(note.id, db)
     await db.commit()
@@ -378,41 +423,12 @@ async def get_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     return _note_response(note)
 
 
-def _notify_postit_note(
-    board_id: str,
-    note_id: str,
-    text: str | None = None,
-    due_date: str | None = None,
-) -> None:
-    import json
-    import urllib.request
-    from app.config import settings
-
-    url = (
-        f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
-    )
-    payload = {}
-    if text is not None:
-        payload["text"] = text
-    if due_date is not None:
-        payload["due_date"] = due_date
-
-    if not payload:
-        return
-
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="PATCH")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            pass
-    except Exception:
-        pass
-
-
 @router.patch("/{note_id}", response_model=StickyNoteResponse)
 async def update_sticky_note(
-    note_id: int, body: StickyNoteUpdate, db: AsyncSession = Depends(get_db)
+    request: Request,
+    note_id: int,
+    body: StickyNoteUpdate,
+    db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
@@ -464,8 +480,8 @@ async def update_sticky_note(
             else None
         )
         if text_to_send is not None or due_date_to_send is not None:
-            await asyncio.to_thread(
-                _notify_postit_note,
+            await _notify_postit_note_async(
+                request,
                 note.postit_board_id,
                 note.postit_note_id,
                 text_to_send,
@@ -473,24 +489,6 @@ async def update_sticky_note(
             )
 
     return _note_response(note)
-
-
-def _notify_postit_archive(board_id: str, note_id: str) -> bool:
-    import json
-    import urllib.request
-    from app.config import settings
-
-    url = (
-        f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
-    )
-    body = json.dumps({"gray": True}).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="PATCH")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            return 200 <= resp.status < 300
-    except Exception:
-        return False
 
 
 @router.delete("/by_postit", status_code=204)
@@ -512,11 +510,9 @@ async def delete_sticky_notes_by_postit(
 
 
 @router.delete("/{note_id}", status_code=204)
-async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
-    import logging
-
-    _logger = logging.getLogger("uvicorn")
-
+async def delete_sticky_note(
+    request: Request, note_id: int, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -526,22 +522,22 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
     postit_note_id = note.postit_note_id
 
     if postit_board_id and postit_note_id:
-        _logger.info(
+        logger.info(
             "[delete_sticky_note] 付箋ボードへのグレー化通知: board=%s note=%s",
             postit_board_id,
             postit_note_id,
         )
-        archived = await asyncio.to_thread(
-            _notify_postit_archive, postit_board_id, postit_note_id
+        archived = await _notify_postit_archive_async(
+            request, postit_board_id, postit_note_id
         )
         if not archived:
-            _logger.warning(
+            logger.warning(
                 "[delete_sticky_note] グレー化通知に失敗しましたが、タスクボード上の削除を継続します"
             )
         else:
-            _logger.info("[delete_sticky_note] グレー化通知完了")
+            logger.info("[delete_sticky_note] グレー化通知完了")
     else:
-        _logger.info(
+        logger.info(
             "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
             postit_board_id,
             postit_note_id,
@@ -549,12 +545,15 @@ async def delete_sticky_note(note_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(note)
     await db.commit()
-    _logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
+    logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
 
 @router.post("/{note_id}/move_to_personal", response_model=BoardPlacementResponse)
 async def move_to_personal(
-    note_id: int, body: MoveToPersonalBody, db: AsyncSession = Depends(get_db)
+    request: Request,
+    note_id: int,
+    body: MoveToPersonalBody,
+    db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
@@ -591,15 +590,14 @@ async def move_to_personal(
     await db.flush()
 
     if not note.postit_note_id:
-        from app.services.orchestrator import _sync_note_to_postit_sync
+        from app.services.orchestrator import _sync_note_to_postit_async
 
         try:
-            ok = await asyncio.to_thread(
-                _sync_note_to_postit_sync,
+            ok = await _sync_note_to_postit_async(
+                request,
                 note.id,
                 note.content or "",
                 settings.postit_board_id,
-                settings.postit_board_url,
             )
             if ok:
                 note.postit_board_id = settings.postit_board_id
@@ -615,7 +613,10 @@ async def move_to_personal(
 
 @router.post("/{note_id}/copy_to_team", response_model=CopyToTeamResponse)
 async def copy_to_team(
-    note_id: int, body: CopyToTeamBody, db: AsyncSession = Depends(get_db)
+    request: Request,
+    note_id: int,
+    body: CopyToTeamBody,
+    db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
@@ -659,15 +660,14 @@ async def copy_to_team(
     await db.flush()
 
     if not note.postit_note_id:
-        from app.services.orchestrator import _sync_note_to_postit_sync
+        from app.services.orchestrator import _sync_note_to_postit_async
 
         try:
-            ok = await asyncio.to_thread(
-                _sync_note_to_postit_sync,
+            ok = await _sync_note_to_postit_async(
+                request,
                 note.id,
                 note.content or "",
                 settings.postit_board_id,
-                settings.postit_board_url,
             )
             if ok:
                 note.postit_board_id = settings.postit_board_id

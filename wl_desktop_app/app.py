@@ -123,6 +123,7 @@ import startup
 from version import __version__
 from update_checker import check_and_notify, wait_for_network
 from network_readiness import resolve_probe_url
+from audio_player import cleanup_temp_audio_files
 
 from app_log import setup_app_log, log_info
 
@@ -140,8 +141,12 @@ _SHOW_REQUEST_STOP = False
 
 
 def cleanup_resources():
-    """リソース（トレイアイコン・ミニポートウィンドウ・ファイルロック）を確実に破棄する"""
+    """リソース（トレイアイコン・ミニポートウィンドウ・ファイルロック・一時音声ファイル）を確実に破棄する"""
     global _icon, _miniport_window, _SINGLE_INSTANCE_FD, _SINGLE_INSTANCE_MUTEX
+
+    # 自身の PID を持つ一時音声ファイルのみをクリーンアップ
+    cleanup_temp_audio_files(only_current_pid=True)
+
     if _icon is not None:
         try:
             _icon.stop()
@@ -213,8 +218,8 @@ def _acquire_single_instance_lock() -> bool:
 
     if sys.platform == "win32":
         try:
-            # ファイルロックはアプリ更新・ネットワークドライブ等で不安定になることが
-            # あるため、OS がプロセス終了時に必ず解放する名前付き Mutex を使う。
+            # ファイルロックはアプリ更新・ネットワークドライブ等で不安定になることがあるため、
+            # OS がプロセス終了時に必ず解放する名前付き Mutex を使う。
             import ctypes
 
             mutex_name = "Local\\WonderLinko.Desktop.SingleInstance"
@@ -835,6 +840,9 @@ def _sync_startup_setting():
 def main():
     global _config, _miniport_window, _miniport_visible
 
+    # アプリ起動時に前回の強制終了などで残った自身のゴミ一時音声を一括削除
+    cleanup_temp_audio_files(only_current_pid=False)
+
     for i, arg in enumerate(sys.argv):
         if arg == "--after-update-wait" and i + 1 < len(sys.argv):
             try:
@@ -853,7 +861,6 @@ def main():
                 pass
             return
 
-    # 単一インスタンス制御 (課題4: ファイルロック方式)
     if not _acquire_single_instance_lock():
         _signal_existing_instance_to_show()
         log_info(
@@ -900,7 +907,9 @@ def main():
             on_notifications_toggle=_miniport_on_notifications_toggle,
             get_notifications_enabled=_miniport_get_notifications_enabled,
         )
-        notifications.set_ui_dispatch(lambda callback: _miniport_window.after(0, callback))
+        notifications.set_ui_dispatch(
+            lambda callback: _miniport_window.after(0, callback)
+        )
         _miniport_visible = True
 
         try:

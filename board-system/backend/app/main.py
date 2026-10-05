@@ -7,6 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,12 +22,12 @@ from app.routers import (
     board_placements,
     boards,
     brainstorm,
+    calendar_reminders,
     daily_reset,
     news,
     personal,
     sticky_notes,
     task_reminders,
-    calendar_reminders,
     teams,
     users,
 )
@@ -41,12 +42,16 @@ _DESKTOP_APP_RELEASES_DIR = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """起動時に DB 初期化（テーブル作成）とパーソナル用ユーザーシード。"""
+    """起動時に DB 初期化（テーブル作成）とパーソナル用ユーザーシード、共有 HTTP クライアントの管理。"""
     await init_db()
     from app.db import seed_personal_users, seed_teams
 
     await seed_personal_users()
     await seed_teams()
+
+    # イベントループ内で httpx.AsyncClient を生成し app.state に格納
+    app.state.http_client = httpx.AsyncClient(timeout=5.0)
+
     from app.services.llm_settings import (
         get_effective_llm_target_sync,
         get_resolved_ollama_sync,
@@ -72,7 +77,12 @@ async def lifespan(app: FastAPI):
         start_scheduler()
     except Exception as e:
         logger.warning("スケジューラ起動をスキップ: %s", e)
+
     yield
+
+    # アプリケーション終了時に共有クライアントを安全に破棄
+    await app.state.http_client.aclose()
+
     try:
         from app.scheduler import shutdown_scheduler
 

@@ -5,11 +5,10 @@ AIによる自動振り分けオーケストレーター。
 Board System でタスクになった付箋（postit 連携なし）は付箋ボードにも反映する。
 """
 import asyncio
-import json
 import logging
 import time
-import urllib.request
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +20,6 @@ from app.services.llm_settings import get_resolved_ollama_async
 logger = logging.getLogger("uvicorn")
 
 # アイゼンハワー象限(1-4) → Taskボード列(1=アイデア, 2=短期, 3=長期, 4=重要)
-# matrix.py: 1=緊急かつ重要, 2=重要だが非緊急, 3=緊急だが非重要, 4=どちらでもない
 EISENHOWER_TO_COLUMN = {1: 4, 2: 3, 3: 2, 4: 1}
 
 
@@ -46,7 +44,7 @@ async def _resolve_assignee_user_async(
     if not raw and not normalized:
         return None
 
-    # 完全一致を優先（姓のみ or フルネーム）
+    # 完全一致を優先
     for candidate in (normalized, raw):
         if not candidate:
             continue
@@ -55,7 +53,7 @@ async def _resolve_assignee_user_async(
         if user:
             return user
 
-    # 部分一致（User.name に candidate が含まれる）
+    # 部分一致
     for candidate in (normalized, raw):
         if not candidate:
             continue
@@ -69,14 +67,9 @@ async def _resolve_assignee_user_async(
     return None
 
 
-async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
+async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) -> None:
     """
     新規付箋に対する AI 振り分け（バックグラウンド的処理）。
-    1. Triage でタスク判定
-    2. タスクなら Matrix Scoring で緊急度・重要度を採点
-    3. Task ボードの適切な列（1=アイデア, 2=短期, 3=長期, 4=重要）に配置
-    4. 担当者名があれば Personal Inbox に配布
-    例外時はログのみで握りつぶし、呼び出し元の 500 を防ぐ。
     """
     logger.info("[Linko AI] Processing Note ID: %s...", note_id)
 
@@ -92,7 +85,6 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     )
     logger.info("[Linko AI] Note %s 内容: %s", note_id, content_preview)
 
-    # 非同期で LLM 設定（URL, モデル上書き）を取得
     ollama_url, model_ov = await get_resolved_ollama_async(db)
 
     # --- 1. Triage ---
@@ -107,7 +99,6 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     if not triage_result:
         logger.warning(
             "[Linko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
-            " OLLAMA_URL を .env に設定するとタスク判定・列の自動振り分けが有効になります。"
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
@@ -118,12 +109,11 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
         if not note.postit_note_id:
             from app.config import settings
 
-            ok = await asyncio.to_thread(
-                _sync_note_to_postit_sync,
+            ok = await _sync_note_to_postit_async(
+                request,
                 note.id,
                 note.content or "",
                 settings.postit_board_id,
-                settings.postit_board_url,
             )
             if ok:
                 note.postit_board_id = settings.postit_board_id
@@ -132,7 +122,6 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
                 logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
         return
 
-    # タスクでないと判定されても全件 Task ボードに載せる（曖昧な内容で取りこぼしを防ぐ）
     if not triage_result.get("is_task"):
         reason = triage_result.get("reason") or ""
         logger.info(
@@ -140,14 +129,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             note_id,
             reason,
         )
-        await _place_on_task_board(db, note_id, 50.0, 50.0, 1)  # 1=アイデア
+        await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
         await db.flush()
 
     triage_reason = triage_result.get("reason") or ""
     if triage_reason and triage_result.get("is_task"):
         logger.info("[Linko AI] Note %s Triage 理由: %s", note_id, triage_reason)
 
-    # --- 2. Matrix Scoring（タスクと判定されたときのみ） ---
+    # --- 2. Matrix Scoring ---
     urgency, importance, column = 50.0, 50.0, 1
     column_name = "アイデア"
     if triage_result.get("is_task"):
@@ -182,7 +171,7 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             column_name,
         )
 
-    # --- 4. Personal へ配布（担当者あり） ---
+    # --- 4. Personal へ配布 ---
     assignee_name = triage_result.get("assignee_name")
     if assignee_name and isinstance(assignee_name, str):
         assignee_name = assignee_name.strip()
@@ -214,16 +203,14 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
     else:
         logger.info("[Linko AI] Note %s 振り分け完了（担当者なし）", note_id)
 
-    # Board System でタスクになった付箋（付箋ボード連携なし）を付箋ボードに反映
     if not note.postit_note_id:
         from app.config import settings
 
-        ok = await asyncio.to_thread(
-            _sync_note_to_postit_sync,
+        ok = await _sync_note_to_postit_async(
+            request,
             note.id,
             note.content or "",
             settings.postit_board_id,
-            settings.postit_board_url,
         )
         if ok:
             note.postit_board_id = settings.postit_board_id
@@ -232,10 +219,12 @@ async def process_new_note_ai(note_id: int, db: AsyncSession) -> None:
             logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
 
 
-def _sync_note_to_postit_sync(
-    note_id: int, content: str, board_id: str, base_url: str
+async def _sync_note_to_postit_async(
+    request: Request, note_id: int, content: str, board_id: str
 ) -> bool:
-    """Board System の付箋を付箋ボードに追加する（同期）。成功時 True。"""
+    """Board System の付箋を付箋ボードに追加する（非同期 httpx 通信）。"""
+    from app.config import settings
+
     postit_note_id = f"bs-{note_id}"
     payload = {
         "boardId": board_id,
@@ -250,23 +239,19 @@ def _sync_note_to_postit_sync(
             "createdAt": int(time.time() * 1000),
         },
     }
-    url = f"{base_url.rstrip('/')}/api/sticky_notes"
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="POST")
-    req.add_header("Content-Type", "application/json")
+    url = f"{settings.postit_board_url.rstrip('/')}/api/sticky_notes"
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if 200 <= resp.status < 300:
-                return True
+        client = request.app.state.http_client
+        resp = await client.post(url, json=payload, timeout=5.0)
+        return 200 <= resp.status_code < 300
     except Exception as e:
         logger.warning("[Linko AI] sync_note_to_postit failed: %s", e)
-    return False
+        return False
 
 
 async def _place_on_task_board(
     db: AsyncSession, note_id: int, x: float, y: float, column: int
 ) -> None:
-    """Task ボードへの配置（既存があれば更新）。column は 1=アイデア, 2=短期, 3=長期, 4=重要。"""
     result = await db.execute(
         select(BoardPlacement).where(
             BoardPlacement.note_id == note_id,

@@ -9,7 +9,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const next = require('next');
 const fs = require('fs');
+const fsPromises = fs.promises;
 const path = require('path');
+const { Agent, fetch: undiciFetch } = require('undici');
 
 // AI-Board 連携先（本番: .env に AI_BOARD_URL を設定。例: http://wlboardsys.local）
 const AI_BOARD_BASE = (process.env.AI_BOARD_URL || 'http://127.0.0.1:5000').replace(/\/$/, '');
@@ -29,10 +31,24 @@ function isInappropriateText(text) {
     const lower = text.toLowerCase();
     return INAPPROPRIATE_KEYWORDS.some(kw => lower.includes(kw));
 }
-// AI-Board が自己証明書（HTTPS）のときは付箋ボードから fetch が失敗するため、明示的に許可する
-if (process.env.NODE_ENV !== 'production' || process.env.AI_BOARD_INSECURE_SSL === '1') {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+// TLS 検証の局所化設定（undici.Agent を使用してグローバル無効化を廃止）
+const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+
+function isInternalServiceUrl(url) {
+    if (!url) return false;
+    return (AI_BOARD_BASE && url.startsWith(AI_BOARD_BASE)) ||
+        (BOARD_SYSTEM_API_BASE && url.startsWith(BOARD_SYSTEM_API_BASE));
 }
+
+function safeFetch(url, options = {}) {
+    const fetchOptions = { ...options };
+    if (isInternalServiceUrl(url)) {
+        fetchOptions.dispatcher = insecureDispatcher;
+    }
+    return undiciFetch(url, fetchOptions);
+}
+
 // 開発環境かどうかの判定
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
@@ -82,26 +98,67 @@ app.prepare().then(() => {
         }
     }
 
-    // データ保存処理（デバウンス付き ＋ エラーハンドリング強化）
-    // 頻繁なディスク書き込みを防ぐため、最後の更新から500ms待ってから保存する
+    // アトミック保存および排他制御
+    // 頻繁なディスク書き込みや高頻度リクエストによる競合を防ぐため isSaving フラグでロック制御
+    let isSaving = false;
     let saveTimeout = null;
+
+    const flushBoardsToDiskAsync = async () => {
+        if (isSaving) return;
+        isSaving = true;
+        const dataStr = JSON.stringify(boards, null, 2);
+        const tempFile = `${DATA_FILE}.tmp`;
+        try {
+            await fsPromises.writeFile(tempFile, dataStr, 'utf8');
+            await fsPromises.rename(tempFile, DATA_FILE);
+            console.log(`✅ Boards saved to disk (${Buffer.byteLength(dataStr)} bytes)`);
+        } catch (err) {
+            console.error('❌ Failed to save boards.json:', err.message);
+            try { await fsPromises.unlink(tempFile); } catch (e) { } // 失敗時は一時ファイルを確実に消去
+        } finally {
+            isSaving = false;
+        }
+    };
+
     const saveBoards = () => {
-        if (saveTimeout) {
-            clearTimeout(saveTimeout);
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => flushBoardsToDiskAsync(), 500);
+    };
+
+    // シャットダウン制御（非同期書き込み完了待機付き＆同期アトミック保存）
+    const handleShutdown = async (signal) => {
+        console.log(`Received ${signal}. Closing connections and flushing data...`);
+        if (saveTimeout) clearTimeout(saveTimeout);
+
+        // 実行中の非同期保存があれば完了するまで待機（競合破綻を防止）
+        while (isSaving) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
         }
 
-        saveTimeout = setTimeout(() => {
-            const dataStr = JSON.stringify(boards, null, 2);
-            fs.writeFile(DATA_FILE, dataStr, (err) => {
-                if (err) {
-                    console.error('❌ [CRITICAL ERROR] Failed to save boards.json to disk:', err.message);
-                    console.error('Check file permissions for directory:', DATA_DIR);
-                } else {
-                    console.log(`✅ Boards saved to disk (${Buffer.byteLength(dataStr)} bytes)`);
-                }
-            });
-        }, 500);
+        const exitProcess = () => {
+            const tempFile = `${DATA_FILE}.tmp`;
+            try {
+                const dataStr = JSON.stringify(boards, null, 2);
+                fs.writeFileSync(tempFile, dataStr, 'utf8');
+                fs.renameSync(tempFile, DATA_FILE);
+                console.log(`✅ Graceful shutdown save completed (${Buffer.byteLength(dataStr)} bytes)`);
+            } catch (err) {
+                console.error('Shutdown save error:', err);
+                try { fs.unlinkSync(tempFile); } catch (e) { }
+            }
+            process.exit(0);
+        };
+
+        if (io) io.close();
+        if (httpServer) {
+            httpServer.close(() => exitProcess());
+        } else {
+            exitProcess();
+        }
     };
+
+    process.on('SIGINT', () => handleShutdown('SIGINT'));
+    process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
     // ボードごとのユーザー管理
     const boardUsers = {}; // { boardId: { socketId: { username, joinedAt } } }
@@ -135,23 +192,19 @@ app.prepare().then(() => {
         socket.on('user-join', ({ boardId, username }) => {
             console.log(`User ${username} (${socket.id}) joined board ${boardId}`);
 
-            // ボードユーザー情報の初期化
             if (!boardUsers[boardId]) {
                 boardUsers[boardId] = {};
             }
 
-            // ユーザー追加
             boardUsers[boardId][socket.id] = {
                 socketId: socket.id,
                 username,
                 joinedAt: Date.now()
             };
 
-            // 参加者リストを全員に送信
             const usersList = Object.values(boardUsers[boardId]);
             io.to(boardId).emit('users-list', usersList);
 
-            // 他のユーザーに参加を通知
             socket.to(boardId).emit('user-joined', {
                 socketId: socket.id,
                 username
@@ -172,7 +225,7 @@ app.prepare().then(() => {
                 // 連携ボード（例: wl）で追加された付箋を AI-Board に通知（Web で追加→AI表示・AIコメント）
                 if (AI_BOARD_LINK_BOARD_IDS.includes(boardId) && note.author && note.author !== 'Real Cam') {
                     try {
-                        fetch(`${AI_BOARD_BASE}/api/receive_note`, {
+                        safeFetch(`${AI_BOARD_BASE}/api/receive_note`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -198,7 +251,7 @@ app.prepare().then(() => {
                         io.to(boardId).emit('note-deleted', note.id);
                         saveBoards();
                         const url = `${BOARD_SYSTEM_API_BASE}/sticky_notes/by_postit?board_id=${encodeURIComponent(boardId)}&note_id=${encodeURIComponent(String(note.id))}`;
-                        fetch(url, { method: 'DELETE' }).catch((err) => console.error('Board System delete by_postit:', err.message));
+                        safeFetch(url, { method: 'DELETE' }).catch((err) => console.error('Board System delete by_postit:', err.message));
                         return;
                     }
                     boards[boardId].notes[index] = note;
@@ -207,7 +260,7 @@ app.prepare().then(() => {
 
                     // Board System: 付箋ボードの追記内容・期限を同期
                     try {
-                        fetch(`${BOARD_SYSTEM_API_BASE}/sticky_notes/sync_from_postit`, {
+                        safeFetch(`${BOARD_SYSTEM_API_BASE}/sticky_notes/sync_from_postit`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -224,7 +277,7 @@ app.prepare().then(() => {
                     // AI-Board (Python) に通知（位置だけの更新・AI自身の付箋のときは通知しない）
                     if (note.author !== 'Real Cam' && note.author !== 'AI') {
                         try {
-                            fetch(`${AI_BOARD_BASE}/api/receive_note`, {
+                            safeFetch(`${AI_BOARD_BASE}/api/receive_note`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -248,7 +301,7 @@ app.prepare().then(() => {
                 io.to(boardId).emit('note-deleted', noteId);
                 saveBoards();
                 const url = `${BOARD_SYSTEM_API_BASE}/sticky_notes/by_postit?board_id=${encodeURIComponent(boardId)}&note_id=${encodeURIComponent(String(noteId))}`;
-                fetch(url, { method: 'DELETE' }).catch((err) => console.error('Board System delete by_postit:', err.message));
+                safeFetch(url, { method: 'DELETE' }).catch((err) => console.error('Board System delete by_postit:', err.message));
             }
         });
 
@@ -262,20 +315,17 @@ app.prepare().then(() => {
         });
 
         // ボード全体をクリア（付箋と線を全削除）
-        // クライアントからの「clear-board」イベントでトリガーされる
         socket.on('clear-board', (boardId) => {
             if (boards[boardId]) {
                 boards[boardId].notes = [];
                 boards[boardId].lines = [];
                 saveBoards();
 
-                // 同じボードに参加している全クライアントへ通知
                 io.to(boardId).emit('board-cleared');
                 console.log(`Board ${boardId} cleared by socket event.`);
 
-                // AI-Board 側にもクリアを通知（AI-Board が HTTPS の場合は https で呼ぶ）
                 try {
-                    fetch(`${AI_BOARD_BASE}/api/clear_board`, {
+                    safeFetch(`${AI_BOARD_BASE}/api/clear_board`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ boardId })
@@ -290,17 +340,14 @@ app.prepare().then(() => {
         socket.on('disconnect', () => {
             console.log('Client disconnected:', socket.id);
 
-            // 全ボードからユーザーを削除し、他ユーザーに通知
             Object.keys(boardUsers).forEach((boardId) => {
                 if (boardUsers[boardId][socket.id]) {
                     const username = boardUsers[boardId][socket.id].username;
                     delete boardUsers[boardId][socket.id];
 
-                    // 更新された参加者リストを送信
                     const usersList = Object.values(boardUsers[boardId]);
                     io.to(boardId).emit('users-list', usersList);
 
-                    // 他ユーザーに退出を通知
                     socket.to(boardId).emit('user-left', {
                         socketId: socket.id,
                         username
@@ -310,12 +357,12 @@ app.prepare().then(() => {
         });
     });
 
-    // REST API: 死活確認（本番で /api/boards/wl/summary が 404 のとき、server.js が動いているか切り分け用）
+    // REST API: 死活確認
     server.get('/api/health', (req, res) => {
         res.json({ ok: true, message: 'Express API is running' });
     });
 
-    // REST API: ボードのサマリー取得（デスクトップアプリのポーリング用・新付箋お知らせ連携）
+    // REST API: ボードのサマリー取得（デスクトップアプリのポーリング用）
     server.get('/api/boards/:id/summary', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -337,8 +384,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: ボードの付箋全件取得（Board System 取り込み用。gray=true は完了済みで取り込まない）
-    // ボードが未作成の場合は自動作成して空配列を返す（AI-Board の「付箋を全件取得」が 404 にならないようにする）
+    // REST API: ボードの付箋全件取得
     server.get('/api/boards/:id/notes', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -361,7 +407,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 付箋のグレー化またはテキスト・期限更新（Board System 連携用）
+    // REST API: 付箋のグレー化またはテキスト・期限更新
     server.patch('/api/boards/:id/notes/:noteId', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -378,7 +424,6 @@ app.prepare().then(() => {
             if (text !== undefined) note.text = String(text);
             const targetDueDate = dueDate !== undefined ? dueDate : due_date;
             if (targetDueDate !== undefined) {
-                // 内部データは dueDate（camelCase）に統一
                 note.dueDate = targetDueDate || null;
                 delete note.due_date;
             }
@@ -391,7 +436,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 付箋1件削除（付箋ボード上の削除ボタン用。Board System ゴミ箱では PATCH でグレー化を使う）
+    // REST API: 付箋1件削除
     server.delete('/api/boards/:id/notes/:noteId', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -412,8 +457,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 外部から付箋を追加するエンドポイント（Python側から呼び出し）
-    // AI-Board (sticky_note_detector.py) が検知した付箋を受け取る
+    // REST API: 外部から付箋を追加するエンドポイント
     server.post('/api/sticky_notes', (req, res) => {
         try {
             const { boardId, note } = req.body;
@@ -422,12 +466,10 @@ app.prepare().then(() => {
                 return res.status(400).json({ error: 'boardId and note are required' });
             }
 
-            // ボードが存在しない場合は作成
             if (!boards[boardId]) {
                 boards[boardId] = { notes: [], lines: [] };
             }
 
-            // 同一IDの付箋が既にあれば更新、なければ追加（無限増殖防止）
             const existingIndex = boards[boardId].notes.findIndex((n) => n.id === note.id);
             if (existingIndex >= 0) {
                 boards[boardId].notes[existingIndex] = note;
@@ -438,10 +480,9 @@ app.prepare().then(() => {
             }
             saveBoards();
 
-            // AI-Board (Python) に通知してリン子のコメントを生成（新規追加時のみ。AI自身の付箋は除く）
             if (existingIndex < 0 && note.author !== 'AI') {
                 try {
-                    fetch(`${AI_BOARD_BASE}/api/receive_note`, {
+                    safeFetch(`${AI_BOARD_BASE}/api/receive_note`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -463,8 +504,7 @@ app.prepare().then(() => {
         }
     });
 
-    // REST API: 特定のボードの全付箋（付箋＋線）を削除するエンドポイント
-    // Webクライアントや他システム（AI-Boardなど）から呼び出し可能
+    // REST API: 特定のボードの全付箋を削除するエンドポイント
     server.post('/api/boards/:id/clear', (req, res) => {
         try {
             const boardId = req.params.id;
@@ -473,18 +513,15 @@ app.prepare().then(() => {
                 return res.status(404).json({ error: `Board ${boardId} not found` });
             }
 
-            // メモリ上のデータをクリア
             boards[boardId].notes = [];
             boards[boardId].lines = [];
             saveBoards();
 
-            // Socket.IO でボード参加者に通知
             io.to(boardId).emit('board-cleared');
             console.log(`Board ${boardId} cleared via REST API.`);
 
-            // AI-Board 側にもクリアを通知（AI-Board が HTTPS の場合は https で呼ぶ）
             try {
-                fetch(`${AI_BOARD_BASE}/api/clear_board`, {
+                safeFetch(`${AI_BOARD_BASE}/api/clear_board`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ boardId })
