@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import face_registry_self_client as c
+from services import face_registry_self_client as c
 
 
 class TestSelfProfileClient(unittest.TestCase):

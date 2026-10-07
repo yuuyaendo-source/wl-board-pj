@@ -16,12 +16,14 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import (
     _split_root_and_v1,
     resolve_ollama_model_for_request,
 )
+from app.config import settings
 from app.db import get_db
 from app.services.brainstorm_calendar import (
     create_google_event,
@@ -31,7 +33,6 @@ from app.services.brainstorm_calendar import (
     handle_pending,
     proposal_payload,
 )
-from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +192,7 @@ async def brainstorm(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    url, model_override = get_resolved_ollama_sync()
+    url, model_override = settings.resolve_ollama_for_target(settings.llm_target)
     if not url:
         raise HTTPException(
             status_code=503, detail="LLM (OLLAMA_URL) が設定されていません"

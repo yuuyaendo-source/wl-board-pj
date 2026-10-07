@@ -8,13 +8,17 @@ from typing import Any
 import feedparser
 
 from app.ai.client import generate_text
-from app.services.llm_settings import ollama_configured_sync
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
-RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
-RSS_ITEM = "https://www.gizmodo.jp/index.xml"
+RSS_IT = (
+    "[https://b.hatena.ne.jp/hotentry/it.rss](https://b.hatena.ne.jp/hotentry/it.rss)"
+)
+RSS_FUN = (
+    "[https://b.hatena.ne.jp/hotentry/fun.rss](https://b.hatena.ne.jp/hotentry/fun.rss)"
+)
+RSS_ITEM = "[https://www.gizmodo.jp/index.xml](https://www.gizmodo.jp/index.xml)"
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。
@@ -70,7 +74,8 @@ def fetch_and_summarize_news() -> str | None:
     RSS を取得し、Ollama で要約テキスト（Markdown）を生成する。
     OLLAMA_URL 未設定時・失敗時は None。
     """
-    if not ollama_configured_sync():
+    resolved_url, _ = settings.resolve_ollama_for_target(settings.llm_target)
+    if not resolved_url:
         logger.info("ニュース要約: OLLAMA が未設定のためスキップ")
         return None
     news_text = fetch_rss_text()

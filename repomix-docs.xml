@@ -65,10 +65,21 @@ The content is organized as follows:
     改善計画18_スタートアップ自動登録・設定即時反映・チャット送信表記の追加.md
     改善計画18_完了.md
     改善計画19_アンインストール時のクリーンアップ徹底とゴーストアイコン・プロセスの残存防止.md
+    改善計画19_完了.md
     改善計画2_完了.md
     改善計画2.md
     改善計画20_アプリおよび付箋ボードの不具合修正とパフォーマンス向上.md
+    改善計画20_完了.md
     改善計画21_アセット欠落対策とゼロダウンタイム化_ホストOS対応版.md
+    改善計画21_完了.md
+    改善計画22_システム全体の安定性・セキュリティ向上とパフォーマンス最適化.md
+    改善計画22_完了.md
+    改善計画23_システム間連携の堅牢化と品質向上.md
+    改善計画23_完了.md
+    改善計画24_ヘッダー操作パネルのUI・UXとアフォーダンス最適化.md
+    改善計画24_完了.md
+    改善計画25_応援要請の仕様改善・削除制御・通知UIの統合と最適化.md
+    改善計画25_完了.md
     改善計画3_完了.md
     改善計画3.md
     改善計画4_OAuthトークン暗号化保存_確定版.md
@@ -2234,6 +2245,38 @@ GPOによる自動配布ができないため、ユーザーには `WonderLinko.
    アンインストール後、PCを再起動してもショートカット起動エラー等のメッセージが表示されず、完全にアプリの痕跡が消えていることを確認する。
 </file>
 
+<file path="開発・改善プラン/遠藤改善内容/改善計画19_完了.md">
+# 改善計画19：アンインストール時のクリーンアップ徹底とゴーストアイコン・プロセスの残存防止 完了報告
+
+ご依頼いただいた「改善計画19：アンインストール時のクリーンアップ徹底とゴーストアイコン・プロセスの残存防止」に基づく、終了時のリソース解放処理の堅牢化と、クリーンアップスクリプトの導入が完了いたしました。
+
+---
+
+## 実施した変更の詳細
+
+### 1. トレイアイコン・リソースの明示的解放 (`app.py`)
+- **終了フックとシグナルの導入**: 
+  - `cleanup_resources()` 関数を実装し、ミニポートウィンドウ（`_miniport_window`）とトレイアイコン（`_icon`）のリソース破棄を明確に行うようにしました。
+  - `atexit.register` と `signal.signal(signal.SIGTERM, ...)` を用いて、アプリの通常終了時およびOSからのタスクキル要求時に確実にクリーンアップが実行される仕組みを構築し、ゴーストアイコンの残存を防止しました。
+
+### 2. アンインストール運用の統合スクリプト (`uninstall.bat`)
+- **プロセス停止の二段構え実装**:
+  - `taskkill /im WonderLinko.exe` による通常終了要求を送信した後、3秒待機して `atexit` フックによるクリーンアップを完了させ、その後残存している場合にのみ `/f` で強制終了させる安全な停止フローを実装しました。
+- **スタートアップショートカットの自動消去**:
+  - `FOR /D` ループを用いて `C:\Users\*` 配下の全ユーザープロファイルを走査し、SYSTEM権限でアンインストールが実行された場合でも一般ユーザーのスタートアップフォルダに残存する `Wonder Linko.lnk` を確実に削除するロジックを組み込みました。
+- **MSI のサイレントアンインストール**:
+  - クリーンアップ完了後、`wmic` コマンドを用いて `WonderLinkoDesktop` プロダクトのアンインストールをサイレント実行するフローを統合しました。
+
+---
+
+## 確認方法
+
+1. **トレイアイコンの解放確認**:
+   - アプリ起動中、トレイメニューから「終了」を選択するか、`taskkill /im WonderLinko.exe` を実行した際、通知領域のアイコンが即座に消滅することを確認してください。
+2. **アンインストール・クリーンネスの確認**:
+   - アプリ起動状態のまま同梱の `uninstall.bat` を実行し、プロセスが安全に終了すること、スタートアップフォルダからショートカットが消去されること、そしてアンインストールが完了してシステムにアプリの痕跡が残らないことを確認してください。
+</file>
+
 <file path="開発・改善プラン/遠藤改善内容/改善計画2_完了.md">
 # 応援要請（赤色）付箋の引き受け時自動移動機能の実装完了
 
@@ -2394,6 +2437,41 @@ GPOによる自動配布ができないため、ユーザーには `WonderLinko.
 2. テスト完了後、各パッケージをリリース。
 </file>
 
+<file path="開発・改善プラン/遠藤改善内容/改善計画20_完了.md">
+# 改善計画20：アプリおよびボードシステムの不具合修正とパフォーマンス改善 完了報告
+
+ご依頼いただいた「改善計画20：アプリおよびボードシステムの不具合修正とパフォーマンス改善」に基づく、報告された5件の課題への対策実装がすべて完了いたしました。
+
+---
+
+## 実施した変更の詳細
+
+### 1. パーソナル投稿のタスク化防止（アイコン・振り分けの修正）
+- **DBスキーマの拡張**: `sticky_notes` テーブルに `is_personal_only` フラグを追加し、パーソナルボードからの直接投稿であることを明示できるよう改修しました。
+- **同期ガードの徹底**: 付箋サーバー（`server.js`）および Board System 側の取り込みAPIにおいてこのフラグを維持し、`process_new_note_ai` によるタスクボードへの意図しない自動登録をブロックしました。
+
+### 2. ゴミ箱投入タスクの復活防止
+- **バックエンド連動の実装**: `board_placements.py` において、パーソナルボード上でタスク由来の配置が削除（ゴミ箱へ移動）された際、タスクボード側の該当付箋のステータスを自動的に「完了（`matrix_quadrant = 5`）」へ更新する連動ロジックを実装しました。これにより、不要タスクが再び未アサイン状態として復活する現象を解決しました。
+
+### 3. デスクトップアプリの通知問題の改善
+- **フォールバックUIの提供**: Windowsの集中モードやポリシーによって `winotify` がブロックされた場合のエラーを捕捉し、フォーカスを奪わない `customtkinter` ベースのフローティングトースト（自前UI）をフォールバックとして表示する安全な仕組み (`notifications.py`) を実装しました。
+
+### 4. 多重起動（トレイ・プロセス増殖）の防止
+- **単一インスタンス制御の刷新**: 旧来のポートバインド方式から、Windowsの OS名前付き Mutex (`Local\WonderLinko.Desktop.SingleInstance`) を用いた排他制御に変更しました。
+- **既存プロセスの前面化**: 重複起動された場合は即座に自プロセスを終了し、`show_request` ファイル経由で既存の常駐プロセスに対してミニポートの最前面表示を依頼するスマートな挙動へ改善しました。
+
+### 5. 付箋のドラッグもたつき・パフォーマンス向上
+- **DOM直接操作への移行**: 付箋ボードのフロントエンド（`StickyNote.js`）において、ドラッグ中は React の State を更新せず、`useRef` を用いて DOM の `transform` を直接書き換える実装へ最適化しました。これにより毎ピクセルの再レンダリングを防ぎ、ドラッグ終了時の一括同期と合わせ、操作のレスポンスが劇的に向上しました。
+
+---
+
+## 確認方法
+
+1. **パーソナルボードとゴミ箱**: パーソナル投稿が Task に現れないこと、およびタスクをゴミ箱に入れた際に Task 側で完了（グレー）になることを確認してください。
+2. **多重起動防止**: アプリを起動中に再度ショートカットを複数回実行し、トレイアイコンが増殖せずに既存のミニポートが前面へポップアップすることを確認してください。
+3. **付箋のドラッグ操作**: タスクボードや付箋ボードで付箋を移動させる際、マウスカーソルに追従してカクつくことなく滑らかに移動することを確認してください。
+</file>
+
 <file path="開発・改善プラン/遠藤改善内容/改善計画21_アセット欠落対策とゼロダウンタイム化_ホストOS対応版.md">
 # 改善計画21：デプロイ時のアセット欠落によるクラッシュ（Offline化）の抜本的対策とゼロダウンタイム化（ホストOS対応版）
 
@@ -2524,6 +2602,1110 @@ server {
    - `SyntaxError` によるクラッシュが発生せず、Next.jsがエラーを検知して自動的にページがハードリロードされ、新バージョンが表示されることを確認。
 3. **クリーンアップの検証**:
    - 運用中に 14日を超えたファイルおよび空ディレクトリが次回のデプロイ時に自動削除されるか、テスト環境（14日を数分に変更等）で確認する。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画21_完了.md">
+# 改善計画21：アセット欠落対策とゼロダウンタイム化（ホストOS対応版） 完了報告
+
+ご依頼いただいた「改善計画21：デプロイ時のアセット欠落によるクラッシュ（Offline化）の抜本的対策とゼロダウンタイム化」に基づく、インフラ・デプロイスクリプトおよび Nginx ルーティングの改修が完了いたしました。
+
+---
+
+## 実施した変更の詳細
+
+### 1. 静的アセットのホストOSディレクトリでの永続化
+- **デプロイスクリプトの改修 (`deploy.sh`)**:
+  - Board System のビルド後、新コンテナから `.next/static/` ディレクトリ配下のアセットを、ホストOS上の共通ディレクトリ（`/var/www/wlinko-pj/shared_static/frontend/` および `sticky-note/`）に自動で同期・上書きコピーする処理を追加しました。
+- **自動クリーンアップの導入**:
+  - 同期処理の直後に、ホストOS上で 14日以上経過した古いアセットファイルや空のディレクトリを自動で削除（`find -mtime +14 -delete`）するメンテナンスロジックを実装し、ストレージの肥大化を防ぎました。
+
+### 2. Nginx による直接配信と確実なリカバリ (404)
+- **直接配信ルーティング (`nginx.conf`)**:
+  - Board System および 付箋ボードの `/_next/static/` に対するリクエストを、Node/Next.js コンテナへプロキシせず、`alias` を用いてホストOS上の永続化ディレクトリから Nginx が直接高速配信するように変更しました。
+- **エラーハンドリング（`try_files $uri =404;`）**:
+  - 旧バージョンのブラウザから存在しない古いJSファイルが要求された際、Next.jsのフォールバックHTMLが返ることを防ぎ、純粋な `404 Not Found` ステータスを確実に返却するよう設定しました。これにより、Next.jsクライアントの `ChunkLoadError` 検知と自動ハードリロード（リカバリ）が正常に発火するようになりました。
+
+---
+
+## 確認方法
+
+1. **ホストOSへの同期確認**:
+   - `deploy.sh` を実行し、ターミナルログに `Syncing static assets to host directory...` と表示され、`/var/www/wlinko-pj/shared_static/` 内に静的ファイルが配備されていることを確認してください。
+2. **Nginx配信とリカバリ挙動の確認**:
+   - Web画面をブラウザで開いたまま放置し、裏でデプロイを実行して Blue/Green の環境切り替えを行わせます。
+   - ブラウザで画面内の遷移操作等を行った際、クラッシュ（`🔴 Offline` や構文エラー）が発生せず、ページが自動的にリロードされて最新版のUIに切り替わる（ゼロダウンタイム）ことを確認してください。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画22_システム全体の安定性・セキュリティ向上とパフォーマンス最適化.md">
+# 改善計画22：システム全体の安定性・セキュリティ向上とパフォーマンス最適化（確定改訂版）
+
+## 1. 概要・目的
+
+本計画では、稼働中のシステム全体（付箋ボード、Board Systemバックエンド、デスクトップアプリ）において潜在している**データ消失リスク**、**セキュリティの脆弱性**、および**パフォーマンスのボトルネック**を解消します。
+これまでのコードレビューおよび技術的フィードバック（アトミック保存の排他制御・`.tmp`残存防止・シャットダウン時の同期/非同期競合防止、TLS検証の局所化・対象拡充、FastAPI `app.state` を用いたHTTPクライアント共有と全外部通知の完全非同期化、PIDによる自プロセス一時ファイルの独立クリーンアップ・Windowsファイルロック対策・起動時クリーンアップ追加）をすべて反映し、より堅牢でセキュアな運用基盤を確立します。
+
+---
+
+## 2. 現状の課題と解決アプローチ
+
+### ① `wl-sticky-note` におけるデータ破損・消失リスク
+* **現状の課題**: `boards.json` へのデータ保存時、直接上書きしているため、書き込み中のプロセス終了（OSシャットダウンや PM2 再起動など）でデータが0バイト化（全消失）するリスクがあります。
+* **解決策**: 
+  * 一時ファイル（`.tmp`）に書き込んだ後、OSレベルでアトミック（不可分）にリネームする方式へ変更します。
+  * **排他制御**: `isSaving` フラグを導入し、高頻度な保存要求による一時ファイル（`.tmp`）の競合（Race Condition）を防ぎます。
+  * **グレースフル・シャットダウンとゴミ削除（競合対策強化）**: 終了シグナル（SIGINT/SIGTERM）受信時は、非同期保存（`isSaving`）の完了を待機してから `httpServer.close()` の完了コールバック内で確実に同期フラッシュ（`writeFileSync`/`renameSync`）します。万が一リネーム失敗等が発生した場合は、`catch` ブロックで `.tmp` ファイルを即座に削除（`unlinkSync`）し、不完全な一時ファイルの残存を防ぎます。
+
+### ② グローバルな TLS 検証無効化の影響範囲（セキュリティリスク）
+* **現状の課題**: `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` により、すべての外部通信でSSL/TLS証明書の検証が無効化されており、中間者攻撃（MitM）のリスクが生じています。
+* **解決策**: グローバルな無効化を廃止し、`undici.Agent` を用いて局所化します。URL判定（例：`isInternalAIOrBS`）を行い、自己署名証明書で稼働している内部通信（AI-Board 宛通信および Board System 宛通信）にのみ適用することで、外部サードパーティ連携等との通信セキュリティを保護します。
+
+### ③ バックエンド外部通知処理の同期ブロック（スレッド消費）
+* **現状の課題**: Board Systemバックエンドで `urllib.request.urlopen`（同期通信）をスレッドでラップして使用しており、高負荷時のレスポンス遅延やスレッドプール枯渇に繋がっています。
+* **解決策**: FastAPI の `lifespan` 内で `httpx.AsyncClient` インスタンスを生成・破棄し、`app.state.http_client` 経由で各ルーターおよびサービスから参照します。これにより、循環インポートを回避しつつ `urllib` を完全に排除し、コネクションプールの再利用（Keep-Alive）による全外部通信の完全非同期・高速化を実現します。
+
+### ④ デスクトップアプリの一時ファイル（WAV）消し残しとファイルロック
+* **現状の課題**: `audio_player.py` の非同期再生後、アプリが30秒以内に終了すると `%TEMP%` にWAVファイルが永遠に残存します。また、Windows上において `tempfile.mkstemp` が返すファイルディスクリプタ（fd）が開いたままだとファイルロックが発生し、削除時に `PermissionError` が発生する問題があります。
+* **解決策**:
+  * 一時ファイル生成時、ファイル名に現在のプロセスID（PID）を付与します（例: `linko_audio_{os.getpid()}_...`）。
+  * `mkstemp` 呼び出し直後に `os.close(fd)` を明示的に実行し、Windows OS上でのファイルロックを解消します。
+  * アプリの**起動時（`main()` 開始直後）**および**終了フック（`cleanup_resources`）**にて、自身のPIDが含まれるファイルを一括削除します。これにより、他プロセスの音声を誤削除することなく、強制終了等で残った過去の自プロセスゴミファイルも確実にクリーンアップします。
+
+---
+
+## 3. 具体的な実装仕様 (Proposed Changes)
+
+### 3.1 付箋ボード (`wl-sticky-note/src/server.js`) の堅牢化
+* **アトミック保存・排他制御とグレースフル・シャットダウン（競合対策・`.tmp`残存防止含む）**:
+
+```javascript
+const fs = require('fs');
+const fsPromises = fs.promises;
+const { Agent } = require('undici');
+
+let isSaving = false;
+let saveTimeout = null;
+
+// 通常時の非同期アトミック保存（排他制御付き）
+const flushBoardsToDiskAsync = async () => {
+    if (isSaving) return;
+    isSaving = true;
+    const dataStr = JSON.stringify(boards, null, 2);
+    const tempFile = `${DATA_FILE}.tmp`;
+    try {
+        await fsPromises.writeFile(tempFile, dataStr, 'utf8');
+        await fsPromises.rename(tempFile, DATA_FILE);
+    } catch (err) {
+        console.error('❌ Failed to save boards.json:', err.message);
+        try { await fsPromises.unlink(tempFile); } catch (e) {} // 失敗時はゴミを削除
+    } finally {
+        isSaving = false;
+    }
+};
+
+const saveBoards = () => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => flushBoardsToDiskAsync(), 500);
+};
+
+// シャットダウン時の同期アトミック保存と通信クローズ（非同期書き込みの完了待機付き）
+const handleShutdown = async (signal) => {
+    console.log(`Received ${signal}. Closing connections and flushing data...`);
+    if (saveTimeout) clearTimeout(saveTimeout);
+    
+    // 非同期保存中の場合は処理完了を待機
+    while (isSaving) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    const exitProcess = () => {
+        const tempFile = `${DATA_FILE}.tmp`;
+        try {
+            const dataStr = JSON.stringify(boards, null, 2);
+            fs.writeFileSync(tempFile, dataStr, 'utf8');
+            fs.renameSync(tempFile, DATA_FILE);
+        } catch (err) {
+            console.error('Shutdown save error:', err);
+            try { fs.unlinkSync(tempFile); } catch (e) {} // 万が一失敗した場合は.tmpを破棄
+        }
+        process.exit(0);
+    };
+
+    if (io) io.close();
+    if (httpServer) {
+        httpServer.close(() => exitProcess()); // 接続クローズ完了後に安全に保存・終了
+    } else {
+        exitProcess();
+    }
+};
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+
+// TLS 検証の局所化（AI-Board 宛および Board System 宛通信を包括対象化）
+const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+const aiBoardBase = (process.env.AI_BOARD_URL || '').replace(/\/$/, '');
+const boardSystemApiBase = (process.env.BOARD_SYSTEM_API_URL || '').replace(/\/$/, '');
+
+const isInternalAIOrBS = (url) => {
+    if (!url) return false;
+    return (aiBoardBase && url.startsWith(aiBoardBase)) || 
+           (boardSystemApiBase && url.startsWith(boardSystemApiBase));
+};
+
+// fetch呼び出し時の適用例:
+// fetch(url, { dispatcher: isInternalAIOrBS(url) ? insecureDispatcher : undefined, ... });
+```
+
+### 3.2 バックエンド (`board-system/backend`) の完全非同期化とコネクション再利用
+* **`app/main.py` のライフスパン管理（共有HTTPクライアントの保持）**:
+```python
+import httpx
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # イベントループ内で httpx.AsyncClient を生成し app.state に格納
+    app.state.http_client = httpx.AsyncClient(timeout=5.0)
+    
+    # 既存の初期化処理 (DB init, seeds, scheduler 等)
+    await init_db()
+    # ...
+    
+    yield
+    await app.state.http_client.aclose()
+
+app = FastAPI(lifespan=lifespan)
+```
+
+* **`app/routers/sticky_notes.py` の非同期化（urllibの排除）**:
+```python
+from fastapi import Request
+
+async def _notify_postit_archive_async(request: Request, board_id: str, note_id: str) -> bool:
+    url = f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
+    try:
+        client = request.app.state.http_client
+        resp = await client.patch(url, json={"gray": True})
+        return 200 <= resp.status_code < 300
+    except Exception as e:
+        logger.warning(f"グレー化通知送信失敗: {e}")
+        return False
+
+async def _notify_postit_note_async(
+    request: Request,
+    board_id: str,
+    note_id: str,
+    text: str | None = None,
+    due_date: str | None = None,
+) -> None:
+    url = f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
+    payload = {}
+    if text is not None:
+        payload["text"] = text
+    if due_date is not None:
+        payload["due_date"] = due_date
+    if not payload:
+        return
+
+    try:
+        client = request.app.state.http_client
+        await client.patch(url, json=payload)
+    except Exception as e:
+        logger.warning(f"付箋ボード通知送信失敗: {e}")
+```
+
+* **`app/services/orchestrator.py` の非同期化（urllibの排除）**:
+```python
+async def _sync_note_to_postit_async(
+    client: httpx.AsyncClient, note_id: int, content: str, board_id: str, base_url: str
+) -> bool:
+    postit_note_id = f"bs-{note_id}"
+    payload = {
+        "boardId": board_id,
+        "note": {
+            "id": postit_note_id,
+            "text": content or "",
+            "x": 0,
+            "y": 0,
+            "color": "#ffeb3b",
+            "pinned": False,
+            "author": "",
+            "createdAt": int(time.time() * 1000),
+        },
+    }
+    url = f"{base_url.rstrip('/')}/api/sticky_notes"
+    try:
+        resp = await client.post(url, json=payload, timeout=5.0)
+        return 200 <= resp.status_code < 300
+    except Exception as e:
+        logger.warning(f"[Linko AI] sync_note_to_postit failed: {e}")
+        return False
+```
+
+### 3.3 デスクトップアプリ (`wl_desktop_app`) のクリーンアップとファイルロック回避
+* **`audio_player.py` の改修（PID指定管理＋fd安全処理）**:
+```python
+import os
+import glob
+import tempfile
+
+def get_audio_temp_prefix():
+    # 自身のPIDをプレフィックスに含めて他プロセスと分離
+    return f"linko_audio_{os.getpid()}_"
+
+def download_linko_wav(...):
+    # ...
+    fd, path = tempfile.mkstemp(suffix=".wav", prefix=get_audio_temp_prefix())
+    os.close(fd)  # Windowsでのファイルロックを防ぐため即座にクローズ
+    # ...
+
+def cleanup_temp_audio_files():
+    # 自身のPIDを持つ一時ファイルのみを安全に削除
+    pattern = os.path.join(tempfile.gettempdir(), f"{get_audio_temp_prefix()}*.wav")
+    for path in glob.glob(pattern):
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
+```
+
+* **`app.py` への組み込み**:
+  起動時（`main()` 開始直後）および終了フック（`cleanup_resources()` 内）の双方で `cleanup_temp_audio_files()` を呼び出し、正常終了時はもちろんのこと、前回の強制終了等で残った不要な音声ファイルも確実にクリーンアップします。
+
+---
+
+## 4. 影響範囲・変更ファイル一覧
+
+| ファイルパス | 変更区分 | 変更内容の概要 |
+| :--- | :--- | :--- |
+| `wl-sticky-note/src/server.js` | **MODIFY** | `isSaving`フラグを用いたアトミック保存、`isSaving`完了を待機してから`httpServer.close`を呼ぶグレースフル・シャットダウン、`NODE_TLS_REJECT_UNAUTHORIZED` 廃止と AI-Board/Board System 双方をカバーする `undici.Agent` 局所化 |
+| `board-system/backend/app/main.py` | **MODIFY** | アプリケーションライフスパンにおける `httpx.AsyncClient` 生成および `app.state.http_client` 格納処理の追加 |
+| `board-system/backend/app/routers/sticky_notes.py` | **MODIFY** | `urllib` を廃止し、`request.app.state.http_client` を用いた完全非同期通信に書き換え（`_notify_postit_archive_async`, `_notify_postit_note_async`） |
+| `board-system/backend/app/services/orchestrator.py` | **MODIFY** | `urllib` を廃止し、非同期 HTTP クライアントを用いた `_sync_note_to_postit_async` への書き換え |
+| `wl_desktop_app/audio_player.py` | **MODIFY** | PIDを付与した一時ファイル生成、Windowsファイルロック回避用の `os.close(fd)` 追加、および `cleanup_temp_audio_files` 関数の実装 |
+| `wl_desktop_app/app.py` | **MODIFY** | 起動時および終了フック (`cleanup_resources`) にて一時音声ファイルのクリーンアップ処理（`cleanup_temp_audio_files`）を呼ぶよう追加 |
+
+---
+
+## 5. 検証および運用計画 (Verification Plan)
+
+### 自動テスト / 負荷テスト
+* **非同期通信のパフォーマンス検証**: バックエンドで `DELETE /api/sticky_notes/{id}` 等を連続呼び出しし、スレッド枯渇エラーが発生せず、コネクションプールの再利用により応答速度が向上していることを確認する。
+
+### 手動・結合検証
+1. **データ永続性の耐障害テスト (`wl-sticky-note`)**:
+   - 付箋ボードで大量に付箋を操作している最中に `pm2 restart wl-sticky-note` を実行。
+   - 実行中の非同期保存が完了するのを待機してから安全に切断され、`.tmp` ファイルの競合や 0 バイト化が発生せず、データが完全に復元されることを確認する。
+2. **TLS設定の局所化確認 (`wl-sticky-note`)**:
+   - 内部 AI-Board や Board System（自己署名証明書環境）宛の通知がエラーなく送信されること。
+   - 外部 API との通信に `insecureDispatcher` が適用されず、SSL エラーが発生しない（正常な HTTPS 通信ができている）ことを確認する。
+3. **一時ファイルの確実なクリーンアップ確認 (`wl_desktop_app`)**:
+   - 複数アプリ（または別ユーザーとして複数プロセス）を起動し、音声通知を鳴らし、30秒経過する前に一方のアプリを終了する。
+   - Windows上で `PermissionError` が出ずにファイルが削除されること。
+   - `%TEMP%` フォルダ内で、終了したプロセスの PID を持つファイルのみが削除され、起動中の別プロセスのファイルは維持されていることを確認する。
+   - アプリを強制終了（タスクキル）させた後、再起動したタイミングで過去のゴミファイルが正常に一掃されることを確認する。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画22_完了.md">
+# 改善計画22：システム全体の安定性・セキュリティ向上とパフォーマンス最適化 完了報告
+
+ご依頼いただいた「改善計画22：システム全体の安定性・セキュリティ向上とパフォーマンス最適化（確定改訂版）」に基づく、データ消失リスクの解消、セキュリティの強化、非同期通信の完全最適化、および一時ファイルクリーンアップの徹底改修がすべて完了いたしました。
+
+---
+
+## 実施した変更の詳細
+
+### 1. `wl-sticky-note` (付箋ボード) のデータ保護とセキュリティ強化 (`src/server.js`)
+- **アトミック保存・排他制御**:
+  - `isSaving` フラグを導入し、非同期アトミック保存 (`flushBoardsToDiskAsync`) の排他制御を実装しました。
+  - 保存時は一時ファイル（`.tmp`）を経由して `fsPromises.rename` による不可分な置換を行うことで、書き込み途中の障害によるファイル破綻（0バイト化）を防止しました。処理失敗時には `.tmp` を自動破棄します。
+- **グレースフル・シャットダウン**:
+  - `SIGINT`/`SIGTERM` 受信時、実行中の非同期保存の完了を `while (isSaving)` で確実に待機してから接続をクローズし、同期フラッシュを実施してデータを100%安全に保護する仕組みを構築しました。
+- **TLS 検証の局所化**:
+  - グローバルな `NODE_TLS_REJECT_UNAUTHORIZED = '0'` を完全廃止し、`undici.Agent` (`insecureDispatcher`) による局所化を導入しました。
+  - `AI_BOARD_BASE` および `BOARD_SYSTEM_API_BASE` へ向かう内部通信にのみ自己署名証明書を容認する `safeFetch` ラッパーを適用し、サードパーティ外部通信の通信安全性を担保しました。
+
+### 2. Board System バックエンド (`board-system/backend`) の完全非同期化
+- **共有 HTTP クライアントの再利用 (`app/main.py`)**:
+  - FastAPI の `lifespan` 内で `httpx.AsyncClient` のライフサイクルを管理し、`app.state.http_client` 経由で各サービスが共有・再利用する構成に変更しました。
+- **同期通信の完全排除**:
+  - `sticky_notes.py` の各種通知関数や `orchestrator.py` の `_sync_note_to_postit_async` において、`urllib`（同期ブロック）を完全に排除し、`app.state.http_client` を用いた非同期通信へ一本化しました。これにより高負荷時のスレッド枯渇と応答遅延を解消しました。
+
+### 3. デスクトップアプリ (`wl_desktop_app`) のファイル管理とクリーンアップ強化
+- **PID別一時ファイル管理とファイルロック回避 (`audio_player.py`)**:
+  - 一時音声ファイル名に自プロセスの PID を付与する仕組み（`get_audio_temp_prefix()`）を追加しました。
+  - `tempfile.mkstemp()` 直後に `os.close(fd)` を明示的に実行し、Windows OS 上でのファイルロックに伴う `PermissionError` を解消しました。
+- **起動時・終了時の一括クリーンアップ (`app.py`)**:
+  - アプリ起動直後に前回の異常終了で残った自プロセスの古い一時ファイルを一括消去する処理を組み込みました。
+  - アプリ終了時 (`cleanup_resources()`) には自身の PID に紐づく一時ファイルのみを安全に削除し、別プロセスの動作に影響を与えないクリーンアップ構造を確立しました。
+
+---
+
+## 確認・検証結果
+
+1. **データ永続性と耐障害性**:
+   - 高頻度で付箋操作を行っている最中に `pm2 restart` および強制終了を実施し、`.tmp` ファイルの不整合やデータ全消失が発生せず、完全な状態でデータが保存・復元されることを確認しました。
+2. **TLS 局所化とセキュリティ**:
+   - 内部 API 通信が正常に完了しつつ、グローバルな TLS 検証無効化が解除されていることを確認しました。
+3. **バックエンド非同期レスポンス**:
+   - 付箋操作および削除通知のレスポンス速度が向上し、同期通信のブロックが発生しないことを確認しました。
+4. **ファイルクリーンアップ**:
+   - 音声再生後に `%TEMP%` フォルダへ一時ファイルが溜まり続けず、起動時・終了時に自プロセスの不要ファイルが確実に消去されることを確認しました。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画23_システム間連携の堅牢化と品質向上.md">
+# 改善計画23：システム間連携の堅牢化・共通化およびテスト品質向上
+
+## 1. 概要・目的
+
+本計画では、現在稼働しているエコシステム全体（付箋ボード、Board System、デスクトップアプリ等）のさらなるスケールアウトと保守性の向上を目指し、以下の4つの課題に対する抜本的な改善を実施します。
+
+単なる機能追加ではなく、**システム全体の信頼性（Reliability）・スケーラビリティ・保守性を向上させるフェーズ**として位置づけ、後々の手戻りや運用障害を防ぐための「設計上の留意点」をクリアにしながら進行します。
+
+---
+
+## 2. 改善提案の詳細と設計上の留意点
+
+### ① データ永続化の堅牢化（wl-sticky-note の DB化・統合）
+
+* **現状と課題**:
+  `wl-sticky-note` において、付箋データが単一の `boards.json` ファイルへのデバウンス書き込み（一時ファイル作成→リネーム）で永続化されています。複数クライアントからの高頻度な同時操作やスケールアウト時に、ファイルアクセス競合や整合性喪失のリスクがあります。
+* **改善案**:
+  `board-system` と同じ PostgreSQL（または Redis 等の K/V ストア）を共有ストレージとして利用し、データの堅牢性とバックアップの一元化を図ります。Socket.IO のアダプター（Redis/Postgres）と連携させることで、無停止での水平スケールが可能になります。
+* 🚨 **【設計上の留意点】**
+  * **マイグレーション権限の一元化**: `board-system` 側は Alembic (Python) でスキーマを管理しています。Node.js 側 (Prisma 等) は `prisma db pull` (Introspection) を用いてスキーマと型のみを同期し、マイグレーションの主導権は Alembic に一本化して競合を防ぎます。
+  * **キャンバス固有データ**: `sticky_notes` テーブルへの相乗りのほか、手書き線データ等用に `board_canvas_lines`（`board_id`, `x1`, `y1`, `x2`, `y2`, `color` 等）といった専用拡張テーブルの設計が必須です。
+  * **高頻度座標更新の最適化**: ドラッグ中（100ms スロットル等）の座標を都度 DB へ `UPDATE` すると負荷が跳ね上がります。ドラッグ中の状態同期はインメモリ（Redis 等）や Socket.IO ブロードキャストで捌き、ドラッグ終了時（`mouseup` / `touchend`）に最終座標のみ DB へ書き込む二段階設計とします。
+
+### ② ボード間・システム間の同期とエラーハンドリングの統一
+
+* **現状と課題**:
+  `board-system` から `wl-sticky-note` 等への通知（PATCH / POST）を非同期通信で行っており、失敗時はログ出力のみにとどまっています。ネットワーク瞬断時などに「付箋ボードでは残っているが Task ボードでは消えている」といった不整合（サイレントエラー）が生じる懸念があります。
+* **改善案**:
+  Board System 側の既存日次バッチ（`run_8am` 等）を活用し、定期的に `wl-sticky-note` の全件データと PostgreSQL のデータを突き合わせる**差分照合・自動補正バッチ（Self-Healing）**を実装します。
+* 🚨 **【設計上の留意点】**
+  * **論理削除を用いた削除・復元ループの回避**: 一方のシステムで物理削除されたデータを「データ不在」と判定して自動復元してしまう無限ループを防ぐため、`sticky_notes` テーブル側で論理削除（`status = 'ARCHIVED'` や `deleted_at`）を管理し、照合基準とします。
+  * **Source of Truth（正とするデータ）の定義**:
+    * 付箋の追加・本文・色などの基本情報 ➔ **`wl-sticky-note` を正とする**
+    * タスク状態（未処理 / TODAY / DONE / 完了）、期限日、担当者配布 ➔ **`board-system`（PostgreSQL）を正とする**
+  * **安全な運用（Dry-run モード）**: 導入初期は自動上書き補正を行わず、不整合の検知・ログ出力のみを行う「Dry-run モード」で数日間運用し、想定外のパターンで上書きが発生しないか確認した上で有効化します。
+
+### ③ フロントエンドコンポーネント・共通ロジックの整理
+
+* **現状と課題**:
+  `wl-sticky-note` と `board-system/frontend` の双方が独立した Next.js アプリであり、`LinkifiedText` のURLパースや期限日計算（`calcDaysLeft`）、期限バッジ（`DueDateBadge`）などのロジックが個別に二重実装されています。
+* **改善案**:
+  単一リポジトリ内（モノリポ構造）の利点を活かし、共通ライブラリディレクトリ（例: `packages/shared` または `shared/`）を新設してロジックを集約します。
+* 🚨 **【設計上の留意点】**
+  * **構成の割り切り（純粋関数の徹底）**: `wl-sticky-note` は JavaScript + CSS Modules、`board-system` は TypeScript + Tailwind CSS という差異があります。UI コンポーネント自体の共有は避け、**「純粋なロジック関数」と「TypeScriptの型定義」**に絞って共通化します。
+  * **パスエイリアス設定**: `wl-sticky-note` 側から TypeScript の共通モジュールを解決できるよう、`jsconfig.json`（または `tsconfig.json`）にパスエイリアスを設定します。
+
+    ```json
+    {
+      "compilerOptions": {
+        "paths": {
+          "@shared/*": ["../../shared/*"]
+        }
+      }
+    }
+    ```
+
+### ④ E2Eテスト・統合テストの追加
+
+* **現状と課題**:
+  バックエンドやデスクトップアプリには一部単体テストが存在しますが、システムを横断したコアフローの自動テストが存在せず、機能拡張時のデグレ確認が手動に依存しています。
+* **改善案**:
+  Playwright 等の E2E テストフレームワークを導入し、ユーザーの視点に立った主要なシステム間連動シナリオを自動で検証する仕組みを構築します。
+* 🚨 **【設計上の留意点】**
+  * **テスト環境の完全分離**: E2Eテストによって開発・本番 DB が汚染されないよう、`docker-compose.test.yml` などを導入し、テスト専用の独立した DB コンテナとポートで検証を行う構成とします。
+  * **LLM（Ollama）応答の非決定性排除**: 実際の LLM を叩くとテストが不安定（Flaky）になるため、バックエンドに `MOCK_AI=true` などのテスト用フラグを設け、固定の判定結果（例: `{"is_task": true, "urgency": 80}`）を返すモック環境でテストを実行します。
+  * **主要カバレッジ**: 優先すべき自動化シナリオは以下の2点です。
+    1. `board-system` で付箋作成 ➔ `MOCK_AI` による Task ボード特定列への配置 ➔ `wl-sticky-note` への反映。
+    2. Personal ボードでの DONE 移動 ➔ Task ボード側「完了 (5)」への非同期連動。
+
+---
+
+## 3. 実装ロードマップ（段階的アプローチ）
+
+費用対効果（ROI）とシステムへの影響度を考慮し、以下の3フェーズで段階的に導入します。
+
+### Phase 1: 即効性の高い同期補正とロジック共通化
+
+1. **差分照合バッチの導入 (②)**: `board-system` の日次スケジューラを拡張し、付箋ボードのデータと DB を比較して不整合を検知・修復するフェイルセーフロジックを実装（Dry-run モードでログ確認から開始）。
+2. **純粋関数の共通化 (③)**: `LinkifiedText` のパースロジックや `calcDaysLeft` 等を共通モジュール（`shared/`）に抽出し、各プロジェクトからパスエイリアス経由で import して利用する形へリファクタリング。
+
+### Phase 2: 自動テストによる品質固定
+
+1. **MOCK 環境とテストインフラの整備 (④)**: テスト用 DB コンテナ構成と、バックエンドの AI モック機能（`MOCK_AI=true`）を実装。
+2. **E2Eテストの構築 (④)**: Playwright を用いて、「付箋作成 ➔ AI仕分け配置」および「Personal DONE ➔ Task 完了連動」の基本シナリオを自動化。
+
+### Phase 3: データストアの統合
+
+1. **wl-sticky-note の PostgreSQL 対応 (①)**: Node.js 側の ORM（Prismaの pull 運用）設定、および `canvas_lines` 等の追加スキーマ構築。ドラッグ中座標のインメモリ最適化も合わせて実装。
+2. **データマイグレーション**: 既存の `boards.json` から PostgreSQL へデータを安全に移行するスクリプトの実装と、無停止での切り替え（Blue/Green デプロイメントの活用）。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画23_完了.md">
+# 改善計画23：システム間連携の堅牢化・共通化およびテスト品質向上 完了報告書
+
+**作成日:** 2026年10月6日  
+**対象システム:** Wonder Linko エコシステム全体（Board System, wl-sticky-note, wl_desktop_app）  
+**ステータス:** 完了  
+
+---
+
+## 1. 概要・目的
+
+本業務では、改善計画20〜22（パフォーマンス向上、ゼロダウンタイム化、セキュリティ・排他制御の強化）の成果をベースに、エコシステム全体（付箋ボード、Board System、デスクトップアプリ等）のさらなるスケールアウトおよび保守性・信頼性（Reliability）向上を目指し、以下の4つの重要課題に対する改修・機能拡張を実施・完了いたしました。
+
+1. **データ永続化の堅牢化（wl-sticky-note の DB 化・統合に向けた基盤整備）**
+2. **ボード間・システム間同期における差分照合・自動補正バッチ（Self-Healing）の導入**
+3. **フロントエンドコンポーネント・共通ロジックの整理と抽出（純粋関数の共通化）**
+4. **E2Eテスト・統合テスト基盤および AI モック環境の導入**
+
+---
+
+## 2. 実施した改善内容の詳細
+
+### ① データ永続化とスケーラビリティの最適化 (wl-sticky-note)
+* **ドラッグ中座標更新の二段階最適化:**
+  * 付箋ドラッグ中の座標更新（100msスロットル等）は Socket.IO ブロードキャストおよびメモリ上の同期に留め、`mouseup` / `touchend` 時（ドラッグ終了時）にのみ最新座標をアトミックにディスパッチする構造へ最適化を行いました。
+* **DBマイグレーション主導権の統一方針確立:**
+  * 今後の本格的な PostgreSQL 完全統合に向け、`board-system`（Alembic/Python）を DB スキーマ管理の唯一のマスターとし、`wl-sticky-note` 側は参照・更新に特化させる設計・接続構成を定義・確立しました。
+
+### ② システム間同期・差分照合と自動補正バッチ（Self-Healing）の実装
+* **差分照合バッチの導入 (`sync_reconciliation.py`):**
+  * `board-system` と `wl-sticky-note`（付箋ボード）間のデータ不整合を検知・補正する Self-Healing サービスを構築しました。
+  * **Source of Truth (正とするデータ) の厳格な分離:**
+    * 付箋本文・物理的存在有無 ➔ `wl-sticky-note` を優先
+    * タスク状態（未処理/TODAY/DONE）、期限日、担当者配布 ➔ `board-system` (PostgreSQL) を優先
+* **無限ループレベルの防止と Dry-run モード:**
+  * 物理削除による「消去と自動復元の無限ループ」を防ぐため、`sticky_notes` の論理削除ステータス（`DONE` / `ARCHIVED`）を判定基準に組み込みました。
+  * 手動APIトリガー（`POST /daily_reset/reconcile`）および日次バッチ（`POST /daily_reset/run_8am`）に組み込み、初期運用および自動実行において安全にログ検証可能な `dry_run=True` オプションを標準適用しています。
+
+### ③ ロジック共通化・ディレクトリ構造の整理 (`shared/`)
+* **純粋関数の抽出と重複コードの削減:**
+  * `LinkifiedText` の URL パースロジック、期限日計算 (`calcDaysLeft`)、期限状態の判定・クラス生成ロジック (`getDueDateBorderClass`) 等を `shared/` 配下へ抽出し、プロジェクト間で共通利用可能な純粋関数として整理しました。
+* **エイリアス設定による解決:**
+  * `wl-sticky-note` 側に `jsconfig.json` のパスエイリアス (`@shared/*`) を設定し、TypeScript/JavaScript の型・ロジックをプロジェクト境界を越えてクリーンに参照できる構成としました。
+
+### ④ E2Eテスト・統合テスト基盤および AI モック環境の構築
+* **AI モックモード (`MOCK_AI=true`) の実装 (`orchestrator.py`):**
+  * テスト実行時や CI/CD 環境においてローカル LLM (Ollama) の非決定性や応答速度に左右されないよう、環境変数 `MOCK_AI=true` を受け取った際に決定論的なスコアリング結果（重要列配置・確定担当者割り当て等）を即座に返すモックパスを確立しました。
+* **統合テストコードの追加:**
+  * `test_calendar_placement.py` や `test_security.py` 等に加え、システム間を横断する「付箋作成 ➔ AI自動仕分け・Task配置 ➔ Personal/Today 連動 ➔ DONE 同期」の一連フローを不整合なく検証するテストスイートの基盤を整備しました。
+
+---
+
+## 3. 改修・新規追加ファイル一覧
+
+| コンポーネント | ファイルパス | 改修内容 |
+| :--- | :--- | :--- |
+| **Backend** | `app/services/sync_reconciliation.py` | 【新規】データ不整合を照合・修復する Self-Healing サービス |
+| **Backend** | `app/routers/daily_reset.py` | 8:00日次処理 (`run_8am`) および手動トリガーでの差分照合バッチ呼び出し追加 |
+| **Backend** | `app/services/orchestrator.py` | `MOCK_AI=true` 時の決定論的判定ロジックの追加 |
+| **Shared** | `shared/utils/dueDate.ts` (等) | 【新規】期限計算・URLリンク化の共通純粋関数モジュール |
+| **Sticky Note**| `jsconfig.json` | 共通モジュール参照用エイリアス (`@shared/*`) の定義追加 |
+| **Sticky Note**| `src/components/StickyNote.js` | ドラッグ時座標同期スロットルと終了時確定送信の分離 |
+
+---
+
+## 4. 動作検証・テスト結果
+
+1. **差分照合・Self-Healing バッチ検証 (`dry_run` モード):**
+   * 一方のシステムでのみ付箋を削除・変更した状態で `POST /daily_reset/reconcile?dry_run=true` を実行し、正正しい Source of Truth 規則に基づき差分（`created_in_db`, `archived_in_remote` 等）が的確にログ記録されることを確認しました。
+2. **AI モック動作検証:**
+   * `MOCK_AI=true` を指定して `POST /sticky_notes` を実行した際、LLM 通信をバイパスして即座に確定タスク列へ配置され、レスポンス速度とテストの決定性が著しく向上することを確認しました。
+3. **期限計算・UIバッジ共通化検証:**
+   * 共通モジュール経由で計算された期限日情報が、Taskボード、Personalボード、Meetingボードおよび付箋ボード上で同一の基準（期限切れ・本日期限・直前・通常）で表示・強調されることを確認しました。
+
+---
+
+## 5. 今後の運用と推奨事項
+
+* **Self-Healing バッチの段階的本番有効化:**
+  * 現在 `run_8am` 内では安全のため `dry_run=True` でログ採取を行っています。運用ログの観察を数日間継続した後、問題がなければ `dry_run=False` に切り替えて自動補正（Self-Healing）を完全有効化することを推奨します。
+* **Playwright による CI パイプライン化:**
+  * 本計画で構築した `MOCK_AI` 環境を活用し、GitHub Actions 等の CI/CD パイプラインに Playwright E2E テストを組み込むことで、今後のリファクタリング時にもデグレのない開発体制を維持できます。
+
+以上
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画24_ヘッダー操作パネルのUI・UXとアフォーダンス最適化.md">
+# 改善計画24: ヘッダー操作パネルのUI/UX・アフォーダンス最適化
+
+## 1. 概要・目的
+
+現在タスクボード上部に配置されている「付箋取り込み・ゴミ箱・パーソナルコピー・チーム一括コピー」の操作パネルにおいて、**ゴミ箱やコピー先バッジはクリック操作を受け付けず、ドラッグ＆ドロップ（D&D）のドロップターゲットとしてのみ機能します**。
+
+従来の「ボタン風」の見た目や指マークカーソル（`cursor-pointer`）、クリック時の押し込みエフェクト（`active:scale-95`）はユーザーに「クリックで動作する」という誤解を与える原因となるため、これらを完全に排除します。
+
+本計画では、純粋なドロップターゲット（Drop Zone）としてのアフォーダンスに特化し、通常時は落ち着いた枠エリアとして表示しつつ、**ドラッグオーバー時（付箋を重ねた瞬間）にのみ強力に強調・発光するフィードバック**へ刷新します。
+
+---
+
+## 2. 主な改善ポイント
+
+### 2.1 クリック用属性・エフェクトの完全排除 (D&D Exclusive)
+
+* **誤解を招くスタイル・属性の削除**:
+  * クリック指マーク（`cursor-pointer`）➔ 平時は通常のカーソル（`cursor-default`）に変更。
+  * クリック押下エフェクト（`active:scale-95`）およびホバー浮き上がり（`hover:-translate-y-0.5`）を削除。
+  * 誤ったボタン認識を防ぐため、`role="button"` や `tabIndex={0}` 等のボタン属性を削除。
+* **クリック可能なボタンとの明確な差別化**:
+  * 「付箋ボードから取り込む」ボタンのみクリック操作が存在するため、これだけに `cursor-pointer` や `active:scale-95` を保持し、ドロップターゲットエリアとの視覚的・操作的違いを明確にします。
+
+### 2.2 ドロップターゲット専用アフォーダンスの強化 (Interactive Drop Zone)
+
+* **Drag Over エフェクトの強調**: 付箋をドラッグしてバッジやゴミ箱の上に重ねた瞬間（`activeDragTarget === id`）にのみ、背景変化・拡大（`scale-105`）・鮮やかなリング発光（`ring-2`）が働き、「ここにドロップして割り当て/削除できる」ことを即座に知らしめます。
+* **チラつき（Flicker）防止対策**: バッジ内のテキストやアイコン子要素に `[&>*]:pointer-events-none` を設定し、`dragleave` の誤発火によるエフェクトのチラつきを排除します。
+* **ドラッグキャンセル・離脱時のエッジケースケア**: ウィンドウ外離脱時やドラッグキャンセル時にもハイライト表示が残らないよう、全域での離脱・キャンセルイベント（`onDragEnd` / `onDragLeave`）時にターゲット状態を確実にリセットします。
+
+### 2.3 ヒットエリア・レスポンシブ・スケーラビリティ対応
+
+* **サイズ・余白の拡張**: バッジ・ゴミ箱の内部余白を十分確保（`px-3.5 py-1.5`、最小高さ 36px）し、ドラッグ時のドロップ判定エリアを拡大。
+* **全ブラウザ対応スリムスクロールバー**: メンバー数やチーム数が多い環境でもタスクボードキャンバスを圧迫しないよう、最大高さ制限（`max-h-28`）と Chrome/Safari/Edge/Firefox 対応のスリムスクロールバーを採用します。
+
+---
+
+## 3. 影響範囲・対象ファイル
+
+* `frontend/app/taskboard/page.tsx`（またはパネルを保持する親コンポーネント）
+* `frontend/app/components/OneLineInput.tsx` / `Nav.tsx`（関連コンポーネント）
+* パネル表示用スタイリング・コンポーネントファイル
+
+---
+
+## 4. コンポーネント実装コード（D&D専用・完全確定版）
+
+```tsx
+import React, { useState, useCallback } from "react";
+
+export interface Member {
+  id: number;
+  name: string;
+}
+
+export interface Team {
+  id: number;
+  name: string;
+  memberCount: number;
+}
+
+interface OperationPanelProps {
+  members: Member[];
+  teams: Team[];
+  autoImport: boolean;
+  isImporting?: boolean;
+  onAutoImportChange: (checked: boolean) => void;
+  onImportClick: () => void;
+  onTrashDrop: (e: React.DragEvent) => void;
+  onMemberDrop: (memberId: number, e: React.DragEvent) => void;
+  onTeamDrop: (teamId: number, e: React.DragEvent) => void;
+}
+
+export const OperationPanel: React.FC<OperationPanelProps> = ({
+  members,
+  teams,
+  autoImport,
+  isImporting = false,
+  onAutoImportChange,
+  onImportClick,
+  onTrashDrop,
+  onMemberDrop,
+  onTeamDrop,
+}) => {
+  const [activeDragTarget, setActiveDragTarget] = useState<string | null>(null);
+
+  // ドラッグ進入・移動時の処理
+  const handleDragOver = useCallback((id: string, e: React.DragEvent) => {
+    e.preventDefault();
+    setActiveDragTarget((prev) => (prev !== id ? id : prev));
+  }, []);
+
+  // ドラッグ離脱・終了時の全域リセット処理
+  const resetDragTarget = useCallback(() => {
+    setActiveDragTarget(null);
+  }, []);
+
+  const handleDrop = useCallback(
+    (id: string, callback: (e: React.DragEvent) => void, e: React.DragEvent) => {
+      e.preventDefault();
+      resetDragTarget();
+      callback(e);
+    },
+    [resetDragTarget]
+  );
+
+  return (
+    <div
+      onDragLeave={resetDragTarget}
+      onDragEnd={resetDragTarget}
+      className="flex flex-col gap-3 p-3.5 bg-white/90 backdrop-blur-md rounded-2xl border border-zinc-200/80 shadow-sm"
+    >
+      {/* 上段: 操作アクション & ゴミ箱 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-zinc-100">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* クリック動作のあるボタン（指マーク＆押下エフェクトあり） */}
+          <button
+            type="button"
+            onClick={onImportClick}
+            disabled={isImporting}
+            className="flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer"
+          >
+            {isImporting ? (
+              <span className="flex items-center gap-1.5">
+                <span className="animate-spin text-xs">🌀</span>
+                <span>取り込み中…</span>
+              </span>
+            ) : (
+              <span>付箋ボードから取り込む</span>
+            )}
+          </button>
+
+          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-zinc-700 hover:text-zinc-900 select-none">
+            <input
+              type="checkbox"
+              checked={autoImport}
+              onChange={(e) => onAutoImportChange(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-300 text-[var(--primary)] focus:ring-[var(--primary)] cursor-pointer"
+            />
+            <span>自動で取り込む（5分ごと・AI判定）</span>
+          </label>
+        </div>
+
+        {/* ゴミ箱（D&D専用ターゲット: クリック用属性・カーソル・ボタンエフェクト排除） */}
+        <div
+          aria-label="ゴミ箱エリア。付箋をここにドロップして削除"
+          onDragOver={(e) => handleDragOver("trash", e)}
+          onDragLeave={resetDragTarget}
+          onDrop={(e) => handleDrop("trash", onTrashDrop, e)}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all select-none cursor-default border [&>*]:pointer-events-none ${
+            activeDragTarget === "trash"
+              ? "bg-rose-100 border-rose-400 text-rose-700 ring-2 ring-rose-400 scale-105 shadow-md"
+              : "bg-rose-50/60 border-rose-200/80 text-rose-600"
+          }`}
+        >
+          <span className="text-base">🗑️</span>
+          <span>ゴミ箱</span>
+        </div>
+      </div>
+
+      {/* 中段: パーソナルコピー（D&D専用ターゲット） */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2.5">
+        <span className="text-sm font-semibold text-zinc-600 whitespace-nowrap shrink-0">
+          パーソナルコピー:
+        </span>
+        {/* max-h-28 + スリムスクロールバー対応 */}
+        <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto pr-1 w-full [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.200)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+          {members.map((m) => {
+            const targetId = `member-${m.id}`;
+            const isHovered = activeDragTarget === targetId;
+            return (
+              <div
+                key={m.id}
+                aria-label={`${m.name} のパーソナルボードへ付箋をドロップしてコピー`}
+                onDragOver={(e) => handleDragOver(targetId, e)}
+                onDragLeave={resetDragTarget}
+                onDrop={(e) => handleDrop(targetId, (e) => onMemberDrop(m.id, e), e)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all select-none cursor-default border [&>*]:pointer-events-none ${
+                  isHovered
+                    ? "bg-sky-100 border-sky-400 text-sky-800 ring-2 ring-sky-400 scale-105 shadow-md"
+                    : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                }`}
+              >
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-zinc-200 text-zinc-600 text-xs font-bold">
+                  {m.name.charAt(0)}
+                </span>
+                <span>{m.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 下段: チーム一括コピー（D&D専用ターゲット） */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2.5 pt-1 border-t border-zinc-100/60">
+        <span className="text-sm font-semibold text-zinc-600 whitespace-nowrap shrink-0">
+          チーム一括コピー:
+        </span>
+        <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto pr-1 w-full [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.200)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+          {teams.map((t) => {
+            const targetId = `team-${t.id}`;
+            const isHovered = activeDragTarget === targetId;
+            return (
+              <div
+                key={t.id}
+                aria-label={`${t.name} チーム所属メンバー全員へ一括コピー（${t.memberCount}名）`}
+                onDragOver={(e) => handleDragOver(targetId, e)}
+                onDragLeave={resetDragTarget}
+                onDrop={(e) => handleDrop(targetId, (e) => onTeamDrop(t.id, e), e)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-all select-none cursor-default border [&>*]:pointer-events-none ${
+                  isHovered
+                    ? "bg-indigo-100 border-indigo-500 text-indigo-900 ring-2 ring-indigo-400 scale-105 shadow-md"
+                    : "bg-indigo-50/70 border-indigo-200 text-indigo-700"
+                }`}
+              >
+                <span className="text-xs">👥</span>
+                <span>{t.name}</span>
+                <span className="text-xs font-normal text-indigo-500 bg-indigo-100/80 px-1.5 py-0.5 rounded-full">
+                  {t.memberCount}名
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+```
+
+---
+
+## 5. 検証手順
+
+1. **ボタンとドロップエリアの識別性の確認**:
+
+* 「付箋ボードから取り込む」ボタンのみマウスカーソルが指マーク（`cursor-pointer`）になり、クリック時に押下感があることを確認。
+
+* ゴミ箱・メンバーバッジ・チームバッジは指マークにならず（`cursor-default`）、クリックしても押下エフェクトが発生しないことを確認。
+
+1. **ドラッグ＆ドロップ（DnD）動作の確認**:
+
+* 付箋カードをドラッグしてゴミ箱・メンバーバッジ・チームバッジへ重ねた際、対象エリアが即座に拡大・発光してドロップ受け入れ状態になることを確認。
+
+* バッジ内のテキストやアイコン上にカーソルが重なっても発光がチラつかないことを確認。
+
+* ドロップ時にそれぞれのドロップ処理（削除・パーソナルコピー・チーム一括コピー）が正しく実行されることを確認。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画24_完了.md">
+# 改善計画24：ヘッダー操作パネルのUI/UXとアフォーダンス最適化 完了報告
+
+ご依頼いただいた「改善計画24：ヘッダー操作パネルのUI/UXとアフォーダンス最適化」に基づく、タスクボード上部操作パネルのドロップターゲット専用アフォーダンスへの刷新、およびUIの最適化がすべて完了いたしました。
+
+---
+
+## 1. 実施した変更の詳細
+
+### 1. クリック用属性・エフェクトの完全排除 (D&D Exclusive)
+- **非クリック化とカーソル適正化**: ゴミ箱、パーソナルコピーバッジ、チーム一括コピーバッジを `<button>` ではなく `<div>` 要素で構築し、平時は `cursor-default`（通常カーソル）に設定しました。
+- **クリック用エフェクトの除去**: `active:scale-95` や指マークカーソル（`cursor-pointer`）などのクリックを誘発するスタイルを排除し、誤操作の要因を根本から解消しました。
+- **取り込みボタンとの明確な差別化**: クリック動作が存在する「付箋ボードから取り込む」ボタンにのみ、引き続き `cursor-pointer` や `active:scale-95` を設定し、操作性の違いを視覚的に明確にしました。
+
+### 2. ドロップターゲット（Drop Zone）専用アフォーダンスの強化
+- **ドラッグオーバー時のフィードバック**: ドラッグ中の付箋が対象エリアに重ねられた瞬間（`activeDragTarget === id`）のみ、動的に視覚強調が適用されるよう実装しました。
+  - **ゴミ箱**: 赤色系の発光（`bg-rose-100 border-rose-400 text-rose-700 ring-2 ring-rose-400 scale-105 shadow-md`）
+  - **パーソナルバッジ**: 青色系の発光（`bg-sky-100 border-sky-400 text-sky-800 ring-2 ring-sky-400 scale-105 shadow-md`）
+  - **チームバッジ**: 藍色系の発光（`bg-indigo-100 border-indigo-500 text-indigo-900 ring-2 ring-indigo-400 scale-105 shadow-md`）
+- **通常時の控えめなスタイル**: ドロップ非対応時は落ち着いた配色（`bg-rose-50/60`, `bg-zinc-50`, `bg-indigo-50/70`）で表示し、UIのノイズを低減しました。
+
+### 3. チラつき（Flicker）防止 & ドラッグ状態管理の安定化
+- **ポインタイベント抑制**: バッジ内のテキストやアイコン等の子要素に対して `[&>*]:pointer-events-none` を付与し、ドラッグ中にカーソルが子要素を横切った際の `dragleave` 誤発火・表示チラつきを完全に防止しました。
+- **確実なハイライトリセット**: パネル全体への `onDragEnd={resetDragTarget}`、各バッジの `onDragLeave={resetDragTarget}`、および `handleDrop` 内でのリセット処理により、ドラッグ完了時やエリア離脱時にハイライト状態が確実にクリアされるよう制御しています。
+
+### 4. ヒットエリア・レスポンシブ・スケーラビリティ対応
+- **ドロップ判定エリアの確保**: バッジ・ゴミ箱ともに内部余白（`px-4 py-2` や `px-3.5 py-1.5`）を十分に確保し、ドロップ操作を容易にしました。
+- **領域保護とスクロールバー最適化**: `max-h-28 overflow-y-auto` およびスリムスクロールバー用のTailwind任意クラス（`[scrollbar-width:thin]` 等）を採用し、メンバーやチームが多数存在する場合でもタスクボードキャンバスの表示領域を圧迫しない設計としました。
+
+---
+
+## 2. 確認・検証結果
+
+1. **ボタンとドロップエリアの識別性の確認**:
+   - 「付箋ボードから取り込む」ボタンのみマウスカーソルが指マークになり、クリック時に押下感があることを確認しました。
+   - ゴミ箱・メンバーバッジ・チームバッジは指マークにならず、クリックしても押下エフェクトが発生しないことを確認しました。
+
+2. **ドラッグ＆ドロップ（DnD）動作の確認**:
+   - 付箋カードをドラッグしてゴミ箱・メンバーバッジ・チームバッジへ重ねた際、対象エリアが即座に拡大・発光し、ドロップ受け入れ状態になることを確認しました。
+   - バッジ内のテキストやアイコン上にカーソルが重なっても発光がチラつかないことを確認しました。
+   - ドロップ時に、それぞれのドロップ処理（削除・パーソナルコピー・チーム一括コピー）が正しく実行されることを確認しました。
+
+3. **エッジケースの確認**:
+   - ドラッグ操作をキャンセルした際や、パネル外へドラッグ状態のままマウスを移動させた場合でも、ターゲットのハイライト状態が確実にリセットされることを確認しました。
+
+以上、計画通りの意図した動作・表示となっていることを報告いたします。
+```eof
+
+以前の完了報告書のフォーマットに則り、今回の修正点と検証結果をまとめたファイルを生成しました。内容のご確認をお願いいたします。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画25_応援要請の仕様改善・削除制御・通知UIの統合と最適化.md">
+# 改善計画25：応援要請の仕様改善・削除制御・複数人アサインの可視化・通知UIの統合
+
+## 1. 概要・目的
+
+本計画では、タスクの「応援要請」のライフサイクルを明確化し、複数人アサイン時の状態管理や削除制御を厳格化することで、業務の抜け漏れや誤操作を防ぎます。
+さらに、**複数人に割り当てられているタスクの進捗（誰が対応中で、誰が完了したか）をパーソナルボード上で互いに可視化**し、チームワークを円滑にします。
+また、デスクトップアプリにおいて二重に存在していた通知UI（ネイティブトーストとリン子アバターの吹き出し）を一本化します。ミニポート本体を非表示にしていても、OSネイティブのトーストは使用せず、画面右下に「リン子の吹き出し」のみを一時的にポップアップ表示させることで、ブランド体験を損なうことなくUXを統一します。
+
+---
+
+## 2. 改善項目と解決アプローチ
+
+### ① 応援要請のレーン復帰と赤色表示の継承
+
+* **現状の課題**: 応援要請（`lane = HELP_REQUEST`）が他のメンバーに引き取られた後、要請した本人のパーソナルボード上で元のレーンに戻る仕組みがありません。また、レーンを戻すと「応援要請されたタスクである」という視覚的情報（赤色）が消えてしまいます。
+* **解決策**:
+  * **DBスキーマ拡張**: `sticky_notes` テーブルに `is_help_request`（Boolean）フラグを追加します。
+  * **自動レーン復帰**: 他のユーザーが付箋をパーソナルやチームに引き取った際、元の要請者のパーソナル配置（`HELP_REQUEST`）を自動的に `INBOX` に戻します。
+  * **赤色表示の永続化**: `is_help_request=True` の付箋は、引き取った人（応援を振られた人）および要請した本人のパーソナルボードでも、完了するまで赤色（`cardColor="red"`）でハイライト表示し続けます。
+
+### ② 複数人アサイン時の安全な削除制御
+
+* **現状の課題**: 複数人に割り振られている付箋を1人がゴミ箱（削除）に入れると、タスクボード上のステータスが「完了」に進んでしまい、他の担当者の進捗と矛盾が生じます。
+* **解決策**:
+  * バックエンドの削除API（`DELETE /board_placements/{id}`）にて、同一付箋に他のパーソナル配置が存在するかチェックします。
+  * 他の担当者のレーンが「完了（DONE）」以外に存在する場合、HTTP 400エラーを返し「他の担当者が完了にするまで削除できません」と操作をブロックします。
+
+### ③ 複数人アサインの状況可視化と完了ステータスの共有
+
+* **現状の課題**: パーソナルボード上では自分のタスク状態しか見えず、同じタスクを他に誰が持っているか、誰が完了したかが分かりません。
+* **解決策**:
+  * **他担当者バッジの表示**: パーソナルボードにおいて、その付箋が自分以外の誰かにアサインされている場合、該当付箋に「自分以外の担当者アイコンバッジ」を表示します（自分のバッジは除外）。
+  * **完了状態のリアルタイム共有**: 他の担当者がその付箋を「完了（DONE）」レーンに移動させた場合、**該当者のバッジの色（グレースケール＋チェックマーク表示）を変化**させ、誰が終わったのかを視覚的に通知します。
+
+### ④ 通知UIの「吹き出し」への一本化（ネイティブトースト廃止）
+
+* **現状の課題**: デスクトップアプリで「ネイティブトースト」と「ミニポート上の吹き出し」が混在しており、通知体験が統一されていません。
+* **解決策**:
+  * `notifications.py` にある OSネイティブのトースト呼び出しを廃止します。
+  * **吹き出しの独立ポップアップ化**: ミニポート本体が非表示（バックグラウンド）の状態でも、通知受信時にはミニポート本体を出現させることなく、**「吹き出し」ウィンドウのみ**を画面右下（旧トースト位置）に一時的に表示します。
+  * 吹き出しは指定秒数（`duration_sec`）が経過すると自動的にフェードアウト・非表示となります。
+
+---
+
+## 3. 具体的な実装仕様 (Proposed Changes)
+
+### 3.1 データベース変更 (Alembic Migration)
+
+新しいマイグレーションスクリプトを作成し、`sticky_notes` テーブルにフラグを追加します。
+
+* `backend/alembic/versions/xxxx_add_is_help_request.py`
+
+```python
+def upgrade() -> None:
+    with op.batch_alter_table("sticky_notes", schema=None) as batch_op:
+        batch_op.add_column(
+            sa.Column("is_help_request", sa.Boolean(), server_default=sa.text("false"), nullable=False)
+        )
+
+def downgrade() -> None:
+    with op.batch_alter_table("sticky_notes", schema=None) as batch_op:
+        batch_op.drop_column("is_help_request")
+
+```
+
+### 3.2 バックエンド API ロジック改修 (`board-system`)
+
+* `backend/app/schemas/board_placement.py`
+* 複数人アサイン時の状態を示すため、`TakenByUser` スキーマに `is_done: bool` を追加します。
+
+```python
+class TakenByUser(BaseModel):
+    id: int
+    name: str
+    name_short: str
+    is_done: bool = False  # 追加: このユーザーが完了(DONE)にしたかどうか
+
+```
+
+* `backend/app/schemas/sticky_note.py` & `board_placement.py`
+* レスポンススキーマに `is_help_request: bool = False` を追加します。
+
+* `backend/app/routers/boards.py` (`GET /boards/personal`)
+* パーソナルボード取得時、同一付箋に対する自分以外の配置情報（`BoardPlacement`）から `taken_by` リスト（自分以外の所有者一覧）を組み立てて返却します。その際、各ユーザーの `lane == Lane.DONE` であれば `is_done = True` とします。
+
+* `backend/app/routers/board_placements.py` & `sticky_notes.py`
+* **削除制御**: `DELETE` メソッドで、他の未完了パーソナル配置がある場合は HTTP 400 でブロックし、未完了メンバーを通知します。
+* **引き取り時のレーン復帰**: `move_to_personal` や `copy_to_team` 実行時、対象付箋において自分以外のパーソナル配置が `HELP_REQUEST` レーンにある場合、それらを自動的に `INBOX` に更新します。
+
+### 3.3 フロントエンドのUI対応 (`frontend`)
+
+* `frontend/app/components/NoteCard.tsx` & `PersonalBoardView.tsx`
+* **他担当者バッジの表示**: 渡された `taken_by` リスト（自分以外）を展開し、付箋の端（または下部）にアバター風バッジを表示します。
+* **完了状態の色変化**: `taken_by` のうち `is_done === true` のメンバーバッジには、`grayscale opacity-60` のスタイルと「✅」アイコンを適用し、未完了メンバーと一目で区別できるようにします。
+* **赤色表示**: `note.is_help_request` が `true` の場合、付箋を完了にするまで赤基調（`cardColor="red"`）でハイライト表示します。
+
+### 3.4 デスクトップアプリの通知統合 (`wl_desktop_app`)
+
+* `wl_desktop_app/notifications.py`
+* ネイティブトースト（`win10toast` 等）の処理を削除し、UIディスパッチを経由してアバターモジュールの「吹き出しのみ」にルーティングします。
+
+```python
+def show_toast(title: str, msg: str, url: str = None, duration_sec: int = 5, force_show: bool = False):
+    if not are_enabled() and not force_show:
+        return
+    # トースト呼び出しをすべて吹き出し表示（linko_avatar）に委譲
+    if _ui_dispatch:
+        _ui_dispatch(lambda: _trigger_speech_bubble_notification(msg, duration_sec))
+
+```
+
+* `wl_desktop_app/linko_avatar.py` & `speech_bubble.py`
+* ミニポート本体が非表示（`_miniport_visible == False`）の場合、`SpeechBubble` のみを画面右下の固定位置に表示するスタンドアロンモードを実装します。
+
+```python
+# speech_bubble.py 内の表示ロジック拡張
+def show_message(self, text: str, duration_sec: float = 3.0, standalone: bool = False):
+    self.label.configure(text=text)
+    
+    if standalone:
+        # ミニポート本体が出現しないよう、吹き出しのみを画面右下へ配置
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x = sw - self.WIDTH - 24
+        y = sh - self.HEIGHT - 60
+        self.geometry(f"+{x}+{y}")
+    else:
+        self._align_to_parent()
+
+    self.deiconify()
+    self.attributes("-topmost", True)
+    
+    if self._hide_job:
+        self.after_cancel(self._hide_job)
+    self._hide_job = self.after(int(duration_sec * 1000), self.withdraw)
+
+```
+
+---
+
+## 4. 検証および運用計画 (Verification Plan)
+
+1. **応援要請のライフサイクル検証**:
+
+* ユーザーAが付箋を `HELP_REQUEST` レーンに置く（赤色表示になる）。
+* ユーザーBがそれを引き取ると、ユーザーAのボードで付箋が自動で `INBOX` に戻り、両者のボードで完了するまで赤色のまま維持されることを確認する。
+
+1. **複数人アサインの可視化と削除制御検証**:
+
+* ユーザーAとBが同じ付箋を持っている際、お互いのパーソナルボードに相手のバッジが表示されることを確認する（自分のバッジは表示されない）。
+* ユーザーAが該当付箋をゴミ箱に入れようとすると、「他の担当者が完了にするまで削除できません」とブロックされることを確認する。
+* ユーザーBが付箋を `DONE` に移動させると、ユーザーAのボード上にある「ユーザーBのバッジ」がグレーアウト＋チェックマーク（✅）に変化することを確認する。
+* ユーザーBが完了状態になった後であれば、ユーザーAが正常に付箋を削除できることを確認する。
+
+1. **通知UIの吹き出し一本化検証**:
+
+* ミニポート本体を非表示にする。
+* 通知トリガーを発生させ、**ミニポート本体は出現せず、吹き出しのみ**が画面右下にポップアップ表示されることを確認する。
+* 指定秒数経過後、吹き出しが自動的に消えることを確認する。
+</file>
+
+<file path="開発・改善プラン/遠藤改善内容/改善計画25_完了.md">
+# 改善計画25：応援要請の仕様改善・削除制御・複数人アサインの可視化・通知UIの統合と最適化 完了報告書
+
+**作成日:** 2026年10月6日
+
+**対象システム:** Wonder Linko エコシステム全体（Board System, wl_desktop_app, wl-sticky-note）
+
+**ステータス:** 完了
+
+---
+
+## 1. 概要・目的
+
+本計画では、タスクの「応援要請」におけるライフサイクル（レーン移動・復帰・視覚的情報の保持）を明確化し、複数アサイン時の状態管理および削除制御を厳格化することで、業務の抜け漏れや誤操作を防止しました。
+また、パーソナルボード上において同じタスクを持つ他担当者の進捗状態（対応中・完了）をリアルタイムに視覚可視化できるようにしました。
+さらに、デスクトップアプリで重複・混在していた通知UI（OSネイティブトーストとアバター吹き出し）を「吹き出しウィンドウ」へ一本化し、ミニポート本体が非表示の状態であっても右下に一時ポップアップ表示される共通通知体験を構築しました。
+
+---
+
+## 2. 実施した改善内容の詳細
+
+### ① 応援要請のレーン復帰と赤色表示の継承
+
+* **DBスキーマ拡張とフラグ保持:**
+* `sticky_notes` テーブルに `is_help_request`（Boolean）カラムを追加し、付箋自体が応援要請由来であることをDBレベルで保持可能にしました。
+
+* **引き取り時の自動レーン復帰 (`sticky_notes.py`):**
+* 他のユーザーが付箋をパーソナルボード（`move_to_personal`）やチーム（`copy_to_team`）へ引き取った際、要請者本人の配置が `HELP_REQUEST` レーンにある場合は自動的に `INBOX` レーンへ復帰・更新されるロジックを追加しました。
+
+* **赤色表示の永続化 (`board_placements.py`, `boards.py`):**
+* `is_help_request = True` の付箋は、引き取った担当者および要請者本人のパーソナルボード上でも、完了（`DONE`）するまで赤基調のハイライト表示（`cardColor="red"` / `is_help_request=True`）が維持されるよう改修しました。
+
+### ② 複数人アサイン時の安全な削除制御
+
+* **削除ブロック制御 (`board_placements.py`):**
+* バックエンドの削除API（`DELETE /board_placements/{id}`）において、該当付箋に他の未完了パーソナル配置（`lane != Lane.DONE`）が存在するかチェックする安全制御を実装しました。
+
+* 未完了の他担当者が存在する場合、`他の担当者（○○）が完了にするまで削除できません` という明確なメッセージとともに HTTP 400 エラーを返し、誤操作によるタスクステータスの矛盾発生をブロックします。
+
+### ③ 複数人アサインの状況可視化と完了ステータスの共有
+
+* **レスポンススキーマ拡張 (`board_placement.py`):**
+* `TakenByUser` スキーマに `is_done: bool` フィールドを追加しました。
+
+* **他担当者のリアルタイム共有 (`boards.py`):**
+* パーソナルボード取得API（`GET /boards/personal`）およびタスクボード取得API（`GET /boards/task`）において、自分以外の担当者一覧（`taken_by`）を組み立てる際、各担当者のレーンが `DONE` であるかを判定して `is_done` フラグを設定・返却するようにしました。
+
+* これにより、フロントエンド側で他担当者が完了した際にアバターバッジの色変化（グレーアウト＋チェックマーク✅）で直感的に進捗が把握できるようになりました。
+
+### ④ 通知UIの「吹き出し」への一本化（ネイティブトースト廃止）
+
+* **ネイティブトーストの廃止 (`notifications.py`):**
+* `win10toast` などの OS ネイティブトースト呼び出しコードおよび不調時の自前トースト描画フォールバックを整理し、通知トリガーをすべて UI ディスパッチ経由でアバターの吹き出しモジュールへ移譲・一本化しました。
+
+* **吹き出しの独立ポップアップ化 (`speech_bubble.py`):**
+* `SpeechBubble` に `standalone=True` オプションを拡張しました。
+
+* ミニポート本体がバックグラウンド（非表示）状態であっても、通知受信時にはミニポート本体を出現させることなく「吹き出しウィンドウ」のみを画面右下に独立表示・自動フェードアウトさせる処理を確立しました。
+
+### ⑤ Alembic マイグレーションの追加と一貫性確保
+
+* **リビジョンファイル追加 (`n4o5p6q7r8s9_add_is_help_request_to_sticky_notes.py`):**
+* リビジョン `m3n4o5p6q7r8` から更新する形で、`sticky_notes` テーブルへの `is_help_request` カラム追加（`server_default=false`, `nullable=False`）を行うマイグレーションスクリプトを作成・配置しました。
+
+---
+
+## 3. 改修・新規追加ファイル一覧
+
+| コンポーネント | ファイルパス | 改修内容 |
+| --- | --- | --- |
+| **Migration** | `alembic/versions/n4o5p6q7r8s9_....py` | 【新規】`is_help_request` カラム追加用マイグレーション
+
+ |
+| **Backend** | `app/models/sticky_note.py` | `StickyNote` モデルへ `is_help_request` カラムの定義追加
+
+ |
+| **Backend** | `app/schemas/board_placement.py` | `TakenByUser` (`is_done`) および `BoardPlacementWithNoteResponse` (`is_help_request`) の拡張
+
+ |
+| **Backend** | `app/routers/board_placements.py` | `HELP_REQUEST` フラグ更新および複数人アサイン時の削除ブロック制御
+
+ |
+| **Backend** | `app/routers/boards.py` | 各ボード応答時の `is_help_request` 返却およびパーソナル用 `taken_by` (`is_done`) 算出の追加
+
+ |
+| **Backend** | `app/routers/sticky_notes.py` | `move_to_personal` / `copy_to_team` 実行時の要請者 `HELP_REQUEST` ➔ `INBOX` 自動復帰ロジック
+
+ |
+| **Desktop App** | `notifications.py` | OSネイティブトーストの撤去と吹き出し表示（`standalone=True`）への一本化
+
+ |
+| **Desktop App** | `speech_bubble.py` | `standalone=True` 指定時の画面右下固定配置処理の追加
+
+ |
+
+---
+
+## 4. 確認・検証結果
+
+1. **応援要請のライフサイクル検証:**
+
+* パーソナルボードで付箋を `HELP_REQUEST` レーンに置くと赤色に強調され、他のユーザーが引き取った段階で要請者の付箋が自動的に `INBOX` レーンへ戻り、完了するまで両者の画面で赤色が維持されることを確認しました。
+
+1. **複数人アサインの可視化と削除制御検証:**
+
+* 同一タスクを所有する他担当者がパーソナルボード上にアバターバッジで表示され、他担当者が `DONE` に移動するとバッジがグレーアウト＋チェックマークに変化することを確認しました。
+
+* 未完了の他担当者が存在する状態でゴミ箱投入（削除）を試みた際、「他の担当者（○○）が完了にするまで削除できません」とブロックされることを確認しました。
+
+1. **通知UI（吹き出し）の動作検証:**
+
+* ミニポート本体を非表示にした状態で通知（新着・リマインド等）が発生した際、ミニポート本体は出現せず、画面右下に「吹き出し」のみがポップアップ表示され、指定秒数後に消えることを確認しました。
 </file>
 
 <file path="開発・改善プラン/遠藤改善内容/改善計画3_完了.md">

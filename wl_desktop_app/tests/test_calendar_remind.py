@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config_loader import (  # noqa: E402
+from core.config_loader import (  # noqa: E402
     parse_calendar_remind_minutes_from_text,
     parse_calendar_remind_minutes_list,
     parse_task_remind_times_from_text,

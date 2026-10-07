@@ -13,6 +13,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, Team, User
 from app.models.board_placement import Lane
+from app.models.sticky_note import NoteStatus
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
     CopyToTeamBody,
@@ -437,8 +438,46 @@ async def update_sticky_note(
 
     if body.content is not None:
         note.content = body.content
+
     if body.status is not None:
         note.status = body.status
+        # 付箋のステータス変更に合わせて Task ボードの象限および Personal ボードのレーンを連動更新
+        if body.status in (NoteStatus.DONE, NoteStatus.ARCHIVED):
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.TASK,
+                )
+                .values(matrix_quadrant=5)
+            )
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                )
+                .values(lane=Lane.DONE)
+            )
+        elif body.status == NoteStatus.ACTIVE:
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.TASK,
+                    BoardPlacement.matrix_quadrant == 5,
+                )
+                .values(matrix_quadrant=1)
+            )
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.lane == Lane.DONE,
+                )
+                .values(lane=Lane.INBOX)
+            )
 
     due_date_changed = False
     if body.due_date is not None:
@@ -589,6 +628,19 @@ async def move_to_personal(
 
     await db.flush()
 
+    # --- 追加: 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り) ---
+    await db.execute(
+        sa_update(BoardPlacement)
+        .where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id != body.owner_id,
+            BoardPlacement.lane == Lane.HELP_REQUEST,
+        )
+        .values(lane=Lane.INBOX)
+    )
+    await db.flush()
+
     if not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
@@ -658,6 +710,20 @@ async def copy_to_team(
             user_ids.append(member.id)
 
     await db.flush()
+
+    # --- 追加: 新規に割り当てられたユーザー以外の HELP_REQUEST レーンを INBOX に戻す ---
+    if user_ids:
+        await db.execute(
+            sa_update(BoardPlacement)
+            .where(
+                BoardPlacement.note_id == note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.owner_id.notin_(user_ids),
+                BoardPlacement.lane == Lane.HELP_REQUEST,
+            )
+            .values(lane=Lane.INBOX)
+        )
+        await db.flush()
 
     if not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async

@@ -56,26 +56,3 @@ async def get_resolved_ollama_async(db: AsyncSession) -> tuple[str | None, str |
 async def ollama_configured_async(db: AsyncSession) -> bool:
     resolved, _ = await get_resolved_ollama_async(db)
     return bool(resolved)
-
-
-# --- 互換性・フォールバック用の同期関数 (同期 DB 接続は全廃) ---
-
-
-def get_db_llm_target_sync() -> int | None:
-    """（フォールバック用）DB同期アクセスを廃止したため、環境変数設定を優先。"""
-    return None
-
-
-def get_effective_llm_target_sync() -> int | None:
-    """実効 LLM スロット（同期フォールバック）: 環境変数 LLM_TARGET のみ参照。"""
-    return settings.llm_target
-
-
-def get_resolved_ollama_sync() -> tuple[str | None, str | None]:
-    """実効ターゲットに応じた (ollama_base_url, model_override)（同期フォールバック）。"""
-    eff = get_effective_llm_target_sync()
-    return settings.resolve_ollama_for_target(eff)
-
-
-def ollama_configured_sync() -> bool:
-    return bool(get_resolved_ollama_sync()[0])

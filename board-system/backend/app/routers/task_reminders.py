@@ -28,6 +28,7 @@ from app.models import (
     TaskReminderLog,
     User,
 )
+from app.models.sticky_note import NoteStatus
 from app.services.calendar_placement import include_in_task_remind
 
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
@@ -257,7 +258,7 @@ async def ack_task_reminder(
     body: AckBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """継続 / 完了 の応答。done のとき Personal を DONE に移動（Task 完了連動は board_placements と同じ）。"""
+    """継続 / 完了 の応答。done のとき Personal を DONE に移動し、StickyNote.status も NoteStatus.DONE へ更新。"""
     await _ensure_user(user_id, db)
     remind_date = _jst_today()
     r = await db.execute(
@@ -297,6 +298,14 @@ async def ack_task_reminder(
     if body.action == "done" and placement.lane != Lane.DONE:
         prev_lane = placement.lane
         placement.lane = Lane.DONE
+
+        r_note = await db.execute(
+            select(StickyNote).where(StickyNote.id == placement.note_id)
+        )
+        note = r_note.scalar_one_or_none()
+        if note:
+            note.status = NoteStatus.DONE
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,
@@ -307,8 +316,6 @@ async def ack_task_reminder(
         task_placement = r_task.scalar_one_or_none()
         if task_placement:
             task_placement.matrix_quadrant = 5
-        elif prev_lane == Lane.HELP_REQUEST:
-            pass  # HELP_REQUEST から DONE は既存 PATCH と同様 task 連動のみ
 
     await db.flush()
     return {

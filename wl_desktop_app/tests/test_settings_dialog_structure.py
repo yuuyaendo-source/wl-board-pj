@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import settings_dialog
+from ui import settings_dialog
 
 
 class TestSettingsDialogStructure(unittest.TestCase):

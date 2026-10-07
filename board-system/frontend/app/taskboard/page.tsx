@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import {
   fetchLegacyPostitNotes,
   LEGACY_POSTIT_BOARD_ID,
 } from "@/lib/legacyPostit";
-import type { PlacementWithNote } from "@/lib/types";
-import type { Team } from "@/lib/types";
+import type { PlacementWithNote, Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
+import { OperationPanel } from "../components/OperationPanel";
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
 const REFETCH_DELAY_MS = 120;
@@ -259,72 +259,25 @@ export default function TaskBoardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      {/* メニューバー・ゴミ箱・コピー先（アコーディオンなし・コンパクト全表示） */}
-      <div className="sticky top-[52px] z-10 -mx-4 mb-4 rounded-b-xl border-b border-[var(--border)] bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur-sm">
+      {/* メニューバー・ゴミ箱・コピー先 */}
+      <div className="sticky top-[52px] z-10 -mx-4 mb-4">
         {(importing || importMessage) && (
-          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1 rounded-md border border-amber-200">
+          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-xs">
             {importing ? "取り込み中…" : importMessage}
           </div>
         )}
 
-        <div className="flex flex-col gap-2 text-xs">
-          {/* 1行目: アクション・設定・ゴミ箱 */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => handleImportFromPostit()}
-              disabled={importing}
-              className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 shadow-sm"
-              style={{ background: "var(--primary)" }}
-            >
-              付箋ボードから取り込む
-            </button>
-
-            <label className="flex cursor-pointer items-center gap-1.5 text-zinc-600 select-none">
-              <input
-                type="checkbox"
-                checked={autoImportEnabled}
-                onChange={(e) => setAutoImportEnabled(e.target.checked)}
-                className="rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
-              />
-              <span>自動で取り込む（5分ごと・AI判定）</span>
-            </label>
-
-            <div className="h-3.5 w-px bg-zinc-200 mx-1 hidden sm:block" />
-
-            <TrashDropZone onDrop={handleTrashDrop} />
-          </div>
-
-          {/* 2行目: パーソナルコピー */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium text-zinc-500 shrink-0">パーソナルコピー:</span>
-            <div className="flex flex-wrap gap-1">
-              {personalMembers.map(({ ownerId, name }) => (
-                <MemberDropZone
-                  key={ownerId}
-                  name={name}
-                  onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* 3行目: チームコピー */}
-          {teams.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-medium text-zinc-500 shrink-0">チーム一括コピー:</span>
-              <div className="flex flex-wrap gap-1">
-                {teams.map((team) => (
-                  <TeamDropZone
-                    key={team.id}
-                    team={team}
-                    onDrop={(noteId) => handleCopyToTeam(noteId, team.id, team.name)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <OperationPanel
+          members={personalMembers}
+          teams={teams}
+          autoImport={autoImportEnabled}
+          isImporting={importing}
+          onAutoImportChange={setAutoImportEnabled}
+          onImportClick={handleImportFromPostit}
+          onTrashDrop={handleTrashDrop}
+          onMemberDrop={handleCopyToPersonal}
+          onTeamDrop={handleCopyToTeam}
+        />
       </div>
 
       {/* タスクボード4列 */}
@@ -343,93 +296,6 @@ export default function TaskBoardPage() {
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs transition-colors cursor-pointer ${over ? "border-red-500 bg-red-50 text-red-700" : "border-zinc-300 bg-zinc-50 text-zinc-600"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <span>🗑️ ゴミ箱</span>
-    </div>
-  );
-}
-
-function MemberDropZone({ name, onDrop }: { name: string; onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-[var(--primary)] bg-green-50 text-[var(--primary)]" : "border-zinc-300 bg-zinc-50 text-zinc-700"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {name}
-    </div>
-  );
-}
-
-function TeamDropZone({ team, onDrop }: { team: Team; onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-indigo-200 bg-indigo-50/50 text-indigo-800"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      👥 {team.name} <span className="text-[10px] opacity-75">({team.member_count}名)</span>
     </div>
   );
 }
@@ -467,13 +333,20 @@ function Column({
   const handleDrop = (e: React.DragEvent) => {
     if (!droppable || targetQ == null) return;
     e.preventDefault();
-    setOver(false);
-    const id = e.dataTransfer.getData("placementId");
-    if (id) onDrop(Number(id), targetQ);
+    try {
+      const id = e.dataTransfer.getData("placementId");
+      if (id && !isNaN(Number(id))) {
+        onDrop(Number(id), targetQ);
+      }
+    } finally {
+      setOver(false);
+    }
   };
 
   return (
     <div
+      role="region"
+      aria-label={`${title} カラム`}
       className={`rounded-xl border-2 border-dashed p-4 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : "border-[var(--border)] bg-white"
         }`}
       onDragOver={handleDragOver}

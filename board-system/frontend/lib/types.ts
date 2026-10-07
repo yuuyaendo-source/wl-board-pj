@@ -32,6 +32,8 @@ export interface PlacementWithNote {
   is_manually_moved_to_today?: boolean;
   /** 紐づく付箋の期限（YYYY-MM-DD 文字列）*/
   due_date?: string | null;
+  /** 応援要請 */
+  is_help_request?: boolean;
 }
 
 export interface User {

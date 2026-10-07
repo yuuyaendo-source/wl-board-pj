@@ -3,9 +3,11 @@
 AIによる自動振り分けオーケストレーター。
 新規付箋の内容を Triage → Matrix Scoring し、Task ボードの適切な列へ配置、担当者があれば Personal にも配布する。
 Board System でタスクになった付箋（postit 連携なし）は付箋ボードにも反映する。
+MOCK_AI=true の場合は外部 LLM 呼び出しを行わずに確定スコアで配置する。
 """
 import asyncio
 import logging
+import os
 import time
 
 from fastapi import Request
@@ -84,6 +86,26 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
         (content[:300] + "…") if len(content) > 300 else (content or "(空)")
     )
     logger.info("[Linko AI] Note %s 内容: %s", note_id, content_preview)
+
+    # E2E テスト環境用 モック判定 (MOCK_AI=true)
+    if os.environ.get("MOCK_AI", "").lower() in ("true", "1"):
+        logger.info("[Linko AI] MOCK_AI 提案適用 Note ID: %s", note_id)
+        await _place_on_task_board(db, note_id, 80.0, 80.0, 4)  # 重要列へマッピング
+        await db.flush()
+        if not note.postit_note_id:
+            from app.config import settings
+
+            ok = await _sync_note_to_postit_async(
+                request,
+                note.id,
+                note.content or "",
+                settings.postit_board_id,
+            )
+            if ok:
+                note.postit_board_id = settings.postit_board_id
+                note.postit_note_id = f"bs-{note.id}"
+                await db.flush()
+        return
 
     ollama_url, model_ov = await get_resolved_ollama_async(db)
 
@@ -222,7 +244,7 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
 async def _sync_note_to_postit_async(
     request: Request, note_id: int, content: str, board_id: str
 ) -> bool:
-    """Board System の付箋を付箋ボードに追加する（非同期 httpx 通信）。"""
+    """Board System の付箋が付箋ボードに追加された際、中央付近（x:2000, y:2000）に配置する"""
     from app.config import settings
 
     postit_note_id = f"bs-{note_id}"
@@ -231,8 +253,8 @@ async def _sync_note_to_postit_async(
         "note": {
             "id": postit_note_id,
             "text": content or "",
-            "x": 0,
-            "y": 0,
+            "x": 2000.0,
+            "y": 2000.0,
             "color": "#ffeb3b",
             "pinned": False,
             "author": "",

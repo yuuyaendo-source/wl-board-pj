@@ -1,0 +1,53 @@
+/**
+ * 期限日（YYYY-MM-DD）から今日までの残り日数を計算する
+ * @param dueDateStr YYYY-MM-DD 形式の文字列
+ * @returns 残り日数（期限切れは負の数、当日は0）。無効値の場合は null
+ */
+export function calcDaysLeft(dueDateStr?: string | null): number | null {
+    if (!dueDateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const parts = dueDateStr.split("-").map(Number);
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts;
+    if (!y || !m || !d) return null;
+
+    const due = new Date(y, m - 1, d);
+    due.setHours(0, 0, 0, 0);
+    if (isNaN(due.getTime())) return null;
+
+    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 期限日のフォーマット文字列（例: "⚠️️ 期限切れ（2日経過）"）を取得する
+ */
+export function getDueDateStatusText(dueDateStr?: string | null): {
+    daysLeft: number | null;
+    label: string;
+    status: "expired" | "today" | "urgent" | "normal" | "none";
+} {
+    const daysLeft = calcDaysLeft(dueDateStr);
+    if (daysLeft === null) {
+        return { daysLeft: null, label: "", status: "none" };
+    }
+
+    if (daysLeft < 0) {
+        return {
+            daysLeft,
+            label: `⚠️ 期限切れ（${Math.abs(daysLeft)}日経過）`,
+            status: "expired",
+        };
+    }
+    if (daysLeft === 0) {
+        return { daysLeft, label: "🔥 本期日が期限！", status: "today" };
+    }
+    if (daysLeft <= 3) {
+        return { daysLeft, label: `⏰ 期限まであと${daysLeft}日`, status: "urgent" };
+    }
+    if (daysLeft <= 10) {
+        return { daysLeft, label: `📅 期限まであと${daysLeft}日`, status: "normal" };
+    }
+    return { daysLeft, label: `📅 期限: ${dueDateStr}`, status: "normal" };
+}

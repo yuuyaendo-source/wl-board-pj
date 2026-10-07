@@ -16,11 +16,11 @@ wl-board-pj/
 │   ├── docker-compose.prod.yml # 本番用 Docker Compose 設定
 │   └── docker-compose.db.yml   # 本番・ローカル用 PostgreSQL 設定
 ├── wl-sticky-note/             # リアルタイム協調型付箋ボード
-│   └── src/                    # Next.js + Express + Socket.IO（リアルタイム同期・3D/UI高度化）
+│   └── src/                    # Next.js + Express + Socket.IO（リアルタイム同期・アトミック保存・3D/UI高度化）
 ├── wl_desktop_app/             # 社員PC常駐用デスクトップアプリ（Personal Linko Agent）
-│   ├── app.py                  # メインエントリ（タスクトレイ常駐・ミニポートUI）
+│   ├── app.py                  # メインエントリ（タスクトレイ常駐・ミニポートUI・OS名前付きMutex）
 │   ├── build_msi.ps1           # MSI インストーラ自動ビルド（自己署名コード署名）
-│   └── scripts/                # 署名生成・アンインストールスクリプト
+│   └── scripts/                # 署名生成・インストール/アンインストールスクリプト
 ├── docs/                       # 設計書・デプロイ手順・改善プラン・運用マニュアル
 ├── start_all_servers.ps1       # ローカル開発用：全サーバー一括起動スクリプト（PowerShell）
 ├── check_ports.ps1             # ポート使用状況確認スクリプト
@@ -38,7 +38,7 @@ wl-board-pj/
 │  [wl_desktop_app]            [Webブラウザ]                  │
 │   - ミニポート（付箋クイック投稿）  - 付箋ボード (/board/wl)        │
 │   - タスク/カレンダーリマインド    - Board System (/boards)      │
-│   - リン子ブレスト（SSE/音声）      (Task / Personal / Meeting) │
+│   - アバター吹き出し通知一元化      (Task / Personal / Meeting) │
 └──────────────┬───────────────────────────────┬──────────────┘
                │                               │
                ▼ (リバースプロキシ: Nginx)       ▼
@@ -48,7 +48,7 @@ wl-board-pj/
 │  ┌────────────────────────┐    ┌──────────────────────────┐ │
 │  │ wl-sticky-note (Node)  │    │ board-system             │ │
 │  │ - Express + Socket.IO  │◄───┤ - FastAPI Backend (8000) │ │
-│  │ - リアルタイム付箋同期 │───►│ - Next.js Frontend(3001) │ │
+│  │ - アトミック保存(.tmp) │───►│ - Next.js Frontend(3001) │ │
 │  └────────────────────────┘    └─────────────┬────────────┘ │
 │                                              │              │
 │               ┌──────────────────────────────┼────────────┐ │
@@ -64,9 +64,9 @@ wl-board-pj/
 
 | コンポーネント | 技術スタック | 主な役割・機能 | 参照ドキュメント |
 | :--- | :--- | :--- | :--- |
-| **[board-system](board-system/README.md)** | FastAPI, PostgreSQL, Next.js 16, Tailwind CSS v4 | **統合4ボードシステム**: Main（全体構想）、Task（5列・引き取り管理）、Personal（Today/Inbox/Done）、Meeting（朝会スナップショット・ニュース要約）。複数チーム所属（N:M）、管理者認証（JWT）、期限連動ルール、停滞タスクの自動ローテーション（`run_8am`）。 | [board-system/README.md](board-system/README.md) |
-| **[wl-sticky-note](wl-sticky-note/README.md)** | Next.js 16, Express, Socket.IO, Three.js | **リアルタイム付箋ボード**: 複数人同時編集、Google Map風パン移動、ホイールズーム（0.3x〜2.5x）、矩形ドラッグ複数選択・一括移動、Esc選択解除、グレー付箋非表示切替、`useRef` 直接DOM操作によるドラッグ超高速化。 | [wl-sticky-note/README.md](wl-sticky-note/README.md) |
-| **[wl_desktop_app](wl_desktop_app/README.md)** | Python 3.10+, CustomTkinter, pystray, winotify | **デスクトップ常駐エージェント**: ミニポート（付箋クイック投稿）、タスクトレイ常駐、タスク/カレンダー定時リマインド（期限警告バッジ付）、OS名前付きMutexによる確実な二重起動防止、自前フローティング通知フォールバック、自己署名MSI配布。 | [wl_desktop_app/README.md](wl_desktop_app/README.md) |
+| **[board-system](board-system/README.md)** | FastAPI, PostgreSQL, Next.js 16, Tailwind CSS v4 | **統合4ボードシステム**: Main（全体構想）、Task（5列・引き取り管理）、Personal（Today/Inbox/Done）、Meeting（朝会スナップショット・ニュース要約）。複数チーム所属（N:M）、管理者認証（JWT）、期限連動ルール、停滞タスクの自動ローテーション、応援要請・複数アサイン状態共有・安全削除制御、差分照合バッチ (Self-Healing)。 | [board-system/README.md](board-system/README.md) |
+| **[wl-sticky-note](wl-sticky-note/README.md)** | Next.js 16, Express, Socket.IO, Three.js | **リアルタイム付箋ボード**: 複数人同時編集、Google Map風パン移動、ホイールズーム（0.3x〜2.5x）、矩形ドラッグ複数選択・一括移動、Esc選択解除、グレー付箋非表示切替、`useRef` 直接DOM操作によるドラッグ超高速化、`boards.json` アトミック保存 (`.tmp` + `rename`) & グレースフルシャットダウン。 | [wl-sticky-note/README.md](wl-sticky-note/README.md) |
+| **[wl_desktop_app](wl_desktop_app/README.md)** | Python 3.10+, CustomTkinter, pystray | **デスクトップ常駐エージェント**: ミニポート（付箋クイック投稿）、タスクトレイ常駐、タスク/カレンダー定時リマインド（期限警告バッジ付）、OS名前付きMutexによる排他制御、画面右下アバター吹き出し通知への一本化、自己署名MSI配布（`install.bat` / `uninstall.bat`）。 | [wl_desktop_app/README.md](wl_desktop_app/README.md) |
 
 ---
 
@@ -156,18 +156,9 @@ docker exec -it linko-backend alembic upgrade head
 
 - **本番ドメイン**: `https://wlboardsys.internal.wonder-link.com/` (IP: `172.16.1.203`)
 - **Blue/Green デプロイ**: `board-system/deploy/deploy.sh` によるゼロダウンタイム切り替え。
-- **静的アセット永続化（改善計画21）**: デプロイ時にフロントエンドコンテナの `.next/static` をホストOS上の `/var/www/wlinko-pj/shared_static/` に同期し、Nginx から直接配信。不在時は純粋な 404 を返却してブラウザ側の自動リロード（ChunkLoadError リカバリ）をトリガー。
+- **静的アセット永続化**: デプロイ時にフロントエンドコンテナの `.next/static` をホストOS上の `/var/www/wlinko-pj/shared_static/` に同期し、Nginx から直接配信。不在時は純粋な 404 を返却してブラウザ側の自動リロード（ChunkLoadError リカバリ）をトリガー。
+- **MSI 即時配信**: `backend/desktop_app_releases/` はコンテナへ bind mount されているため、最新 MSI や `latest.json` を配置するだけで `deploy.sh` の実行なしに即時配信可能。
 - **データベース**: PostgreSQL（`docker-compose.db.yml`）、マイグレーションは Alembic で完全管理。
-
-### 本番デプロイコマンド例
-
-```bash
-ssh devuser01@172.16.1.203
-cd /var/www/wlinko-pj
-git pull
-cd board-system/deploy
-./deploy.sh
-```
 
 ---
 
@@ -183,13 +174,3 @@ cd board-system/deploy
 >    - `TOKEN_ENCRYPTION_KEY` には **32 バイト以上** の安全なランダム文字列を設定してください。未設定時はバックエンドが起動しません。
 > 3. **管理者パスワード**:
 >    - `ADMIN_PASSWORD`（既定: `admin123`）は本番環境構築時に必ず堅牢な値に変更してください。
-
----
-
-## 8. 関連ドキュメント一覧
-
-- [docs/本番デプロイ手順_Docker.md](docs/本番デプロイ手順_Docker.md) — 本番 Docker 環境のデプロイ・更新手順
-- [docs/本番環境の構成_Docker.md](docs/本番環境の構成_Docker.md) — インフラ構成・ネットワーク設計
-- [docs/Googleカレンダー連携の動作確認.md](docs/Googleカレンダー連携の動作確認.md) — OAuth 2.0 連携ガイド
-- [docs/ユーザーDB共用と登録方法.md](docs/ユーザーDB共用と登録方法.md) — ユーザーマスタ管理仕様
-- [docs/開発・改善プラン/遠藤改善内容/](docs/開発・改善プラン/遠藤改善内容/) — 各種機能改善・バグ修正の詳細仕様書

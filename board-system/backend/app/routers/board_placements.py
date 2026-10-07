@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.models import BoardPlacement, BoardType
+from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
+from app.models.sticky_note import NoteStatus
 from app.schemas.board_placement import (
     BoardPlacementCreate,
     BoardPlacementResponse,
@@ -115,8 +116,8 @@ async def update_board_placement(
     db: AsyncSession = Depends(get_db),
 ):
     """配置の lane / position_x,y / matrix_quadrant / sort_order を更新。
-    1) Personal で DONE にしたらパーソナルにも残しつつ Task を完了(5)に連動。
-    2) Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻す（グレー→緑）。"""
+    1) Personal で DONE にしたらパーソナルにも残しつつ Task を完了(5)および status=DONE に連動。
+    2) Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻し status=ACTIVE に連動。"""
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
@@ -141,7 +142,31 @@ async def update_board_placement(
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
 
+    note_result = await db.execute(
+        select(StickyNote).where(StickyNote.id == placement.note_id)
+    )
+    note = note_result.scalar_one_or_none()
+
     if placement.board_type == BoardType.PERSONAL and body.lane is not None:
+        # --- HELP_REQUEST に移動されたら、付箋本体の is_help_request を True に ---
+        if body.lane == Lane.HELP_REQUEST:
+            if note:
+                note.is_help_request = True
+        else:
+            # 他ユーザー（引き取った担当者など）が HELP_REQUEST 以外のレーンに移動させた場合、
+            # 同一付箋で HELP_REQUEST レーンにいる他ユーザー（要請者）の配置を INBOX に自動復帰させる
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == placement.note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.owner_id != placement.owner_id,
+                    BoardPlacement.lane == Lane.HELP_REQUEST,
+                )
+                .values(lane=Lane.INBOX)
+            )
+            await db.flush()
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,
@@ -162,24 +187,29 @@ async def update_board_placement(
         if task_placement:
             if body.lane == Lane.DONE:
                 task_placement.matrix_quadrant = 5
+                if note:
+                    note.status = NoteStatus.DONE
             elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
                 task_placement.matrix_quadrant = 4
+                if note:
+                    note.status = NoteStatus.ACTIVE
 
-    if (
-        placement.board_type == BoardType.TASK
-        and body.matrix_quadrant is not None
-        and body.matrix_quadrant != 5
-        and prev_matrix == 5
-    ):
-        r_personal = await db.execute(
-            select(BoardPlacement).where(
-                BoardPlacement.note_id == placement.note_id,
-                BoardPlacement.board_type == BoardType.PERSONAL,
-                BoardPlacement.lane == Lane.DONE,
+    if placement.board_type == BoardType.TASK and body.matrix_quadrant is not None:
+        if body.matrix_quadrant == 5:
+            if note:
+                note.status = NoteStatus.DONE
+        elif prev_matrix == 5 and body.matrix_quadrant != 5:
+            if note:
+                note.status = NoteStatus.ACTIVE
+            r_personal = await db.execute(
+                select(BoardPlacement).where(
+                    BoardPlacement.note_id == placement.note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.lane == Lane.DONE,
+                )
             )
-        )
-        for p in r_personal.scalars().all():
-            p.lane = Lane.INBOX
+            for p in r_personal.scalars().all():
+                p.lane = Lane.INBOX
 
     await db.flush()
     await db.refresh(placement)
@@ -198,8 +228,26 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
 
-    # パーソナルボード上の配置がゴミ箱へ投入された場合、タスクボード上も「完了（5）」に更新
     if placement.board_type == BoardType.PERSONAL:
+        # 同一タスクに対する他の未完了パーソナル配置があるかチェック (複数人アサイン時の削除制御)
+        r_others = await db.execute(
+            select(BoardPlacement, User)
+            .join(User, BoardPlacement.owner_id == User.id)
+            .where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.id != placement.id,
+                BoardPlacement.lane != Lane.DONE,
+            )
+        )
+        others = r_others.all()
+        if others:
+            names = ", ".join([u.name for p, u in others])
+            raise HTTPException(
+                status_code=400,
+                detail=f"他の担当者（{names}）が完了にするまで削除できません",
+            )
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,

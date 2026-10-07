@@ -44,6 +44,9 @@ class StickyNote(Base):
     is_personal_only: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    is_help_request: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

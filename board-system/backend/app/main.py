@@ -52,14 +52,9 @@ async def lifespan(app: FastAPI):
     # イベントループ内で httpx.AsyncClient を生成し app.state に格納
     app.state.http_client = httpx.AsyncClient(timeout=5.0)
 
-    from app.services.llm_settings import (
-        get_effective_llm_target_sync,
-        get_resolved_ollama_sync,
-    )
-
-    url, model_ov = get_resolved_ollama_sync()
+    url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     if url:
-        eff = get_effective_llm_target_sync()
+        eff = settings.llm_target
         tgt = f" [effective_LLM_TARGET={eff}]" if eff is not None else ""
         model_line = model_ov or "自動（Ollama のローカルモデル一覧から解決）"
         logger.info(

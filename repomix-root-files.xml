@@ -1,0 +1,572 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: *.md, *.ps1, .*
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitattributes
+.gitignore
+check_ports.ps1
+README.md
+start_all_servers.ps1
+ローカルDockerでテストする手順.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitattributes">
+# シェルスクリプトは常に LF でチェックアウト（本番で /usr/bin/env: `bash\r' エラーを防ぐ）
+*.sh text eol=lf
+</file>
+
+<file path="check_ports.ps1">
+# Check port usage script
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Port Usage Check" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check Port 3000
+Write-Host "Port 3000 (Web App) Status:" -ForegroundColor Yellow
+$port3000 = netstat -ano | findstr ":3000"
+if ($port3000) {
+    Write-Host $port3000 -ForegroundColor Red
+    Write-Host "Warning: Port 3000 is already in use." -ForegroundColor Red
+} else {
+    Write-Host "OK: Port 3000 is free." -ForegroundColor Green
+}
+
+Write-Host ""
+
+# Check Port 5000
+Write-Host "Port 5000 (AI-Board) Status:" -ForegroundColor Yellow
+$port5000 = netstat -ano | findstr ":5000"
+if ($port5000) {
+    Write-Host $port5000 -ForegroundColor Red
+    Write-Host "Warning: Port 5000 is already in use." -ForegroundColor Red
+} else {
+    Write-Host "OK: Port 5000 is free." -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+</file>
+
+<file path="ローカルDockerでテストする手順.md">
+# ローカルで Docker をビルドしてテストする手順（WSL）
+
+手元の **WSL（Ubuntu 等）** で付箋ボード＋Board System を Docker で起動し、動作確認するまでの手順です。**本番サーバは不要**で、`board-system/docker-compose.yml`（ローカル用）を使います。
+
+- **本番を Docker でデプロイする手順**は [docs/本番デプロイ手順_Docker.md](docs/本番デプロイ手順_Docker.md) を参照してください。
+
+---
+
+## 前提
+
+- **WSL 上で Docker**（Docker Engine + Docker Compose v2）が利用できること（Docker Desktop の WSL 2 統合でも可）
+- リポジトリを clone 済みで、**board-system** があること。付箋ボードも使う場合は、同じ階層に **wl-sticky-note** を用意する（例: `wlinko-pj/wl-sticky-note`）。
+
+---
+
+## 手順
+
+### 1. リポジトリの場所に移動
+
+```bash
+cd ~/dev/wlinko-pj
+# 実際のパスは環境に合わせてください（例: /home/hisashi/dev/wlinko-pj）
+```
+
+### 2. 環境変数（任意）
+
+Board System の **AI 自動振り分け**を使う場合は、`.env` を用意します。
+
+```bash
+cd board-system
+cp .env.example .env
+# .env を開いて GEMINI_API_KEY を設定（任意。未設定でも付箋・タスク・パーソナルは利用可能）
+cd ..
+```
+
+### 3. ビルドと起動
+
+**DB・Backend・Frontend だけ起動する（付箋ボードなし）**
+
+```bash
+cd board-system
+docker compose up -d --build
+```
+
+- 初回はイメージのビルドで数分かかることがあります
+- **cato-ca.crt** が無くてもビルドできます（証明書はオプション）
+- 付箋ボード（wl-sticky-note）はビルドしないため、`wl-sticky-note` が無くてもこのコマンドで起動できます。
+
+**付箋ボードも含めて起動する場合**（`wlinko-pj/wl-sticky-note` が存在するとき）
+
+```bash
+cd board-system
+docker compose --profile sticky up -d --build
+```
+
+**「parent snapshot does not exist」などビルドキャッシュのエラーが出る場合**は、キャッシュを使わずにビルドし直してください。
+
+```bash
+cd board-system
+docker compose build --no-cache
+docker compose up -d
+```
+
+まだ解消しない場合は、ビルドキャッシュを削除してから再試行します。
+
+```bash
+docker builder prune -f
+docker compose build --no-cache
+docker compose up -d
+```
+
+### 4. マイグレーション（初回のみ）
+
+PostgreSQL のテーブルを作成します。
+
+```bash
+docker exec linko-backend alembic upgrade head
+```
+
+> **補足**: WSL では `-it` なしで問題なく実行できます。TTY エラーが出る場合は上記のとおり `-it` を付けないでください。
+
+### 5. アクセスしてテスト
+
+ブラウザで次の URL を開きます。
+
+| 用途 | URL |
+| ------ | ----- |
+| **Board System**（タスク・パーソナル・Meeting） | <http://localhost:3010> |
+| **付箋ボード** | <http://localhost:3011（`--profile> sticky` で起動した場合のみ） |
+| **Board System API**（ヘルス確認） | <http://localhost:8010/health> |
+
+- 付箋ボードを起動している場合は、付箋を作成 → Board System の「取り込み」で取り込み
+- タスクボード・パーソナルボード・Meeting の各機能を確認
+
+### 6. 停止するとき
+
+```bash
+cd board-system
+docker compose down
+```
+
+---
+
+## 検証用に「何もない状態」からやり直す
+
+マイグレーションやデータをゼロから検証したいときは、**ボリュームごと削除**してから起動し直します。
+
+```bash
+cd board-system
+docker compose down -v
+docker compose up -d --build
+```
+
+- `-v` で **named volume**（`postgres_data`・`sticky_data`）も削除されるため、DB と付箋ボードのデータが消えます。
+- 再起動後は DB が空なので、**初回だけ**マイグレーションを実行します。
+
+  ```bash
+  docker exec linko-backend alembic upgrade head
+  ```
+
+これで「relation already exists」なしに、初期スキーマから最新（応援要請の lane 変更まで）が適用された状態で検証できます。
+
+---
+
+## ポート一覧（ローカル）
+
+| サービス | ホストポート | 用途 |
+| ---------- | -------------- | ------ |
+| Frontend | 3010 | Board System（Next.js） |
+| Sticky Note | 3011 | 付箋ボード（`--profile sticky` 時のみ） |
+| Backend | 8010 | Board System API |
+| PostgreSQL | 5433 | DB（通常は直接アクセスしない） |
+
+---
+
+## トラブルシューティング
+
+| 現象 | 対処 |
+| ------ | ------ |
+| `path ".../wl-sticky-note" not found`（または 02_1_sticky-note/src） | 付箋ボードなしで起動する場合は `docker compose up -d --build` のみでよい（sticky は profile でオプション）。付箋ボードも使う場合は、`wlinko-pj/wl-sticky-note` を用意して `docker compose --profile sticky up -d --build`。 |
+| ビルドが遅い・止まる | プロキシ環境では `export DOCKER_BUILDKIT=0` のあと `docker compose up -d --build` を再実行 |
+| マイグレーションで「relation already exists」 | DB に既にテーブルがあるため。**スタンプ**してから `upgrade head` する（下記「既存DBでマイグレーションを進める」参照） |
+| コンテナが起動しない | `docker compose logs backend` などでログを確認 |
+
+---
+
+## 既存DBでマイグレーションを進める
+
+`alembic upgrade head` で「relation "users" already exists」などと出る場合は、テーブルが既に存在するためです。Alembic に「このリビジョンまで適用済み」と教えてから、その先だけ適用します。
+
+### 手順（Docker で backend を実行している場合）
+
+1. **初期スキーマだけある場合**（users / sticky_notes / board_placements はあるが、`sticky_notes` に `postit_board_id` がない場合）  
+   コンテナ内で:
+
+   ```bash
+   docker exec linko-backend alembic stamp 18f12e452b24
+   docker exec linko-backend alembic upgrade head
+   ```
+
+2. **Postit 用カラムも既にある場合**（`sticky_notes` に `postit_board_id` / `postit_note_id` がある場合）  
+
+   ```bash
+   docker exec linko-backend alembic stamp a1b2c3d4e5f6
+   docker exec linko-backend alembic upgrade head
+   ```
+
+どちらかで「応援要請」用の `lane` 変更（b2c3d4e5f6a7）まで適用されます。  
+`stamp 18f12e452b24` のあと `upgrade head` で「column postit_board_id already exists」が出たら、`stamp a1b2c3d4e5f6` を実行してから再度 `alembic upgrade head` してください。
+
+---
+
+## 参照
+
+- 詳細（本番デプロイ含む）: [docs/本番デプロイ手順_Docker.md](docs/本番デプロイ手順_Docker.md)
+- board-system の README: [board-system/README.md](board-system/README.md)
+</file>
+
+<file path=".gitignore">
+# General
+.DS_Store
+Thumbs.db
+*.log
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Database (SQLite)
+*.db
+*.sqlite3
+
+# Node.js (※ロックファイルはコミットするため除外リストから削除)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Next.js / Build Artifacts (先頭スラッシュを外してサブディレクトリにも適用)
+.next/
+out/
+build/
+dist/
+*.exe
+*.dll
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Docs / Legacy
+old_docs/
+</file>
+
+<file path="README.md">
+# Wonder Linko (wl-board-pj)
+
+付箋ボード（`wl-sticky-note`）、統合4ボードシステム（`board-system`）、社内常駐デスクトップアプリ（`wl_desktop_app`）が連携する、ワンダーリンクの業務協調・タスク管理プラットフォームです。
+
+---
+
+## 1. プロジェクト構成
+
+```
+wl-board-pj/
+├── board-system/               # 統合4ボードシステム（Main / Task / Personal / Meeting）
+│   ├── backend/                # FastAPI + SQLAlchemy（非同期、SQLite / PostgreSQL）
+│   ├── frontend/               # Next.js (App Router) + Tailwind CSS v4（basePath: /boards）
+│   ├── deploy/                 # Blue/Green デプロイスクリプト（deploy.sh / rollback.sh）
+│   ├── nginx/                  # 本番用 Nginx 設定（リバースプロキシ・静的アセット直接配信）
+│   ├── docker-compose.prod.yml # 本番用 Docker Compose 設定
+│   └── docker-compose.db.yml   # 本番・ローカル用 PostgreSQL 設定
+├── wl-sticky-note/             # リアルタイム協調型付箋ボード
+│   └── src/                    # Next.js + Express + Socket.IO（リアルタイム同期・アトミック保存・3D/UI高度化）
+├── wl_desktop_app/             # 社員PC常駐用デスクトップアプリ（Personal Linko Agent）
+│   ├── app.py                  # メインエントリ（タスクトレイ常駐・ミニポートUI・OS名前付きMutex）
+│   ├── build_msi.ps1           # MSI インストーラ自動ビルド（自己署名コード署名）
+│   └── scripts/                # 署名生成・インストール/アンインストールスクリプト
+├── docs/                       # 設計書・デプロイ手順・改善プラン・運用マニュアル
+├── start_all_servers.ps1       # ローカル開発用：全サーバー一括起動スクリプト（PowerShell）
+├── check_ports.ps1             # ポート使用状況確認スクリプト
+└── ローカルDockerでテストする手順.md # ローカル環境でのDocker検証マニュアル
+```
+
+---
+
+## 2. システム連携アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   社員 Windows PC / ブラウザ                 │
+│                                                             │
+│  [wl_desktop_app]            [Webブラウザ]                  │
+│   - ミニポート（付箋クイック投稿）  - 付箋ボード (/board/wl)        │
+│   - タスク/カレンダーリマインド    - Board System (/boards)      │
+│   - アバター吹き出し通知一元化      (Task / Personal / Meeting) │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │                               │
+               ▼ (リバースプロキシ: Nginx)       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 本番サーバ (wlboardsys.internal.wonder-link.com / 172.16.1.203) │
+│                                                             │
+│  ┌────────────────────────┐    ┌──────────────────────────┐ │
+│  │ wl-sticky-note (Node)  │    │ board-system             │ │
+│  │ - Express + Socket.IO  │◄───┤ - FastAPI Backend (8000) │ │
+│  │ - アトミック保存(.tmp) │───►│ - Next.js Frontend(3001) │ │
+│  └────────────────────────┘    └─────────────┬────────────┘ │
+│                                              │              │
+│               ┌──────────────────────────────┼────────────┐ │
+│               ▼                              ▼            ▼ │
+│      [PostgreSQL (linko-db)]      [社内 Ollama]   [Google API]
+│      (ユーザー/タスク/配置データ)   (AI自動仕分け)   (カレンダー)
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. 各コンポーネントの役割と主要機能
+
+| コンポーネント | 技術スタック | 主な役割・機能 | 参照ドキュメント |
+| :--- | :--- | :--- | :--- |
+| **[board-system](board-system/README.md)** | FastAPI, PostgreSQL, Next.js 16, Tailwind CSS v4 | **統合4ボードシステム**: Main（全体構想）、Task（5列・引き取り管理）、Personal（Today/Inbox/Done）、Meeting（朝会スナップショット・ニュース要約）。複数チーム所属（N:M）、管理者認証（JWT）、期限連動ルール、停滞タスクの自動ローテーション、応援要請・複数アサイン状態共有・安全削除制御、差分照合バッチ (Self-Healing)。 | [board-system/README.md](board-system/README.md) |
+| **[wl-sticky-note](wl-sticky-note/README.md)** | Next.js 16, Express, Socket.IO, Three.js | **リアルタイム付箋ボード**: 複数人同時編集、Google Map風パン移動、ホイールズーム（0.3x〜2.5x）、矩形ドラッグ複数選択・一括移動、Esc選択解除、グレー付箋非表示切替、`useRef` 直接DOM操作によるドラッグ超高速化、`boards.json` アトミック保存 (`.tmp` + `rename`) & グレースフルシャットダウン。 | [wl-sticky-note/README.md](wl-sticky-note/README.md) |
+| **[wl_desktop_app](wl_desktop_app/README.md)** | Python 3.10+, CustomTkinter, pystray | **デスクトップ常駐エージェント**: ミニポート（付箋クイック投稿）、タスクトレイ常駐、タスク/カレンダー定時リマインド（期限警告バッジ付）、OS名前付きMutexによる排他制御、画面右下アバター吹き出し通知への一本化、自己署名MSI配布（`install.bat` / `uninstall.bat`）。 | [wl_desktop_app/README.md](wl_desktop_app/README.md) |
+
+---
+
+## 4. 開発環境のセットアップと起動手順
+
+### 前提条件
+
+- **OS**: Windows 10/11 または Linux / macOS（デスクトップアプリのMSIビルドは Windows のみ）
+- **ランタイム**: Python 3.10 以上, Node.js 20.x LTS 以上, npm 9.x 以上
+- **インフラ**: Docker / Docker Compose（Docker 起動時）
+
+### 4-1. PowerShell 一括起動（Windows 開発時）
+
+リポジトリルートから以下のスクリプトを実行すると、バックエンド・フロントエンド・付箋ボードを各ウィンドウで一括起動できます。
+
+```powershell
+.\start_all_servers.ps1
+```
+
+- ポート使用状況の確認: `.\check_ports.ps1`
+
+### 4-2. 個別手動起動（開発時）
+
+#### ① Board System Backend
+
+```bash
+cd board-system/backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate / Linux: source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# ※ .env の TOKEN_ENCRYPTION_KEY に 32 バイト以上の安全な文字列を必ず設定してください
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### ② Board System Frontend
+
+```bash
+cd board-system/frontend
+npm install
+cp .env.local.example .env.local
+npm run dev -- -p 3001
+```
+
+#### ③ 付箋ボード (wl-sticky-note)
+
+```bash
+cd wl-sticky-note/src
+npm install
+cp .env.example .env
+npm run dev
+```
+
+#### ④ デスクトップアプリ (wl_desktop_app)
+
+```powershell
+cd wl_desktop_app
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
+```
+
+---
+
+## 5. ローカル Docker による起動検証
+
+付箋ボードと Board System をまとめてコンテナで起動する場合:
+
+```bash
+cd board-system
+cp .env.example .env
+docker compose up -d --build
+# 初回マイグレーション
+docker exec -it linko-backend alembic upgrade head
+```
+
+- **Board System フロント**: [http://localhost:3010](http://localhost:3010) (自動的に `/taskboard` へリダイレクト)
+- **付箋ボード**: [http://localhost:3011/board/wl](http://localhost:3011/board/wl)
+- **Backend API**: [http://localhost:8010/health](http://localhost:8010/health)
+
+詳細手順は [ローカルDockerでテストする手順.md](ローカルDockerでテストする手順.md) を参照してください。
+
+---
+
+## 6. 本番環境構成とデプロイ
+
+- **本番ドメイン**: `https://wlboardsys.internal.wonder-link.com/` (IP: `172.16.1.203`)
+- **Blue/Green デプロイ**: `board-system/deploy/deploy.sh` によるゼロダウンタイム切り替え。
+- **静的アセット永続化**: デプロイ時にフロントエンドコンテナの `.next/static` をホストOS上の `/var/www/wlinko-pj/shared_static/` に同期し、Nginx から直接配信。不在時は純粋な 404 を返却してブラウザ側の自動リロード（ChunkLoadError リカバリ）をトリガー。
+- **MSI 即時配信**: `backend/desktop_app_releases/` はコンテナへ bind mount されているため、最新 MSI や `latest.json` を配置するだけで `deploy.sh` の実行なしに即時配信可能。
+- **データベース**: PostgreSQL（`docker-compose.db.yml`）、マイグレーションは Alembic で完全管理。
+
+---
+
+## 7. セキュリティと環境変数に関する重要事項
+
+> [!IMPORTANT]
+>
+> 1. **機密情報のコミット禁止**:
+>    - 個人情報（PII）、パスワード、APIキー、OAuthシークレット、秘密鍵（`.pfx` 等）を絶対に Git リポジトリへコミット・プッシュしないでください。
+>    - `.env` や `config.json` などの設定ファイルは必ず `.gitignore` に含まれていることを確認してください。
+> 2. **TOKEN_ENCRYPTION_KEY の必須設定**:
+>    - Google カレンダーの OAuth トークンは AES-256 で暗号化されて保存されます。
+>    - `TOKEN_ENCRYPTION_KEY` には **32 バイト以上** の安全なランダム文字列を設定してください。未設定時はバックエンドが起動しません。
+> 3. **管理者パスワード**:
+>    - `ADMIN_PASSWORD`（既定: `admin123`）は本番環境構築時に必ず堅牢な値に変更してください。
+</file>
+
+<file path="start_all_servers.ps1">
+# Script to start both servers simultaneously
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "AI-Board System Startup" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Project root directory
+$scriptPath = $PSScriptRoot
+if (-not $scriptPath) {
+    $scriptPath = Get-Location
+}
+$webAppDir = Join-Path $scriptPath "02_1_sticky-note\src"
+$aiBoardDir = Join-Path $scriptPath "02_2_AI-Board"
+
+# Check paths
+if (-not (Test-Path $webAppDir)) {
+    Write-Host "Error: Web App directory not found: $webAppDir" -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path $aiBoardDir)) {
+    Write-Host "Error: AI-Board directory not found: $aiBoardDir" -ForegroundColor Red
+    exit 1
+}
+
+# Create temp script to start Web App
+Write-Host "1. Starting Web App (Port 3000)..." -ForegroundColor Green
+$webAppScript = Join-Path $env:TEMP "start_webapp_$(Get-Random).ps1"
+$webAppLines = @(
+    "Write-Host 'Web App Server (Port 3000)' -ForegroundColor Cyan",
+    "Set-Location '$webAppDir'",
+    "npm run dev"
+)
+$webAppLines | Out-File -FilePath $webAppScript -Encoding UTF8
+Start-Process powershell -ArgumentList @("-NoExit", "-File", $webAppScript)
+
+# Wait a bit
+Start-Sleep -Seconds 3
+
+# Create temp script to start AI-Board
+Write-Host "2. Starting AI-Board (Port 5000)..." -ForegroundColor Green
+$aiBoardScript = Join-Path $env:TEMP "start_aiboard_$(Get-Random).ps1"
+$aiBoardLines = @(
+    "Write-Host 'AI-Board Server (Port 5000)' -ForegroundColor Cyan",
+    "Set-Location '$aiBoardDir'",
+    "# Check and activate virtual environment",
+    "`$pythonCmd = 'python'",
+    "if (Test-Path '.venv\Scripts\Activate.ps1') {",
+    "    & '.venv\Scripts\Activate.ps1'",
+    "    if (Test-Path '.venv\Scripts\python.exe') {",
+    "        `$pythonCmd = (Resolve-Path '.venv\Scripts\python.exe').Path",
+    "    }",
+    "} elseif (Test-Path 'venv\Scripts\Activate.ps1') {",
+    "    & 'venv\Scripts\Activate.ps1'",
+    "    if (Test-Path 'venv\Scripts\python.exe') {",
+    "        `$pythonCmd = (Resolve-Path 'venv\Scripts\python.exe').Path",
+    "    }",
+    "}",
+    "Set-Location 'src\webapp'",
+    "Write-Host 'Starting python server with: ' `$pythonCmd -ForegroundColor Yellow",
+    "& `$pythonCmd app.py"
+)
+$aiBoardLines | Out-File -FilePath $aiBoardScript -Encoding UTF8
+Start-Process powershell -ArgumentList @("-NoExit", "-File", $aiBoardScript)
+
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Servers Startup Complete" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Local:  Web App http://localhost:3000  |  AI-Board http://localhost:5000" -ForegroundColor Yellow
+Write-Host "CATO:   Web App http://172.16.1.161:3000  |  AI-Board http://172.16.1.161:5000" -ForegroundColor Cyan
+Write-Host "  (from CATO-connected PCs, use 172.16.1.161 instead of localhost)" -ForegroundColor Gray
+Write-Host ""
+Write-Host "Each server is running in a separate window. Press Ctrl+C in each to stop." -ForegroundColor Gray
+</file>
+
+</files>

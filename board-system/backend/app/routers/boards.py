@@ -35,6 +35,7 @@ async def get_board_main(db: AsyncSession = Depends(get_db)):
             note_content=n.content,
             note_status=n.status.value,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
         )
         for p, n in rows
     ]
@@ -58,10 +59,11 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     )
     rows = result.all()
     note_ids = [n.id for _, n in rows]
-    taken_by_map: dict[int, list[tuple[int, str, str]]] = {}
+    taken_by_map: dict[int, list[tuple[int, str, str, bool]]] = {}
     done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
     accepted_by_others_note_ids: set[int] = set()
+
     if note_ids:
         personal_result = await db.execute(
             select(
@@ -76,6 +78,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
         owner_ids = {r[1] for r in personal_rows if r[1] is not None}
         users_result = await db.execute(select(User).where(User.id.in_(owner_ids)))
         users = {u.id: u for u in users_result.scalars().all()}
+
         for note_id, owner_id, lane in personal_rows:
             if owner_id is None:
                 continue
@@ -84,22 +87,37 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 continue
             if note_id not in taken_by_map:
                 taken_by_map[note_id] = []
-            if (owner_id, u.name, _name_short(u.name)) not in [
-                (x[0], x[1], x[2]) for x in taken_by_map[note_id]
-            ]:
-                taken_by_map[note_id].append((owner_id, u.name, _name_short(u.name)))
+
+            is_done = lane == Lane.DONE
+            # 既存のリスト内に同じユーザーが登録されていなければ追加
+            existing = next(
+                (x for x in taken_by_map[note_id] if x[0] == owner_id), None
+            )
+            if not existing:
+                taken_by_map[note_id].append(
+                    (owner_id, u.name, _name_short(u.name), is_done)
+                )
+            else:
+                # 複数配置がある場合、一つでもDONEならTrueとして上書き
+                if is_done and not existing[3]:
+                    taken_by_map[note_id].remove(existing)
+                    taken_by_map[note_id].append(
+                        (owner_id, u.name, _name_short(u.name), True)
+                    )
+
             if lane == Lane.DONE:
                 done_note_ids.add(note_id)
             if lane == Lane.HELP_REQUEST:
                 help_request_note_ids.add(note_id)
             else:
                 accepted_by_others_note_ids.add(note_id)
+
     out = []
     for p, n in rows:
         taken = taken_by_map.get(n.id, [])
         taken_by = [
-            TakenByUser(id=uid, name=name, name_short=short)
-            for uid, name, short in taken
+            TakenByUser(id=uid, name=name, name_short=short, is_done=is_done)
+            for uid, name, short, is_done in taken
         ]
         if n.id in help_request_note_ids:
             task_color = "red"
@@ -128,6 +146,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 task_color=task_color,
                 is_accepted_by_others=n.id in accepted_by_others_note_ids,
                 due_date=n.due_date.isoformat() if n.due_date else None,
+                is_help_request=getattr(n, "is_help_request", False),
             )
         )
     return out
@@ -151,7 +170,10 @@ async def get_board_personal(
     rows = result.all()
     note_ids = [n.id for _, n in rows]
     task_note_ids = set()
+    taken_by_map: dict[int, list[TakenByUser]] = {}
+
     if note_ids:
+        # 1. Taskボードに存在するか判定
         r_task = await db.execute(
             select(BoardPlacement.note_id)
             .where(
@@ -162,6 +184,50 @@ async def get_board_personal(
             .distinct()
         )
         task_note_ids = {row[0] for row in r_task.all()}
+
+        # 2. 他メンバーの配置情報から taken_by リストを組み立て
+        personal_result = await db.execute(
+            select(
+                BoardPlacement.note_id, BoardPlacement.owner_id, BoardPlacement.lane
+            ).where(
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.note_id.in_(note_ids),
+                BoardPlacement.owner_id != owner_id,
+                BoardPlacement.owner_id.isnot(None),
+            )
+        )
+        personal_rows = personal_result.all()
+        other_owner_ids = {r[1] for r in personal_rows}
+        users_dict = {}
+        if other_owner_ids:
+            users_result = await db.execute(
+                select(User).where(User.id.in_(other_owner_ids))
+            )
+            users_dict = {u.id: u for u in users_result.scalars().all()}
+
+        for nid, oid, lane in personal_rows:
+            u = users_dict.get(oid)
+            if not u:
+                continue
+            if nid not in taken_by_map:
+                taken_by_map[nid] = []
+
+            is_done = lane == Lane.DONE
+            # 同一人物の重複を排除しつつ、is_doneフラグを更新
+            existing = next((x for x in taken_by_map[nid] if x.id == oid), None)
+            if not existing:
+                taken_by_map[nid].append(
+                    TakenByUser(
+                        id=oid,
+                        name=u.name,
+                        name_short=_name_short(u.name),
+                        is_done=is_done,
+                    )
+                )
+            else:
+                if is_done and not existing.is_done:
+                    existing.is_done = True
+
     return [
         BoardPlacementWithNoteResponse(
             id=p.id,
@@ -179,6 +245,8 @@ async def get_board_personal(
             is_from_task=(n.id in task_note_ids),
             is_manually_moved_to_today=p.is_manually_moved_to_today,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
+            taken_by=taken_by_map.get(n.id, []),
         )
         for p, n in rows
     ]
@@ -209,6 +277,7 @@ async def get_board_morning(db: AsyncSession = Depends(get_db)):
             note_status=n.status.value,
             placement_source=p.placement_source,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
         )
         for p, n in rows
     ]

@@ -8,7 +8,7 @@ import asyncio
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.ai import run_daily_reset_messages
+from app.services.sync_reconciliation import reconcile_sticky_notes
 
 JST = ZoneInfo("Asia/Tokyo")
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
@@ -54,7 +55,9 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
     毎朝 10:15 に cron や systemd タイマーで呼ぶ想定。テスト時は手動で呼べる。
     """
     # 既存の MORNING 配置を全削除
-    await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
 
     # 全ユーザー取得
@@ -95,7 +98,9 @@ async def reset_meeting(db: AsyncSession = Depends(get_db)):
     Meeting ボード（MORNING）の内容を全削除する。
     毎日 8:00 の cron 用および手動リセットボタン用。
     """
-    result = await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
     return {"ok": True}
 
@@ -108,9 +113,8 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
     - 日本時間（JST）を基準として判定する。
     戻り値: {"today_count": int, "inbox_count": int} 各レーンへ移動した件数。
     """
-    today_jst = date.today()  # サーバーが JST の場合はこれで OK
-    # Dockerで TZ=Asia/Tokyo が設定されている前提。さらに確実にする場合は datetime.now(JST).date() を使う。
     from datetime import datetime as _dt
+
     today_jst = _dt.now(JST).date()
 
     # DONE 以外の PERSONAL 配置で、期限が設定されているものを取得
@@ -171,6 +175,7 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
     - リスト全体の sort_order を 0 から連番で再採番（正規化）。
     """
     from datetime import datetime as _dt
+
     today_jst = _dt.now(JST).date()
 
     if not force and today_jst.toordinal() % 2 != 0:
@@ -188,7 +193,9 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
             BoardPlacement.matrix_quadrant.isnot(None),
             BoardPlacement.matrix_quadrant != 5,
         )
-        .order_by(BoardPlacement.matrix_quadrant, BoardPlacement.sort_order, BoardPlacement.id)
+        .order_by(
+            BoardPlacement.matrix_quadrant, BoardPlacement.sort_order, BoardPlacement.id
+        )
     )
     task_rows = task_res.all()
 
@@ -274,20 +281,37 @@ async def manual_rotate_tasks(
     return {"ok": True, "result": result}
 
 
+@router.post("/reconcile")
+async def trigger_reconciliation(
+    request: Request,
+    dry_run: bool = Query(
+        True, description="True の場合はログ出力のみを行い書き込みを行わない"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """手動で付箋データと DB の差分照合・Self-Healing バッチを実行する。"""
+    client = getattr(request.app.state, "http_client", None)
+    res = await reconcile_sticky_notes(db, client=client, dry_run=dry_run)
+    return {"ok": True, "result": res}
+
+
 @router.post("/run_8am")
-async def run_8am(db: AsyncSession = Depends(get_db)):
+async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     """
     毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 期限タスクの自動移動
-    (3) 停滞タスクの自動ローテーション (4) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
+    (3) 停滞タスクの自動ローテーション (4) 付箋データと DB の差分照合 (5) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
     cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
     """
     from app.config import settings
     from app.models import UserGoogleToken
     from app.routers.auth_google import _refresh_user_calendar_and_today
     import logging
+
     log = logging.getLogger(__name__)
 
-    await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
 
     # 期限タスクの自動移動
@@ -302,7 +326,15 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
     rotation_result = await rotate_stale_tasks(db)
     log.info("run_8am: タスクローテーション実行結果: %s", rotation_result)
 
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    # 付箋データと DB の差分照合・自動補正バッチ (初期は dry_run=True で安全運用)
+    client = getattr(request.app.state, "http_client", None)
+    reconcile_result = await reconcile_sticky_notes(db, client=client, dry_run=True)
+    log.info("run_8am: 差分照合実行結果 (dry_run=True): %s", reconcile_result)
+
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         log.info("run_8am: Google Calendar 未設定のためカレンダー取得をスキップ")
         return {
             "ok": True,
@@ -310,6 +342,7 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
             "failed": [],
             "due_date_moved": due_date_result,
             "task_rotation": rotation_result,
+            "reconciliation": reconcile_result,
         }
 
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
@@ -329,5 +362,5 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
         "failed": failed,
         "due_date_moved": due_date_result,
         "task_rotation": rotation_result,
+        "reconciliation": reconcile_result,
     }
-

@@ -5463,12 +5463,24 @@ export default eslintConfig;
 <file path="src/jsconfig.json">
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@shared/*": [
+        "../shared/*"
       ]
     }
-  }
+  },
+  "include": [
+    "**/*",
+    "../shared/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
 }
 </file>
 
@@ -5693,7 +5705,8 @@ server {
     "react-dom": "19.2.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "three": "^0.182.0"
+    "three": "^0.182.0",
+    "undici": "^6.19.8"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

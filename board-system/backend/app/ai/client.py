@@ -4,8 +4,6 @@
 OLLAMA_URL 未設定時は None を返す。
 
 OLLAMA_MODEL 未設定時は /api/tags（modified_at 新しい順）→ 失敗時 /v1/models でモデル名を自動解決し、短時間キャッシュする。
-
-※ Gemini は使用しない（ローカル LLM 利用のためコメントアウト）。
 """
 from __future__ import annotations
 
@@ -19,7 +17,6 @@ from typing import Any
 import requests
 
 from app.config import settings
-from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 _session: requests.Session | None = None
@@ -171,7 +168,7 @@ def generate_text(
     ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
     if ollama_url is None:
-        url, model_ov = get_resolved_ollama_sync()
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     else:
         url, model_ov = ollama_url, model_override
 
@@ -231,7 +228,7 @@ def generate_json(
     ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
     if ollama_url is None:
-        url, model_ov = get_resolved_ollama_sync()
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     else:
         url, model_ov = ollama_url, model_override
 

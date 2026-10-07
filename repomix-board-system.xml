@@ -45,7 +45,6 @@ backend/
     versions/
       18f12e452b24_initial_schema_users_sticky_notes_board_.py
       a1b2c3d4e5f6_add_postit_source_to_sticky_notes.py
-      add_placement_source_manual.sql
       b2c3d4e5f6a7_add_help_request_lane.py
       c3d4e5f6a7b8_reset_users_id_sequence.py
       d4e5f6a7b8c9_add_user_email_call_name_and_user_faces.py
@@ -58,6 +57,7 @@ backend/
       k1l2m3n4o5p6_add_due_date_and_manually_moved_flag.py
       l2m3n4o5p6q7_add_user_teams_and_admin_auth.py
       m3n4o5p6q7r8_add_is_personal_only_to_sticky_notes.py
+      n4o5p6q7r8s9_add_is_help_request_to_sticky_notes.py
     env.py
     README
     script.py.mako
@@ -112,6 +112,7 @@ backend/
       llm_settings.py
       news_fetcher.py
       orchestrator.py
+      sync_reconciliation.py
     __init__.py
     config.py
     db.py
@@ -157,18 +158,13 @@ frontend/
       Nav.tsx
       NoteCard.tsx
       OneLineInput.tsx
+      OperationPanel.tsx
       PersonalBoardView.tsx
-    main/
-      page.tsx
     meeting/
-      page.tsx
-    morning/
       page.tsx
     personal/
       [slug]/
         page.tsx
-      page.tsx
-    task/
       page.tsx
     taskboard/
       layout.tsx
@@ -318,13 +314,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("sticky_notes", "postit_note_id")
     op.drop_column("sticky_notes", "postit_board_id")
-</file>
-
-<file path="backend/alembic/versions/add_placement_source_manual.sql">
--- placement_source カラム追加（h8c9d0e1f2a3 相当）
--- 本番で alembic upgrade head が実行されていない場合、この SQL を DB に流してください。
-ALTER TABLE board_placements
-ADD COLUMN IF NOT EXISTS placement_source VARCHAR(32) NULL;
 </file>
 
 <file path="backend/alembic/versions/b2c3d4e5f6a7_add_help_request_lane.py">
@@ -875,6 +864,40 @@ def downgrade() -> None:
         batch_op.drop_column("is_personal_only")
 </file>
 
+<file path="backend/alembic/versions/n4o5p6q7r8s9_add_is_help_request_to_sticky_notes.py">
+"""add is_help_request to sticky_notes
+
+Revision ID: n4o5p6q7r8s9
+Revises: m3n4o5p6q7r8
+Create Date: 2026-10-06
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "n4o5p6q7r8s9"
+down_revision = "m3n4o5p6q7r8"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    with op.batch_alter_table("sticky_notes", schema=None) as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "is_help_request",
+                sa.Boolean(),
+                server_default=sa.text("false"),
+                nullable=False,
+            )
+        )
+
+
+def downgrade() -> None:
+    with op.batch_alter_table("sticky_notes", schema=None) as batch_op:
+        batch_op.drop_column("is_help_request")
+</file>
+
 <file path="backend/alembic/env.py">
 # -*- coding: utf-8 -*-
 """
@@ -1004,8 +1027,6 @@ __all__ = [
 OLLAMA_URL 未設定時は None を返す。
 
 OLLAMA_MODEL 未設定時は /api/tags（modified_at 新しい順）→ 失敗時 /v1/models でモデル名を自動解決し、短時間キャッシュする。
-
-※ Gemini は使用しない（ローカル LLM 利用のためコメントアウト）。
 """
 from __future__ import annotations
 
@@ -1019,7 +1040,6 @@ from typing import Any
 import requests
 
 from app.config import settings
-from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 _session: requests.Session | None = None
@@ -1171,7 +1191,7 @@ def generate_text(
     ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
     if ollama_url is None:
-        url, model_ov = get_resolved_ollama_sync()
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     else:
         url, model_ov = ollama_url, model_override
 
@@ -1231,7 +1251,7 @@ def generate_json(
     ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
     if ollama_url is None:
-        url, model_ov = get_resolved_ollama_sync()
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     else:
         url, model_ov = ollama_url, model_override
 
@@ -1745,6 +1765,9 @@ class StickyNote(Base):
     )
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_personal_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    is_help_request: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -2812,11 +2835,12 @@ async def refresh_personal_calendar(
 <file path="backend/app/routers/board_placements.py">
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.models import BoardPlacement, BoardType
+from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
+from app.models.sticky_note import NoteStatus
 from app.schemas.board_placement import (
     BoardPlacementCreate,
     BoardPlacementResponse,
@@ -2927,8 +2951,8 @@ async def update_board_placement(
     db: AsyncSession = Depends(get_db),
 ):
     """配置の lane / position_x,y / matrix_quadrant / sort_order を更新。
-    1) Personal で DONE にしたらパーソナルにも残しつつ Task を完了(5)に連動。
-    2) Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻す（グレー→緑）。"""
+    1) Personal で DONE にしたらパーソナルにも残しつつ Task を完了(5)および status=DONE に連動。
+    2) Task の完了(5)から他列へ移動したら、当該付箋の Personal DONE を INBOX に戻し status=ACTIVE に連動。"""
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
@@ -2953,7 +2977,31 @@ async def update_board_placement(
     if body.sort_order is not None:
         placement.sort_order = body.sort_order
 
+    note_result = await db.execute(
+        select(StickyNote).where(StickyNote.id == placement.note_id)
+    )
+    note = note_result.scalar_one_or_none()
+
     if placement.board_type == BoardType.PERSONAL and body.lane is not None:
+        # --- HELP_REQUEST に移動されたら、付箋本体の is_help_request を True に ---
+        if body.lane == Lane.HELP_REQUEST:
+            if note:
+                note.is_help_request = True
+        else:
+            # 他ユーザー（引き取った担当者など）が HELP_REQUEST 以外のレーンに移動させた場合、
+            # 同一付箋で HELP_REQUEST レーンにいる他ユーザー（要請者）の配置を INBOX に自動復帰させる
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == placement.note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.owner_id != placement.owner_id,
+                    BoardPlacement.lane == Lane.HELP_REQUEST,
+                )
+                .values(lane=Lane.INBOX)
+            )
+            await db.flush()
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,
@@ -2974,24 +3022,29 @@ async def update_board_placement(
         if task_placement:
             if body.lane == Lane.DONE:
                 task_placement.matrix_quadrant = 5
+                if note:
+                    note.status = NoteStatus.DONE
             elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
                 task_placement.matrix_quadrant = 4
+                if note:
+                    note.status = NoteStatus.ACTIVE
 
-    if (
-        placement.board_type == BoardType.TASK
-        and body.matrix_quadrant is not None
-        and body.matrix_quadrant != 5
-        and prev_matrix == 5
-    ):
-        r_personal = await db.execute(
-            select(BoardPlacement).where(
-                BoardPlacement.note_id == placement.note_id,
-                BoardPlacement.board_type == BoardType.PERSONAL,
-                BoardPlacement.lane == Lane.DONE,
+    if placement.board_type == BoardType.TASK and body.matrix_quadrant is not None:
+        if body.matrix_quadrant == 5:
+            if note:
+                note.status = NoteStatus.DONE
+        elif prev_matrix == 5 and body.matrix_quadrant != 5:
+            if note:
+                note.status = NoteStatus.ACTIVE
+            r_personal = await db.execute(
+                select(BoardPlacement).where(
+                    BoardPlacement.note_id == placement.note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.lane == Lane.DONE,
+                )
             )
-        )
-        for p in r_personal.scalars().all():
-            p.lane = Lane.INBOX
+            for p in r_personal.scalars().all():
+                p.lane = Lane.INBOX
 
     await db.flush()
     await db.refresh(placement)
@@ -3010,8 +3063,26 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
 
-    # パーソナルボード上の配置がゴミ箱へ投入された場合、タスクボード上も「完了（5）」に更新
     if placement.board_type == BoardType.PERSONAL:
+        # 同一タスクに対する他の未完了パーソナル配置があるかチェック (複数人アサイン時の削除制御)
+        r_others = await db.execute(
+            select(BoardPlacement, User)
+            .join(User, BoardPlacement.owner_id == User.id)
+            .where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.id != placement.id,
+                BoardPlacement.lane != Lane.DONE,
+            )
+        )
+        others = r_others.all()
+        if others:
+            names = ", ".join([u.name for p, u in others])
+            raise HTTPException(
+                status_code=400,
+                detail=f"他の担当者（{names}）が完了にするまで削除できません",
+            )
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,
@@ -3066,6 +3137,7 @@ async def get_board_main(db: AsyncSession = Depends(get_db)):
             note_content=n.content,
             note_status=n.status.value,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
         )
         for p, n in rows
     ]
@@ -3089,10 +3161,11 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     )
     rows = result.all()
     note_ids = [n.id for _, n in rows]
-    taken_by_map: dict[int, list[tuple[int, str, str]]] = {}
+    taken_by_map: dict[int, list[tuple[int, str, str, bool]]] = {}
     done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
     accepted_by_others_note_ids: set[int] = set()
+
     if note_ids:
         personal_result = await db.execute(
             select(
@@ -3107,6 +3180,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
         owner_ids = {r[1] for r in personal_rows if r[1] is not None}
         users_result = await db.execute(select(User).where(User.id.in_(owner_ids)))
         users = {u.id: u for u in users_result.scalars().all()}
+
         for note_id, owner_id, lane in personal_rows:
             if owner_id is None:
                 continue
@@ -3115,22 +3189,37 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 continue
             if note_id not in taken_by_map:
                 taken_by_map[note_id] = []
-            if (owner_id, u.name, _name_short(u.name)) not in [
-                (x[0], x[1], x[2]) for x in taken_by_map[note_id]
-            ]:
-                taken_by_map[note_id].append((owner_id, u.name, _name_short(u.name)))
+
+            is_done = lane == Lane.DONE
+            # 既存のリスト内に同じユーザーが登録されていなければ追加
+            existing = next(
+                (x for x in taken_by_map[note_id] if x[0] == owner_id), None
+            )
+            if not existing:
+                taken_by_map[note_id].append(
+                    (owner_id, u.name, _name_short(u.name), is_done)
+                )
+            else:
+                # 複数配置がある場合、一つでもDONEならTrueとして上書き
+                if is_done and not existing[3]:
+                    taken_by_map[note_id].remove(existing)
+                    taken_by_map[note_id].append(
+                        (owner_id, u.name, _name_short(u.name), True)
+                    )
+
             if lane == Lane.DONE:
                 done_note_ids.add(note_id)
             if lane == Lane.HELP_REQUEST:
                 help_request_note_ids.add(note_id)
             else:
                 accepted_by_others_note_ids.add(note_id)
+
     out = []
     for p, n in rows:
         taken = taken_by_map.get(n.id, [])
         taken_by = [
-            TakenByUser(id=uid, name=name, name_short=short)
-            for uid, name, short in taken
+            TakenByUser(id=uid, name=name, name_short=short, is_done=is_done)
+            for uid, name, short, is_done in taken
         ]
         if n.id in help_request_note_ids:
             task_color = "red"
@@ -3159,6 +3248,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 task_color=task_color,
                 is_accepted_by_others=n.id in accepted_by_others_note_ids,
                 due_date=n.due_date.isoformat() if n.due_date else None,
+                is_help_request=getattr(n, "is_help_request", False),
             )
         )
     return out
@@ -3182,7 +3272,10 @@ async def get_board_personal(
     rows = result.all()
     note_ids = [n.id for _, n in rows]
     task_note_ids = set()
+    taken_by_map: dict[int, list[TakenByUser]] = {}
+
     if note_ids:
+        # 1. Taskボードに存在するか判定
         r_task = await db.execute(
             select(BoardPlacement.note_id)
             .where(
@@ -3193,6 +3286,50 @@ async def get_board_personal(
             .distinct()
         )
         task_note_ids = {row[0] for row in r_task.all()}
+
+        # 2. 他メンバーの配置情報から taken_by リストを組み立て
+        personal_result = await db.execute(
+            select(
+                BoardPlacement.note_id, BoardPlacement.owner_id, BoardPlacement.lane
+            ).where(
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.note_id.in_(note_ids),
+                BoardPlacement.owner_id != owner_id,
+                BoardPlacement.owner_id.isnot(None),
+            )
+        )
+        personal_rows = personal_result.all()
+        other_owner_ids = {r[1] for r in personal_rows}
+        users_dict = {}
+        if other_owner_ids:
+            users_result = await db.execute(
+                select(User).where(User.id.in_(other_owner_ids))
+            )
+            users_dict = {u.id: u for u in users_result.scalars().all()}
+
+        for nid, oid, lane in personal_rows:
+            u = users_dict.get(oid)
+            if not u:
+                continue
+            if nid not in taken_by_map:
+                taken_by_map[nid] = []
+
+            is_done = lane == Lane.DONE
+            # 同一人物の重複を排除しつつ、is_doneフラグを更新
+            existing = next((x for x in taken_by_map[nid] if x.id == oid), None)
+            if not existing:
+                taken_by_map[nid].append(
+                    TakenByUser(
+                        id=oid,
+                        name=u.name,
+                        name_short=_name_short(u.name),
+                        is_done=is_done,
+                    )
+                )
+            else:
+                if is_done and not existing.is_done:
+                    existing.is_done = True
+
     return [
         BoardPlacementWithNoteResponse(
             id=p.id,
@@ -3210,6 +3347,8 @@ async def get_board_personal(
             is_from_task=(n.id in task_note_ids),
             is_manually_moved_to_today=p.is_manually_moved_to_today,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
+            taken_by=taken_by_map.get(n.id, []),
         )
         for p, n in rows
     ]
@@ -3240,6 +3379,7 @@ async def get_board_morning(db: AsyncSession = Depends(get_db)):
             note_status=n.status.value,
             placement_source=p.placement_source,
             due_date=n.due_date.isoformat() if n.due_date else None,
+            is_help_request=getattr(n, "is_help_request", False),
         )
         for p, n in rows
     ]
@@ -3264,12 +3404,14 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import (
     _split_root_and_v1,
     resolve_ollama_model_for_request,
 )
+from app.config import settings
 from app.db import get_db
 from app.services.brainstorm_calendar import (
     create_google_event,
@@ -3279,7 +3421,6 @@ from app.services.brainstorm_calendar import (
     handle_pending,
     proposal_payload,
 )
-from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 
@@ -3439,7 +3580,7 @@ async def brainstorm(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    url, model_override = get_resolved_ollama_sync()
+    url, model_override = settings.resolve_ollama_for_target(settings.llm_target)
     if not url:
         raise HTTPException(
             status_code=503, detail="LLM (OLLAMA_URL) が設定されていません"
@@ -3749,7 +3890,7 @@ import asyncio
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -3757,6 +3898,7 @@ from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.ai import run_daily_reset_messages
+from app.services.sync_reconciliation import reconcile_sticky_notes
 
 JST = ZoneInfo("Asia/Tokyo")
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
@@ -3795,7 +3937,9 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
     毎朝 10:15 に cron や systemd タイマーで呼ぶ想定。テスト時は手動で呼べる。
     """
     # 既存の MORNING 配置を全削除
-    await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
 
     # 全ユーザー取得
@@ -3836,7 +3980,9 @@ async def reset_meeting(db: AsyncSession = Depends(get_db)):
     Meeting ボード（MORNING）の内容を全削除する。
     毎日 8:00 の cron 用および手動リセットボタン用。
     """
-    result = await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
     return {"ok": True}
 
@@ -3849,9 +3995,8 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
     - 日本時間（JST）を基準として判定する。
     戻り値: {"today_count": int, "inbox_count": int} 各レーンへ移動した件数。
     """
-    today_jst = date.today()  # サーバーが JST の場合はこれで OK
-    # Dockerで TZ=Asia/Tokyo が設定されている前提。さらに確実にする場合は datetime.now(JST).date() を使う。
     from datetime import datetime as _dt
+
     today_jst = _dt.now(JST).date()
 
     # DONE 以外の PERSONAL 配置で、期限が設定されているものを取得
@@ -3912,6 +4057,7 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
     - リスト全体の sort_order を 0 から連番で再採番（正規化）。
     """
     from datetime import datetime as _dt
+
     today_jst = _dt.now(JST).date()
 
     if not force and today_jst.toordinal() % 2 != 0:
@@ -3929,7 +4075,9 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
             BoardPlacement.matrix_quadrant.isnot(None),
             BoardPlacement.matrix_quadrant != 5,
         )
-        .order_by(BoardPlacement.matrix_quadrant, BoardPlacement.sort_order, BoardPlacement.id)
+        .order_by(
+            BoardPlacement.matrix_quadrant, BoardPlacement.sort_order, BoardPlacement.id
+        )
     )
     task_rows = task_res.all()
 
@@ -4015,20 +4163,37 @@ async def manual_rotate_tasks(
     return {"ok": True, "result": result}
 
 
+@router.post("/reconcile")
+async def trigger_reconciliation(
+    request: Request,
+    dry_run: bool = Query(
+        True, description="True の場合はログ出力のみを行い書き込みを行わない"
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """手動で付箋データと DB の差分照合・Self-Healing バッチを実行する。"""
+    client = getattr(request.app.state, "http_client", None)
+    res = await reconcile_sticky_notes(db, client=client, dry_run=dry_run)
+    return {"ok": True, "result": res}
+
+
 @router.post("/run_8am")
-async def run_8am(db: AsyncSession = Depends(get_db)):
+async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     """
     毎日 8:00 に実行する処理: (1) Meeting ボードをリセット (2) 期限タスクの自動移動
-    (3) 停滞タスクの自動ローテーション (4) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
+    (3) 停滞タスクの自動ローテーション (4) 付箋データと DB の差分照合 (5) 全 Google 連携ユーザーの今日の予定を取得し、今日の予定欄に保存＆要約を P 付箋として Today レーンに配置。
     cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
     """
     from app.config import settings
     from app.models import UserGoogleToken
     from app.routers.auth_google import _refresh_user_calendar_and_today
     import logging
+
     log = logging.getLogger(__name__)
 
-    await db.execute(delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING))
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    )
     await db.flush()
 
     # 期限タスクの自動移動
@@ -4043,7 +4208,15 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
     rotation_result = await rotate_stale_tasks(db)
     log.info("run_8am: タスクローテーション実行結果: %s", rotation_result)
 
-    if not settings.google_calendar_client_id or not settings.google_calendar_client_secret:
+    # 付箋データと DB の差分照合・自動補正バッチ (初期は dry_run=True で安全運用)
+    client = getattr(request.app.state, "http_client", None)
+    reconcile_result = await reconcile_sticky_notes(db, client=client, dry_run=True)
+    log.info("run_8am: 差分照合実行結果 (dry_run=True): %s", reconcile_result)
+
+    if (
+        not settings.google_calendar_client_id
+        or not settings.google_calendar_client_secret
+    ):
         log.info("run_8am: Google Calendar 未設定のためカレンダー取得をスキップ")
         return {
             "ok": True,
@@ -4051,6 +4224,7 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
             "failed": [],
             "due_date_moved": due_date_result,
             "task_rotation": rotation_result,
+            "reconciliation": reconcile_result,
         }
 
     result = await db.execute(select(UserGoogleToken.user_id).distinct())
@@ -4070,6 +4244,7 @@ async def run_8am(db: AsyncSession = Depends(get_db)):
         "failed": failed,
         "due_date_moved": due_date_result,
         "task_rotation": rotation_result,
+        "reconciliation": reconcile_result,
     }
 </file>
 
@@ -4331,6 +4506,7 @@ from app.config import settings
 from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, Team, User
 from app.models.board_placement import Lane
+from app.models.sticky_note import NoteStatus
 from app.schemas.board_placement import BoardPlacementResponse, MoveToPersonalBody
 from app.schemas.sticky_note import (
     CopyToTeamBody,
@@ -4755,8 +4931,46 @@ async def update_sticky_note(
 
     if body.content is not None:
         note.content = body.content
+
     if body.status is not None:
         note.status = body.status
+        # 付箋のステータス変更に合わせて Task ボードの象限および Personal ボードのレーンを連動更新
+        if body.status in (NoteStatus.DONE, NoteStatus.ARCHIVED):
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.TASK,
+                )
+                .values(matrix_quadrant=5)
+            )
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                )
+                .values(lane=Lane.DONE)
+            )
+        elif body.status == NoteStatus.ACTIVE:
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.TASK,
+                    BoardPlacement.matrix_quadrant == 5,
+                )
+                .values(matrix_quadrant=1)
+            )
+            await db.execute(
+                sa_update(BoardPlacement)
+                .where(
+                    BoardPlacement.note_id == note_id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.lane == Lane.DONE,
+                )
+                .values(lane=Lane.INBOX)
+            )
 
     due_date_changed = False
     if body.due_date is not None:
@@ -4907,6 +5121,19 @@ async def move_to_personal(
 
     await db.flush()
 
+    # --- 追加: 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り) ---
+    await db.execute(
+        sa_update(BoardPlacement)
+        .where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id != body.owner_id,
+            BoardPlacement.lane == Lane.HELP_REQUEST,
+        )
+        .values(lane=Lane.INBOX)
+    )
+    await db.flush()
+
     if not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
@@ -4976,6 +5203,20 @@ async def copy_to_team(
             user_ids.append(member.id)
 
     await db.flush()
+
+    # --- 追加: 新規に割り当てられたユーザー以外の HELP_REQUEST レーンを INBOX に戻す ---
+    if user_ids:
+        await db.execute(
+            sa_update(BoardPlacement)
+            .where(
+                BoardPlacement.note_id == note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.owner_id.notin_(user_ids),
+                BoardPlacement.lane == Lane.HELP_REQUEST,
+            )
+            .values(lane=Lane.INBOX)
+        )
+        await db.flush()
 
     if not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
@@ -5053,6 +5294,7 @@ from app.models import (
     TaskReminderLog,
     User,
 )
+from app.models.sticky_note import NoteStatus
 from app.services.calendar_placement import include_in_task_remind
 
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
@@ -5282,7 +5524,7 @@ async def ack_task_reminder(
     body: AckBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """継続 / 完了 の応答。done のとき Personal を DONE に移動（Task 完了連動は board_placements と同じ）。"""
+    """継続 / 完了 の応答。done のとき Personal を DONE に移動し、StickyNote.status も NoteStatus.DONE へ更新。"""
     await _ensure_user(user_id, db)
     remind_date = _jst_today()
     r = await db.execute(
@@ -5322,6 +5564,14 @@ async def ack_task_reminder(
     if body.action == "done" and placement.lane != Lane.DONE:
         prev_lane = placement.lane
         placement.lane = Lane.DONE
+
+        r_note = await db.execute(
+            select(StickyNote).where(StickyNote.id == placement.note_id)
+        )
+        note = r_note.scalar_one_or_none()
+        if note:
+            note.status = NoteStatus.DONE
+
         r_task = await db.execute(
             select(BoardPlacement).where(
                 BoardPlacement.note_id == placement.note_id,
@@ -5332,8 +5582,6 @@ async def ack_task_reminder(
         task_placement = r_task.scalar_one_or_none()
         if task_placement:
             task_placement.matrix_quadrant = 5
-        elif prev_lane == Lane.HELP_REQUEST:
-            pass  # HELP_REQUEST から DONE は既存 PATCH と同様 task 連動のみ
 
     await db.flush()
     return {
@@ -5879,6 +6127,7 @@ class MoveToPersonalBody(BaseModel):
 
 class ReorderPersonalLaneBody(BaseModel):
     """同一レーン内の並び替え。placement_ids の順に sort_order を 0,1,2,... で設定する。"""
+
     owner_id: int
     lane: Lane
     placement_ids: list[int]
@@ -5886,13 +6135,16 @@ class ReorderPersonalLaneBody(BaseModel):
 
 class TakenByUser(BaseModel):
     """Task 付箋をパーソナルに引き取ったユーザー（アイコン表示用）。"""
+
     id: int
     name: str
     name_short: str  # 例: 浅川久司 → 浅
+    is_done: bool = False  # 追加: このユーザーが完了(DONE)にしたかどうか
 
 
 class BoardPlacementWithNoteResponse(BaseModel):
     """配置 + 付箋本文（ボード View 用）。Personal 用 is_from_task、Task 用 taken_by / task_color。"""
+
     id: int
     note_id: int
     board_type: BoardType
@@ -5913,6 +6165,7 @@ class BoardPlacementWithNoteResponse(BaseModel):
     is_manually_moved_to_today: bool = False
     # 紐づく付箋の期限（YYYY-MM-DD 文字列）
     due_date: str | None = None
+    is_help_request: bool = False  # 追加: 応援要請フラグ
 </file>
 
 <file path="backend/app/schemas/sticky_note.py">
@@ -6541,29 +6794,6 @@ async def get_resolved_ollama_async(db: AsyncSession) -> tuple[str | None, str |
 async def ollama_configured_async(db: AsyncSession) -> bool:
     resolved, _ = await get_resolved_ollama_async(db)
     return bool(resolved)
-
-
-# --- 互換性・フォールバック用の同期関数 (同期 DB 接続は全廃) ---
-
-
-def get_db_llm_target_sync() -> int | None:
-    """（フォールバック用）DB同期アクセスを廃止したため、環境変数設定を優先。"""
-    return None
-
-
-def get_effective_llm_target_sync() -> int | None:
-    """実効 LLM スロット（同期フォールバック）: 環境変数 LLM_TARGET のみ参照。"""
-    return settings.llm_target
-
-
-def get_resolved_ollama_sync() -> tuple[str | None, str | None]:
-    """実効ターゲットに応じた (ollama_base_url, model_override)（同期フォールバック）。"""
-    eff = get_effective_llm_target_sync()
-    return settings.resolve_ollama_for_target(eff)
-
-
-def ollama_configured_sync() -> bool:
-    return bool(get_resolved_ollama_sync()[0])
 </file>
 
 <file path="backend/app/services/news_fetcher.py">
@@ -6577,13 +6807,17 @@ from typing import Any
 import feedparser
 
 from app.ai.client import generate_text
-from app.services.llm_settings import ollama_configured_sync
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
-RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
-RSS_ITEM = "https://www.gizmodo.jp/index.xml"
+RSS_IT = (
+    "[https://b.hatena.ne.jp/hotentry/it.rss](https://b.hatena.ne.jp/hotentry/it.rss)"
+)
+RSS_FUN = (
+    "[https://b.hatena.ne.jp/hotentry/fun.rss](https://b.hatena.ne.jp/hotentry/fun.rss)"
+)
+RSS_ITEM = "[https://www.gizmodo.jp/index.xml](https://www.gizmodo.jp/index.xml)"
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。
@@ -6639,7 +6873,8 @@ def fetch_and_summarize_news() -> str | None:
     RSS を取得し、Ollama で要約テキスト（Markdown）を生成する。
     OLLAMA_URL 未設定時・失敗時は None。
     """
-    if not ollama_configured_sync():
+    resolved_url, _ = settings.resolve_ollama_for_target(settings.llm_target)
+    if not resolved_url:
         logger.info("ニュース要約: OLLAMA が未設定のためスキップ")
         return None
     news_text = fetch_rss_text()
@@ -6660,9 +6895,11 @@ def fetch_and_summarize_news() -> str | None:
 AIによる自動振り分けオーケストレーター。
 新規付箋の内容を Triage → Matrix Scoring し、Task ボードの適切な列へ配置、担当者があれば Personal にも配布する。
 Board System でタスクになった付箋（postit 連携なし）は付箋ボードにも反映する。
+MOCK_AI=true の場合は外部 LLM 呼び出しを行わずに確定スコアで配置する。
 """
 import asyncio
 import logging
+import os
 import time
 
 from fastapi import Request
@@ -6741,6 +6978,26 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
         (content[:300] + "…") if len(content) > 300 else (content or "(空)")
     )
     logger.info("[Linko AI] Note %s 内容: %s", note_id, content_preview)
+
+    # E2E テスト環境用 モック判定 (MOCK_AI=true)
+    if os.environ.get("MOCK_AI", "").lower() in ("true", "1"):
+        logger.info("[Linko AI] MOCK_AI 提案適用 Note ID: %s", note_id)
+        await _place_on_task_board(db, note_id, 80.0, 80.0, 4)  # 重要列へマッピング
+        await db.flush()
+        if not note.postit_note_id:
+            from app.config import settings
+
+            ok = await _sync_note_to_postit_async(
+                request,
+                note.id,
+                note.content or "",
+                settings.postit_board_id,
+            )
+            if ok:
+                note.postit_board_id = settings.postit_board_id
+                note.postit_note_id = f"bs-{note.id}"
+                await db.flush()
+        return
 
     ollama_url, model_ov = await get_resolved_ollama_async(db)
 
@@ -6879,7 +7136,7 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
 async def _sync_note_to_postit_async(
     request: Request, note_id: int, content: str, board_id: str
 ) -> bool:
-    """Board System の付箋を付箋ボードに追加する（非同期 httpx 通信）。"""
+    """Board System の付箋が付箋ボードに追加された際、中央付近（x:2000, y:2000）に配置する"""
     from app.config import settings
 
     postit_note_id = f"bs-{note_id}"
@@ -6888,8 +7145,8 @@ async def _sync_note_to_postit_async(
         "note": {
             "id": postit_note_id,
             "text": content or "",
-            "x": 0,
-            "y": 0,
+            "x": 2000.0,
+            "y": 2000.0,
             "color": "#ffeb3b",
             "pinned": False,
             "author": "",
@@ -6932,6 +7189,163 @@ async def _place_on_task_board(
         existing.position_x = x
         existing.position_y = y
         existing.matrix_quadrant = column
+</file>
+
+<file path="backend/app/services/sync_reconciliation.py">
+# -*- coding: utf-8 -*-
+"""
+Self-Healing 同期照合サービス。
+board-system (PostgreSQL) と wl-sticky-note (付箋ボード API) の間のデータ差分を照合・修復する。
+"""
+import logging
+from typing import Any
+import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.models import BoardPlacement, BoardType, StickyNote
+from app.models.sticky_note import NoteStatus
+
+logger = logging.getLogger(__name__)
+
+
+async def reconcile_sticky_notes(
+    db: AsyncSession,
+    client: httpx.AsyncClient | None = None,
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """
+    wl-sticky-note と board-system のデータ整合性をチェック・補正する。
+
+    Source of Truth 規則:
+    - 本文・存在有無 (物理存在): wl-sticky-note を優先
+    - ステータス・期限日: board-system (PostgreSQL) を優先
+    """
+    postit_url = settings.postit_board_url.rstrip("/")
+    board_id = settings.postit_board_id
+    fetch_url = f"{postit_url}/api/boards/{board_id}/notes"
+
+    stats = {
+        "dry_run": dry_run,
+        "remote_total": 0,
+        "db_total": 0,
+        "created_in_db": 0,
+        "updated_in_remote": 0,
+        "archived_in_remote": 0,
+        "errors": [],
+    }
+
+    close_client = False
+    if client is None:
+        client = httpx.AsyncClient(timeout=10.0)
+        close_client = True
+
+    try:
+        try:
+            resp = await client.get(fetch_url)
+            if resp.status_code != 200:
+                stats["errors"].append(f"HTTP {resp.status_code} from postit board")
+                return stats
+            remote_data = resp.json()
+            remote_notes = remote_data.get("notes", [])
+            stats["remote_total"] = len(remote_notes)
+        except Exception as e:
+            logger.error("[Reconciliation] Failed to fetch remote notes: %s", e)
+            stats["errors"].append(str(e))
+            return stats
+
+        stmt = select(StickyNote).where(StickyNote.postit_board_id == board_id)
+        result = await db.execute(stmt)
+        db_notes = list(result.scalars().all())
+        stats["db_total"] = len(db_notes)
+
+        db_note_map = {n.postit_note_id: n for n in db_notes if n.postit_note_id}
+
+        for r_note in remote_notes:
+            r_id = str(r_note.get("id"))
+            r_text = r_note.get("text", "")
+            r_gray = r_note.get("gray", False)
+
+            if r_id not in db_note_map:
+                stats["created_in_db"] += 1
+                logger.info(
+                    "[Reconciliation][DryRun=%s] Missing in DB -> Create: postit_id=%s (gray=%s)",
+                    dry_run,
+                    r_id,
+                    r_gray,
+                )
+                if not dry_run:
+                    status = NoteStatus.DONE if r_gray else NoteStatus.ACTIVE
+                    matrix_q = 5 if r_gray else 1
+                    new_note = StickyNote(
+                        content=r_text or "（テキストなし）",
+                        postit_board_id=board_id,
+                        postit_note_id=r_id,
+                        status=status,
+                    )
+                    db.add(new_note)
+                    await db.flush()
+                    placement = BoardPlacement(
+                        note_id=new_note.id,
+                        board_type=BoardType.TASK,
+                        matrix_quadrant=matrix_q,
+                        sort_order=0,
+                        placement_source="reconciliation",
+                    )
+                    db.add(placement)
+            else:
+                db_note = db_note_map[r_id]
+                if r_gray and db_note.status == NoteStatus.ACTIVE:
+                    logger.info(
+                        "[Reconciliation][DryRun=%s] Remote Gray -> DB Status DONE: postit_id=%s",
+                        dry_run,
+                        r_id,
+                    )
+                    if not dry_run:
+                        db_note.status = NoteStatus.DONE
+                        r_placement = await db.execute(
+                            select(BoardPlacement).where(
+                                BoardPlacement.note_id == db_note.id,
+                                BoardPlacement.board_type == BoardType.TASK,
+                            )
+                        )
+                        task_placement = r_placement.scalar_one_or_none()
+                        if task_placement:
+                            task_placement.matrix_quadrant = 5
+
+        for postit_id, db_note in db_note_map.items():
+            if db_note.status in (NoteStatus.DONE, NoteStatus.ARCHIVED):
+                r_match = next(
+                    (rn for rn in remote_notes if str(rn.get("id")) == postit_id), None
+                )
+                if r_match and not r_match.get("gray"):
+                    stats["archived_in_remote"] += 1
+                    logger.info(
+                        "[Reconciliation][DryRun=%s] DB Completed/Archived -> Remote Gray: postit_id=%s",
+                        dry_run,
+                        postit_id,
+                    )
+                    if not dry_run:
+                        patch_url = (
+                            f"{postit_url}/api/boards/{board_id}/notes/{postit_id}"
+                        )
+                        try:
+                            await client.patch(patch_url, json={"gray": True})
+                        except Exception as e:
+                            logger.warning(
+                                "[Reconciliation] Failed to patch gray remote note %s: %s",
+                                postit_id,
+                                e,
+                            )
+
+        if not dry_run:
+            await db.commit()
+
+        return stats
+    finally:
+        if close_client:
+            await client.aclose()
 </file>
 
 <file path="backend/app/__init__.py">
@@ -7036,7 +7450,7 @@ class Settings(BaseSettings):
         return v[:32]
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
-    postit_board_url: str = "http://127.0.0.1:3000"
+    postit_board_url: str = "[http://127.0.0.1:3000](http://127.0.0.1:3000)"
     # 付箋ボードのボードID（Board System でタスクになった付箋をここに反映する）
     postit_board_id: str = "wl"
 
@@ -7044,7 +7458,7 @@ class Settings(BaseSettings):
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = (
-        None  # 例: https://wlboardsys.example.com/auth/google/callback
+        None  # 例: [https://wlboardsys.example.com/auth/google/callback](https://wlboardsys.example.com/auth/google/callback)
     )
     # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
     calendar_timezone: str = "Asia/Tokyo"
@@ -7058,14 +7472,14 @@ class Settings(BaseSettings):
     scheduler_news_interval_minutes: int = 0
     # Google カレンダー予定をキャッシュへ定期同期する間隔（分）。0 で無効。既定 30 分
     scheduler_calendar_interval_minutes: int = 30
-    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
-    scheduler_base_url: str = "http://127.0.0.1:8000"
+    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+    scheduler_base_url: str = "[http://127.0.0.1:8000](http://127.0.0.1:8000)"
 
     @field_validator("scheduler_base_url")
     @classmethod
     def strip_scheduler_base_url(cls, v: str | None) -> str:
         if v is None:
-            return "http://127.0.0.1:8000"
+            return "[http://127.0.0.1:8000](http://127.0.0.1:8000)"
         return (v or "").strip().rstrip("/")
 
     @field_validator("oauth_success_redirect_base")
@@ -7324,14 +7738,9 @@ async def lifespan(app: FastAPI):
     # イベントループ内で httpx.AsyncClient を生成し app.state に格納
     app.state.http_client = httpx.AsyncClient(timeout=5.0)
 
-    from app.services.llm_settings import (
-        get_effective_llm_target_sync,
-        get_resolved_ollama_sync,
-    )
-
-    url, model_ov = get_resolved_ollama_sync()
+    url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     if url:
-        eff = get_effective_llm_target_sync()
+        eff = settings.llm_target
         tgt = f" [effective_LLM_TARGET={eff}]" if eff is not None else ""
         model_line = model_ov or "自動（Ollama のローカルモデル一覧から解決）"
         logger.info(
@@ -7541,7 +7950,7 @@ def shutdown_scheduler() -> None:
 <file path="backend/desktop_app_releases/README.md">
 # Wonder Linko デスクトップアプリ 自動更新用リリース置き場
 
-このディレクトリの **`WonderLinko.msi`**（または `WonderLinko_<version>.msi`）と **`latest.json`** を更新すると、クライアントPCに常駐するデスクトップアプリの自動更新が有効になります。
+このディレクトリの **`WonderLinko.msi`**（または `WonderLinko_<version>.msi`）と **`latest.json`** を更新すると、クライアントPCに常駐するデスクトップアプリの自動更新が有効になります[cite: 1]。
 
 ---
 
@@ -7549,8 +7958,8 @@ def shutdown_scheduler() -> None:
 
 | ファイル名 | 役割 |
 | :--- | :--- |
-| `latest.json` | 最新バージョン情報（`version` と MSI 取得先の絶対 `url`） |
-| `WonderLinko.msi` | `wl_desktop_app` でビルドされた Windows インストーラ（`build_msi.ps1` で生成・署名） |
+| `latest.json` | 最新バージョン情報（`version` と MSI 取得先の絶対 `url`）[cite: 1] |
+| `WonderLinko.msi` / `WonderLinko_<version>.msi` | `wl_desktop_app` でビルドされた Windows インストーラ（自己署名コード署名済み）[cite: 1] |
 
 ---
 
@@ -7559,25 +7968,25 @@ def shutdown_scheduler() -> None:
 ```json
 {
   "version": "3.9.8",
-  "url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi"
+  "url": "[https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi](https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi)"
 }
 ```
 
-- `version`: `wl_desktop_app/version.py` の `__version__` と完全に一致させること。
-- `url`: クライアントが MSI をダウンロードする **絶対 URL**。
+- `version`: `wl_desktop_app/version.py` の `__version__` と完全に一致させること[cite: 1]。
+- `url`: クライアントが MSI をダウンロードする **絶対 URL**。※ サーバ上のファイル名と完全に一致させること[cite: 1]。
 
 ---
 
 ## 反映方法（bind mount による即時反映）
 
-`docker-compose.prod.yml` において、本ディレクトリが backend コンテナの `/app/desktop_app_releases` に **bind mount** されています。
+`docker-compose.prod.yml` において、本ディレクトリが backend コンテナの `/app/desktop_app_releases` に **bind mount** されています[cite: 1]。
 
 ```yaml
 # docker-compose.prod.yml backend.volumes
 - ./backend/desktop_app_releases:/app/desktop_app_releases
 ```
 
-FastAPI の `StaticFiles` はリクエストごとにホストOSのディレクトリを直接参照するため、**ホスト側のファイルを差し替えるだけで、コンテナの再起動や `deploy.sh` の実行なしに即時反映** されます。
+FastAPI の `StaticFiles` はリクエストごとにホストOSのディレクトリを直接参照するため、**ホスト側のファイルを差し替えるだけで、コンテナの再起動や `deploy.sh` の実行なしに即時反映** されます[cite: 1]。
 
 ---
 
@@ -7585,9 +7994,9 @@ FastAPI の `StaticFiles` はリクエストごとにホストOSのディレク�
 
 ### 1. バージョン番号の更新
 
-- `wl_desktop_app/version.py` の `__version__` を更新（例: `3.9.8`）。
-- 本ディレクトリの `latest.json` の `version` と `url` を同じバージョン番号に書き換え。
-- Git コミット & プッシュ。
+- `wl_desktop_app/version.py` の `__version__` を更新（例: `3.9.8`）[cite: 1]。
+- 本ディレクトリの `latest.json` の `version` と `url` を同じバージョン番号に書き換え[cite: 1]。
+- Git コミット & プッシュ[cite: 1]。
 
 ### 2. Windows ビルド PC での MSI ビルド
 
@@ -7598,6 +8007,8 @@ cd wl-board-pj\wl_desktop_app
 ```
 
 ### 3. 本番サーバへ MSI を転送 (scp)
+
+ロールバック管理のため、バージョン付きファイル名でアップロードします[cite: 1]。
 
 ```powershell
 scp dist\WonderLinko.msi devuser01@172.16.1.203:/var/www/wlinko-pj/board-system/backend/desktop_app_releases/WonderLinko_3.9.8.msi
@@ -7611,24 +8022,17 @@ cd /var/www/wlinko-pj
 git pull
 ```
 
-※ `latest.json` が git pull で更新され、bind mount により即時配信されます（deploy.sh 不要）。
+※ `latest.json` が git pull で更新され、bind mount により即時配信されます（`deploy.sh` 不要）[cite: 1]。
 
 ### 5. 配信確認
 
 ```bash
 # JSON が最新バージョンを返しているか
-curl https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json
+curl [https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json](https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json)
 
 # MSI が 200 OK でダウンロード可能か
-curl -sI https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi | head -n 3
+curl -sI [https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi](https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/WonderLinko_3.9.8.msi) | head -n 3
 ```
-
----
-
-## クライアント側の更新挙動
-
-1. **起動時**: デスクトップアプリ起動時にバックグラウンドで `latest.json` を取得（新版があればログ出力）。
-2. **手動確認**: トレイアイコンまたは設定ダイアログの「🔄 アップデート確認」をクリックすると、新バージョンをダウンロードし、サイレントインストール後に自動でアプリが再起動します。
 </file>
 
 <file path="backend/scripts/migrate_sqlite_to_pg.py">
@@ -8174,21 +8578,21 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 <file path="backend/README.md">
 # Board System Backend (Wonder Linko)
 
-4ボード（Main / Task / Personal / Meeting）用の FastAPI 非同期バックエンド。  
-開発は SQLite（aiosqlite）、**本番 Docker は PostgreSQL**（`postgresql+asyncpg`、`docker-compose.prod.yml` + `docker-compose.db.yml`）。
+4ボード（Main / Task / Personal / Meeting）用の FastAPI 非同期バックエンド[cite: 1]。  
+開発は SQLite（aiosqlite）、**本番 Docker は PostgreSQL**（`postgresql+asyncpg`、`docker-compose.prod.yml` + `docker-compose.db.yml`）[cite: 1]。
 
 ---
 
 ## 技術スタック
 
-- **Framework**: FastAPI (Python 3.10+)
-- **ORM**: SQLAlchemy 2.0（完全非同期）
-- **DB ドライバ**: aiosqlite（SQLite） / asyncpg（PostgreSQL）
-- **マイグレーション**: Alembic
-- **セキュリティ・認証**: 簡易 JWT（管理者用）、`cryptography` / `sqlalchemy-utils`（Google OAuth トークンの AES-256 暗号化保存）
-- **設定管理**: pydantic-settings + .env
-- **スケジューラ**: APScheduler（内蔵・Asia/Tokyo）
-- **AI**: 社内 Ollama（`OLLAMA_URL`）。自動仕分け・マトリクススコア・日次リセット・ブレスト・ニュース要約
+- **Framework**: FastAPI [Python 3.10+](cite: 1)
+- **ORM**: SQLAlchemy 2.0（完全非同期）[cite: 1]
+- **DB ドライバ**: aiosqlite（SQLite） / asyncpg（PostgreSQL）[cite: 1]
+- **マイグレーション**: Alembic[cite: 1]
+- **セキュリティ・認証**: 簡易 JWT（管理者用）、`cryptography` / `sqlalchemy-utils`（Google OAuth トークンの AES-256 暗号化保存）[cite: 1]
+- **設定管理**: pydantic-settings + .env[cite: 1]
+- **スケジューラ**: APScheduler（内蔵・Asia/Tokyo）[cite: 1]
+- **AI**: 社内 Ollama（`OLLAMA_URL` / 3スロット切替機能）。自動仕分け・マトリクススコア・日次リセット・ブレスト・ニュース要約[cite: 1]
 
 ---
 
@@ -8203,8 +8607,8 @@ cp .env.example .env
 ```
 
 > [!IMPORTANT]
-> **`TOKEN_ENCRYPTION_KEY` の設定が必須です。**  
-> Google カレンダーの OAuth トークンを暗号化するため、`.env` 内の `TOKEN_ENCRYPTION_KEY` に **32 バイト以上** の文字列を必ず設定してください。未設定の場合は起動時にエラーとなりアプリが停止します。
+> **`TOKEN_ENCRYPTION_KEY` の設定が必須です。**[cite: 1]  
+> Google カレンダーの OAuth トークンを暗号化するため、`.env` 内の `TOKEN_ENCRYPTION_KEY` に **32 バイト以上** の文字列を必ず設定してください[cite: 1]。未設定の場合は起動時にエラーとなりアプリが停止します[cite: 1]。
 
 ---
 
@@ -8214,52 +8618,26 @@ cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- API ルート: <http://localhost:8000>
-- 死活確認: <http://localhost:8000/health>
-- Swagger UI (開発時): <http://localhost:8000/docs>
+- API ルート: <http://localhost:8000>[cite: 1]
+- 死活確認: <http://localhost:8000/health>[cite: 1]
+- Swagger UI (開発時): <http://localhost:8000/docs>[cite: 1]
 
 ---
 
-## ディレクトリ構成
-
-```
-backend/
-├── alembic/
-│   ├── versions/      # マイグレーション履歴（is_personal_only, user_teams, admin_auth 等）
-│   └── env.py         # 非同期マイグレーション設定
-├── app/
-│   ├── ai/            # Linko Core（triage, matrix, daily_reset）
-│   ├── config.py      # アプリ設定・環境変数バリデーション
-│   ├── db.py          # 非同期エンジン・セッション管理・シード初期化
-│   ├── main.py        # FastAPI エントリポイント・ルーター登録
-│   ├── models/        # SQLAlchemy モデル（User, Team, UserTeam, StickyNote, BoardPlacement 等）
-│   ├── routers/       # 各種 API ルーター（管理者認証, チーム, 付箋, ボード, スケジューラ等）
-│   ├── schemas/       # Pydantic スキーマ
-│   ├── services/      # LLM 連携・設定管理サービス
-│   └── scheduler.py   # 内蔵 APScheduler
-├── desktop_app_releases/ # デスクトップアプリ MSI・latest.json 配信用（bind mount）
-├── scripts/           # seed_teams.py 等のユーティリティ
-├── alembic.ini
-├── .env.example
-├── requirements.txt
-└── README.md
-```
-
----
-
-## マイグレーション
+## マイグレーション履歴
 
 ```bash
 alembic upgrade head                       # 最新リビジョンまで適用
 alembic revision --autogenerate -m "説明"   # モデル変更から新規リビジョン生成
 ```
 
-### 最新マイグレーション適用履歴
+### 主なマイグレーション適用履歴
 
-- `m3n4o5p6q7r8_add_is_personal_only_to_sticky_notes.py`: パーソナル直接投稿付箋の AI 仕分けスキップフラグ追加
-- `l2m3n4o5p6q7_add_user_teams_and_admin_auth.py`: 複数チーム所属用 `user_teams` 中間テーブルおよび管理者認証基盤の追加
-- `k1l2m3n4o5p6_add_due_date_and_manually_moved_flag.py`: 付箋の期限日および手動移動フラグ追加
-- `e5f6a7b8c9d0_add_user_google_tokens.py`: Google OAuth トークン暗号化テーブル追加
+- `n4o5p6q7r8s9_add_is_help_request_to_sticky_notes.py`: 応援要請フラグ (`is_help_request`) の追加[cite: 1]
+- `m3n4o5p6q7r8_add_is_personal_only_to_sticky_notes.py`: パーソナル直接投稿付箋の AI 仕分けスキップフラグ追加[cite: 1]
+- `l2m3n4o5p6q7_add_user_teams_and_admin_auth.py`: 複数チーム所属用 `user_teams` 中間テーブルおよび管理者認証基盤の追加[cite: 1]
+- `k1l2m3n4o5p6_add_due_date_and_manually_moved_flag.py`: 付箋の期限日および手動移動フラグ追加[cite: 1]
+- `e5f6a7b8c9d0_add_user_google_tokens.py`: Google OAuth トークン暗号化テーブル追加[cite: 1]
 
 ---
 
@@ -8269,104 +8647,51 @@ alembic revision --autogenerate -m "説明"   # モデル変更から新規リ�
 
 | メソッド | パス | 認証 | 説明 |
 | :--- | :--- | :---: | :--- |
-| POST | `/admin/login` | 不要 | 管理者パスワード検証と JWT トークン発行（body: `{"password": "..."}`） |
-| GET | `/admin/llm` | **要Admin** | 現在の LLM スロット・実効 URL・解決モデル情報の取得 |
-| PUT | `/admin/llm` | **要Admin** | LLM スロットの動的切替（`{"llm_target": 1\|2\|3\|null}`） |
+| POST | `/admin/login` | 不要 | 管理者パスワード検証と JWT トークン発行[cite: 1] |
+| GET | `/admin/llm` | **要Admin** | 現在の LLM スロット・実効 URL・解決モデル情報の取得[cite: 1] |
+| PUT | `/admin/llm` | **要Admin** | LLM スロットの動的切替（`{"llm_target": 1\|2\|3\|null}`）[cite: 1] |
 
 ### 2. ユーザー & チーム管理 (N:M対応)
 
 | メソッド | パス | 認証 | 説明 |
 | :--- | :--- | :---: | :--- |
-| GET | `/users` | 不要 | ユーザー一覧取得（所属チームリスト `teams` を含む） |
-| GET | `/users/by_email` | 不要 | メールアドレスによるユーザー検索（デスクトップログイン用） |
-| GET | `/users/{id}` | 不要 | ユーザー個別取得 |
-| POST | `/users` | **要Admin** | ユーザー新規作成（複数チーム `team_ids` リスト指定対応） |
-| PATCH | `/users/{id}` | **要Admin** | ユーザー情報・所属チーム更新 |
-| DELETE | `/users/{id}` | **要Admin** | ユーザー削除 |
-| GET | `/teams` | 不要 | チーム一覧取得（所属メンバー数等を含む） |
-| POST | `/teams` | **要Admin** | チーム新規作成 |
-| PATCH | `/teams/{id}` | **要Admin** | チーム名更新 |
-| DELETE | `/teams/{id}` | **要Admin** | チーム削除（所属メンバーの紐付け解除） |
+| GET | `/users` | 不要 | ユーザー一覧取得（所属チームリスト `teams` を含む）[cite: 1] |
+| GET | `/users/by_email` | 不要 | メールアドレスによるユーザー検索[cite: 1] |
+| POST | `/users` | **要Admin** | ユーザー新規作成（複数チーム `team_ids` 指定対応）[cite: 1] |
+| PATCH | `/users/{id}` | **要Admin** | ユーザー情報・所属チーム更新[cite: 1] |
+| DELETE | `/users/{id}` | **要Admin** | ユーザー削除（保有パーソナル付箋のタスクボードリリース）[cite: 1] |
+| GET | `/teams` | 不要 | チーム一覧取得（所属メンバー数含む）[cite: 1] |
+| POST | `/teams` | **要Admin** | チーム新規作成[cite: 1] |
+| PATCH | `/teams/{id}` | **要Admin** | チーム名更新[cite: 1] |
+| DELETE | `/teams/{id}` | **要Admin** | チーム削除[cite: 1] |
 
 ### 3. 付箋 (Sticky Notes) & ボード配置
 
 | メソッド | パス | 認証 | 説明 |
 | :--- | :--- | :---: | :--- |
-| GET | `/sticky_notes` | 不要 | 付箋一覧取得 |
-| POST | `/sticky_notes` | 不要 | 付箋作成（Main ボード配置 ＋ **AI 自動仕分けで Task/Personal にも配置**） |
-| POST | `/sticky_notes/create_personal` | 不要 | **Personal ボード直接投稿**（`is_personal_only=True`、AI仕分けをスキップし、タスク化を防ぐ） |
-| POST | `/sticky_notes/import_from_postit` | 不要 | 付箋ボードからの取り込み（`dueDate` / `due_date` エイリアス対応） |
-| PATCH | `/sticky_notes/sync_from_postit` | 不要 | 付箋ボードからの双方向同期 |
-| GET/PATCH | `/sticky_notes/{id}` | 不要 | 付箋の取得・本文や期限（`due_date`）の更新 |
-| DELETE | `/sticky_notes/{id}` | 不要 | 付箋削除（付箋ボードへ PATCH でグレー化通知を送信） |
-| POST | `/sticky_notes/{id}/move_to_personal` | 不要 | Personal ボードへの配置 |
-| POST | `/sticky_notes/{id}/copy_to_team` | 不要 | 指定チームに所属する全メンバーの Personal ボードへ付箋を一括コピー |
-| POST | `/sticky_notes/{id}/release_to_task_board` | 不要 | Personal 配置を解除し、Task ボードへ再配置 |
-| POST | `/board_placements/reorder_personal_lane` | 不要 | Personal ボード内の付箋並び順（`sort_order`）の一括更新 |
-| GET | `/boards/main` | 不要 | Main ボード表示用データ（フリーキャンバス座標） |
-| GET | `/boards/task` | 不要 | Task ボード表示用データ（5列、引き取り者、タスク色、期限情報） |
-| GET | `/boards/personal?owner_id=` | 不要 | Personal ボード表示用データ（Today / タスク / Done、期限情報） |
-| GET | `/boards/morning` | 不要 | Meeting ボード表示用データ（朝会スナップショット） |
+| GET | `/sticky_notes` | 不要 | 付箋一覧取得[cite: 1] |
+| POST | `/sticky_notes` | 不要 | 付箋作成（Main配置 ＋ **AI 自動仕分けで Task/Personal にも配置**）[cite: 1] |
+| POST | `/sticky_notes/create_personal` | 不要 | **Personal ボード直接投稿**（`is_personal_only=True`、AI仕分けをスキップ）[cite: 1] |
+| PATCH | `/sticky_notes/{id}` | 不要 | 付箋の取得・本文や期限（`due_date`）の更新[cite: 1] |
+| DELETE | `/sticky_notes/{id}` | 不要 | 付箋削除（付箋ボードへ PATCH でグレー化通知を送信）[cite: 1] |
+| DELETE | `/board_placements/{id}` | 不要 | パーソナル配置削除（**複数人アサイン時は未完了メンバーがいる場合ブロック**）[cite: 1] |
+| POST | `/sticky_notes/{id}/move_to_personal` | 不要 | Personal ボードへの配置（要請者 `HELP_REQUEST` ➔ `INBOX` 自動復帰）[cite: 1] |
+| POST | `/sticky_notes/{id}/copy_to_team` | 不要 | チーム所属全メンバーの Personal ボードへ付箋を一括コピー[cite: 1] |
+| GET | `/boards/personal?owner_id=` | 不要 | Personal ボード表示（Today/Inbox/Done、`taken_by` 他担当者進捗状態 `is_done` 含む）[cite: 1] |
 
-### 4. 日次リセット・タスクローテーション・スケジューラ
+### 4. 日次処理・自動移動・ローテーション・Self-Healing
 
 | メソッド | パス | 認証 | 説明 |
 | :--- | :--- | :---: | :--- |
-| POST | `/daily_reset/run_8am` | 不要 | 毎朝 8:00 日次処理（Meeting リセット + 今日の予定取得 + 期限 Today 移動 + **タスクローテーション**） |
-| POST | `/daily_reset/rotate_tasks` | 不要 | 停滞タスクローテーションの手動実行（クエリ `?force=true` 対応） |
-| POST | `/daily_reset/sync_to_morning` | 不要 | 全ユーザーの Personal Today を MORNING にスナップショットコピー |
-| POST | `/daily_reset/reset_meeting` | 不要 | Meeting ボードのクリア |
-| GET | `/daily_reset/messages?owner_id=` | 不要 | 朝会用「持ち越しますか？」メッセージ取得 |
-
-### 5. デスクトップアプリ連携・リマインド・ブレスト
-
-| メソッド | パス | 認証 | 説明 |
-| :--- | :--- | :---: | :--- |
-| GET | `/users/{id}/task_reminders/pending` | 不要 | Today タスクリマインド取得（期限警告情報 `due_date` 付与） |
-| POST | `/users/{id}/task_reminders/shown_slot` | 不要 | リマインド表示済み記録 |
-| POST | `/users/{id}/task_reminders/ack` | 不要 | リマインド応答（`continue` または `done`） |
-| GET | `/users/{id}/calendar_reminders/pending` | 不要 | カレンダーリマインド取得（N分前通知） |
-| POST | `/brainstorm` | 不要 | リン子とのブレストチャット（SSE ストリーミング） |
-| POST | `/brainstorm/calendar/confirm` | 不要 | ブレスト内で提案された Google カレンダー予定の登録承認 |
+| POST | `/daily_reset/run_8am` | 不要 | 毎朝 8:00 日次処理（Meeting リセット + カレンダー取得 + 期限 Today 移動 + **タスクローテーション** + **Self-Healing 差分照合**）[cite: 1] |
+| POST | `/daily_reset/rotate_tasks` | 不要 | 停滞タスクローテーションの手動実行（`?force=true` 対応）[cite: 1] |
+| POST | `/daily_reset/reconcile` | 不要 | 手動 Self-Healing 差分照合・自動修復（`?dry_run=true` 対応）[cite: 1] |
 
 ---
 
-## AI Worker & ビジネスロジック
+## 本番デプロイ
 
-### 1. Auto-Triage & Matrix Scoring
-
-`POST /sticky_notes` で付箋が投稿されると、ローカル LLM が内容を解析:
-
-- **タスクか情報か**: タスクの場合は Task Board に配置。
-- **マトリクススコアリング**: 緊急度と重要度を 0〜100 で採点し、象限 1〜4（1: アイデア、2: 短期、3: 長期、4: 重要）を決定。
-- **担当者判定**: `users.name` と一致する社員名が含まれている場合、その社員の Personal Board（INBOX）に自動配置。
-- ※ `POST /sticky_notes/create_personal` から投稿されたパーソナル専用付箋は、この AI 仕分けがスキップされます。
-
-### 2. 期限連動移動ルール (`apply_due_date_rules`)
-
-期限日（`due_date`）が設定されている Personal 付箋について:
-
-- **当日以前**（`days <= 0`）または **直前日数**（1, 2, 3, 4, 5, 10, 20日前、30の倍数日前）に該当する場合、自動的に `INBOX` から `TODAY` レーンへ移動。
-- 手動で移動されたフラグ（`is_manually_moved_to_today`）が立っている付箋は、ユーザーの意図を尊重して維持。
-
-### 3. 停滞タスクの自動ローテーション (`rotate_stale_tasks`)
-
-タスクボードおよびパーソナルボードが停滞するのを防ぐため、2日に1回（`run_8am` 実行時）自動実行:
-
-- **優先タスクの保護**: 期限が10日以内のタスクはローテーション対象外とし、先頭位置をキープ。
-- **Task Board**: 象限内に 11 件以上ある場合、先頭 10 件を末尾に移動。
-- **Personal Board**: INBOX 内に 4 件以上ある場合、先頭 3 件を末尾に移動。
-
-### 4. Google カレンダー連携とトークン暗号化
-
-- 取得範囲: Asia/Tokyo 基準の当日 0:00〜23:59。
-- セキュリティ: トークンは AES-256（`TOKEN_ENCRYPTION_KEY`）で DB に暗号化保存。復号失敗時は安全にレコードを初期化し再認証を促す。
-
----
-
-## 本番（Docker）デプロイ
-
-ホスト側で Python 環境や pip をインストールする必要はありません。`backend/Dockerfile` ビルド時にコンテナ内部に環境が構築されます。
+`backend/Dockerfile` ビルド時にコンテナ内部に環境が構築されます[cite: 1]。また、`desktop_app_releases/` はコンテナへ bind mount されているため、MSI や `latest.json` の更新はコンテナの再起動なしに即時配信されます[cite: 1]。
 
 ```bash
 cd /var/www/wlinko-pj/board-system/deploy
@@ -8380,7 +8705,7 @@ cd /var/www/wlinko-pj/board-system/deploy
 
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-sqlalchemy[asyncio]>=2.0.0
+sqlalchemy[asyncio]>=2.0.0,<2.1.0
 aiosqlite>=0.20.0
 psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
@@ -8701,197 +9026,81 @@ echo "Staging stopped."
 <file path="docs/デプロイとマイグレーション手順.md">
 # デプロイとマイグレーション手順
 
-修正済みマイグレーション（`g7b8c9d0e1f2` の IF NOT EXISTS 対応）を本番に反映し、`alembic upgrade head` で同じ事象を防ぐ手順です。
+最新リビジョン（`n4o5p6q7r8s9_add_is_help_request_to_sticky_notes.py` まで）を本番環境に安全にデプロイし、マイグレーションを適用する手順です[cite: 1]。
 
 ---
 
 ## 前提
 
-- 本番サーバー: `wlboardsys-app-01`
-- プロジェクト配置: `/var/www/wlinko-pj`（または `wlinko-pj` を clone したディレクトリ）
-- バックエンドコンテナ: `linko-backend-blue`（`COLOR=blue` の場合）
-- バックエンドのコード: `board-system/backend` をビルドした Docker イメージ
+- 本番サーバー: `wlboardsys-app-01` (`172.16.1.203`)[cite: 1]
+- プロジェクト配置: `/var/www/wlinko-pj`[cite: 1]
+- バックエンドコンテナ: `linko-backend-blue` または `linko-backend-green`[cite: 1]
 
 ---
 
 ## Step 1: ローカルで修正をコミット・プッシュ
-
-開発マシン（linko-system / wl-board-pj を編集している環境）で実施します。
 
 ```bash
 cd /home/hisashi/dev/wl-board-pj
 
 # 変更確認
 git status
-git diff board-system/backend/alembic/versions/g7b8c9d0e1f2_add_oauth_pkce_state.py
 
-# コミット
-git add board-system/backend/alembic/versions/g7b8c9d0e1f2_add_oauth_pkce_state.py
-git commit -m "fix(alembic): oauth_pkce_state を CREATE TABLE IF NOT EXISTS に変更"
-
-# リモートへプッシュ（main またはデプロイ用ブランチ）
+# コミット & プッシュ
+git add .
+git commit -m "feat/fix: 最新マイグレーションおよび機能改修の適用"
 git push origin main
 ```
-
-※ リポジトリが GitHub / GitLab 等にある場合、プッシュ先は利用しているブランチに合わせてください。
 
 ---
 
 ## Step 2: 本番サーバーにログインし、リポジトリを更新
 
-本番サーバーで、デプロイ元のディレクトリに移動して pull します。
-
 ```bash
-ssh devuser01@wlboardsys-app-01
-
+ssh devuser01@172.16.1.203
 cd /var/www/wlinko-pj
-# または: cd /var/www/wl-board-pj  など、実際のプロジェクトパスに合わせる
-
 git pull origin main
 ```
 
-※ デプロイ用ブランチが `main` でない場合は、そのブランチを pull してください。
-
 ---
 
-## Step 3: バックエンドの Docker イメージを再ビルド
+## Step 3: Blue/Green デプロイスクリプトの実行
 
-Compose でバックエンドだけビルドし直します。本番用の compose ファイル名は環境に合わせて読み替えてください。
+`deploy.sh` を実行すると、自動的に新コンテナのビルド、ヘルスチェック、Alembic マイグレーション (`alembic upgrade head`)、チームシード (`seed_teams.py`)、静的アセットのホスト同期 (`shared_static/frontend`)、Nginx 切り替え、旧コンテナの停止が行われます[cite: 1]。
 
 ```bash
-# board-system ディレクトリに移動
-cd /var/www/wlinko-pj/board-system
-# もしくは: cd board-system  など
-
-# 本番用 compose でバックエンドのみビルド（キャッシュを使わず最新コードで）
-docker compose -f docker-compose.prod.yml build --no-cache backend
+cd /var/www/wlinko-pj/board-system/deploy
+./deploy.sh
 ```
 
-- `COLOR` 等の環境変数が必要な場合は、`.env` を読み込むか、実行前に export してください。  
-  例: `export COLOR=blue` のうえで上記を実行。
-
 ---
 
-## Step 4: バックエンドコンテナを新しいイメージで起動
+## Step 4: 手動でマイグレーションのみ実行したい場合（任意）
 
-既存のバックエンドコンテナを止め、同じ compose で起動し直すと新しいイメージでコンテナが作られます。
-
-```bash
-# 同じ board-system ディレクトリで
-docker compose -f docker-compose.prod.yml up -d backend
-```
-
-- コンテナ名が `linko-backend-blue` のままになるよう、`COLOR=blue` 等の設定を合わせておいてください。
-- blue/green やロードバランサの切り替え手順がある場合は、その手順に従って「新しい backend」がトラフィックを受けるようにしてください。
-
----
-
-## Step 5: コンテナ内でマイグレーションを実行
-
-新しいコンテナには修正済みの `g7b8c9d0e1f2_add_oauth_pkce_state.py` が含まれているので、`upgrade head` でエラーにならずに `placement_source` まで適用されます。
+特定コンテナに対して直接マイグレーションを実行したい場合は、以下を実行します[cite: 1]。
 
 ```bash
+# 現在アクティブなバックエンドコンテナを指定して実行
 docker exec -it linko-backend-blue alembic -c /app/alembic.ini upgrade head
 ```
 
-- 成功時は次のようなログが出ます:
-  - `Running upgrade f6a7b8c9d0e1 -> g7b8c9d0e1f2, add oauth_pkce_state ...`
-  - `Running upgrade g7b8c9d0e1f2 -> h8c9d0e1f2a3, add placement_source ...`
-- `oauth_pkce_state` が既に存在する場合は g7b8c9d0e1f2 でテーブル作成はスキップされ、続けて h8c9d0e1f2a3 で `board_placements.placement_source` が追加されます。
+- 成功時には `Running upgrade m3n4o5p6q7r8 -> n4o5p6q7r8s9, add is_help_request to sticky_notes` 等が出力されます[cite: 1]。
 
 ---
 
 ## 動作確認
 
-1. **API の応答確認**
-   - パーソナルボード: `GET /boards/personal?owner_id=5` が 500 ではなく 200 で返ること。
-   - 必要に応じてフロントからパーソナルボードを開いて表示を確認。
+1. **API死活・応答確認**
+   - ヘルスチェック: `curl https://wlboardsys.internal.wonder-link.com/api/bs/health`[cite: 1]
+   - パーソナルボード: `GET /api/bs/boards/personal?owner_id=1`[cite: 1]
 
-2. **DB の確認（任意）**
-   - PostgreSQL に接続し、`board_placements` に `placement_source` カラムがあることを確認:
+2. **DB カラム確認**
 
    ```bash
-   docker exec -it linko-db psql -U linko_user -d linko_board_system -c '\d board_placements'
+   docker exec -it linko-db psql -U linko_user -d linko_board_system -c '\d sticky_notes'
    ```
 
-   - 一覧に `placement_source | character varying(32) | nullable` が出ていれば OK です。
-
----
-
-## よくあるパターン（環境に応じて読み替え）
-
-| 項目 | 例 |
-| ------ | ----- |
-| Compose ファイル | `docker-compose.prod.yml` / `docker-compose.staging.yml` など |
-| 環境変数 | `COLOR=blue` を `.env` に書くか、`export` してから compose 実行 |
-| デプロイ用ブランチ | `main` / `master` / `release` など |
-| ビルドコマンド | `docker compose build backend` や CI で `docker build -f backend/Dockerfile .` など |
-
----
-
-## トラブル時
-
-- **「relation oauth_pkce_state already exists」がまだ出る**  
-  → コンテナが古いイメージのままの可能性があります。  
-  `docker images` でイメージの作成日を確認し、Step 3 のビルド後に Step 4 で確実にそのイメージで起動しているか確認してください。
-
-- **「column board_placements.placement_source does not exist」がまだ出る**  
-  → Step 5 の `alembic upgrade head` がまだ実行されていないか、別の DB を見ている可能性があります。  
-  コンテナ内の `DATABASE_URL` と、実際にアプリが接続している DB が同じか確認し、再度 Step 5 を実行してください。
-
-- **stamp で合わせたあと、再度 upgrade head したい**  
-  → 既に `stamp g7b8c9d0e1f2` で合わせてある場合は、修正済みイメージをデプロイしたうえで、そのまま `alembic upgrade head` を実行すれば `h8c9d0e1f2a3` だけが適用されます。
-
----
-
-## 付箋ボード（wl-sticky-note）のデータ永続化とバックアップ
-
-デプロイのたびに付箋が消えないよう、**blue/green で共有する外部ボリューム**を使い、**デプロイ前に自動バックアップ**するようにしています。
-
-### 初回のみ: 共有ボリュームの作成
-
-`docker-compose.prod.yml` で付箋データは `sticky_note_data` という**外部ボリューム**を参照します。**初回デプロイ前**にサーバーで 1 回だけ実行してください。
-
-```bash
-docker volume create sticky_note_data
-```
-
-既に blue または green で付箋データがある場合、`deploy.sh` が現在の色のボリュームから `sticky_note_data` へコピーするため、初回実行後も付箋は維持されます。
-
-### 自動バックアップ
-
-- **タイミング**: `deploy.sh` 実行時、新コンテナ起動前に「現在の付箋コンテナ」から `boards.json` をコピーします。
-- **保存先**: `board-system/backups/sticky-note/boards_YYYYMMDD_HHMMSS.json`
-- **保管数**: 直近 30 件を残し、それより古いファイルは自動削除されます。
-
-### 手動バックアップ
-
-```bash
-# 現在の付箋コンテナからコピー（blue の場合）
-docker cp linko-sticky-note-blue:/app/data/boards.json ./backups/sticky-note/boards_$(date +%Y%m%d_%H%M%S).json
-```
-
-### リストア（付箋データを戻す）
-
-1. 復元したいバックアップファイルを選ぶ（例: `board-system/backups/sticky-note/boards_20260306_120000.json`）。
-2. 共有ボリュームに書き込むため、一時コンテナでコピーします。
-
-```bash
-cd /var/www/wlinko-pj/board-system
-
-# 例: boards_20260306_120000.json を復元する場合
-docker run --rm \
-  -v "$(pwd)/backups/sticky-note/boards_20260306_120000.json:/src/boards.json:ro" \
-  -v sticky_note_data:/data \
-  alpine cp /src/boards.json /data/boards.json
-```
-
-1. 付箋コンテナを再起動すると、復元した内容が反映されます。
-
-```bash
-# 現在トラフィックを受けている方のコンテナを再起動（例: blue）
-docker restart linko-sticky-note-blue
-```
+   - `is_help_request | boolean` カラムが存在することを確認します[cite: 1]。
 </file>
 
 <file path="frontend/app/admin/system/page.tsx">
@@ -10776,6 +10985,205 @@ export default function OneLineInput({ placeholder = "入力して Enter", onSub
 }
 </file>
 
+<file path="frontend/app/components/OperationPanel.tsx">
+"use client";
+
+import React, { useState, useCallback } from "react";
+import type { Team } from "@/lib/types";
+import type { PersonalMember } from "@/lib/personalMembers";
+
+interface OperationPanelProps {
+    members: PersonalMember[];
+    teams: Team[];
+    autoImport: boolean;
+    isImporting?: boolean;
+    onAutoImportChange: (checked: boolean) => void;
+    onImportClick: () => void;
+    onTrashDrop: (noteId: number) => void;
+    onMemberDrop: (noteId: number, ownerId: number) => void;
+    onTeamDrop: (noteId: number, teamId: number, teamName: string) => void;
+}
+
+/** DragEvent から安全に noteId (number) を取り出すヘルパー */
+function parseNoteId(e: React.DragEvent): number | null {
+    const raw =
+        e.dataTransfer.getData("noteId") ||
+        e.dataTransfer.getData("placementId") ||
+        e.dataTransfer.getData("text/plain");
+    if (!raw) return null;
+    const num = Number(raw);
+    return isNaN(num) ? null : num;
+}
+
+export const OperationPanel: React.FC<OperationPanelProps> = ({
+    members,
+    teams,
+    autoImport,
+    isImporting = false,
+    onAutoImportChange,
+    onImportClick,
+    onTrashDrop,
+    onMemberDrop,
+    onTeamDrop,
+}) => {
+    const [activeDragTarget, setActiveDragTarget] = useState<string | null>(null);
+
+    const handleDragOver = useCallback((id: string, e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = id === "trash" ? "move" : "copy";
+        setActiveDragTarget((prev) => (prev !== id ? id : prev));
+    }, []);
+
+    const resetDragTarget = useCallback(() => {
+        setActiveDragTarget(null);
+    }, []);
+
+    const handleDrop = useCallback(
+        (id: string, callback: (noteId: number) => void, e: React.DragEvent) => {
+            e.preventDefault();
+            try {
+                const noteId = parseNoteId(e);
+                if (noteId !== null) {
+                    callback(noteId);
+                }
+            } finally {
+                resetDragTarget();
+            }
+        },
+        [resetDragTarget]
+    );
+
+    return (
+        <div
+            onDragEnd={resetDragTarget}
+            className="flex flex-col gap-3 p-3.5 bg-white/90 backdrop-blur-md rounded-2xl border border-zinc-200/80 shadow-sm"
+        >
+            {/* 1行目: 操作ボタン・自動インポート・ゴミ箱 */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-zinc-100">
+                <div className="flex flex-wrap items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={onImportClick}
+                        disabled={isImporting}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer"
+                    >
+                        {isImporting ? (
+                            <span className="flex items-center gap-1.5">
+                                <span className="animate-spin text-xs">🌀</span>
+                                <span>取り込み中…</span>
+                            </span>
+                        ) : (
+                            <span>付箋ボードから取り込む</span>
+                        )}
+                    </button>
+
+                    <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-zinc-700 hover:text-zinc-900 select-none">
+                        <input
+                            type="checkbox"
+                            checked={autoImport}
+                            onChange={(e) => onAutoImportChange(e.target.checked)}
+                            className="w-4 h-4 rounded border-zinc-300 text-[var(--primary)] focus:ring-[var(--primary)] cursor-pointer"
+                        />
+                        <span>自動で取り込む（5分ごと・AI判定）</span>
+                    </label>
+                </div>
+
+                {/* ゴミ箱（D&D専用ターゲット） */}
+                <div
+                    role="region"
+                    aria-label="ゴミ箱エリア。付箋をここにドロップして削除"
+                    onDragOver={(e) => handleDragOver("trash", e)}
+                    onDragLeave={resetDragTarget}
+                    onDrop={(e) => handleDrop("trash", onTrashDrop, e)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all select-none cursor-default border [&>*]:pointer-events-none ${activeDragTarget === "trash"
+                            ? "bg-rose-200 border-2 border-rose-500 text-rose-900 ring-2 ring-inset ring-rose-400 font-bold shadow-md"
+                            : "bg-rose-50/60 border-rose-200/80 text-rose-600"
+                        }`}
+                >
+                    <span className="text-base">🗑️</span>
+                    <span>ゴミ箱</span>
+                </div>
+            </div>
+
+            {/* 2行目: パーソナルコピー */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2.5">
+                <span className="text-sm font-semibold text-zinc-600 whitespace-nowrap shrink-0">
+                    パーソナルコピー:
+                </span>
+                <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-1.5 pr-2 w-full [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.200)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+                    {members.map((m) => {
+                        const targetId = `member-${m.ownerId}`;
+                        const isHovered = activeDragTarget === targetId;
+                        return (
+                            <div
+                                key={m.ownerId}
+                                role="region"
+                                aria-label={`${m.name} のパーソナルボードへ付箋をドロップしてコピー`}
+                                onDragOver={(e) => handleDragOver(targetId, e)}
+                                onDragLeave={resetDragTarget}
+                                onDrop={(e) =>
+                                    handleDrop(targetId, (noteId) => onMemberDrop(noteId, m.ownerId), e)
+                                }
+                                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all select-none cursor-default border [&>*]:pointer-events-none ${isHovered
+                                        ? "bg-sky-200 border-2 border-sky-500 text-sky-950 ring-2 ring-inset ring-sky-400 font-bold shadow-md"
+                                        : "bg-zinc-50 border-zinc-200 text-zinc-700"
+                                    }`}
+                            >
+                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-zinc-200 text-zinc-600 text-xs font-bold">
+                                    {m.name.charAt(0)}
+                                </span>
+                                <span>{m.name}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* 3行目: チーム一括コピー */}
+            {teams.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2.5 pt-1 border-t border-zinc-100/60">
+                    <span className="text-sm font-semibold text-zinc-600 whitespace-nowrap shrink-0">
+                        チーム一括コピー:
+                    </span>
+                    <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto p-1.5 pr-2 w-full [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.200)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-zinc-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+                        {teams.map((t) => {
+                            const targetId = `team-${t.id}`;
+                            const isHovered = activeDragTarget === targetId;
+                            return (
+                                <div
+                                    key={t.id}
+                                    role="region"
+                                    aria-label={`${t.name} チーム所属メンバー全員へ一括コピー（${t.member_count}名）`}
+                                    onDragOver={(e) => handleDragOver(targetId, e)}
+                                    onDragLeave={resetDragTarget}
+                                    onDrop={(e) =>
+                                        handleDrop(
+                                            targetId,
+                                            (noteId) => onTeamDrop(noteId, t.id, t.name),
+                                            e
+                                        )
+                                    }
+                                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-sm font-semibold transition-all select-none cursor-default border [&>*]:pointer-events-none ${isHovered
+                                            ? "bg-indigo-200 border-2 border-indigo-600 text-indigo-950 ring-2 ring-inset ring-indigo-400 font-bold shadow-md"
+                                            : "bg-indigo-50/70 border-indigo-200 text-indigo-700"
+                                        }`}
+                                >
+                                    <span className="text-xs">👥</span>
+                                    <span>{t.name}</span>
+                                    <span className="text-xs font-normal text-indigo-500 bg-indigo-100/80 px-1.5 py-0.5 rounded-full">
+                                        {t.member_count ?? 0}名
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+</file>
+
 <file path="frontend/app/components/PersonalBoardView.tsx">
 "use client";
 
@@ -10808,12 +11216,13 @@ function isCalendarPlacement(src?: string | null): boolean {
   return src === "calendar" || src === "calendar_timed";
 }
 
+/** カード色判定: DONE でない限り、is_help_request フラグまたは HELP_REQUEST レーンなら赤色(red)を維持 */
 function personalCardColor(
   lane: LaneType,
   placement: PlacementWithNote
 ): "yellow" | "green" | "grey" | "blue" | "red" | "purple" {
-  if (lane === "HELP_REQUEST") return "red";
   if (lane === "DONE") return "grey";
+  if (placement.is_help_request || lane === "HELP_REQUEST") return "red";
   if (isCalendarPlacement(placement.placement_source)) return "purple";
   if (placement.is_from_task) return "green";
   return "blue";
@@ -11325,6 +11734,7 @@ function LaneColumn({
               showPersonalBadge={
                 p.is_from_task === false &&
                 lane !== "HELP_REQUEST" &&
+                !p.is_help_request &&
                 !isCalendarPlacement(p.placement_source)
               }
               showCalendarBadge={isCalendarPlacement(p.placement_source)}
@@ -11335,198 +11745,6 @@ function LaneColumn({
               onDragEnd={onRefresh}
             />
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/app/main/page.tsx">
-"use client";
-
-import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { motion } from "framer-motion";
-import { api } from "@/lib/api";
-import type { PlacementWithNote } from "@/lib/types";
-import ApiErrorBanner from "../components/ApiErrorBanner";
-import OneLineInput from "../components/OneLineInput";
-import NoteCard from "../components/NoteCard";
-
-/** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
-const REFETCH_DELAY_MS = 120;
-const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-/** キャンバス上の座標（ピクセル） */
-type Position = { x: number; y: number };
-
-export default function MainBoardPage() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ w: 1200, h: 800 });
-  const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
-  const [positions, setPositions] = useState<Record<number, Position>>({});
-  const [aiMovedNoteIds, setAiMovedNoteIds] = useState<Set<number>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchMain = useCallback(async () => {
-    try {
-      setError(null);
-      const [mainList, allPlacements] = await Promise.all([
-        api.boards.main(),
-        api.boardPlacements.list(),
-      ]);
-      const moved = new Set<number>();
-      for (const p of allPlacements) {
-        if (p.board_type === "TASK" || p.board_type === "PERSONAL") moved.add(p.note_id);
-      }
-      flushSync(() => {
-        setPlacements(mainList);
-        setAiMovedNoteIds(moved);
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchMain();
-  }, [fetchMain]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const { width, height } = el.getBoundingClientRect();
-      if (width > 0 && height > 0) setContainerSize({ w: width, h: height });
-    });
-    ro.observe(el);
-    const { width, height } = el.getBoundingClientRect();
-    if (width > 0 && height > 0) setContainerSize({ w: width, h: height });
-    return () => ro.disconnect();
-  }, [placements.length]);
-
-  useEffect(() => {
-    const { w, h } = containerSize;
-    setPositions((prev) => {
-      const next = { ...prev };
-      placements.forEach((p, i) => {
-        const px = p.position_x != null ? (p.position_x / 100) * w : 20 + i * 90;
-        const py = p.position_y != null ? (p.position_y / 100) * h : 20 + i * 70;
-        next[p.id] = { x: px, y: py };
-      });
-      return next;
-    });
-  }, [placements, containerSize]);
-
-  // 新規投稿（期限受け取り対応）
-  const handlePost = useCallback(
-    async (text: string, dueDate?: string | null) => {
-      await api.stickyNotes.create({ content: text, due_date: dueDate || null });
-      await delay(REFETCH_DELAY_MS);
-      await fetchMain();
-    },
-    [fetchMain]
-  );
-
-  // 既存付箋の期限変更ハンドラー
-  const handleDueDateChange = useCallback(
-    async (noteId: number, dueDateStr: string) => {
-      await api.stickyNotes.update(noteId, {
-        due_date: dueDateStr === "" ? "" : dueDateStr,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchMain();
-    },
-    [fetchMain]
-  );
-
-  const handleDragEnd = useCallback(
-    async (placementId: number, ev: MouseEvent | TouchEvent | PointerEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-      const target = ev.target as HTMLElement;
-      const box = target.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const x = box.left - containerRect.left;
-      const y = box.top - containerRect.top;
-      const { w, h } = containerSize;
-      const position_x = Math.max(0, Math.min(100, (x / w) * 100));
-      const position_y = Math.max(0, Math.min(100, (y / h) * 100));
-      await api.boardPlacements.patch(placementId, { position_x, position_y });
-      await delay(REFETCH_DELAY_MS);
-      await fetchMain();
-    },
-    [containerSize, fetchMain]
-  );
-
-  const syncPositionFromElement = useCallback(
-    (placementId: number, ev: MouseEvent | TouchEvent | PointerEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-      const target = ev.target as HTMLElement;
-      const box = target.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      setPositions((prev) => ({
-        ...prev,
-        [placementId]: {
-          x: box.left - containerRect.left,
-          y: box.top - containerRect.top,
-        },
-      }));
-    },
-    []
-  );
-
-  if (loading) return <div className="p-6">Loading...</div>;
-  if (error)
-    return (
-      <div className="p-6">
-        <ApiErrorBanner error={error} onRetry={fetchMain} />
-      </div>
-    );
-
-  return (
-    <div className="flex h-[calc(100vh-52px)] flex-col">
-      <div className="shrink-0 border-b border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <h1 className="mb-1 text-lg font-bold">Main Board（広場）</h1>
-        <p className="mb-3 text-xs text-zinc-500">
-          ホワイトボード形式。付箋をドラッグして配置。AI が Task / Personal へ仕分けした付箋は ✨。
-        </p>
-        <OneLineInput placeholder="投稿内容を入力..." onSubmit={handlePost} />
-      </div>
-      <div
-        ref={containerRef}
-        className="relative flex-1 overflow-hidden bg-[#f5f5dc] dark:bg-zinc-900"
-        style={{ minHeight: 320 }}
-      >
-        {placements.map((p) => (
-          <motion.div
-            key={p.id}
-            className="absolute left-0 top-0 cursor-grab active:cursor-grabbing"
-            style={{
-              x: positions[p.id]?.x ?? 0,
-              y: positions[p.id]?.y ?? 0,
-              touchAction: "none",
-            }}
-            drag
-            dragMomentum={false}
-            dragElastic={0}
-            dragConstraints={containerRef}
-            onDragEnd={(ev) => {
-              void handleDragEnd(p.id, ev);
-            }}
-            onDrag={(ev) => syncPositionFromElement(p.id, ev)}
-          >
-            <NoteCard
-              placement={p}
-              showAiBadge={aiMovedNoteIds.has(p.note_id)}
-              onDueDateChange={handleDueDateChange}
-            />
-          </motion.div>
         ))}
       </div>
     </div>
@@ -11705,15 +11923,6 @@ export default function MeetingBoardPage() {
 }
 </file>
 
-<file path="frontend/app/morning/page.tsx">
-import { redirect } from "next/navigation";
-
-/** 旧URL /morning を /meeting へリダイレクト */
-export default function MorningRedirect() {
-  redirect("/meeting");
-}
-</file>
-
 <file path="frontend/app/personal/[slug]/page.tsx">
 "use client";
 
@@ -11757,15 +11966,6 @@ export default function PersonalPage() {
 }
 </file>
 
-<file path="frontend/app/task/page.tsx">
-import { redirect } from "next/navigation";
-
-/** 旧URL /task を /taskboard へリダイレクト（本番で /task が 404 になったためルート名を taskboard に変更） */
-export default function TaskRedirect() {
-  redirect("/taskboard");
-}
-</file>
-
 <file path="frontend/app/taskboard/layout.tsx">
 import { ReactNode } from "react";
 
@@ -11777,18 +11977,18 @@ export default function TaskboardLayout({ children }: { children: ReactNode }) {
 <file path="frontend/app/taskboard/page.tsx">
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
 import {
   fetchLegacyPostitNotes,
   LEGACY_POSTIT_BOARD_ID,
 } from "@/lib/legacyPostit";
-import type { PlacementWithNote } from "@/lib/types";
-import type { Team } from "@/lib/types";
+import type { PlacementWithNote, Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
+import { OperationPanel } from "../components/OperationPanel";
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
 const REFETCH_DELAY_MS = 120;
@@ -12036,72 +12236,25 @@ export default function TaskBoardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      {/* メニューバー・ゴミ箱・コピー先（アコーディオンなし・コンパクト全表示） */}
-      <div className="sticky top-[52px] z-10 -mx-4 mb-4 rounded-b-xl border-b border-[var(--border)] bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur-sm">
+      {/* メニューバー・ゴミ箱・コピー先 */}
+      <div className="sticky top-[52px] z-10 -mx-4 mb-4">
         {(importing || importMessage) && (
-          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1 rounded-md border border-amber-200">
+          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-xs">
             {importing ? "取り込み中…" : importMessage}
           </div>
         )}
 
-        <div className="flex flex-col gap-2 text-xs">
-          {/* 1行目: アクション・設定・ゴミ箱 */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => handleImportFromPostit()}
-              disabled={importing}
-              className="shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50 shadow-sm"
-              style={{ background: "var(--primary)" }}
-            >
-              付箋ボードから取り込む
-            </button>
-
-            <label className="flex cursor-pointer items-center gap-1.5 text-zinc-600 select-none">
-              <input
-                type="checkbox"
-                checked={autoImportEnabled}
-                onChange={(e) => setAutoImportEnabled(e.target.checked)}
-                className="rounded border-[var(--border)] text-[var(--primary)] focus:ring-[var(--primary)]"
-              />
-              <span>自動で取り込む（5分ごと・AI判定）</span>
-            </label>
-
-            <div className="h-3.5 w-px bg-zinc-200 mx-1 hidden sm:block" />
-
-            <TrashDropZone onDrop={handleTrashDrop} />
-          </div>
-
-          {/* 2行目: パーソナルコピー */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium text-zinc-500 shrink-0">パーソナルコピー:</span>
-            <div className="flex flex-wrap gap-1">
-              {personalMembers.map(({ ownerId, name }) => (
-                <MemberDropZone
-                  key={ownerId}
-                  name={name}
-                  onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* 3行目: チームコピー */}
-          {teams.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-medium text-zinc-500 shrink-0">チーム一括コピー:</span>
-              <div className="flex flex-wrap gap-1">
-                {teams.map((team) => (
-                  <TeamDropZone
-                    key={team.id}
-                    team={team}
-                    onDrop={(noteId) => handleCopyToTeam(noteId, team.id, team.name)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <OperationPanel
+          members={personalMembers}
+          teams={teams}
+          autoImport={autoImportEnabled}
+          isImporting={importing}
+          onAutoImportChange={setAutoImportEnabled}
+          onImportClick={handleImportFromPostit}
+          onTrashDrop={handleTrashDrop}
+          onMemberDrop={handleCopyToPersonal}
+          onTeamDrop={handleCopyToTeam}
+        />
       </div>
 
       {/* タスクボード4列 */}
@@ -12120,93 +12273,6 @@ export default function TaskBoardPage() {
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("placementId");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs transition-colors cursor-pointer ${over ? "border-red-500 bg-red-50 text-red-700" : "border-zinc-300 bg-zinc-50 text-zinc-600"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <span>🗑️ ゴミ箱</span>
-    </div>
-  );
-}
-
-function MemberDropZone({ name, onDrop }: { name: string; onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-[var(--primary)] bg-green-50 text-[var(--primary)]" : "border-zinc-300 bg-zinc-50 text-zinc-700"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {name}
-    </div>
-  );
-}
-
-function TeamDropZone({ team, onDrop }: { team: Team; onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`rounded-full border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors ${over ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-indigo-200 bg-indigo-50/50 text-indigo-800"
-        }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      👥 {team.name} <span className="text-[10px] opacity-75">({team.member_count}名)</span>
     </div>
   );
 }
@@ -12244,13 +12310,20 @@ function Column({
   const handleDrop = (e: React.DragEvent) => {
     if (!droppable || targetQ == null) return;
     e.preventDefault();
-    setOver(false);
-    const id = e.dataTransfer.getData("placementId");
-    if (id) onDrop(Number(id), targetQ);
+    try {
+      const id = e.dataTransfer.getData("placementId");
+      if (id && !isNaN(Number(id))) {
+        onDrop(Number(id), targetQ);
+      }
+    } finally {
+      setOver(false);
+    }
   };
 
   return (
     <div
+      role="region"
+      aria-label={`${title} カラム`}
       className={`rounded-xl border-2 border-dashed p-4 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : "border-[var(--border)] bg-white"
         }`}
       onDragOver={handleDragOver}
@@ -12724,6 +12797,8 @@ export interface PlacementWithNote {
   is_manually_moved_to_today?: boolean;
   /** 紐づく付箋の期限（YYYY-MM-DD 文字列）*/
   due_date?: string | null;
+  /** 応援要請 */
+  is_help_request?: boolean;
 }
 
 export interface User {
@@ -12966,10 +13041,13 @@ export default eslintConfig;
 <file path="frontend/next.config.ts">
 import type { NextConfig } from "next";
 
-// 本番で付箋ボードと同一ドメイン運用時は /boards で提供（環境変数より優先して確実に効かせる）
+// 余分な引用符を除去
+const rawBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/['"]/g, "").trim();
+
+// クォートや空文字を考慮して安全に basePath を設定
 const basePath =
-  process.env.NEXT_PUBLIC_BASE_PATH !== undefined
-    ? process.env.NEXT_PUBLIC_BASE_PATH
+  rawBasePath !== ""
+    ? (rawBasePath.startsWith("/") ? rawBasePath : `/${rawBasePath}`)
     : process.env.NODE_ENV === "production"
       ? "/boards"
       : "";
@@ -13987,6 +14065,7 @@ services:
       - "8010:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://linko_user:linko_password@db:5432/linko_board_system
+      MOCK_AI: ${MOCK_AI:-false}  # ← この行を追記
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       JWT_SECRET: ${JWT_SECRET:-super-secret-key-change-in-production-12345}
       OLLAMA_URL: ${OLLAMA_URL:-http://172.16.1.161:11435/v1}

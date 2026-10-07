@@ -1,0 +1,182 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+utils/
+  dueDate.ts
+  linkify.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="utils/dueDate.ts">
+/**
+ * 期限日（YYYY-MM-DD）から今日までの残り日数を計算する
+ * @param dueDateStr YYYY-MM-DD 形式の文字列
+ * @returns 残り日数（期限切れは負の数、当日は0）。無効値の場合は null
+ */
+export function calcDaysLeft(dueDateStr?: string | null): number | null {
+    if (!dueDateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const parts = dueDateStr.split("-").map(Number);
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts;
+    if (!y || !m || !d) return null;
+
+    const due = new Date(y, m - 1, d);
+    due.setHours(0, 0, 0, 0);
+    if (isNaN(due.getTime())) return null;
+
+    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 期限日のフォーマット文字列（例: "⚠️️ 期限切れ（2日経過）"）を取得する
+ */
+export function getDueDateStatusText(dueDateStr?: string | null): {
+    daysLeft: number | null;
+    label: string;
+    status: "expired" | "today" | "urgent" | "normal" | "none";
+} {
+    const daysLeft = calcDaysLeft(dueDateStr);
+    if (daysLeft === null) {
+        return { daysLeft: null, label: "", status: "none" };
+    }
+
+    if (daysLeft < 0) {
+        return {
+            daysLeft,
+            label: `⚠️ 期限切れ（${Math.abs(daysLeft)}日経過）`,
+            status: "expired",
+        };
+    }
+    if (daysLeft === 0) {
+        return { daysLeft, label: "🔥 本期日が期限！", status: "today" };
+    }
+    if (daysLeft <= 3) {
+        return { daysLeft, label: `⏰ 期限まであと${daysLeft}日`, status: "urgent" };
+    }
+    if (daysLeft <= 10) {
+        return { daysLeft, label: `📅 期限まであと${daysLeft}日`, status: "normal" };
+    }
+    return { daysLeft, label: `📅 期限: ${dueDateStr}`, status: "normal" };
+}
+</file>
+
+<file path="utils/linkify.ts">
+export interface TextLinkPart {
+    type: "text" | "link";
+    content: string;
+    url?: string;
+}
+
+const URL_REGEX = /(https?:\/\/[^\s<>\[\]()]+)/gi;
+const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi;
+const URL_DISPLAY_MAX = 40;
+
+export function shortenUrl(url: string): string {
+    if (url.length <= URL_DISPLAY_MAX) return url;
+    return url.slice(0, URL_DISPLAY_MAX - 1) + "…";
+}
+
+/**
+ * テキストから URL および Markdown 形式のリンクを抽出し、パーツの配列へ変換する
+ */
+export function parseTextWithLinks(text?: string | null): TextLinkPart[] {
+    if (!text) return [];
+
+    const parts: TextLinkPart[] = [];
+    let lastIndex = 0;
+    const mdRegex = new RegExp(MARKDOWN_LINK_REGEX.source, "gi");
+    let match: RegExpExecArray | null;
+
+    while ((match = mdRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            parsePlainTextLinks(text.slice(lastIndex, match.index), parts);
+        }
+        parts.push({
+            type: "link",
+            content: match[1],
+            url: match[2],
+        });
+        lastIndex = mdRegex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+        parsePlainTextLinks(text.slice(lastIndex), parts);
+    }
+
+    return parts;
+}
+
+function parsePlainTextLinks(plainText: string, result: TextLinkPart[]): void {
+    let lastIndex = 0;
+    const urlRegex = new RegExp(URL_REGEX.source, "gi");
+    let match: RegExpExecArray | null;
+
+    while ((match = urlRegex.exec(plainText)) !== null) {
+        if (match.index > lastIndex) {
+            result.push({
+                type: "text",
+                content: plainText.slice(lastIndex, match.index),
+            });
+        }
+        result.push({
+            type: "link",
+            content: shortenUrl(match[0]),
+            url: match[0],
+        });
+        lastIndex = urlRegex.lastIndex;
+    }
+
+    if (lastIndex < plainText.length) {
+        result.push({
+            type: "text",
+            content: plainText.slice(lastIndex),
+        });
+    }
+}
+</file>
+
+</files>

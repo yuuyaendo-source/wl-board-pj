@@ -7,8 +7,8 @@ import unittest
 # 親ディレクトリをパスに追加
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config_loader
-import startup
+from core import config_loader
+from core import startup
 import app
 
 

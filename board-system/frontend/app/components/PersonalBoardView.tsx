@@ -29,12 +29,13 @@ function isCalendarPlacement(src?: string | null): boolean {
   return src === "calendar" || src === "calendar_timed";
 }
 
+/** カード色判定: DONE でない限り、is_help_request フラグまたは HELP_REQUEST レーンなら赤色(red)を維持 */
 function personalCardColor(
   lane: LaneType,
   placement: PlacementWithNote
 ): "yellow" | "green" | "grey" | "blue" | "red" | "purple" {
-  if (lane === "HELP_REQUEST") return "red";
   if (lane === "DONE") return "grey";
+  if (placement.is_help_request || lane === "HELP_REQUEST") return "red";
   if (isCalendarPlacement(placement.placement_source)) return "purple";
   if (placement.is_from_task) return "green";
   return "blue";
@@ -546,6 +547,7 @@ function LaneColumn({
               showPersonalBadge={
                 p.is_from_task === false &&
                 lane !== "HELP_REQUEST" &&
+                !p.is_help_request &&
                 !isCalendarPlacement(p.placement_source)
               }
               showCalendarBadge={isCalendarPlacement(p.placement_source)}

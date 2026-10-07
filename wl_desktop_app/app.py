@@ -116,16 +116,16 @@ except ImportError as e:
 Image = _PIL_Image
 ImageDraw = _PIL_ImageDraw
 
-from config_loader import load_config, save_config
-import notifications
-from postit_poll import start_postit_poll, fetch_summary_with_error
-import startup
-from version import __version__
-from update_checker import check_and_notify, wait_for_network
-from network_readiness import resolve_probe_url
-from audio_player import cleanup_temp_audio_files
+from core.config_loader import load_config, save_config
+from services import notifications
+from services.postit_poll import start_postit_poll, fetch_summary_with_error
+from core import startup
+from core.version import __version__
+from core.update_checker import check_and_notify, wait_for_network
+from core.network_readiness import resolve_probe_url
+from hardware.audio_player import cleanup_temp_audio_files
 
-from app_log import setup_app_log, log_info
+from core.app_log import setup_app_log, log_info
 
 setup_app_log()
 
@@ -284,7 +284,7 @@ def _start_show_request_watcher() -> None:
 
 def _make_icon_image():
     try:
-        from config_loader import get_app_base_dir
+        from core.config_loader import get_app_base_dir
 
         base = get_app_base_dir()
     except Exception:
@@ -308,7 +308,7 @@ def _make_icon_image():
 
 
 def _personal_url():
-    from config_loader import get_board_system_personal_url
+    from core.config_loader import get_board_system_personal_url
 
     url = get_board_system_personal_url()
     if url:
@@ -323,13 +323,13 @@ def _personal_url():
 
 
 def _linko_cards_url():
-    from linko_cards import build_linko_cards_url
+    from ui.linko_cards import build_linko_cards_url
 
     return build_linko_cards_url(_config)
 
 
 def open_linko_cards(*args):
-    from security import safe_webbrowser_open
+    from core.security import safe_webbrowser_open
 
     safe_webbrowser_open(_linko_cards_url(), _config)
 
@@ -344,7 +344,7 @@ def _postit_board_url():
 
 def open_tray_click_target(*args):
     action = _config.get("tray_click_action", "postit")
-    from security import safe_webbrowser_open
+    from core.security import safe_webbrowser_open
 
     if action == "personal":
         safe_webbrowser_open(_personal_url(), _config)
@@ -362,7 +362,7 @@ def open_tray_click_target(*args):
 
 
 def open_personal_mode(*args):
-    from security import safe_webbrowser_open
+    from core.security import safe_webbrowser_open
 
     safe_webbrowser_open(_personal_url(), _config)
 
@@ -408,7 +408,7 @@ def hide_miniport(icon=None, item=None):
 def _on_calendar_remind_ui(items):
     if not items:
         try:
-            from calendar_notify_client import notify_delivery_done
+            from services.calendar_notify_client import notify_delivery_done
 
             notify_delivery_done()
         except Exception:
@@ -418,7 +418,7 @@ def _on_calendar_remind_ui(items):
     def _show_one(index: int = 0) -> None:
         if index >= len(items):
             try:
-                from calendar_notify_client import notify_delivery_done
+                from services.calendar_notify_client import notify_delivery_done
 
                 notify_delivery_done()
             except Exception:
@@ -426,14 +426,15 @@ def _on_calendar_remind_ui(items):
             return
         item = items[index]
         try:
-            from calendar_notify_client import post_shown
-            from remind_notify import deliver_remind
+            from services.calendar_notify_client import (
+                post_shown,
+                calendar_remind_minutes,
+            )
+            from services.remind_notify import deliver_remind
 
             cfg = load_config()
             minutes = item.get("minutes_before")
             if minutes is None:
-                from calendar_notify_client import calendar_remind_minutes
-
                 minutes = calendar_remind_minutes(cfg)
             if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
@@ -459,7 +460,7 @@ def _on_calendar_remind_ui(items):
 def _on_task_remind_ui(items, slot, summary=""):
     def _ack(item, action: str):
         try:
-            from task_remind_client import post_ack
+            from services.task_remind_client import post_ack
 
             cfg = load_config()
             if post_ack(cfg, item, slot, action):
@@ -473,7 +474,7 @@ def _on_task_remind_ui(items, slot, summary=""):
             log_info(f"[task_remind] ack failed: {e}")
 
     try:
-        from task_remind_dialog import show_task_remind_dialog
+        from ui.task_remind_dialog import show_task_remind_dialog
 
         show_task_remind_dialog(
             _miniport_window,
@@ -486,7 +487,7 @@ def _on_task_remind_ui(items, slot, summary=""):
     except Exception as e:
         log_info(f"[task_remind] dialog failed: {e}")
         try:
-            from task_remind_client import notify_dialog_closed
+            from services.task_remind_client import notify_dialog_closed
 
             notify_dialog_closed()
         except Exception:
@@ -498,10 +499,11 @@ def _toggle_notifications(icon=None, item=None):
     _config = load_config()
     _config["notifications_enabled"] = not _config.get("notifications_enabled", True)
     save_config(_config)
+    notifications.set_notifications_enabled(_config["notifications_enabled"])
     on_off = "オン" if _config["notifications_enabled"] else "オフ"
     if not _config["notifications_enabled"]:
         try:
-            import linko_avatar
+            from ui import linko_avatar
 
             linko_avatar.dismiss_ui()
         except Exception:
@@ -519,7 +521,7 @@ def _toggle_notifications(icon=None, item=None):
 def open_settings(icon=None, item=None):
     def _open():
         try:
-            from settings_dialog import open_settings_dialog
+            from ui.settings_dialog import open_settings_dialog
 
             open_settings_dialog(master=_miniport_window)
         except Exception as e:
@@ -605,99 +607,36 @@ def _show_notification_help(*args):
 
 
 def _show_email_login_dialog() -> str | None:
+    """メールアドレス入力ダイアログを表示し、入力値を返す。"""
     try:
-        from dialog_utils import ask_string_large
+        from ui.dialog_utils import ask_string_large
 
-        email = ask_string_large(
+        return ask_string_large(
             "Wonder Linko - Board System ログイン",
             "Board System のパーソナルボードを開くには、登録済みのメールアドレスを入力してください:",
         )
-        return email.strip() if email and isinstance(email, str) else None
     except Exception:
         return None
 
 
-def _board_system_login_clicked(*args):
+def _board_system_login_clicked(*args) -> None:
+    """トレイメニュー等から Board System ログインを実行する。"""
     global _config
     _config = load_config()
-    board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
-    if not board_url:
-        notifications.show_toast(
-            "Wonder Linko",
-            "Board System の URL が設定されていません。config.json の board_system_url または環境変数 BOARD_SYSTEM_URL を設定してください。",
-            duration_sec=5,
-            force_show=True,
-        )
-        return
+
     email = _show_email_login_dialog()
-    if not email or "@" not in email:
-        if email is not None:
-            notifications.show_toast(
-                "Wonder Linko",
-                "メールアドレスを入力してください。",
-                duration_sec=3,
-                force_show=True,
-            )
+    # キャンセル（None）の場合は何もしない。空入力は警告を出す。
+    if email is None:
         return
-    try:
-        import requests
-        from security import assert_http_url
 
-        assert_http_url(
-            f"{board_url}/users/by_email", _config, purpose="users_by_email"
-        )
-        r = requests.get(
-            f"{board_url}/users/by_email",
-            params={"email": email},
-            timeout=10,
-        )
-        if r.status_code == 200 and r.json():
-            data = r.json()
-            user_id = data.get("id")
-            if user_id is not None:
-                from config_loader import save_board_system_login
+    from services.board_system_auth import login_with_email
 
-                save_board_system_login(
-                    _config,
-                    board_url=board_url,
-                    user_id=user_id,
-                    user_data=data,
-                    login_email=email,
-                )
-                notifications.show_toast(
-                    "Wonder Linko",
-                    f"ログインしました（{data.get('name', '')}）。パーソナルを開くで Board System のパーソナルボードが開きます。",
-                    duration_sec=4,
-                    force_show=True,
-                )
-                from config_loader import get_board_system_personal_url
-                from security import safe_webbrowser_open
+    success, msg, personal_url = login_with_email(email, _config)
+    notifications.show_toast("Wonder Linko", msg, duration_sec=4 if success else 5, force_show=True)
+    if success and personal_url:
+        from core.security import safe_webbrowser_open
 
-                personal_url = get_board_system_personal_url(_config)
-                if personal_url:
-                    safe_webbrowser_open(personal_url, _config)
-                return
-        if r.status_code == 404:
-            notifications.show_toast(
-                "Wonder Linko",
-                "このメールアドレスは未登録です。Board System でユーザーを登録してください。",
-                duration_sec=5,
-                force_show=True,
-            )
-        else:
-            notifications.show_toast(
-                "Wonder Linko",
-                "ログインに失敗しました。Board System の URL とネットワークを確認してください。",
-                duration_sec=5,
-                force_show=True,
-            )
-    except Exception as e:
-        notifications.show_toast(
-            "Wonder Linko",
-            "ログインに失敗しました: " + str(e)[:80],
-            duration_sec=5,
-            force_show=True,
-        )
+        safe_webbrowser_open(personal_url, _config)
 
 
 def build_menu(icon):
@@ -721,7 +660,7 @@ def run_tray():
 
 def _show_display_name_dialog(current_name: str = "") -> str | None:
     try:
-        from dialog_utils import ask_string_large
+        from ui.dialog_utils import ask_string_large
 
         prompt = "ミニポートから投稿したときに付箋に表示する名前を入力してください:"
         if current_name:
@@ -746,45 +685,27 @@ def _prompt_display_name_if_empty():
         save_config(_config)
 
 
-def _prompt_board_system_login_if_needed():
+def _prompt_board_system_login_if_needed() -> None:
+    """起動時: board_system_url が設定済みで未ログインの場合にメール入力を促す。"""
     global _config
     board_url = (_config.get("board_system_url") or "").strip().rstrip("/")
     board_id = (_config.get("board_system_personal_id") or "").strip()
     if not board_url or board_id:
         return
+
     email = _show_email_login_dialog()
     if not email or "@" not in email:
         return
-    try:
-        import requests
-        from security import assert_http_url
 
-        assert_http_url(
-            f"{board_url}/users/by_email", _config, purpose="users_by_email"
-        )
-        r = requests.get(
-            f"{board_url}/users/by_email", params={"email": email}, timeout=10
-        )
-        if r.status_code == 200 and r.json():
-            data = r.json()
-            user_id = data.get("id")
-            if user_id is not None:
-                from config_loader import save_board_system_login
+    from services.board_system_auth import login_with_email
 
-                save_board_system_login(
-                    _config,
-                    board_url=board_url,
-                    user_id=user_id,
-                    user_data=data,
-                    login_email=email,
-                )
-                notifications.show_toast(
-                    "Wonder Linko",
-                    "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。",
-                    duration_sec=4,
-                )
-    except Exception:
-        pass
+    success, msg, _ = login_with_email(email, _config)
+    if success:
+        notifications.show_toast(
+            "Wonder Linko",
+            "Board System にログインしました。パーソナルは Board System のパーソナルボードを開きます。",
+            duration_sec=4,
+        )
 
 
 def _wait_for_process_exit(pid: int):
@@ -889,7 +810,7 @@ def main():
 
     try:
         import customtkinter as ctk
-        from mini_port import MiniPortWindow
+        from ui.mini_port import MiniPortWindow
 
         ctk.set_appearance_mode("system")
 
@@ -900,7 +821,7 @@ def main():
             _toggle_notifications()
 
         def _miniport_get_notifications_enabled():
-            return load_config().get("notifications_enabled", True)
+            return notifications.are_enabled()
 
         _miniport_window = MiniPortWindow(
             on_hide=_miniport_on_hide,
@@ -931,7 +852,7 @@ def main():
     _start_show_request_watcher()
 
     try:
-        from task_remind_client import start_task_remind_poll
+        from services.task_remind_client import start_task_remind_poll
 
         start_task_remind_poll(
             lambda: _config,
@@ -943,7 +864,7 @@ def main():
         log_info(f"[task_remind] 起動スキップ: {e}")
 
     try:
-        from calendar_notify_client import start_calendar_notify_poll
+        from services.calendar_notify_client import start_calendar_notify_poll
 
         start_calendar_notify_poll(_on_calendar_remind_ui, tk_master=_miniport_window)
         log_info("[calendar_notify] ポーリング開始")
@@ -952,7 +873,7 @@ def main():
 
     log_info("[visitor_notify] start_visitor_notify を呼ぶ準備中...")
     try:
-        from visitor_notify_client import start_visitor_notify
+        from services.visitor_notify_client import start_visitor_notify
 
         log_info("[visitor_notify] visitor_notify_client の import 成功")
         result = start_visitor_notify()
