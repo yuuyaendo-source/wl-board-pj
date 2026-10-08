@@ -10497,11 +10497,11 @@ export default function Nav() {
 <file path="frontend/app/components/NoteCard.tsx">
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import LinkifiedText from "./LinkifiedText";
 import DueDateBadge from "./DueDateBadge";
-import { getDueDateBorderClass } from "@shared/utils/dueDate";
+import { getDueDateBorderClass, formatWithDay } from "@shared/utils/dueDate";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
@@ -10541,6 +10541,7 @@ function DueDatePicker({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(currentDueDate ?? "");
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -10556,22 +10557,49 @@ function DueDatePicker({
     onClose();
   };
 
+  const handleOpenPicker = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (dateInputRef.current) {
+      if (typeof dateInputRef.current.showPicker === "function") {
+        try {
+          dateInputRef.current.showPicker();
+        } catch {
+          dateInputRef.current.focus();
+        }
+      } else {
+        dateInputRef.current.click();
+      }
+    }
+  };
+
   return (
     <div
       className="mt-1 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg z-10"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800"
-      />
+      <div className="relative flex items-center">
+        <button
+          type="button"
+          onClick={handleOpenPicker}
+          className="flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+        >
+          <span>{value ? formatWithDay(value) : "未設定"}</span>
+          <span>📅</span>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="sr-only"
+          tabIndex={-1}
+        />
+      </div>
       <button
         type="button"
         onClick={handleSave}
-        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700"
+        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer"
       >
         保存
       </button>
@@ -10579,7 +10607,7 @@ function DueDatePicker({
         <button
           type="button"
           onClick={handleClear}
-          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300"
+          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300 cursor-pointer"
         >
           クリア
         </button>
@@ -10590,7 +10618,7 @@ function DueDatePicker({
           e.stopPropagation();
           onClose();
         }}
-        className="text-xs text-zinc-400 hover:text-zinc-600 px-1"
+        className="text-xs text-zinc-400 hover:text-zinc-600 px-1 cursor-pointer"
       >
         ✕
       </button>
@@ -10692,7 +10720,7 @@ export default function NoteCard({
             e.stopPropagation();
             setShowDatePicker((v) => !v);
           }}
-          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium"
+          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium cursor-pointer"
         >
           📅 期限を設定
         </button>
@@ -10750,7 +10778,7 @@ export default function NoteCard({
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300"
+            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300 cursor-pointer"
           >
             追記
           </button>
@@ -10805,7 +10833,8 @@ export default function NoteCard({
 <file path="frontend/app/components/OneLineInput.tsx">
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { formatWithDay } from "@shared/utils/dueDate";
 
 interface OneLineInputProps {
   placeholder?: string;
@@ -10816,6 +10845,7 @@ interface OneLineInputProps {
 export default function OneLineInput({ placeholder = "入力して Enter", onSubmit, disabled }: OneLineInputProps) {
   const [value, setValue] = useState("");
   const [dueDate, setDueDate] = useState<string>("");
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -10828,6 +10858,21 @@ export default function OneLineInput({ placeholder = "入力して Enter", onSub
     },
     [value, dueDate, disabled, onSubmit]
   );
+
+  const handleOpenPicker = () => {
+    if (disabled) return;
+    if (dateInputRef.current) {
+      if (typeof dateInputRef.current.showPicker === "function") {
+        try {
+          dateInputRef.current.showPicker();
+        } catch {
+          dateInputRef.current.focus();
+        }
+      } else {
+        dateInputRef.current.click();
+      }
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="flex gap-2" autoComplete="off">
@@ -10843,18 +10888,45 @@ export default function OneLineInput({ placeholder = "入力して Enter", onSub
         {...{ "data-lpignore": true }}
         className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
       />
-      <input
-        type="date"
-        value={dueDate}
-        onChange={(e) => setDueDate(e.target.value)}
-        disabled={disabled}
-        className="rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-600 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-        title="期限を設定"
-      />
+
+      <div className="relative flex items-center">
+        <button
+          type="button"
+          onClick={handleOpenPicker}
+          disabled={disabled}
+          className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 cursor-pointer"
+          title="期限を設定"
+        >
+          <span>{dueDate ? formatWithDay(dueDate) : "期限を設定"}</span>
+          <span>📅</span>
+        </button>
+
+        {dueDate && (
+          <button
+            type="button"
+            onClick={() => setDueDate("")}
+            className="ml-1 text-xs text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
+            title="期限をクリア"
+          >
+            ✕
+          </button>
+        )}
+
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          disabled={disabled}
+          className="sr-only"
+          tabIndex={-1}
+        />
+      </div>
+
       <button
         type="submit"
         disabled={disabled || !value.trim()}
-        className="rounded-lg bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        className="rounded-lg bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600 disabled:opacity-50 cursor-pointer"
       >
         投稿
       </button>

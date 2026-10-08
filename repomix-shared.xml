@@ -113,6 +113,20 @@ export function getDueDateBorderClass(dueDateStr?: string | null): string {
     if (daysLeft === 0) return "border-2 border-orange-500";
     return "";
 }
+
+/**
+ * 期限日を "YYYY/MM/DD (曜日)" の形式にフォーマットする
+ */
+export function formatWithDay(dueDateStr?: string | null): string {
+    if (!dueDateStr) return "";
+    const d = new Date(dueDateStr);
+    if (isNaN(d.getTime())) return "";
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}/${m}/${day} (${days[d.getDay()]})`;
+}
 </file>
 
 <file path="utils/linkify.ts">

@@ -18,6 +18,18 @@ function calcDaysLeft(dueDateStr) {
     return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/** 曜日付きフォーマット関数 */
+function formatWithDay(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "";
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}/${m}/${day} (${days[d.getDay()]})`;
+}
+
 export default function StickyNote({
     note,
     onUpdate,
@@ -39,6 +51,7 @@ export default function StickyNote({
     const [tempDueDate, setTempDueDate] = useState(dueDateVal);
 
     const noteRef = useRef(null);
+    const dateInputRef = useRef(null);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
     const dragOffset = useRef({ x: 0, y: 0 });
@@ -232,9 +245,24 @@ export default function StickyNote({
         setAppendText("");
     };
 
+    const handleOpenPicker = (e) => {
+        e.stopPropagation();
+        if (dateInputRef.current) {
+            if (typeof dateInputRef.current.showPicker === "function") {
+                try {
+                    dateInputRef.current.showPicker();
+                } catch {
+                    dateInputRef.current.focus();
+                }
+            } else {
+                dateInputRef.current.click();
+            }
+        }
+    };
+
     let badgeClass = styles.badgeDefault;
     let cardHighlightClass = "";
-    let badgeText = `📅 期限: ${dueDateVal}`;
+    let badgeText = `📅 期限: ${formatWithDay(dueDateVal)}`;
 
     if (daysLeft !== null) {
         if (daysLeft < 0) {
@@ -251,6 +279,8 @@ export default function StickyNote({
         } else if (daysLeft <= 10) {
             badgeClass = styles.badgeWarning;
             badgeText = `📅 期限まであと${daysLeft}日`;
+        } else {
+            badgeText = `📅 期限: ${formatWithDay(dueDateVal)}`;
         }
     }
 
@@ -345,13 +375,40 @@ export default function StickyNote({
                     onMouseDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                 >
-                    <input
-                        type="date"
-                        value={tempDueDate}
-                        onChange={(e) => setTempDueDate(e.target.value)}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        className={styles.dateInput}
-                    />
+                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                        <button
+                            type="button"
+                            onClick={handleOpenPicker}
+                            style={{
+                                fontSize: "12px",
+                                padding: "4px 8px",
+                                border: "1px solid #ccc",
+                                borderRadius: "4px",
+                                background: "#fff",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px"
+                            }}
+                        >
+                            <span>{tempDueDate ? formatWithDay(tempDueDate) : "未設定"}</span>
+                            <span>📅</span>
+                        </button>
+                        <input
+                            ref={dateInputRef}
+                            type="date"
+                            value={tempDueDate}
+                            onChange={(e) => setTempDueDate(e.target.value)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                                position: "absolute",
+                                width: 0,
+                                height: 0,
+                                opacity: 0,
+                                pointerEvents: "none"
+                            }}
+                        />
+                    </div>
                     <button
                         type="button"
                         onClick={() => saveDueDate(tempDueDate)}

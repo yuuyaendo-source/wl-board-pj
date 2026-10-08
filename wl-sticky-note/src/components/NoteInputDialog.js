@@ -1,5 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import styles from "./NoteInputDialog.module.css";
+
+/** 曜日付きフォーマット関数 */
+function formatWithDay(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "";
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}/${m}/${day} (${days[d.getDay()]})`;
+}
 
 export default function NoteInputDialog({
     onSubmit,
@@ -9,6 +21,7 @@ export default function NoteInputDialog({
 }) {
     const [text, setText] = useState(initialText);
     const [dueDate, setDueDate] = useState(initialDueDate);
+    const dateInputRef = useRef(null);
 
     useEffect(() => {
         setText(initialText || "");
@@ -19,6 +32,20 @@ export default function NoteInputDialog({
         e.preventDefault();
         if (!text.trim()) return;
         onSubmit(text, dueDate || null);
+    };
+
+    const handleOpenPicker = () => {
+        if (dateInputRef.current) {
+            if (typeof dateInputRef.current.showPicker === "function") {
+                try {
+                    dateInputRef.current.showPicker();
+                } catch {
+                    dateInputRef.current.focus();
+                }
+            } else {
+                dateInputRef.current.click();
+            }
+        }
     };
 
     const isEditing = Boolean(initialText);
@@ -37,18 +64,39 @@ export default function NoteInputDialog({
                     />
                     <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
                         <label style={{ fontSize: "14px", color: "#555", fontWeight: "bold" }}>📅 期限:</label>
-                        <input
-                            type="date"
-                            value={dueDate}
-                            onChange={(e) => setDueDate(e.target.value)}
-                            style={{
-                                padding: "6px 10px",
-                                borderRadius: "6px",
-                                border: "1px solid #ccc",
-                                fontSize: "14px",
-                                cursor: "pointer",
-                            }}
-                        />
+                        <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                            <button
+                                type="button"
+                                onClick={handleOpenPicker}
+                                style={{
+                                    padding: "6px 10px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #ccc",
+                                    background: "#fff",
+                                    fontSize: "14px",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "6px"
+                                }}
+                            >
+                                <span>{dueDate ? formatWithDay(dueDate) : "期限を設定"}</span>
+                                <span>📅</span>
+                            </button>
+                            <input
+                                ref={dateInputRef}
+                                type="date"
+                                value={dueDate}
+                                onChange={(e) => setDueDate(e.target.value)}
+                                style={{
+                                    position: "absolute",
+                                    width: 0,
+                                    height: 0,
+                                    opacity: 0,
+                                    pointerEvents: "none"
+                                }}
+                            />
+                        </div>
                         {dueDate && (
                             <button
                                 type="button"

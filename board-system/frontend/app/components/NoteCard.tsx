@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import LinkifiedText from "./LinkifiedText";
 import DueDateBadge from "./DueDateBadge";
-import { getDueDateBorderClass } from "@shared/utils/dueDate";
+import { getDueDateBorderClass, formatWithDay } from "@shared/utils/dueDate";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
@@ -44,6 +44,7 @@ function DueDatePicker({
   onClose: () => void;
 }) {
   const [value, setValue] = useState(currentDueDate ?? "");
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -59,22 +60,49 @@ function DueDatePicker({
     onClose();
   };
 
+  const handleOpenPicker = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (dateInputRef.current) {
+      if (typeof dateInputRef.current.showPicker === "function") {
+        try {
+          dateInputRef.current.showPicker();
+        } catch {
+          dateInputRef.current.focus();
+        }
+      } else {
+        dateInputRef.current.click();
+      }
+    }
+  };
+
   return (
     <div
       className="mt-1 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg z-10"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800"
-      />
+      <div className="relative flex items-center">
+        <button
+          type="button"
+          onClick={handleOpenPicker}
+          className="flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+        >
+          <span>{value ? formatWithDay(value) : "未設定"}</span>
+          <span>📅</span>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="sr-only"
+          tabIndex={-1}
+        />
+      </div>
       <button
         type="button"
         onClick={handleSave}
-        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700"
+        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer"
       >
         保存
       </button>
@@ -82,7 +110,7 @@ function DueDatePicker({
         <button
           type="button"
           onClick={handleClear}
-          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300"
+          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300 cursor-pointer"
         >
           クリア
         </button>
@@ -93,7 +121,7 @@ function DueDatePicker({
           e.stopPropagation();
           onClose();
         }}
-        className="text-xs text-zinc-400 hover:text-zinc-600 px-1"
+        className="text-xs text-zinc-400 hover:text-zinc-600 px-1 cursor-pointer"
       >
         ✕
       </button>
@@ -195,7 +223,7 @@ export default function NoteCard({
             e.stopPropagation();
             setShowDatePicker((v) => !v);
           }}
-          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium"
+          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium cursor-pointer"
         >
           📅 期限を設定
         </button>
@@ -253,7 +281,7 @@ export default function NoteCard({
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300"
+            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300 cursor-pointer"
           >
             追記
           </button>
