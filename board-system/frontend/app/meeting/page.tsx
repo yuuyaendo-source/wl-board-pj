@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 import type { PlacementWithNote } from "@/lib/types";
 import ApiErrorBanner from "../components/ApiErrorBanner";
-import DueDateBadge, { getDueDateBorderClass } from "../components/DueDateBadge";
+import DueDateBadge from "../components/DueDateBadge";
+import { getDueDateBorderClass } from "@shared/utils/dueDate";
 import LinkifiedText from "../components/LinkifiedText";
 
 export default function MeetingBoardPage() {

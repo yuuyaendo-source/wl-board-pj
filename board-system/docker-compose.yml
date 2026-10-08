@@ -68,7 +68,8 @@ services:
   # --- Board System Frontend (Next.js) ---
   frontend:
     build:
-      context: ./frontend
+      context: ..
+      dockerfile: board-system/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-""}

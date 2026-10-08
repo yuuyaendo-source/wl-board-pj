@@ -124,11 +124,7 @@ def _get_defaults():
         "user_id": _default_user_id(),
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
         "face_registry_person_id": "",  # 互換フォールバック（カード URL は board_system_email を正）
-        "personal_path": "",  # Board System 利用時は未使用。レガシー AI ボード用パス（例: /asakawa）。空でよい。
         "open_personal_on_start": False,
-        # 旧 tray menu「アバターを表示」「音声ON」が読んでいた設定。v3.1.7 で UI 削除済 (dead)。
-        # 既存ユーザ config.json にあれば残るが、コードは参照しない。
-        "toast_duration_sec": 8,
         "postit_poll_interval_sec": 60,  # 付箋ボードの新付箋チェック間隔（0で無効）
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
         "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
@@ -138,7 +134,6 @@ def _get_defaults():
         "mini_port_taskboard_url": "https://wlboardsys.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
         "update_check_url": "https://wlboardsys.internal.wonder-link.com/api/bs/desktop-app/latest.json",  # 更新チェック用 JSON の URL
         "update_network_check_url": "",  # 到達確認 URL（空なら update_check_url → board /health 等を自動選択）。ping は使わない
-        "update_network_check_host": "172.16.1.150",  # 後方互換（非推奨）。到達確認は update_network_check_url / update_check_url の HTTP を使用
         "update_network_check_interval_sec": 5,
         "update_network_check_max_wait_sec": 180,
         "network_unreachable_backoff_sec": 30,  # CATO 未接続時、ポーリングの再試行間隔（秒）
@@ -277,7 +272,6 @@ def load_config():
     return cfg
 
 
-
 # save_config でキー単位に転送するスカラー系のキー一覧。
 # 新しい設定キーを追加する際は、ここに追加するだけでよい。
 # dict/list 型の特殊マージが必要なキー（features, security, task_remind_slots_shown 等）は
@@ -287,7 +281,6 @@ _PASSTHROUGH_KEYS: tuple[str, ...] = (
     "postit_board_url",
     "user_id",
     "display_name",
-    "personal_path",
     "postit_board_id",
     "postit_poll_interval_sec",
     "tray_click_action",
@@ -298,7 +291,6 @@ _PASSTHROUGH_KEYS: tuple[str, ...] = (
     "mini_port_taskboard_url",
     "update_check_url",
     "update_network_check_url",
-    "update_network_check_host",
     "update_network_check_interval_sec",
     "update_network_check_max_wait_sec",
     "network_unreachable_backoff_sec",
@@ -360,7 +352,6 @@ def save_config(cfg: dict) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
-
 
 
 def is_feature_enabled(name: str, cfg=None) -> bool:

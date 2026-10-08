@@ -36,7 +36,6 @@ export default function BoardPage() {
     const [username, setUsername] = useState("");
     const [showUserDialog, setShowUserDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
-    const [participants, setParticipants] = useState([]);
 
     const [selectedNoteIds, setSelectedNoteIds] = useState([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -157,10 +156,6 @@ export default function BoardPage() {
             setSelectedNoteIds([]);
         });
 
-        socket.on("users-list", (usersList) => {
-            setParticipants(usersList);
-        });
-
         socket.on("user-joined", ({ username: newUsername }) => {
             console.log(`${newUsername} joined the board`);
         });
@@ -182,7 +177,6 @@ export default function BoardPage() {
             socket.off("note-deleted");
             socket.off("line-added");
             socket.off("board-cleared");
-            socket.off("users-list");
             socket.off("user-joined");
             socket.off("user-left");
             socket.off("disconnect");

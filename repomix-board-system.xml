@@ -152,7 +152,6 @@ frontend/
       AddUserMenu.tsx
       AdminAuthModal.tsx
       ApiErrorBanner.tsx
-      ApiStatus.tsx
       DueDateBadge.tsx
       LinkifiedText.tsx
       Nav.tsx
@@ -178,12 +177,6 @@ frontend/
     legacyPostit.ts
     personalMembers.ts
     types.ts
-  public/
-    file.svg
-    globe.svg
-    next.svg
-    vercel.svg
-    window.svg
   .dockerignore
   .gitignore
   cato-ca.crt
@@ -197,7 +190,6 @@ frontend/
   tsconfig.json
 nginx/
   nginx.conf
-  nginx.conf.draft
   nginx.conf.production-server
   nginx.conf.production-server-no-staging
   staging.conf
@@ -10178,69 +10170,12 @@ export default function ApiErrorBanner({ error, onRetry }: ApiErrorBannerProps) 
 }
 </file>
 
-<file path="frontend/app/components/ApiStatus.tsx">
-"use client";
-
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-
-export default function ApiStatus() {
-  const [ok, setOk] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    api
-      .health()
-      .then(() => setOk(true))
-      .catch(() => setOk(false));
-  }, []);
-
-  if (ok === null) return <span className="text-sm text-zinc-500">API 確認中...</span>;
-  if (ok)
-    return <span className="text-sm text-green-600 dark:text-green-400">API 接続済み</span>;
-  return (
-    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-      <p className="font-medium">API に接続できません</p>
-      <p className="mt-1 text-xs">バックエンドを起動してから各ボードを開いてください。</p>
-      <code className="mt-1 block text-xs">
-        cd board-system/backend → .venv\Scripts\Activate.ps1 → uvicorn app.main:app --port 8000
-      </code>
-    </div>
-  );
-}
-</file>
-
 <file path="frontend/app/components/DueDateBadge.tsx">
 "use client";
 
 import React from "react";
-
-export function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
-    if (!dueDateStr) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const [y, m, d] = dueDateStr.split("-").map(Number);
-    if (!y || !m || !d) return null;
-    const due = new Date(y, m - 1, d);
-    due.setHours(0, 0, 0, 0);
-    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-export function getDueDateBorderClass(dueDateStr: string | null | undefined): string {
-    const days = calcDaysLeft(dueDateStr);
-    if (days === null) return "";
-
-    // 背景色(bg-)の指定を外し、外枠(border/ring)の強調のみに留めることで付箋の元の色を維持します
-    if (days < 0) {
-        return "ring-2 ring-red-500 border-red-500";
-    }
-    if (days === 0) {
-        return "ring-2 ring-amber-500 border-amber-500";
-    }
-    if (days > 0 && days <= 3) {
-        return "border-2 border-orange-400";
-    }
-    return "";
-}
+// 共通ユーティリティからインポート
+import { getDueDateStatusText } from "@shared/utils/dueDate";
 
 interface DueDateBadgeProps {
     dueDate: string | null | undefined;
@@ -10250,27 +10185,22 @@ interface DueDateBadgeProps {
 export default function DueDateBadge({ dueDate, className = "" }: DueDateBadgeProps) {
     if (!dueDate) return null;
 
-    const days = calcDaysLeft(dueDate);
-    if (days === null) return null;
+    // utils/dueDate.ts の共通判定関数を利用
+    const statusInfo = getDueDateStatusText(dueDate);
+    if (statusInfo.daysLeft === null) return null;
 
-    let label = "";
     let badgeCls = "";
 
-    // Taskボード・付箋ボードと完全に同等の文言と色使い（白抜き文字等）に統一
-    if (days < 0) {
-        label = `⚠️ 期限切れ（${Math.abs(days)}日経過）`;
+    // 状態に応じたスタイルを適用
+    if (statusInfo.status === "expired") {
         badgeCls = "bg-red-600 text-white font-extrabold text-sm py-1 px-3 shadow-md animate-pulse";
-    } else if (days === 0) {
-        label = "🔥 本期日が期限！";
+    } else if (statusInfo.status === "today") {
         badgeCls = "bg-amber-500 text-white font-extrabold text-sm py-1 px-3 shadow-md";
-    } else if (days <= 3) {
-        label = `⏰ 期限まであと${days}日`;
+    } else if (statusInfo.daysLeft !== null && statusInfo.daysLeft <= 3) {
         badgeCls = "bg-orange-500 text-white font-bold text-xs py-1 px-2.5 shadow-sm";
-    } else if (days <= 10) {
-        label = `📅 期限まであと${days}日`;
+    } else if (statusInfo.daysLeft !== null && statusInfo.daysLeft <= 10) {
         badgeCls = "bg-yellow-400 text-zinc-900 font-bold text-xs py-1 px-2.5 shadow-sm";
     } else {
-        label = `📅 期限: ${dueDate}`;
         badgeCls = "bg-blue-100 text-blue-800 font-semibold text-xs py-1 px-2.5";
     }
 
@@ -10279,7 +10209,7 @@ export default function DueDateBadge({ dueDate, className = "" }: DueDateBadgePr
             className={`inline-flex items-center gap-1 rounded-lg border leading-none ${badgeCls} ${className}`}
             title={`期限日: ${dueDate}`}
         >
-            {label}
+            {statusInfo.label}
         </span>
     );
 }
@@ -10289,52 +10219,11 @@ export default function DueDateBadge({ dueDate, className = "" }: DueDateBadgePr
 "use client";
 
 import type { ReactNode } from "react";
-
-const URL_REGEX = /(https?:\/\/[^\s<>\[\]()]+)/gi;
-const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi;
-const URL_DISPLAY_MAX = 40;
-
-function shortenUrl(url: string): string {
-  return url.length <= URL_DISPLAY_MAX ? url : url.slice(0, URL_DISPLAY_MAX - 1) + "…";
-}
-
-function createLink(url: string, label: string, key: string): ReactNode {
-  return (
-    <a
-      key={key}
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={url}
-      className="text-blue-600 underline hover:text-blue-800"
-      onClick={(event) => event.stopPropagation()}
-    >
-      {label}
-    </a>
-  );
-}
-
-function linkifyPlainText(text: string, keyPrefix: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let keyIndex = 0;
-  const regex = new RegExp(URL_REGEX.source, "gi");
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(<span key={`${keyPrefix}-text-${keyIndex++}`}>{text.slice(lastIndex, match.index)}</span>);
-    }
-    parts.push(createLink(match[0], shortenUrl(match[0]), `${keyPrefix}-link-${keyIndex++}`));
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(<span key={`${keyPrefix}-text-${keyIndex++}`}>{text.slice(lastIndex)}</span>);
-  }
-  return parts.length ? parts : [text];
-}
+// 共通ユーティリティからインポート
+import { parseTextWithLinks } from "@shared/utils/linkify";
 
 /**
- * テキスト中の URL をリンク化して表示する。長い URL は省略表示（title で全文）。
+ * テキスト中の URL や Markdown リンクを <a> タグ化して表示する。
  */
 export default function LinkifiedText({
   text,
@@ -10344,24 +10233,30 @@ export default function LinkifiedText({
   className?: string;
 }) {
   if (text == null || text === "") return null;
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let keyIndex = 0;
-  const regex = new RegExp(MARKDOWN_LINK_REGEX.source, "gi");
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(...linkifyPlainText(text.slice(lastIndex, match.index), `before-${keyIndex++}`));
-    }
-    parts.push(createLink(match[2], match[1], `markdown-link-${keyIndex++}`));
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(...linkifyPlainText(text.slice(lastIndex), `after-${keyIndex++}`));
-  }
+
+  // utils/linkify.ts でテキストとリンクのパーツ配列へ分解
+  const parts = parseTextWithLinks(text);
+
   return (
     <span className={className}>
-      {parts.length ? parts : linkifyPlainText(text, "all")}
+      {parts.map((part, index) => {
+        if (part.type === "link" && part.url) {
+          return (
+            <a
+              key={index}
+              href={part.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={part.url}
+              className="text-blue-600 underline hover:text-blue-800"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {part.content}
+            </a>
+          );
+        }
+        return <span key={index}>{part.content}</span>;
+      })}
     </span>
   );
 }
@@ -10605,6 +10500,8 @@ export default function Nav() {
 import { useState } from "react";
 import { motion } from "framer-motion";
 import LinkifiedText from "./LinkifiedText";
+import DueDateBadge from "./DueDateBadge";
+import { getDueDateBorderClass } from "@shared/utils/dueDate";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
@@ -10630,73 +10527,6 @@ const BG_COLOR = {
   red: "bg-red-100 border-red-400",
   purple: "bg-violet-100 border-violet-300",
 } as const;
-
-/** 残り日数を計算（due_date: YYYY-MM-DD 文字列 → 整数） */
-function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
-  if (!dueDateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [y, m, d] = dueDateStr.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const due = new Date(y, m - 1, d);
-  due.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-/** 期限に応じたカード外枠の強調スタイル */
-function getDueDateBorderClass(dueDateStr: string | null | undefined): string {
-  const days = calcDaysLeft(dueDateStr);
-  if (days === null) return "";
-  if (days < 0) return "ring-2 ring-red-500 border-red-500"; // 期限切れ: 鮮やかな赤枠
-  if (days === 0) return "ring-2 ring-amber-500 border-amber-500"; // 今日: 鮮やかなオレンジ枠
-  if (days <= 3) return "border-orange-400 border-2"; // 間近: オレンジ太枠
-  return "";
-}
-
-/** 視認性を大幅に拡大した期限バッジ Component */
-function DueDateBadge({
-  dueDate,
-  onClick,
-}: {
-  dueDate: string | null | undefined;
-  onClick?: () => void;
-}) {
-  const days = calcDaysLeft(dueDate);
-  if (days === null) return null;
-
-  let label = "";
-  let badgeCls = "";
-
-  if (days < 0) {
-    label = `⚠️ 期限切れ（${Math.abs(days)}日経過）`;
-    badgeCls = "bg-red-600 text-white font-extrabold text-sm py-1 px-3 shadow-md animate-pulse";
-  } else if (days === 0) {
-    label = "🔥 本期日が期限！";
-    badgeCls = "bg-amber-500 text-white font-extrabold text-sm py-1 px-3 shadow-md";
-  } else if (days <= 3) {
-    label = `⏰ 期限まであと${days}日`;
-    badgeCls = "bg-orange-500 text-white font-bold text-xs py-1 px-2.5 shadow-sm";
-  } else if (days <= 10) {
-    label = `📅 期限まであと${days}日`;
-    badgeCls = "bg-yellow-400 text-zinc-900 font-bold text-xs py-1 px-2.5 shadow-sm";
-  } else {
-    label = `📅 期限: ${dueDate}`;
-    badgeCls = "bg-blue-100 text-blue-800 font-semibold text-xs py-1 px-2.5";
-  }
-
-  return (
-    <span
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border leading-none transition-all hover:opacity-80 hover:scale-105 ${badgeCls}`}
-      title={`クリックして期限を変更 (期限: ${dueDate})`}
-    >
-      {label}
-    </span>
-  );
-}
 
 /** インライン日付入力ピッカー */
 function DueDatePicker({
@@ -10843,11 +10673,14 @@ export default function NoteCard({
 
       {/* 期限バッジ */}
       {placement.due_date && (
-        <div className="mt-0.5">
-          <DueDateBadge
-            dueDate={placement.due_date}
-            onClick={() => onDueDateChange && setShowDatePicker((v) => !v)}
-          />
+        <div
+          className="mt-0.5 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDueDateChange && setShowDatePicker((v) => !v);
+          }}
+        >
+          <DueDateBadge dueDate={placement.due_date} />
         </div>
       )}
 
@@ -10883,8 +10716,8 @@ export default function NoteCard({
             <span
               key={u.id}
               className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-xs transition-colors ${u.is_done
-                  ? "bg-zinc-400 text-white line-through opacity-80"
-                  : "bg-emerald-500 text-white"
+                ? "bg-zinc-400 text-white line-through opacity-80"
+                : "bg-emerald-500 text-white"
                 }`}
               title={`${u.name}${u.is_done ? " (完了済み)" : " (対応中)"}`}
             >
@@ -10931,7 +10764,6 @@ export default function NoteCard({
 
   if (draggable) {
     return (
-      /* ドラッグ・ホバー移動時の拡大跳ね動作を防ぐため whileHover={{ scale: 1.02 }} を削除 */
       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
         <div
           className={className}
@@ -11828,7 +11660,8 @@ import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 import type { PlacementWithNote } from "@/lib/types";
 import ApiErrorBanner from "../components/ApiErrorBanner";
-import DueDateBadge, { getDueDateBorderClass } from "../components/DueDateBadge";
+import DueDateBadge from "../components/DueDateBadge";
+import { getDueDateBorderClass } from "@shared/utils/dueDate";
 import LinkifiedText from "../components/LinkifiedText";
 
 export default function MeetingBoardPage() {
@@ -12952,26 +12785,6 @@ export interface PersonalNoteCreatePayload {
 }
 </file>
 
-<file path="frontend/public/file.svg">
-<svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
-</file>
-
-<file path="frontend/public/globe.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.27 14.1a6.5 6.5 0 0 0 3.67-3.45q-1.24.21-2.7.34-.31 1.83-.97 3.1M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.48-1.52a7 7 0 0 1-.96 0H7.5a4 4 0 0 1-.84-1.32q-.38-.89-.63-2.08a40 40 0 0 0 3.92 0q-.25 1.2-.63 2.08a4 4 0 0 1-.84 1.31zm2.94-4.76q1.66-.15 2.95-.43a7 7 0 0 0 0-2.58q-1.3-.27-2.95-.43a18 18 0 0 1 0 3.44m-1.27-3.54a17 17 0 0 1 0 3.64 39 39 0 0 1-4.3 0 17 17 0 0 1 0-3.64 39 39 0 0 1 4.3 0m1.1-1.17q1.45.13 2.69.34a6.5 6.5 0 0 0-3.67-3.44q.65 1.26.98 3.1M8.48 1.5l.01.02q.41.37.84 1.31.38.89.63 2.08a40 40 0 0 0-3.92 0q.25-1.2.63-2.08a4 4 0 0 1 .85-1.32 7 7 0 0 1 .96 0m-2.75.4a6.5 6.5 0 0 0-3.67 3.44 29 29 0 0 1 2.7-.34q.31-1.83.97-3.1M4.58 6.28q-1.66.16-2.95.43a7 7 0 0 0 0 2.58q1.3.27 2.95.43a18 18 0 0 1 0-3.44m.17 4.71q-1.45-.12-2.69-.34a6.5 6.5 0 0 0 3.67 3.44q-.65-1.27-.98-3.1" fill="#666"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
-</file>
-
-<file path="frontend/public/next.svg">
-<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 394 80"><path fill="#000" d="M262 0h68.5v12.7h-27.2v66.6h-13.6V12.7H262V0ZM149 0v12.7H94v20.4h44.3v12.6H94v21h55v12.6H80.5V0h68.7zm34.3 0h-17.8l63.8 79.4h17.9l-32-39.7 32-39.6h-17.9l-23 28.6-23-28.6zm18.3 56.7-9-11-27.1 33.7h17.8l18.3-22.7z"/><path fill="#000" d="M81 79.3 17 0H0v79.3h13.6V17l50.2 62.3H81Zm252.6-.4c-1 0-1.8-.4-2.5-1s-1.1-1.6-1.1-2.6.3-1.8 1-2.5 1.6-1 2.6-1 1.8.3 2.5 1a3.4 3.4 0 0 1 .6 4.3 3.7 3.7 0 0 1-3 1.8zm23.2-33.5h6v23.3c0 2.1-.4 4-1.3 5.5a9.1 9.1 0 0 1-3.8 3.5c-1.6.8-3.5 1.3-5.7 1.3-2 0-3.7-.4-5.3-1s-2.8-1.8-3.7-3.2c-.9-1.3-1.4-3-1.4-5h6c.1.8.3 1.6.7 2.2s1 1.2 1.6 1.5c.7.4 1.5.5 2.4.5 1 0 1.8-.2 2.4-.6a4 4 0 0 0 1.6-1.8c.3-.8.5-1.8.5-3V45.5zm30.9 9.1a4.4 4.4 0 0 0-2-3.3 7.5 7.5 0 0 0-4.3-1.1c-1.3 0-2.4.2-3.3.5-.9.4-1.6 1-2 1.6a3.5 3.5 0 0 0-.3 4c.3.5.7.9 1.3 1.2l1.8 1 2 .5 3.2.8c1.3.3 2.5.7 3.7 1.2a13 13 0 0 1 3.2 1.8 8.1 8.1 0 0 1 3 6.5c0 2-.5 3.7-1.5 5.1a10 10 0 0 1-4.4 3.5c-1.8.8-4.1 1.2-6.8 1.2-2.6 0-4.9-.4-6.8-1.2-2-.8-3.4-2-4.5-3.5a10 10 0 0 1-1.7-5.6h6a5 5 0 0 0 3.5 4.6c1 .4 2.2.6 3.4.6 1.3 0 2.5-.2 3.5-.6 1-.4 1.8-1 2.4-1.7a4 4 0 0 0 .8-2.4c0-.9-.2-1.6-.7-2.2a11 11 0 0 0-2.1-1.4l-3.2-1-3.8-1c-2.8-.7-5-1.7-6.6-3.2a7.2 7.2 0 0 1-2.4-5.7 8 8 0 0 1 1.7-5 10 10 0 0 1 4.3-3.5c2-.8 4-1.2 6.4-1.2 2.3 0 4.4.4 6.2 1.2 1.8.8 3.2 2 4.3 3.4 1 1.4 1.5 3 1.5 5h-5.8z"/></svg>
-</file>
-
-<file path="frontend/public/vercel.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1155 1000"><path d="m577.3 0 577.4 1000H0z" fill="#fff"/></svg>
-</file>
-
-<file path="frontend/public/window.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
-</file>
-
 <file path="frontend/.dockerignore">
 node_modules
 .next
@@ -13076,17 +12889,18 @@ ne2dCLmrR2CG5TkeDSDeJvuyWWSLY1P6oEOb
 # ベースイメージ: Node.js 20 軽量版
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/board-system/frontend
 
 # 依存関係ファイルだけ先にコピー（キャッシュ効率化）
-COPY package.json package-lock.json* ./
+COPY board-system/frontend/package.json board-system/frontend/package-lock.json* ./
 
 # インストール実行
 RUN npm install
 
-
-# ソースコードをコピー
-COPY . .
+# 共通 shared フォルダをプロジェクト内外の両方にコピー
+COPY shared /app/shared
+COPY shared /app/board-system/frontend/shared
+COPY board-system/frontend ./
 
 # CATO Networks SSL対応: 証明書があれば信頼ストアに追加（ローカルでは省略可）
 RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi
@@ -13302,7 +13116,11 @@ Taskボード、Personalボード、Meetingボードで共通の期限判定・�
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -13320,7 +13138,13 @@ Taskボード、Personalボード、Meetingボードで共通の期限判定・�
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ],
+      "@shared/*": [
+        "./shared/*",
+        "../../shared/*"
+      ]
     }
   },
   "include": [
@@ -13331,7 +13155,9 @@ Taskボード、Personalボード、Meetingボードで共通の期限判定・�
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }
 </file>
 
@@ -13455,111 +13281,6 @@ http {
         location / {
             return 302 https://$host/boards/taskboard;
         }
-    }
-}
-</file>
-
-<file path="nginx/nginx.conf.draft">
-worker_processes 1;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    include       mime.types;
-    default_type  application/octet-stream;
-    sendfile        on;
-    keepalive_timeout  65;
-
-    # ブルー/グリーン環境のアップストリーム定義
-    # デプロイスクリプトで active_env を切り替えることで向き先を変更する
-    
-    # Board System Frontend (Next.js)
-    upstream frontend_blue {
-        server 127.0.0.1:3010;
-        keepalive 64;
-    }
-    upstream frontend_green {
-        server 127.0.0.1:3020;
-        keepalive 64;
-    }
-
-    # Board System Backend (FastAPI)
-    upstream backend_blue {
-        server 127.0.0.1:8010;
-        keepalive 64;
-    }
-    upstream backend_green {
-        server 127.0.0.1:8020;
-        keepalive 64;
-    }
-
-    # Sticky Note (Next.js + Socket.IO)
-    upstream sticky_blue {
-        server 127.0.0.1:3011;
-        keepalive 64;
-    }
-    upstream sticky_green {
-        server 127.0.0.1:3021;
-        keepalive 64;
-    }
-
-    # 現在のアクティブ環境（スクリプトで書き換えるincludeファイル）
-    # 内容例: 
-    # upstream frontend_current { server 127.0.0.1:3010; }
-    # upstream backend_current { server 127.0.0.1:8010; }
-    # upstream sticky_current { server 127.0.0.1:3011; }
-    include /etc/nginx/conf.d/active_env.conf;
-
-    server {
-        listen 80;
-        server_name wl-sticky-note.local;
-
-        # フロントエンドへのプロキシ
-        location / {
-            proxy_pass http://frontend_current;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
-        }
-
-        # バックエンドAPIへのプロキシ
-        # /api/docs, /api/openapi.json など
-        location /api/ {
-            # FastAPIのルートが /api プレフィックスを持っているか確認が必要
-            # ここでは /api/* を backend_current/api/* に転送すると仮定
-            proxy_pass http://backend_current/api/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-        }
-
-        # Sticky Note へのプロキシ
-        # sticky-note は /board/* などを扱う
-        # パスベースのルーティングが必要
-        
-        # sticky-noteのSocket.IO
-        location /socket.io/ {
-            proxy_pass http://sticky_current/socket.io/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host;
-        }
-
-        # sticky-noteのページとAPI
-        # 現状の構成を確認すると、3000(sticky) と 3001(board-frontend) が共存している
-        # パスの切り分け:
-        # /board/* -> sticky
-        # /api/boards/* -> sticky (some) or backend (some)?
-        # sticky-note は /api/boards/:id/summary 等を提供
-        # board-system は /boards (frontend)
-        
-        # 明確なルーティング戦略が必要
-        # ...一旦保留して現状構成を確認...
     }
 }
 </file>
@@ -14209,7 +13930,8 @@ services:
   # --- Board System Frontend (Next.js) ---
   frontend:
     build:
-      context: ./frontend
+      context: ..
+      dockerfile: board-system/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010}
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-""}

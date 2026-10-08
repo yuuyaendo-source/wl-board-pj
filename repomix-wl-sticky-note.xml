@@ -41,9 +41,11 @@ The content is organized as follows:
 
 <directory_structure>
 docs/
+  開発/
+    開発の進め方.md
+    機能追加指示書(廃案).md
   AI-Board・Desktopアプリの開発の進め方.md
   デプロイ手順.md
-  開発の進め方.md
   本番連携の整理.md
 src/
   app/
@@ -60,12 +62,9 @@ src/
     favicon.ico
     globals.css
     layout.js
+    mobile_upload.md
     page.js
-    page.module.css
   components/
-    AvatarCanvas.jsx
-    AvatarCanvas.module.css
-    AvatarCanvasWrapper.jsx
     BoardCanvas.js
     BoardCanvas.module.css
     CommentListPanel.js
@@ -73,20 +72,12 @@ src/
     LinkifiedText.js
     NoteInputDialog.js
     NoteInputDialog.module.css
-    ParticipantsList.js
-    ParticipantsList.module.css
     StickyNote.js
     StickyNote.module.css
     Toolbar.js
     Toolbar.module.css
     UserDialog.js
     UserDialog.module.css
-  public/
-    file.svg
-    globe.svg
-    next.svg
-    vercel.svg
-    window.svg
   .dockerignore
   .env.example
   .gitignore
@@ -109,11 +100,165 @@ src/
   start_server.ps1
 .cursorignore.txt
 README.md
-機能追加指示書1.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="docs/開発/開発の進め方.md">
+# wl-sticky-note 開発の進め方（ローカル・本番の整理）
+
+今回のデプロイで **wl-sticky-note** は **ローカル環境** と **本番環境** の 2 つが存在する状態になりました。今後の開発をどう進めるかを整理したドキュメントです。
+
+---
+
+## 1. 環境の整理
+
+| 環境 | 場所 | URL（付箋ボード） | 用途 |
+|------|------|-------------------|------|
+| **ローカル** | 開発PC（wlinko-pj リポジトリ内の 02_1_sticky-note） | <http://localhost:3000> | 日々の開発・動作確認 |
+| **本番** | サーバ 172.16.1.203（wlboardsys.internal.wonder-link.com） | <https://wlboardsys.internal.wonder-link.com> / <https://wlboardsys.internal.wonder-link.com/board/wl> | 実際の利用・AI-Board・Desktopアプリの連携先 |
+
+- **本番の連携先ボード**: `wl` → <https://wlboardsys.internal.wonder-link.com/board/wl（AI-Board・Desktopアプリはここを向く）>
+- ローカルでは `localhost:3000` で開発し、本番ではサーバ上の 02_1_sticky-note を `wlboardsys.internal.wonder-link.com` で公開する想定です。
+
+---
+
+## 2. 開発フローのイメージ
+
+```
+[ローカル開発] → [動作確認] → [Git に push] → [本番サーバで pull & デプロイ]
+```
+
+1. **ローカルで開発** … 02_1_sticky-note のコードを編集（wlinko-pj リポジトリ内）
+2. **ローカルで動作確認** … `cd src` → `npm run dev` で <http://localhost:3000> を確認
+3. **Git に push** … wlinko-pj のリモート（GitHub 等）に push
+4. **本番サーバで反映** … サーバで `git pull` し、ビルド・再起動（後述）
+
+---
+
+## 3. Git の進め方（推奨）
+
+- **main（または main 相当）**: 本番に反映してよい状態を置く
+- **開発用ブランチ**（任意）: 機能追加・修正は `feature/xxx` や `develop` で行い、確認後に main にマージしてもよい
+- **タグ**（任意）: 本番反映のタイミングで `v1.0.1` のようにタグを打つと、どのコミットが本番か追いやすい
+
+運用例:
+
+- 小規模なら **main のみ**で開発し、問題なければそのまま本番で `git pull` する
+- 複数人・大きな変更なら **feature ブランチ**で開発 → main にマージ → 本番で `git pull origin main` する
+
+---
+
+## 4. 本番への反映手順
+
+修正を本番環境に反映するときは、**本番サーバ**で次を実行します。
+
+```bash
+# サーバに SSH
+ssh user@172.16.1.203
+# または
+ssh user@wlboardsys.internal.wonder-link.com
+
+# 02_1_sticky-note のみが clone されているディレクトリへ
+cd /var/www/wl-sticky-note
+git pull
+
+# ビルドと再起動
+cd 02_1_sticky-note/src
+npm install
+npm run build
+pm2 restart wl-sticky-note
+```
+
+- 初回デプロイ時と同じく、**02_1_sticky-note だけ**が sparse-checkout されているので、`git pull` で 02_1_sticky-note 以下だけが更新されます。
+- 依存関係の追加・変更をした場合は必ず `npm install` を実行してください。
+
+---
+
+## 5. 連携アプリ（AI-Board・Desktop）の環境切り替え
+
+| アプリ | ローカルで開発・確認するとき | 本番で使うとき |
+| -------- | ------------------------------ | ---------------- |
+| **付箋ボード（wl-sticky-note）** | <http://localhost:3000> | <https://wlboardsys.internal.wonder-link.com> |
+| **AI-Board** | 付箋送信先: localhost:3000 / board_id: wl（または開発用ID） | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com`、`config.json` の `board_id`: `wl` |
+| **Desktopアプリ** | `postit_board_url`: <http://127.0.0.1:3000/、`postit_board_id`>: wl（または開発用） | `postit_board_url`: <https://wlboardsys.internal.wonder-link.com/、`postit_board_id`>: wl |
+
+- **ローカルで付箋ボード＋AI-Board＋Desktop をまとめて試す**: 付箋ボードを localhost:3000 で起動し、AI-Board と Desktop は付箋ボードURLを localhost のままにしておく。
+- **本番**: 上表のとおり、AI-Board は `POSTIT_BOARD_URL`、Desktop は `config.json` の `postit_board_url` で **<https://wlboardsys.internal.wonder-link.com/>** を指定し、いずれも **board_id: wl** で <https://wlboardsys.internal.wonder-link.com/board/wl> を連携先にする。
+
+---
+
+## 6. 困ったときの確認リスト
+
+| 確認項目 | ローカル | 本番 |
+| ---------- | ---------- | ------ |
+| 付箋ボードが起動しているか | `npm run dev`（src で） | `pm2 list` → wl-sticky-note、`pm2 logs wl-sticky-note` |
+| ボード wl が存在するか | <http://localhost:3000/board/wl> で開けるか | <https://wlboardsys.internal.wonder-link.com/board/wl> で開けるか |
+| AI-Board の送信先 | 環境変数未設定 or localhost:3000 | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` |
+| Desktop のポーリング先 | config で localhost:3000 | config で <https://wlboardsys.internal.wonder-link.com/、postit_board_id>: wl |
+| サーバの 02_1_sticky-note の更新 | — | `cd /var/www/wl-sticky-note && git pull` で最新化 |
+
+---
+
+## 7. まとめ
+
+- **開発はローカル**で行い、**本番はサーバ上の 02_1_sticky-note**（sparse-checkout）を更新する形で進める。
+- 反映の流れは「**ローカルで commit → push → 本番サーバで pull → npm install & build → pm2 restart**」。
+- 本番の連携先は **<https://wlboardsys.internal.wonder-link.com/board/wl>** に統一し、AI-Board・Desktopアプリは本番ではこのURL（および board_id: wl）を向くように設定する。
+
+初回デプロイの詳細は **`docs/デプロイ手順_初回.md`**、本番反映のコマンドは **`docs/デプロイ手順_初回.md` の「6. 今後の更新」** を参照してください。
+
+---
+
+## 8. AI-Board・Desktopアプリの開発・配布
+
+- **Desktopアプリ**: 本番 sticky-note 連携を確認できたら、一旦メンバーにアプリとして配布する想定。
+- **AI-Board**: 本番の sticky-note（board: wl）との連携を確認しながら開発を進める。
+
+詳細は **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照してください。
+</file>
+
+<file path="docs/開発/機能追加指示書(廃案).md">
+# 目的
+
+Next.jsアプリ (`src/app`) 内に、Three.jsを使って3Dキャラクター(VRM)を表示するコンポーネントを作成したいです。
+これにより、外部アプリを使わずにブラウザ上でアバターを表示させます。
+
+# 指示
+
+## 1. ライブラリのインストール
+
+ターミナルで以下のコマンドを実行するよう指示、または実行してください。
+`npm install three @types/three @react-three/fiber @react-three/drei @pixiv/three-vrm`
+
+## 2. アバター表示コンポーネントの作成
+
+`src/components/AvatarCanvas.tsx` (または .js) を新規作成し、以下の機能を実装してください。
+
+- **Canvas設定:**
+  - 背景は透明 (`alpha: true`, `gl={{ alpha: true }}`) にする。
+  - カメラ位置を調整し、モデルのバストアップ（胸から上）が右下に映るようにする。
+- **VRMモデルの読み込み:**
+  - `@react-three/fiber` の `useLoader` と `three/examples/jsm/loaders/GLTFLoader` を使用。
+  - ローダーに `@pixiv/three-vrm` の `VRMLoaderPlugin` を登録して `.vrm` ファイルをパース可能にする。
+  - モデルのパスは `/avatar.vrm` (publicフォルダ直下) とする。
+- **ライト設定:**
+  - キャラクターが暗くならないよう、`ambientLight` と `directionalLight` を適切に配置する。
+- **コンポーネント構成:**
+  - `AvatarModel`: VRMを読み込んで表示する内部コンポーネント。
+  - `AvatarCanvas`: Canvas全体をラップし、画面の「右下」に固定表示 (`position: fixed; bottom: 0; right: 0;`) するスタイルを適用したコンポーネント。z-indexは付箋より手前（または奥、指定可能に）にする。
+
+## 3. 全体レイアウトへの配置
+
+`src/app/layout.tsx` (または `page.tsx` の適切な場所) に `<AvatarCanvas />` を追加し、
+どのページを開いても画面右下にアバターが常駐するようにしてください。
+
+# 注意点
+
+- Next.js の App Router (Server Components) を使用しているため、Three.js を使うコンポーネントにはファイルの先頭に `'use client';` を必ず付けてください。
+- VRM読み込み時にエラーが出ないよう、非同期読み込みの `Suspense` でラップするなどの配慮をしてください。
+</file>
 
 <file path="docs/AI-Board・Desktopアプリの開発の進め方.md">
 # AI-Board・Desktopアプリの開発の進め方
@@ -559,120 +704,6 @@ pm2 restart wl-sticky-note --update-env
 - **本番 API**: 付箋ボードのサマリーは `GET /api/boards/wl/summary`、付箋追加は `POST /api/sticky_notes`。Desktop アプリ・AI-Board の連携は `docs/本番連携の整理.md` を参照。
 </file>
 
-<file path="docs/開発の進め方.md">
-# wl-sticky-note 開発の進め方（ローカル・本番の整理）
-
-今回のデプロイで **wl-sticky-note** は **ローカル環境** と **本番環境** の 2 つが存在する状態になりました。今後の開発をどう進めるかを整理したドキュメントです。
-
----
-
-## 1. 環境の整理
-
-| 環境 | 場所 | URL（付箋ボード） | 用途 |
-|------|------|-------------------|------|
-| **ローカル** | 開発PC（wlinko-pj リポジトリ内の 02_1_sticky-note） | <http://localhost:3000> | 日々の開発・動作確認 |
-| **本番** | サーバ 172.16.1.203（wlboardsys.internal.wonder-link.com） | <https://wlboardsys.internal.wonder-link.com> / <https://wlboardsys.internal.wonder-link.com/board/wl> | 実際の利用・AI-Board・Desktopアプリの連携先 |
-
-- **本番の連携先ボード**: `wl` → <https://wlboardsys.internal.wonder-link.com/board/wl（AI-Board・Desktopアプリはここを向く）>
-- ローカルでは `localhost:3000` で開発し、本番ではサーバ上の 02_1_sticky-note を `wlboardsys.internal.wonder-link.com` で公開する想定です。
-
----
-
-## 2. 開発フローのイメージ
-
-```
-[ローカル開発] → [動作確認] → [Git に push] → [本番サーバで pull & デプロイ]
-```
-
-1. **ローカルで開発** … 02_1_sticky-note のコードを編集（wlinko-pj リポジトリ内）
-2. **ローカルで動作確認** … `cd src` → `npm run dev` で <http://localhost:3000> を確認
-3. **Git に push** … wlinko-pj のリモート（GitHub 等）に push
-4. **本番サーバで反映** … サーバで `git pull` し、ビルド・再起動（後述）
-
----
-
-## 3. Git の進め方（推奨）
-
-- **main（または main 相当）**: 本番に反映してよい状態を置く
-- **開発用ブランチ**（任意）: 機能追加・修正は `feature/xxx` や `develop` で行い、確認後に main にマージしてもよい
-- **タグ**（任意）: 本番反映のタイミングで `v1.0.1` のようにタグを打つと、どのコミットが本番か追いやすい
-
-運用例:
-
-- 小規模なら **main のみ**で開発し、問題なければそのまま本番で `git pull` する
-- 複数人・大きな変更なら **feature ブランチ**で開発 → main にマージ → 本番で `git pull origin main` する
-
----
-
-## 4. 本番への反映手順
-
-修正を本番環境に反映するときは、**本番サーバ**で次を実行します。
-
-```bash
-# サーバに SSH
-ssh user@172.16.1.203
-# または
-ssh user@wlboardsys.internal.wonder-link.com
-
-# 02_1_sticky-note のみが clone されているディレクトリへ
-cd /var/www/wl-sticky-note
-git pull
-
-# ビルドと再起動
-cd 02_1_sticky-note/src
-npm install
-npm run build
-pm2 restart wl-sticky-note
-```
-
-- 初回デプロイ時と同じく、**02_1_sticky-note だけ**が sparse-checkout されているので、`git pull` で 02_1_sticky-note 以下だけが更新されます。
-- 依存関係の追加・変更をした場合は必ず `npm install` を実行してください。
-
----
-
-## 5. 連携アプリ（AI-Board・Desktop）の環境切り替え
-
-| アプリ | ローカルで開発・確認するとき | 本番で使うとき |
-| -------- | ------------------------------ | ---------------- |
-| **付箋ボード（wl-sticky-note）** | <http://localhost:3000> | <https://wlboardsys.internal.wonder-link.com> |
-| **AI-Board** | 付箋送信先: localhost:3000 / board_id: wl（または開発用ID） | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com`、`config.json` の `board_id`: `wl` |
-| **Desktopアプリ** | `postit_board_url`: <http://127.0.0.1:3000/、`postit_board_id`>: wl（または開発用） | `postit_board_url`: <https://wlboardsys.internal.wonder-link.com/、`postit_board_id`>: wl |
-
-- **ローカルで付箋ボード＋AI-Board＋Desktop をまとめて試す**: 付箋ボードを localhost:3000 で起動し、AI-Board と Desktop は付箋ボードURLを localhost のままにしておく。
-- **本番**: 上表のとおり、AI-Board は `POSTIT_BOARD_URL`、Desktop は `config.json` の `postit_board_url` で **<https://wlboardsys.internal.wonder-link.com/>** を指定し、いずれも **board_id: wl** で <https://wlboardsys.internal.wonder-link.com/board/wl> を連携先にする。
-
----
-
-## 6. 困ったときの確認リスト
-
-| 確認項目 | ローカル | 本番 |
-| ---------- | ---------- | ------ |
-| 付箋ボードが起動しているか | `npm run dev`（src で） | `pm2 list` → wl-sticky-note、`pm2 logs wl-sticky-note` |
-| ボード wl が存在するか | <http://localhost:3000/board/wl> で開けるか | <https://wlboardsys.internal.wonder-link.com/board/wl> で開けるか |
-| AI-Board の送信先 | 環境変数未設定 or localhost:3000 | `POSTIT_BOARD_URL=https://wlboardsys.internal.wonder-link.com` |
-| Desktop のポーリング先 | config で localhost:3000 | config で <https://wlboardsys.internal.wonder-link.com/、postit_board_id>: wl |
-| サーバの 02_1_sticky-note の更新 | — | `cd /var/www/wl-sticky-note && git pull` で最新化 |
-
----
-
-## 7. まとめ
-
-- **開発はローカル**で行い、**本番はサーバ上の 02_1_sticky-note**（sparse-checkout）を更新する形で進める。
-- 反映の流れは「**ローカルで commit → push → 本番サーバで pull → npm install & build → pm2 restart**」。
-- 本番の連携先は **<https://wlboardsys.internal.wonder-link.com/board/wl>** に統一し、AI-Board・Desktopアプリは本番ではこのURL（および board_id: wl）を向くように設定する。
-
-初回デプロイの詳細は **`docs/デプロイ手順_初回.md`**、本番反映のコマンドは **`docs/デプロイ手順_初回.md` の「6. 今後の更新」** を参照してください。
-
----
-
-## 8. AI-Board・Desktopアプリの開発・配布
-
-- **Desktopアプリ**: 本番 sticky-note 連携を確認できたら、一旦メンバーにアプリとして配布する想定。
-- **AI-Board**: 本番の sticky-note（board: wl）との連携を確認しながら開発を進める。
-
-詳細は **`docs/AI-Board・Desktopアプリの開発の進め方.md`** を参照してください。
-</file>
-
 <file path="docs/本番連携の整理.md">
 # 本番 Sticky-note と AI-Board・Desktop の連携整理
 
@@ -896,7 +927,6 @@ export default function BoardPage() {
     const [username, setUsername] = useState("");
     const [showUserDialog, setShowUserDialog] = useState(false);
     const [showNoteDialog, setShowNoteDialog] = useState(false);
-    const [participants, setParticipants] = useState([]);
 
     const [selectedNoteIds, setSelectedNoteIds] = useState([]);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -1017,10 +1047,6 @@ export default function BoardPage() {
             setSelectedNoteIds([]);
         });
 
-        socket.on("users-list", (usersList) => {
-            setParticipants(usersList);
-        });
-
         socket.on("user-joined", ({ username: newUsername }) => {
             console.log(`${newUsername} joined the board`);
         });
@@ -1042,7 +1068,6 @@ export default function BoardPage() {
             socket.off("note-deleted");
             socket.off("line-added");
             socket.off("board-cleared");
-            socket.off("users-list");
             socket.off("user-joined");
             socket.off("user-left");
             socket.off("disconnect");
@@ -2015,341 +2040,87 @@ export default function RootLayout({ children }) {
 }
 </file>
 
+<file path="src/app/mobile_upload.md">
+# スマホ付箋撮影・アップロード機能（Mobile Upload）拡張計画
+
+## 1. 概要とコンセプト
+本機能（`src/app/mobile/upload/page.js`）は、**「専用の定点カメラがない環境や外出先からでも、手元のスマートフォンで物理的な付箋やメモを撮影し、即座にデジタルボードへ取り込む」**ことを目的とした機能です。
+
+現状はPoC（概念実証）レベルの最小限のコードとなっているため、これを実際の業務に耐えうる実用的な機能へと昇華させるための要件を整理します。
+
+---
+
+## 2. 現状の仕様と「できること」（As-Is）
+
+現在のコードで既に実現されている機能は以下の通りです。
+
+*   **デバイスネイティブなカメラ起動**: `<input type="file" capture="environment">` を使用し、ブラウザから直接スマホの背面カメラを起動できます。
+*   **バックエンドへの画像送信**: Next.js の Rewrite 設定（`/api/proxy/upload_image`）を経由し、AI-Board（Python側 / Port 5000）へ画像を POST 送信できます。
+*   **非同期UI（ローディングとトースト）**: 送信中のスピナー表示と、完了・失敗時のトースト通知（ポップアップ）が実装されています。
+
+---
+
+## 3. これから改善が必要な課題（技術・仕様面）
+
+本格運用に向けて、直ちに解決すべき技術的な課題です。
+
+### 3.1. PC画面からのUI動線（誘導）の欠如
+*   **課題**: 現在、このページ（`/mobile/upload`）へアクセスする手段がありません。
+*   **解決案**: PC版の `Toolbar.js` 等に「📱スマホで追加」ボタンを設置し、クリック時に**アクセス用QRコード**を表示するモーダルを実装します。
+
+### 3.2. 送信先ボード（Board ID）の指定不足
+*   **課題**: 画像を送信する際、どのボード（例: `wl` や `taskboard`）に追加するかの指定がありません。
+*   **解決案**: URLのクエリパラメータ（例: `/mobile/upload?board_id=wl`）で対象ボードを受け取り、送信時の FormData に含めてバックエンドへ渡すようにします。QRコード生成時にこのURLを埋め込みます。
+
+### 3.3. クライアント側での画像圧縮の欠如
+*   **課題**: 最近のスマートフォンの写真は高解像度（数MB〜十数MB）であり、そのまま送信すると通信量が膨大になり、バックエンドのAI処理（OpenCV/Gemini）にも過度な負荷がかかります。
+*   **解決案**: ブラウザ側（Canvas API等）で、送信前に画像を適切なサイズ（例: フルHD程度）と画質に圧縮（リサイズ）してから送信する処理を追加します。
+
+### 3.4. 認証・セキュリティ
+*   **課題**: 誰でもアクセスして画像を送信できてしまう状態です。
+*   **解決案**: Board System のログインセッションと連携するか、QRコードに使い捨てのワンタイムトークンを含めることで、許可されたユーザーのみがアップロードできるようにします。
+
+---
+
+## 4. よりUXを向上させるためのアイデア（To-Be）
+
+ユーザーが「面倒くさい」と感じず、アナログとデジタルをシームレスに行き来できるようにするための機能提案です。
+
+### ① スムーズな連続撮影モード
+現状は「撮影 → 待機 → トースト表示」で1サイクルが終わりますが、会議終了後などに大量の付箋を撮りたい場合、操作が煩雑になります。
+*   **提案**: PWA (Progressive Web Apps) の機能や WebRTC（`navigator.mediaDevices.getUserMedia`）を用いて、ブラウザ内にカメラのプレビュー画面を直接埋め込みます。「シャッターボタンを押すと裏で非同期送信され、ユーザーは待たずに次の付箋を撮影できる」ような連続撮影UIを構築します。
+
+### ② 画像の事前プレビューとトリミング（切り抜き）
+*   **提案**: 撮影した直後に画面上でプレビューを表示し、ユーザー自身が付箋の四隅をドラッグして切り抜ける（パース補正できる）機能を提供します。これにより、AI側の検知エラーを未然に防ぐことができます。
+
+### ③ 送信結果のリアルタイム・フィードバック
+*   **提案**: 現在の「送信しました」というトーストだけでなく、バックエンドでのAI処理（付箋の抽出とテキスト化）が完了し、**「PC側のボードに実際に反映された」タイミングでスマホ側にも Socket.IO 経由で通知**を送り、「✨ ボードに追加されました」とフィードバックします。
+
+### ④ AIへの音声メモ（プロンプト）の同時送信
+*   **提案**: 写真を撮る際、テキスト入力欄やマイクボタンを用意します。「この付箋は重要タスクに入れて」「これは〇〇さん宛て」といった指示（プロンプト）を付与して送信し、AIの自動振り分け精度を向上させます。
+
+---
+
+## 5. 推奨される実装ステップ
+
+まずは以下の順序で開発を進めることをお勧めします。
+
+1.  **Step 1（動線の確保と安定化）**
+    *   PC版にQRコード表示ボタンを追加。
+    *   URLパラメータによる Board ID の受け渡し実装。
+    *   フロントエンドでの画像圧縮処理の追加。
+2.  **Step 2（バックエンド連携）**
+    *   バックエンド側（AI-Board）で `upload_image` エンドポイントを整備し、受け取った画像から付箋を抽出・テキスト化して対象のBoard Systemへ反映させる。
+3.  **Step 3（UXの高度化）**
+    *   連続撮影モードやプレビュー機能、PWA化など、モバイル特有の体験向上。
+</file>
+
 <file path="src/app/page.js">
 import { redirect } from "next/navigation";
 
 // トップはデフォルトボードへ（basePath 時は /board/wl、開発時は /board/wl）
 export default function Home() {
   redirect("/board/wl");
-}
-</file>
-
-<file path="src/app/page.module.css">
-.page {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--background);
-  padding: 20px;
-}
-
-.main {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  max-width: 600px;
-  gap: 32px;
-}
-
-.title {
-  font-size: 2.5rem;
-  font-weight: bold;
-  color: var(--primary);
-  text-align: center;
-  margin-bottom: 1rem;
-}
-
-.card {
-  background: white;
-  padding: 2rem;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.inputGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.inputGroup label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #555;
-}
-
-.input {
-  padding: 12px 16px;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-  outline: none;
-}
-
-.input:focus {
-  border-color: var(--primary);
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.primaryButton {
-  background-color: var(--primary);
-  color: white;
-  padding: 14px;
-  border-radius: 8px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  transition: background-color 0.2s, transform 0.1s;
-}
-
-.primaryButton:hover {
-  background-color: var(--primary-hover);
-}
-
-.primaryButton:active {
-  transform: scale(0.98);
-}
-
-.divider {
-  text-align: center;
-  color: #999;
-  font-size: 0.9rem;
-  position: relative;
-}
-
-.divider::before,
-.divider::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 40%;
-  height: 1px;
-  background-color: var(--border);
-}
-
-.divider::before {
-  left: 0;
-}
-
-.divider::after {
-  right: 0;
-}
-
-.joinGroup {
-  display: flex;
-  gap: 8px;
-}
-
-.joinGroup .input {
-  flex: 1;
-}
-
-.secondaryButton {
-  background-color: #f0f0f0;
-  color: #333;
-  padding: 0 20px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: background-color 0.2s;
-}
-
-.secondaryButton:hover:not(:disabled) {
-  background-color: #e0e0e0;
-}
-
-.secondaryButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-@media (max-width: 480px) {
-  .title {
-    font-size: 2rem;
-  }
-
-  .card {
-    padding: 1.5rem;
-  }
-
-  .joinGroup {
-    flex-direction: column;
-  }
-
-  .secondaryButton {
-    padding: 12px;
-  }
-}
-</file>
-
-<file path="src/components/AvatarCanvas.jsx">
-'use client';
-
-import React, { useMemo, Suspense, useState, useEffect } from 'react';
-import { Canvas, useLoader } from '@react-three/fiber';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin } from '@pixiv/three-vrm';
-import styles from './AvatarCanvas.module.css';
-
-/**
- * VRM を読み込んで表示する内部コンポーネント
- */
-function AvatarModel() {
-  const loader = useMemo(() => {
-    const gltfLoader = new GLTFLoader();
-    gltfLoader.register((parser) => new VRMLoaderPlugin(parser));
-    return gltfLoader;
-  }, []);
-
-  const gltf = useLoader(loader, '/avatar.vrm');
-  const scene = gltf?.userData?.vrm?.scene ?? gltf?.scene;
-
-  if (!scene) return null;
-
-  return <primitive object={scene} />;
-}
-
-/**
- * アバター用 Canvas をラップし、画面右下に固定表示するコンポーネント
- * @param {Object} props
- * @param {number} [props.zIndex] - z-index（未指定時は CSS の 50 を使用）
- */
-export default function AvatarCanvas({ zIndex }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
-    return (
-      <div className={styles.wrapper} style={zIndex != null ? { zIndex } : undefined} aria-hidden>
-        <div className={styles.fallback}>アバター読み込み中...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={styles.wrapper}
-      style={zIndex != null ? { zIndex } : undefined}
-      aria-hidden
-    >
-      <ErrorBoundary>
-        <Suspense fallback={<div className={styles.fallback}>アバター読み込み中...</div>}>
-          <Canvas
-            camera={{ position: [0.5, 0.3, 1], fov: 45 }}
-            gl={{ alpha: true, antialias: true }}
-            dpr={[1, 2]}
-            style={{ background: 'transparent', width: '100%', height: '100%' }}
-          >
-            <color attach="background" args={[0, 0, 0, 0]} />
-            <ambientLight intensity={0.8} />
-            <directionalLight position={[2, 2, 2]} intensity={1.2} />
-            <directionalLight position={[-1, 1, 1]} intensity={0.4} />
-            <AvatarModel />
-          </Canvas>
-        </Suspense>
-      </ErrorBoundary>
-    </div>
-  );
-}
-
-/**
- * 子の描画エラーを捕捉してメッセージを表示する簡易 Error Boundary
- */
-class ErrorBoundary extends React.Component {
-  state = { error: null };
-
-  static getDerivedStateFromError(error) {
-    const message = error?.message ?? String(error);
-    return { error: message };
-  }
-
-  render() {
-    if (this.state.error) {
-      return <div className={styles.fallback}>アバターの読み込みに失敗しました</div>;
-    }
-    return this.props.children;
-  }
-}
-</file>
-
-<file path="src/components/AvatarCanvas.module.css">
-.wrapper {
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  width: 280px;
-  height: 360px;
-  min-width: 280px;
-  min-height: 360px;
-  pointer-events: none;
-  /* 付箋・ボードより手前に表示（ヘッダー z-index: 100 より下） */
-  z-index: 50;
-}
-
-.wrapper canvas {
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
-}
-
-.fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #666;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 8px;
-  text-align: center;
-}
-</file>
-
-<file path="src/components/AvatarCanvasWrapper.jsx">
-'use client';
-
-import dynamic from 'next/dynamic';
-
-// 読み込み中は右下にプレースホルダを表示（アバター領域を確保）
-function AvatarLoadingPlaceholder() {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 0,
-        right: 0,
-        width: 280,
-        height: 360,
-        minWidth: 280,
-        minHeight: 360,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 12,
-        color: '#666',
-        background: 'rgba(255,255,255,0.9)',
-      }}
-      aria-hidden
-    >
-      アバター読み込み中...
-    </div>
-  );
-}
-
-// Three.js はクライアントのみで実行するため dynamic import（ssr: false）
-const AvatarCanvas = dynamic(
-  () => import('@/components/AvatarCanvas').then((mod) => mod.default),
-  { ssr: false, loading: AvatarLoadingPlaceholder }
-);
-
-export default function AvatarCanvasWrapper() {
-  return <AvatarCanvas />;
 }
 </file>
 
@@ -2959,160 +2730,6 @@ export default function NoteInputDialog({
 
 .cancelButton:hover {
     background: #e0e0e0;
-}
-</file>
-
-<file path="src/components/ParticipantsList.js">
-import styles from "./ParticipantsList.module.css";
-
-export default function ParticipantsList({ participants, onClose }) {
-    return (
-        <div className={styles.panel}>
-            <div className={styles.header}>
-                <h3 className={styles.title}>
-                    👥 参加者 ({participants.length})
-                </h3>
-                <button onClick={onClose} className={styles.closeButton}>
-                    ✕
-                </button>
-            </div>
-
-            <div className={styles.list}>
-                {participants.length === 0 ? (
-                    <div className={styles.empty}>
-                        参加者がいません
-                    </div>
-                ) : (
-                    participants.map((participant) => (
-                        <div key={participant.socketId} className={styles.participant}>
-                            <div className={styles.avatar}>
-                                {participant.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div className={styles.info}>
-                                <div className={styles.name}>{participant.username}</div>
-                                <div className={styles.status}>🟢 オンライン</div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
-    );
-}
-</file>
-
-<file path="src/components/ParticipantsList.module.css">
-.panel {
-    position: fixed;
-    right: 20px;
-    top: 80px;
-    width: 300px;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    z-index: 200;
-    animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(20px);
-        opacity: 0;
-    }
-
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-.header {
-    padding: 16px;
-    border-bottom: 1px solid #eee;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.title {
-    margin: 0;
-    font-size: 16px;
-    color: #333;
-}
-
-.closeButton {
-    background: none;
-    border: none;
-    font-size: 20px;
-    color: #999;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: background 0.2s;
-}
-
-.closeButton:hover {
-    background: #f0f0f0;
-}
-
-.list {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 8px;
-}
-
-.empty {
-    padding: 32px;
-    text-align: center;
-    color: #999;
-    font-size: 14px;
-}
-
-.participant {
-    display: flex;
-    align-items: center;
-    padding: 12px;
-    border-radius: 8px;
-    transition: background 0.2s;
-}
-
-.participant:hover {
-    background: #f9f9f9;
-}
-
-.avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--primary, #79dc89);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 18px;
-    flex-shrink: 0;
-    margin-right: 12px;
-}
-
-.info {
-    flex: 1;
-    min-width: 0;
-}
-
-.name {
-    font-weight: 600;
-    color: #333;
-    font-size: 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.status {
-    font-size: 12px;
-    color: #666;
-    margin-top: 2px;
 }
 </file>
 
@@ -4465,26 +4082,6 @@ export default function UserDialog({ onSubmit }) {
     font-size: 12px;
     text-align: center;
 }
-</file>
-
-<file path="src/public/file.svg">
-<svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
-</file>
-
-<file path="src/public/globe.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.27 14.1a6.5 6.5 0 0 0 3.67-3.45q-1.24.21-2.7.34-.31 1.83-.97 3.1M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.48-1.52a7 7 0 0 1-.96 0H7.5a4 4 0 0 1-.84-1.32q-.38-.89-.63-2.08a40 40 0 0 0 3.92 0q-.25 1.2-.63 2.08a4 4 0 0 1-.84 1.31zm2.94-4.76q1.66-.15 2.95-.43a7 7 0 0 0 0-2.58q-1.3-.27-2.95-.43a18 18 0 0 1 0 3.44m-1.27-3.54a17 17 0 0 1 0 3.64 39 39 0 0 1-4.3 0 17 17 0 0 1 0-3.64 39 39 0 0 1 4.3 0m1.1-1.17q1.45.13 2.69.34a6.5 6.5 0 0 0-3.67-3.44q.65 1.26.98 3.1M8.48 1.5l.01.02q.41.37.84 1.31.38.89.63 2.08a40 40 0 0 0-3.92 0q.25-1.2.63-2.08a4 4 0 0 1 .85-1.32 7 7 0 0 1 .96 0m-2.75.4a6.5 6.5 0 0 0-3.67 3.44 29 29 0 0 1 2.7-.34q.31-1.83.97-3.1M4.58 6.28q-1.66.16-2.95.43a7 7 0 0 0 0 2.58q1.3.27 2.95.43a18 18 0 0 1 0-3.44m.17 4.71q-1.45-.12-2.69-.34a6.5 6.5 0 0 0 3.67 3.44q-.65-1.27-.98-3.1" fill="#666"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
-</file>
-
-<file path="src/public/next.svg">
-<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 394 80"><path fill="#000" d="M262 0h68.5v12.7h-27.2v66.6h-13.6V12.7H262V0ZM149 0v12.7H94v20.4h44.3v12.6H94v21h55v12.6H80.5V0h68.7zm34.3 0h-17.8l63.8 79.4h17.9l-32-39.7 32-39.6h-17.9l-23 28.6-23-28.6zm18.3 56.7-9-11-27.1 33.7h17.8l18.3-22.7z"/><path fill="#000" d="M81 79.3 17 0H0v79.3h13.6V17l50.2 62.3H81Zm252.6-.4c-1 0-1.8-.4-2.5-1s-1.1-1.6-1.1-2.6.3-1.8 1-2.5 1.6-1 2.6-1 1.8.3 2.5 1a3.4 3.4 0 0 1 .6 4.3 3.7 3.7 0 0 1-3 1.8zm23.2-33.5h6v23.3c0 2.1-.4 4-1.3 5.5a9.1 9.1 0 0 1-3.8 3.5c-1.6.8-3.5 1.3-5.7 1.3-2 0-3.7-.4-5.3-1s-2.8-1.8-3.7-3.2c-.9-1.3-1.4-3-1.4-5h6c.1.8.3 1.6.7 2.2s1 1.2 1.6 1.5c.7.4 1.5.5 2.4.5 1 0 1.8-.2 2.4-.6a4 4 0 0 0 1.6-1.8c.3-.8.5-1.8.5-3V45.5zm30.9 9.1a4.4 4.4 0 0 0-2-3.3 7.5 7.5 0 0 0-4.3-1.1c-1.3 0-2.4.2-3.3.5-.9.4-1.6 1-2 1.6a3.5 3.5 0 0 0-.3 4c.3.5.7.9 1.3 1.2l1.8 1 2 .5 3.2.8c1.3.3 2.5.7 3.7 1.2a13 13 0 0 1 3.2 1.8 8.1 8.1 0 0 1 3 6.5c0 2-.5 3.7-1.5 5.1a10 10 0 0 1-4.4 3.5c-1.8.8-4.1 1.2-6.8 1.2-2.6 0-4.9-.4-6.8-1.2-2-.8-3.4-2-4.5-3.5a10 10 0 0 1-1.7-5.6h6a5 5 0 0 0 3.5 4.6c1 .4 2.2.6 3.4.6 1.3 0 2.5-.2 3.5-.6 1-.4 1.8-1 2.4-1.7a4 4 0 0 0 .8-2.4c0-.9-.2-1.6-.7-2.2a11 11 0 0 0-2.1-1.4l-3.2-1-3.8-1c-2.8-.7-5-1.7-6.6-3.2a7.2 7.2 0 0 1-2.4-5.7 8 8 0 0 1 1.7-5 10 10 0 0 1 4.3-3.5c2-.8 4-1.2 6.4-1.2 2.3 0 4.4.4 6.2 1.2 1.8.8 3.2 2 4.3 3.4 1 1.4 1.5 3 1.5 5h-5.8z"/></svg>
-</file>
-
-<file path="src/public/vercel.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1155 1000"><path d="m577.3 0 577.4 1000H0z" fill="#fff"/></svg>
-</file>
-
-<file path="src/public/window.svg">
-<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
 </file>
 
 <file path="src/.dockerignore">
@@ -6506,47 +6103,6 @@ Thumbs.db
 .csv
 .jsonl
 # ※ もし設定用のJSONまで無視されたくない場合は .json は除外しないでください
-</file>
-
-<file path="機能追加指示書1.md">
-# 目的
-
-Next.jsアプリ (`src/app`) 内に、Three.jsを使って3Dキャラクター(VRM)を表示するコンポーネントを作成したいです。
-これにより、外部アプリを使わずにブラウザ上でアバターを表示させます。
-
-# 指示
-
-## 1. ライブラリのインストール
-
-ターミナルで以下のコマンドを実行するよう指示、または実行してください。
-`npm install three @types/three @react-three/fiber @react-three/drei @pixiv/three-vrm`
-
-## 2. アバター表示コンポーネントの作成
-
-`src/components/AvatarCanvas.tsx` (または .js) を新規作成し、以下の機能を実装してください。
-
-- **Canvas設定:**
-  - 背景は透明 (`alpha: true`, `gl={{ alpha: true }}`) にする。
-  - カメラ位置を調整し、モデルのバストアップ（胸から上）が右下に映るようにする。
-- **VRMモデルの読み込み:**
-  - `@react-three/fiber` の `useLoader` と `three/examples/jsm/loaders/GLTFLoader` を使用。
-  - ローダーに `@pixiv/three-vrm` の `VRMLoaderPlugin` を登録して `.vrm` ファイルをパース可能にする。
-  - モデルのパスは `/avatar.vrm` (publicフォルダ直下) とする。
-- **ライト設定:**
-  - キャラクターが暗くならないよう、`ambientLight` と `directionalLight` を適切に配置する。
-- **コンポーネント構成:**
-  - `AvatarModel`: VRMを読み込んで表示する内部コンポーネント。
-  - `AvatarCanvas`: Canvas全体をラップし、画面の「右下」に固定表示 (`position: fixed; bottom: 0; right: 0;`) するスタイルを適用したコンポーネント。z-indexは付箋より手前（または奥、指定可能に）にする。
-
-## 3. 全体レイアウトへの配置
-
-`src/app/layout.tsx` (または `page.tsx` の適切な場所) に `<AvatarCanvas />` を追加し、
-どのページを開いても画面右下にアバターが常駐するようにしてください。
-
-# 注意点
-
-- Next.js の App Router (Server Components) を使用しているため、Three.js を使うコンポーネントにはファイルの先頭に `'use client';` を必ず付けてください。
-- VRM読み込み時にエラーが出ないよう、非同期読み込みの `Suspense` でラップするなどの配慮をしてください。
 </file>
 
 <file path="README.md">

@@ -1,17 +1,18 @@
 # ベースイメージ: Node.js 20 軽量版
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/board-system/frontend
 
 # 依存関係ファイルだけ先にコピー（キャッシュ効率化）
-COPY package.json package-lock.json* ./
+COPY board-system/frontend/package.json board-system/frontend/package-lock.json* ./
 
 # インストール実行
 RUN npm install
 
-
-# ソースコードをコピー
-COPY . .
+# 共通 shared フォルダをプロジェクト内外の両方にコピー
+COPY shared /app/shared
+COPY shared /app/board-system/frontend/shared
+COPY board-system/frontend ./
 
 # CATO Networks SSL対応: 証明書があれば信頼ストアに追加（ローカルでは省略可）
 RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi

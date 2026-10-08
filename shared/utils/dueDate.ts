@@ -21,7 +21,7 @@ export function calcDaysLeft(dueDateStr?: string | null): number | null {
 }
 
 /**
- * 期限日のフォーマット文字列（例: "⚠️️ 期限切れ（2日経過）"）を取得する
+ * 期限日のフォーマット文字列（例: "⚠️ 期限切れ（2日経過）"）を取得する
  */
 export function getDueDateStatusText(dueDateStr?: string | null): {
     daysLeft: number | null;
@@ -50,4 +50,15 @@ export function getDueDateStatusText(dueDateStr?: string | null): {
         return { daysLeft, label: `📅 期限まであと${daysLeft}日`, status: "normal" };
     }
     return { daysLeft, label: `📅 期限: ${dueDateStr}`, status: "normal" };
+}
+
+/**
+ * 期限日に応じたカードの枠線クラスを取得する
+ */
+export function getDueDateBorderClass(dueDateStr?: string | null): string {
+    const daysLeft = calcDaysLeft(dueDateStr);
+    if (daysLeft === null) return "";
+    if (daysLeft < 0) return "border-2 border-red-500";
+    if (daysLeft === 0) return "border-2 border-orange-500";
+    return "";
 }

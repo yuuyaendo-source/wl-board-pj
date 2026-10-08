@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import LinkifiedText from "./LinkifiedText";
+import DueDateBadge from "./DueDateBadge";
+import { getDueDateBorderClass } from "@shared/utils/dueDate";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
@@ -28,73 +30,6 @@ const BG_COLOR = {
   red: "bg-red-100 border-red-400",
   purple: "bg-violet-100 border-violet-300",
 } as const;
-
-/** 残り日数を計算（due_date: YYYY-MM-DD 文字列 → 整数） */
-function calcDaysLeft(dueDateStr: string | null | undefined): number | null {
-  if (!dueDateStr) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [y, m, d] = dueDateStr.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const due = new Date(y, m - 1, d);
-  due.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-/** 期限に応じたカード外枠の強調スタイル */
-function getDueDateBorderClass(dueDateStr: string | null | undefined): string {
-  const days = calcDaysLeft(dueDateStr);
-  if (days === null) return "";
-  if (days < 0) return "ring-2 ring-red-500 border-red-500"; // 期限切れ: 鮮やかな赤枠
-  if (days === 0) return "ring-2 ring-amber-500 border-amber-500"; // 今日: 鮮やかなオレンジ枠
-  if (days <= 3) return "border-orange-400 border-2"; // 間近: オレンジ太枠
-  return "";
-}
-
-/** 視認性を大幅に拡大した期限バッジ Component */
-function DueDateBadge({
-  dueDate,
-  onClick,
-}: {
-  dueDate: string | null | undefined;
-  onClick?: () => void;
-}) {
-  const days = calcDaysLeft(dueDate);
-  if (days === null) return null;
-
-  let label = "";
-  let badgeCls = "";
-
-  if (days < 0) {
-    label = `⚠️ 期限切れ（${Math.abs(days)}日経過）`;
-    badgeCls = "bg-red-600 text-white font-extrabold text-sm py-1 px-3 shadow-md animate-pulse";
-  } else if (days === 0) {
-    label = "🔥 本期日が期限！";
-    badgeCls = "bg-amber-500 text-white font-extrabold text-sm py-1 px-3 shadow-md";
-  } else if (days <= 3) {
-    label = `⏰ 期限まであと${days}日`;
-    badgeCls = "bg-orange-500 text-white font-bold text-xs py-1 px-2.5 shadow-sm";
-  } else if (days <= 10) {
-    label = `📅 期限まであと${days}日`;
-    badgeCls = "bg-yellow-400 text-zinc-900 font-bold text-xs py-1 px-2.5 shadow-sm";
-  } else {
-    label = `📅 期限: ${dueDate}`;
-    badgeCls = "bg-blue-100 text-blue-800 font-semibold text-xs py-1 px-2.5";
-  }
-
-  return (
-    <span
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border leading-none transition-all hover:opacity-80 hover:scale-105 ${badgeCls}`}
-      title={`クリックして期限を変更 (期限: ${dueDate})`}
-    >
-      {label}
-    </span>
-  );
-}
 
 /** インライン日付入力ピッカー */
 function DueDatePicker({
@@ -241,11 +176,14 @@ export default function NoteCard({
 
       {/* 期限バッジ */}
       {placement.due_date && (
-        <div className="mt-0.5">
-          <DueDateBadge
-            dueDate={placement.due_date}
-            onClick={() => onDueDateChange && setShowDatePicker((v) => !v)}
-          />
+        <div
+          className="mt-0.5 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDueDateChange && setShowDatePicker((v) => !v);
+          }}
+        >
+          <DueDateBadge dueDate={placement.due_date} />
         </div>
       )}
 
@@ -281,8 +219,8 @@ export default function NoteCard({
             <span
               key={u.id}
               className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-xs transition-colors ${u.is_done
-                  ? "bg-zinc-400 text-white line-through opacity-80"
-                  : "bg-emerald-500 text-white"
+                ? "bg-zinc-400 text-white line-through opacity-80"
+                : "bg-emerald-500 text-white"
                 }`}
               title={`${u.name}${u.is_done ? " (完了済み)" : " (対応中)"}`}
             >
@@ -329,7 +267,6 @@ export default function NoteCard({
 
   if (draggable) {
     return (
-      /* ドラッグ・ホバー移動時の拡大跳ね動作を防ぐため whileHover={{ scale: 1.02 }} を削除 */
       <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
         <div
           className={className}
