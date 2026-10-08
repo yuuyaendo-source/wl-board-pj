@@ -119,16 +119,22 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
             TakenByUser(id=uid, name=name, name_short=short, is_done=is_done)
             for uid, name, short, is_done in taken
         ]
-        if n.id in help_request_note_ids:
-            task_color = "red"
-        elif n.id in done_note_ids or (
-            p.matrix_quadrant is not None and p.matrix_quadrant == 5
-        ):
+        is_help = getattr(n, "is_help_request", False) or (
+            n.id in help_request_note_ids
+        )
+        is_completed = (p.matrix_quadrant == 5) or (
+            len(taken) > 0 and all(t.is_done for t in taken_by)
+        )
+
+        if is_completed:
             task_color = "grey"
+        elif is_help:
+            task_color = "red"
         elif taken:
             task_color = "green"
         else:
             task_color = "yellow"
+
         out.append(
             BoardPlacementWithNoteResponse(
                 id=p.id,
@@ -146,7 +152,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 task_color=task_color,
                 is_accepted_by_others=n.id in accepted_by_others_note_ids,
                 due_date=n.due_date.isoformat() if n.due_date else None,
-                is_help_request=getattr(n, "is_help_request", False),
+                is_help_request=is_help,
             )
         )
     return out

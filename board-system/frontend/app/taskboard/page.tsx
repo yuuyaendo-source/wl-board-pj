@@ -37,6 +37,7 @@ export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
@@ -87,6 +88,7 @@ export default function TaskBoardPage() {
   const handleImportFromPostit = useCallback(async () => {
     setImporting(true);
     setImportMessage(null);
+    setActionError(null);
     try {
       const notes = await fetchLegacyPostitNotes();
       const result = await api.stickyNotes.importFromPostit({
@@ -103,7 +105,7 @@ export default function TaskBoardPage() {
       await delay(REFETCH_DELAY_MS);
       await fetchTask();
     } catch (e) {
-      setImportMessage(e instanceof Error ? e.message : "取り込みに失敗しました");
+      setActionError(e instanceof Error ? e.message : "取り込みに失敗しました");
     } finally {
       setImporting(false);
     }
@@ -136,6 +138,7 @@ export default function TaskBoardPage() {
 
   const handleCopyToPersonal = useCallback(
     async (noteId: number, ownerId: number) => {
+      setActionError(null);
       try {
         await api.stickyNotes.moveToPersonal(noteId, {
           owner_id: ownerId,
@@ -146,7 +149,7 @@ export default function TaskBoardPage() {
         setImportMessage("パーソナルボードにコピーしました");
         setTimeout(() => setImportMessage(null), 2000);
       } catch (err) {
-        setImportMessage(err instanceof Error ? err.message : "コピーに失敗しました");
+        setActionError(err instanceof Error ? err.message : "コピーに失敗しました");
       }
     },
     [fetchTask]
@@ -154,6 +157,7 @@ export default function TaskBoardPage() {
 
   const handleCopyToTeam = useCallback(
     async (noteId: number, teamId: number, teamName: string) => {
+      setActionError(null);
       try {
         const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId, lane: "INBOX" });
         await delay(REFETCH_DELAY_MS);
@@ -161,8 +165,7 @@ export default function TaskBoardPage() {
         setImportMessage(res.message);
         setTimeout(() => setImportMessage(null), 3000);
       } catch (err) {
-        setImportMessage(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
-        setTimeout(() => setImportMessage(null), 5000);
+        setActionError(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
       }
     },
     [fetchTask]
@@ -170,23 +173,33 @@ export default function TaskBoardPage() {
 
   const handleAppendContent = useCallback(
     async (noteId: number, currentContent: string | null, appendedText: string) => {
+      setActionError(null);
       const newContent = (currentContent || "").trim()
         ? `${(currentContent || "").trim()}\n${appendedText}`
         : appendedText;
-      await api.stickyNotes.update(noteId, { content: newContent });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      try {
+        await api.stickyNotes.update(noteId, { content: newContent });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "更新に失敗しました");
+      }
     },
     [fetchTask]
   );
 
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
-      await api.stickyNotes.update(noteId, {
-        due_date: dueDateStr === "" ? "" : dueDateStr,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      setActionError(null);
+      try {
+        await api.stickyNotes.update(noteId, {
+          due_date: dueDateStr === "" ? "" : dueDateStr,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+      }
     },
     [fetchTask]
   );
@@ -194,13 +207,14 @@ export default function TaskBoardPage() {
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
       setImportMessage(null);
+      setActionError(null);
       try {
         await api.stickyNotes.delete(noteId);
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch (e) {
-        setImportMessage(e instanceof Error ? e.message : "削除に失敗しました");
-        setTimeout(() => setImportMessage(null), 5000);
+        setActionError(e instanceof Error ? e.message : "削除に失敗しました");
+        await fetchTask();
       }
     },
     [fetchTask]
@@ -240,11 +254,17 @@ export default function TaskBoardPage() {
 
   const handleDrop = useCallback(
     async (placementId: number, column: number) => {
-      await api.boardPlacements.patch(placementId, {
-        matrix_quadrant: column,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      setActionError(null);
+      try {
+        await api.boardPlacements.patch(placementId, {
+          matrix_quadrant: column,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "移動に失敗しました");
+        await fetchTask();
+      }
     },
     [fetchTask]
   );
@@ -261,9 +281,32 @@ export default function TaskBoardPage() {
     <div className="mx-auto max-w-6xl px-4 py-4">
       {/* メニューバー・ゴミ箱・コピー先 */}
       <div className="sticky top-[52px] z-10 -mx-4 mb-4">
+        {actionError && (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="text-xs text-amber-700 hover:underline font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {(importing || importMessage) && (
-          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-xs">
-            {importing ? "取り込み中…" : importMessage}
+          <div className="mb-2 flex items-center justify-between text-xs font-medium text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-xs">
+            <span>{importing ? "取り込み中…" : importMessage}</span>
+            <button
+              type="button"
+              onClick={() => setImportMessage(null)}
+              className="text-xs text-emerald-600 hover:underline font-bold"
+            >
+              ✕
+            </button>
           </div>
         )}
 

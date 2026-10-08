@@ -174,7 +174,7 @@ export default function NoteCard({
   dragData,
   cardColor,
   showCalendarBadge = false,
-  takenBy = [],
+  takenBy,
   onAppendContent,
   onDueDateChange,
   onDragStart,
@@ -185,6 +185,9 @@ export default function NoteCard({
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
   const borderHighlight = getDueDateBorderClass(placement.due_date);
+
+  // 他担当者データの安全な評価（props 指定があれば優先、無ければ placement.taken_by をフォールバック参照）
+  const effectiveTakenBy = (takenBy && takenBy.length > 0) ? takenBy : (placement.taken_by || []);
 
   const handleSubmitAppend = () => {
     const trimmed = appendText.trim();
@@ -270,19 +273,26 @@ export default function NoteCard({
         />
       )}
 
-      {takenBy.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {takenBy.map((u) => (
+      {/* 他担当者の表示（対応中: 緑色 / 完了済み: 灰色＋打ち消し線＋チェックマーク） */}
+      {effectiveTakenBy.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/10 pt-1.5">
+          <span className="text-[10px] text-zinc-500 font-medium">他担当者:</span>
+          {effectiveTakenBy.map((u) => (
             <span
               key={u.id}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs font-medium text-zinc-600 shadow-sm"
-              title={u.name}
+              className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-xs transition-colors ${u.is_done
+                  ? "bg-zinc-400 text-white line-through opacity-80"
+                  : "bg-emerald-500 text-white"
+                }`}
+              title={`${u.name}${u.is_done ? " (完了済み)" : " (対応中)"}`}
             >
-              {u.name_short}
+              {u.is_done && <span>✅</span>}
+              {u.name_short || u.name}
             </span>
           ))}
         </div>
       )}
+
       {onAppendContent && (
         <div className="mt-1 flex gap-1" onClick={(e) => e.stopPropagation()}>
           <textarea
@@ -319,7 +329,8 @@ export default function NoteCard({
 
   if (draggable) {
     return (
-      <motion.div layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}>
+      /* ドラッグ・ホバー移動時の拡大跳ね動作を防ぐため whileHover={{ scale: 1.02 }} を削除 */
+      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
         <div
           className={className}
           draggable
@@ -347,7 +358,6 @@ export default function NoteCard({
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       className={className}

@@ -557,6 +557,24 @@ async def delete_sticky_note(
     if not note:
         return
 
+    # タスクボード／直削除ガード: 未完了の担当者がいる場合は削除をブロック
+    r_others = await db.execute(
+        select(BoardPlacement, User)
+        .join(User, BoardPlacement.owner_id == User.id)
+        .where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane != Lane.DONE,
+        )
+    )
+    others = r_others.all()
+    if others:
+        names = ", ".join([u.name for p, u in others])
+        raise HTTPException(
+            status_code=400,
+            detail=f"担当者（{names}）が完了にするまで削除できません",
+        )
+
     postit_board_id = note.postit_board_id
     postit_note_id = note.postit_note_id
 
@@ -575,12 +593,6 @@ async def delete_sticky_note(
             )
         else:
             logger.info("[delete_sticky_note] グレー化通知完了")
-    else:
-        logger.info(
-            "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
-            postit_board_id,
-            postit_note_id,
-        )
 
     await db.delete(note)
     await db.commit()
@@ -628,7 +640,7 @@ async def move_to_personal(
 
     await db.flush()
 
-    # --- 追加: 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り) ---
+    # 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り)
     await db.execute(
         sa_update(BoardPlacement)
         .where(
@@ -641,7 +653,8 @@ async def move_to_personal(
     )
     await db.flush()
 
-    if not note.postit_note_id:
+    # is_personal_only = True のパーソナル投稿由来付箋は付箋ボードへ同期しない
+    if not note.is_personal_only and not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
         try:
@@ -711,7 +724,6 @@ async def copy_to_team(
 
     await db.flush()
 
-    # --- 追加: 新規に割り当てられたユーザー以外の HELP_REQUEST レーンを INBOX に戻す ---
     if user_ids:
         await db.execute(
             sa_update(BoardPlacement)
@@ -725,7 +737,8 @@ async def copy_to_team(
         )
         await db.flush()
 
-    if not note.postit_note_id:
+    # is_personal_only = True のパーソナル投稿由来付箋は付箋ボードへ同期しない
+    if not note.is_personal_only and not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
         try:

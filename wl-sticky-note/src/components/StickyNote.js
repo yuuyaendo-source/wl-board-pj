@@ -41,9 +41,11 @@ export default function StickyNote({
     const noteRef = useRef(null);
     const lastMousePos = useRef({ x: 0, y: 0 });
 
-    // ドラッグ中のパフォーマンス最適化用Ref
     const dragOffset = useRef({ x: 0, y: 0 });
     const initialPos = useRef({ x: note.x, y: note.y });
+
+    // ★跳ね防止：ドラッグ完了から親のprops更新完了までの間、最新位置を保護保持するRef
+    const lastDraggedPos = useRef(null);
 
     const isLarge = note.ratioW && note.ratioW >= 0.2;
     const daysLeft = calcDaysLeft(dueDateVal);
@@ -52,12 +54,21 @@ export default function StickyNote({
         setTempDueDate(note.dueDate ?? "");
     }, [note.dueDate]);
 
-    // ドラッグ中でない場合は props の座標・選択状態をDOMへ同期
+    // ★親から新しい note.x, note.y が届いたら保護フラグをクリア
     useEffect(() => {
-        if (!isDragging && noteRef.current) {
+        if (lastDraggedPos.current) {
+            if (Math.abs(note.x - lastDraggedPos.current.x) < 0.1 && Math.abs(note.y - lastDraggedPos.current.y) < 0.1) {
+                lastDraggedPos.current = null;
+            }
+        }
+    }, [note.x, note.y]);
+
+    useEffect(() => {
+        if (!isDragging && noteRef.current && !lastDraggedPos.current) {
             noteRef.current.style.left = `${note.x}px`;
             noteRef.current.style.top = `${note.y}px`;
-            noteRef.current.style.transform = `scale(1)`;
+            noteRef.current.style.transform = "none";
+            noteRef.current.style.transition = "";
             noteRef.current.style.willChange = "auto";
         }
     }, [note.x, note.y, isDragging]);
@@ -66,8 +77,6 @@ export default function StickyNote({
         if (onMouseDown) onMouseDown(e);
         if (e.defaultPrevented || e.altKey) return;
 
-        // 中ボタン(button===1) または Spaceキー押下(button===0 && isSpacePressed) の場合は、
-        // 付箋の選択・移動を行わず親要素（ボード）のパン移動へ透過させる
         if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
             return;
         }
@@ -79,11 +88,11 @@ export default function StickyNote({
 
         e.stopPropagation();
 
-        // 選択ハンドリング（Shiftキー考慮）
         if (onSelect) {
             onSelect(note.id, e.shiftKey);
         }
 
+        lastDraggedPos.current = null;
         setIsDragging(true);
         lastMousePos.current = { x: e.clientX, y: e.clientY };
         dragOffset.current = { x: 0, y: 0 };
@@ -98,6 +107,7 @@ export default function StickyNote({
             onSelect(note.id, false);
         }
 
+        lastDraggedPos.current = null;
         setIsDragging(true);
         const touch = e.touches[0];
         lastMousePos.current = { x: touch.clientX, y: touch.clientY };
@@ -106,14 +116,15 @@ export default function StickyNote({
     };
 
     useEffect(() => {
-        const moveSelectedNotes = (dx, dy) => {
+        const moveSelectedNotes = () => {
             if (!isSelected || !onMoveSelectedNotes) return;
             document
                 .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
                 .forEach((el) => {
                     if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
-                    el.style.left = `${(parseFloat(el.style.left) || 0) + dx}px`;
-                    el.style.top = `${(parseFloat(el.style.top) || 0) + dy}px`;
+                    el.style.willChange = "transform";
+                    el.style.transition = "none";
+                    el.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0)`;
                 });
         };
 
@@ -125,24 +136,56 @@ export default function StickyNote({
             dragOffset.current.x += dx;
             dragOffset.current.y += dy;
 
-            // left/top の更新は毎回レイアウトを発生させるため、操作中は transform のみを更新する。
             if (noteRef.current) {
                 noteRef.current.style.willChange = "transform";
-                noteRef.current.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0) scale(1.05)`;
+                noteRef.current.style.transition = "none";
+                noteRef.current.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0)`;
             }
-            moveSelectedNotes(dx, dy);
+            moveSelectedNotes();
         };
 
         const finishDrag = () => {
             if (!isDragging) return;
             setIsDragging(false);
+
             const { x: dx, y: dy } = dragOffset.current;
-            if (dx === 0 && dy === 0) return;
+
+            if (dx === 0 && dy === 0) {
+                if (noteRef.current) {
+                    noteRef.current.style.transform = "none";
+                }
+                return;
+            }
+
+            const newX = initialPos.current.x + dx;
+            const newY = initialPos.current.y + dy;
+
+            lastDraggedPos.current = { x: newX, y: newY };
+
+            if (noteRef.current) {
+                noteRef.current.style.transition = "none";
+                noteRef.current.style.left = `${newX}px`;
+                noteRef.current.style.top = `${newY}px`;
+                noteRef.current.style.transform = "none";
+            }
+
             if (onMoveSelectedNotes && isSelected) {
+                document
+                    .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
+                    .forEach((el) => {
+                        if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
+                        const currentLeft = parseFloat(el.style.left) || 0;
+                        const currentTop = parseFloat(el.style.top) || 0;
+                        el.style.transition = "none";
+                        el.style.left = `${currentLeft + dx}px`;
+                        el.style.top = `${currentTop + dy}px`;
+                        el.style.transform = "none";
+                    });
+
                 onMoveSelectedNotes(note.id, dx, dy);
                 return;
             }
-            onUpdate({ ...note, x: initialPos.current.x + dx, y: initialPos.current.y + dy });
+            onUpdate({ ...note, x: newX, y: newY });
         };
 
         const handleMouseMove = (e) => moveDrag(e.clientX, e.clientY);
@@ -211,6 +254,13 @@ export default function StickyNote({
         }
     }
 
+    let displayX = note.x;
+    let displayY = note.y;
+    if (lastDraggedPos.current) {
+        displayX = lastDraggedPos.current.x;
+        displayY = lastDraggedPos.current.y;
+    }
+
     return (
         <div
             ref={noteRef}
@@ -218,10 +268,9 @@ export default function StickyNote({
             data-note-id={note.id}
             className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isSelected ? styles.selected : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''} ${cardHighlightClass}`}
             style={{
-                left: note.x,
-                top: note.y,
+                left: displayX,
+                top: displayY,
                 backgroundColor: note.gray ? '#e0e0e0' : (note.color || COLORS[0]),
-                transform: `scale(${isDragging ? 1.05 : 1})`,
                 zIndex: isDragging ? 1000 : (isSelected ? 500 : 1),
             }}
             onMouseDown={handleMouseDown}

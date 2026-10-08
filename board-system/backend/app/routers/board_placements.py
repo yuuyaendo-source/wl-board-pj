@@ -218,9 +218,7 @@ async def update_board_placement(
 
 @router.delete("/{placement_id}", status_code=204)
 async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
-    """配置1件削除（付箋は削除されない）。
-    【課題2対応】パーソナル配置の削除（ゴミ箱への投入）時にタスクボード側のステータスを完了(5)へ更新する。
-    """
+    """配置1件削除（付箋は削除されない）。"""
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
@@ -258,6 +256,25 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
         task_placement = r_task.scalar_one_or_none()
         if task_placement:
             task_placement.matrix_quadrant = 5
+
+    elif placement.board_type == BoardType.TASK:
+        # タスクボードからの配置削除時も未完了担当者がいる場合はブロック
+        r_others = await db.execute(
+            select(BoardPlacement, User)
+            .join(User, BoardPlacement.owner_id == User.id)
+            .where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.lane != Lane.DONE,
+            )
+        )
+        others = r_others.all()
+        if others:
+            names = ", ".join([u.name for p, u in others])
+            raise HTTPException(
+                status_code=400,
+                detail=f"担当者（{names}）が完了にするまで削除できません",
+            )
 
     await db.delete(placement)
     await db.commit()

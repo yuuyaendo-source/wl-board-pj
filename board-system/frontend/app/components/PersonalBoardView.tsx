@@ -29,7 +29,6 @@ function isCalendarPlacement(src?: string | null): boolean {
   return src === "calendar" || src === "calendar_timed";
 }
 
-/** カード色判定: DONE でない限り、is_help_request フラグまたは HELP_REQUEST レーンなら赤色(red)を維持 */
 function personalCardColor(
   lane: LaneType,
   placement: PlacementWithNote
@@ -63,6 +62,7 @@ export default function PersonalBoardView({
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summary, setSummary] = useState<{ events: SummaryEvent[]; today: SummaryTodayItem[] } | null>(null);
 
@@ -129,7 +129,7 @@ export default function PersonalBoardView({
 
   const handleDrop = useCallback(
     async (placementId: number, targetLane: LaneType, targetIndex?: number) => {
-      setError(null);
+      setActionError(null);
       const sourceLane = (Object.keys(byLane) as LaneType[]).find((k) =>
         byLane[k].some((p) => p.id === placementId)
       );
@@ -177,7 +177,7 @@ export default function PersonalBoardView({
 
   const handleTrashDrop = useCallback(
     async (placementId: number, noteId: number, isFromTask: boolean) => {
-      setError(null);
+      setActionError(null);
       try {
         if (isFromTask) {
           await api.boardPlacements.delete(placementId);
@@ -187,7 +187,8 @@ export default function PersonalBoardView({
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "削除に失敗しました");
+        setActionError(e instanceof Error ? e.message : "削除に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -195,13 +196,14 @@ export default function PersonalBoardView({
 
   const handleReleaseToTask = useCallback(
     async (noteId: number) => {
-      setError(null);
+      setActionError(null);
       try {
         await api.stickyNotes.releaseToTask(noteId);
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
+        setActionError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -209,12 +211,14 @@ export default function PersonalBoardView({
 
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
+      setActionError(null);
       try {
         await api.stickyNotes.update(noteId, { due_date: dueDateStr });
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+        setActionError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -234,7 +238,24 @@ export default function PersonalBoardView({
         <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
         <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
 
-        <div className="mt-6 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+        {/* 統一された操作エラー警告バナー */}
+        {actionError && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span className="font-semibold">{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="rounded-lg px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-100 font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
           <PersonalTrashDropZone onDrop={handleTrashDrop} />
           <PersonalTaskReleaseDropZone onDropToTask={handleReleaseToTask} />
         </div>
@@ -553,6 +574,7 @@ function LaneColumn({
               showCalendarBadge={isCalendarPlacement(p.placement_source)}
               cardColor={personalCardColor(lane, p)}
               dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
+              takenBy={p.taken_by} // ← 修正点: 他担当者バッジデータを明示的に渡す
               onAppendContent={onAppendContent}
               onDueDateChange={onDueDateChange}
               onDragEnd={onRefresh}

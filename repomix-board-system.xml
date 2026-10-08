@@ -3053,9 +3053,7 @@ async def update_board_placement(
 
 @router.delete("/{placement_id}", status_code=204)
 async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(get_db)):
-    """配置1件削除（付箋は削除されない）。
-    【課題2対応】パーソナル配置の削除（ゴミ箱への投入）時にタスクボード側のステータスを完了(5)へ更新する。
-    """
+    """配置1件削除（付箋は削除されない）。"""
     result = await db.execute(
         select(BoardPlacement).where(BoardPlacement.id == placement_id)
     )
@@ -3093,6 +3091,25 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
         task_placement = r_task.scalar_one_or_none()
         if task_placement:
             task_placement.matrix_quadrant = 5
+
+    elif placement.board_type == BoardType.TASK:
+        # タスクボードからの配置削除時も未完了担当者がいる場合はブロック
+        r_others = await db.execute(
+            select(BoardPlacement, User)
+            .join(User, BoardPlacement.owner_id == User.id)
+            .where(
+                BoardPlacement.note_id == placement.note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.lane != Lane.DONE,
+            )
+        )
+        others = r_others.all()
+        if others:
+            names = ", ".join([u.name for p, u in others])
+            raise HTTPException(
+                status_code=400,
+                detail=f"担当者（{names}）が完了にするまで削除できません",
+            )
 
     await db.delete(placement)
     await db.commit()
@@ -3221,16 +3238,22 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
             TakenByUser(id=uid, name=name, name_short=short, is_done=is_done)
             for uid, name, short, is_done in taken
         ]
-        if n.id in help_request_note_ids:
-            task_color = "red"
-        elif n.id in done_note_ids or (
-            p.matrix_quadrant is not None and p.matrix_quadrant == 5
-        ):
+        is_help = getattr(n, "is_help_request", False) or (
+            n.id in help_request_note_ids
+        )
+        is_completed = (p.matrix_quadrant == 5) or (
+            len(taken) > 0 and all(t.is_done for t in taken_by)
+        )
+
+        if is_completed:
             task_color = "grey"
+        elif is_help:
+            task_color = "red"
         elif taken:
             task_color = "green"
         else:
             task_color = "yellow"
+
         out.append(
             BoardPlacementWithNoteResponse(
                 id=p.id,
@@ -3248,7 +3271,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 task_color=task_color,
                 is_accepted_by_others=n.id in accepted_by_others_note_ids,
                 due_date=n.due_date.isoformat() if n.due_date else None,
-                is_help_request=getattr(n, "is_help_request", False),
+                is_help_request=is_help,
             )
         )
     return out
@@ -5050,6 +5073,24 @@ async def delete_sticky_note(
     if not note:
         return
 
+    # タスクボード／直削除ガード: 未完了の担当者がいる場合は削除をブロック
+    r_others = await db.execute(
+        select(BoardPlacement, User)
+        .join(User, BoardPlacement.owner_id == User.id)
+        .where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane != Lane.DONE,
+        )
+    )
+    others = r_others.all()
+    if others:
+        names = ", ".join([u.name for p, u in others])
+        raise HTTPException(
+            status_code=400,
+            detail=f"担当者（{names}）が完了にするまで削除できません",
+        )
+
     postit_board_id = note.postit_board_id
     postit_note_id = note.postit_note_id
 
@@ -5068,12 +5109,6 @@ async def delete_sticky_note(
             )
         else:
             logger.info("[delete_sticky_note] グレー化通知完了")
-    else:
-        logger.info(
-            "[delete_sticky_note] postit 連携なし (board_id=%s, note_id=%s) → グレー化スキップ",
-            postit_board_id,
-            postit_note_id,
-        )
 
     await db.delete(note)
     await db.commit()
@@ -5121,7 +5156,7 @@ async def move_to_personal(
 
     await db.flush()
 
-    # --- 追加: 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り) ---
+    # 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り)
     await db.execute(
         sa_update(BoardPlacement)
         .where(
@@ -5134,7 +5169,8 @@ async def move_to_personal(
     )
     await db.flush()
 
-    if not note.postit_note_id:
+    # is_personal_only = True のパーソナル投稿由来付箋は付箋ボードへ同期しない
+    if not note.is_personal_only and not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
         try:
@@ -5204,7 +5240,6 @@ async def copy_to_team(
 
     await db.flush()
 
-    # --- 追加: 新規に割り当てられたユーザー以外の HELP_REQUEST レーンを INBOX に戻す ---
     if user_ids:
         await db.execute(
             sa_update(BoardPlacement)
@@ -5218,7 +5253,8 @@ async def copy_to_team(
         )
         await db.flush()
 
-    if not note.postit_note_id:
+    # is_personal_only = True のパーソナル投稿由来付箋は付箋ボードへ同期しない
+    if not note.is_personal_only and not note.postit_note_id:
         from app.services.orchestrator import _sync_note_to_postit_async
 
         try:
@@ -10740,7 +10776,7 @@ export default function NoteCard({
   dragData,
   cardColor,
   showCalendarBadge = false,
-  takenBy = [],
+  takenBy,
   onAppendContent,
   onDueDateChange,
   onDragStart,
@@ -10751,6 +10787,9 @@ export default function NoteCard({
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
   const borderHighlight = getDueDateBorderClass(placement.due_date);
+
+  // 他担当者データの安全な評価（props 指定があれば優先、無ければ placement.taken_by をフォールバック参照）
+  const effectiveTakenBy = (takenBy && takenBy.length > 0) ? takenBy : (placement.taken_by || []);
 
   const handleSubmitAppend = () => {
     const trimmed = appendText.trim();
@@ -10836,19 +10875,26 @@ export default function NoteCard({
         />
       )}
 
-      {takenBy.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {takenBy.map((u) => (
+      {/* 他担当者の表示（対応中: 緑色 / 完了済み: 灰色＋打ち消し線＋チェックマーク） */}
+      {effectiveTakenBy.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/10 pt-1.5">
+          <span className="text-[10px] text-zinc-500 font-medium">他担当者:</span>
+          {effectiveTakenBy.map((u) => (
             <span
               key={u.id}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs font-medium text-zinc-600 shadow-sm"
-              title={u.name}
+              className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-xs transition-colors ${u.is_done
+                  ? "bg-zinc-400 text-white line-through opacity-80"
+                  : "bg-emerald-500 text-white"
+                }`}
+              title={`${u.name}${u.is_done ? " (完了済み)" : " (対応中)"}`}
             >
-              {u.name_short}
+              {u.is_done && <span>✅</span>}
+              {u.name_short || u.name}
             </span>
           ))}
         </div>
       )}
+
       {onAppendContent && (
         <div className="mt-1 flex gap-1" onClick={(e) => e.stopPropagation()}>
           <textarea
@@ -10885,7 +10931,8 @@ export default function NoteCard({
 
   if (draggable) {
     return (
-      <motion.div layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}>
+      /* ドラッグ・ホバー移動時の拡大跳ね動作を防ぐため whileHover={{ scale: 1.02 }} を削除 */
+      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
         <div
           className={className}
           draggable
@@ -10913,7 +10960,6 @@ export default function NoteCard({
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       className={className}
@@ -11216,7 +11262,6 @@ function isCalendarPlacement(src?: string | null): boolean {
   return src === "calendar" || src === "calendar_timed";
 }
 
-/** カード色判定: DONE でない限り、is_help_request フラグまたは HELP_REQUEST レーンなら赤色(red)を維持 */
 function personalCardColor(
   lane: LaneType,
   placement: PlacementWithNote
@@ -11250,6 +11295,7 @@ export default function PersonalBoardView({
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summary, setSummary] = useState<{ events: SummaryEvent[]; today: SummaryTodayItem[] } | null>(null);
 
@@ -11316,7 +11362,7 @@ export default function PersonalBoardView({
 
   const handleDrop = useCallback(
     async (placementId: number, targetLane: LaneType, targetIndex?: number) => {
-      setError(null);
+      setActionError(null);
       const sourceLane = (Object.keys(byLane) as LaneType[]).find((k) =>
         byLane[k].some((p) => p.id === placementId)
       );
@@ -11364,7 +11410,7 @@ export default function PersonalBoardView({
 
   const handleTrashDrop = useCallback(
     async (placementId: number, noteId: number, isFromTask: boolean) => {
-      setError(null);
+      setActionError(null);
       try {
         if (isFromTask) {
           await api.boardPlacements.delete(placementId);
@@ -11374,7 +11420,8 @@ export default function PersonalBoardView({
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "削除に失敗しました");
+        setActionError(e instanceof Error ? e.message : "削除に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -11382,13 +11429,14 @@ export default function PersonalBoardView({
 
   const handleReleaseToTask = useCallback(
     async (noteId: number) => {
-      setError(null);
+      setActionError(null);
       try {
         await api.stickyNotes.releaseToTask(noteId);
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
+        setActionError(e instanceof Error ? e.message : "タスクボードへの追加に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -11396,12 +11444,14 @@ export default function PersonalBoardView({
 
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
+      setActionError(null);
       try {
         await api.stickyNotes.update(noteId, { due_date: dueDateStr });
         await delay(REFETCH_DELAY_MS);
         await fetchPersonal();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+        setActionError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+        await fetchPersonal();
       }
     },
     [fetchPersonal]
@@ -11421,7 +11471,24 @@ export default function PersonalBoardView({
         <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
         <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
 
-        <div className="mt-6 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
+        {/* 統一された操作エラー警告バナー */}
+        {actionError && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span className="font-semibold">{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="rounded-lg px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-100 font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-row flex-nowrap items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
           <PersonalTrashDropZone onDrop={handleTrashDrop} />
           <PersonalTaskReleaseDropZone onDropToTask={handleReleaseToTask} />
         </div>
@@ -11740,6 +11807,7 @@ function LaneColumn({
               showCalendarBadge={isCalendarPlacement(p.placement_source)}
               cardColor={personalCardColor(lane, p)}
               dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
+              takenBy={p.taken_by} // ← 修正点: 他担当者バッジデータを明示的に渡す
               onAppendContent={onAppendContent}
               onDueDateChange={onDueDateChange}
               onDragEnd={onRefresh}
@@ -12014,6 +12082,7 @@ export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
@@ -12064,6 +12133,7 @@ export default function TaskBoardPage() {
   const handleImportFromPostit = useCallback(async () => {
     setImporting(true);
     setImportMessage(null);
+    setActionError(null);
     try {
       const notes = await fetchLegacyPostitNotes();
       const result = await api.stickyNotes.importFromPostit({
@@ -12080,7 +12150,7 @@ export default function TaskBoardPage() {
       await delay(REFETCH_DELAY_MS);
       await fetchTask();
     } catch (e) {
-      setImportMessage(e instanceof Error ? e.message : "取り込みに失敗しました");
+      setActionError(e instanceof Error ? e.message : "取り込みに失敗しました");
     } finally {
       setImporting(false);
     }
@@ -12113,6 +12183,7 @@ export default function TaskBoardPage() {
 
   const handleCopyToPersonal = useCallback(
     async (noteId: number, ownerId: number) => {
+      setActionError(null);
       try {
         await api.stickyNotes.moveToPersonal(noteId, {
           owner_id: ownerId,
@@ -12123,7 +12194,7 @@ export default function TaskBoardPage() {
         setImportMessage("パーソナルボードにコピーしました");
         setTimeout(() => setImportMessage(null), 2000);
       } catch (err) {
-        setImportMessage(err instanceof Error ? err.message : "コピーに失敗しました");
+        setActionError(err instanceof Error ? err.message : "コピーに失敗しました");
       }
     },
     [fetchTask]
@@ -12131,6 +12202,7 @@ export default function TaskBoardPage() {
 
   const handleCopyToTeam = useCallback(
     async (noteId: number, teamId: number, teamName: string) => {
+      setActionError(null);
       try {
         const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId, lane: "INBOX" });
         await delay(REFETCH_DELAY_MS);
@@ -12138,8 +12210,7 @@ export default function TaskBoardPage() {
         setImportMessage(res.message);
         setTimeout(() => setImportMessage(null), 3000);
       } catch (err) {
-        setImportMessage(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
-        setTimeout(() => setImportMessage(null), 5000);
+        setActionError(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
       }
     },
     [fetchTask]
@@ -12147,23 +12218,33 @@ export default function TaskBoardPage() {
 
   const handleAppendContent = useCallback(
     async (noteId: number, currentContent: string | null, appendedText: string) => {
+      setActionError(null);
       const newContent = (currentContent || "").trim()
         ? `${(currentContent || "").trim()}\n${appendedText}`
         : appendedText;
-      await api.stickyNotes.update(noteId, { content: newContent });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      try {
+        await api.stickyNotes.update(noteId, { content: newContent });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "更新に失敗しました");
+      }
     },
     [fetchTask]
   );
 
   const handleDueDateChange = useCallback(
     async (noteId: number, dueDateStr: string) => {
-      await api.stickyNotes.update(noteId, {
-        due_date: dueDateStr === "" ? "" : dueDateStr,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      setActionError(null);
+      try {
+        await api.stickyNotes.update(noteId, {
+          due_date: dueDateStr === "" ? "" : dueDateStr,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+      }
     },
     [fetchTask]
   );
@@ -12171,13 +12252,14 @@ export default function TaskBoardPage() {
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
       setImportMessage(null);
+      setActionError(null);
       try {
         await api.stickyNotes.delete(noteId);
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch (e) {
-        setImportMessage(e instanceof Error ? e.message : "削除に失敗しました");
-        setTimeout(() => setImportMessage(null), 5000);
+        setActionError(e instanceof Error ? e.message : "削除に失敗しました");
+        await fetchTask();
       }
     },
     [fetchTask]
@@ -12217,11 +12299,17 @@ export default function TaskBoardPage() {
 
   const handleDrop = useCallback(
     async (placementId: number, column: number) => {
-      await api.boardPlacements.patch(placementId, {
-        matrix_quadrant: column,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      setActionError(null);
+      try {
+        await api.boardPlacements.patch(placementId, {
+          matrix_quadrant: column,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "移動に失敗しました");
+        await fetchTask();
+      }
     },
     [fetchTask]
   );
@@ -12238,9 +12326,32 @@ export default function TaskBoardPage() {
     <div className="mx-auto max-w-6xl px-4 py-4">
       {/* メニューバー・ゴミ箱・コピー先 */}
       <div className="sticky top-[52px] z-10 -mx-4 mb-4">
+        {actionError && (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="text-xs text-amber-700 hover:underline font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {(importing || importMessage) && (
-          <div className="mb-2 text-xs font-medium text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 shadow-xs">
-            {importing ? "取り込み中…" : importMessage}
+          <div className="mb-2 flex items-center justify-between text-xs font-medium text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-xs">
+            <span>{importing ? "取り込み中…" : importMessage}</span>
+            <button
+              type="button"
+              onClick={() => setImportMessage(null)}
+              className="text-xs text-emerald-600 hover:underline font-bold"
+            >
+              ✕
+            </button>
           </div>
         )}
 
@@ -12768,6 +12879,7 @@ export interface TakenByUser {
   id: number;
   name: string;
   name_short: string;
+  is_done?: boolean;
 }
 
 /** ボード View 用: 配置 + 付箋本文 */

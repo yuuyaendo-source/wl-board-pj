@@ -3,6 +3,7 @@ export interface TakenByUser {
   id: number;
   name: string;
   name_short: string;
+  is_done?: boolean;
 }
 
 /** ボード View 用: 配置 + 付箋本文 */
