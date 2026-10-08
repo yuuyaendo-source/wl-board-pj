@@ -54,7 +54,7 @@ services:
 
   frontend:
     build:
-      context: ..   # ← ここを ./frontend から .. に変更
+      context: ..
       dockerfile: board-system/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://wlboardsys.internal.wonder-link.com/api/bs}
@@ -72,8 +72,7 @@ services:
 
   sticky-note:
     build:
-      context: ..   # ← 念のためここも合わせて .. に変更
-      dockerfile: wl-sticky-note/src/Dockerfile
+      context: ../wl-sticky-note/src
       args:
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH}
     container_name: linko-sticky-note-${COLOR}
