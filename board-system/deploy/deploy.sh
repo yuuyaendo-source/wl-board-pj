@@ -150,8 +150,8 @@ FRONTEND_CONTAINER=$(docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$
 
 if [ -n "$FRONTEND_CONTAINER" ]; then
     echo "Syncing static assets to host directory..."
-    # コンテナからホストOSのディレクトリへ直接上書きコピー
-    docker cp ${FRONTEND_CONTAINER}:/app/.next/static/. "$STATIC_DIR/"
+    # コンテナからホストOSのディレクトリへ直接上書きコピー（パスをDockerfileのWORKDIRに合わせて修正）
+    docker cp ${FRONTEND_CONTAINER}:/app/board-system/frontend/.next/static/. "$STATIC_DIR/"
     # Nginxが安全に読み取れるようにパーミッションを調整 (ディレクトリは実行権限、ファイルは読み取り権限)
     chmod -R a+rX "$STATIC_DIR"
 else
