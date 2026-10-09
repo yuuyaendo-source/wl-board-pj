@@ -10,8 +10,6 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 
-const SOCKET_SERVER_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
-const TRASH_AREA = { x: 3600, y: 3600 };
 const TRASH_COLOR = "#e0e0e0";
 
 export const MIN_SCALE = 0.3;
@@ -409,11 +407,6 @@ export default function BoardPage() {
             }
         });
     }, []);
-
-    const addLine = (line) => {
-        setLines((prev) => [...prev, line]);
-        socket.emit("add-line", { boardId, line });
-    };
 
     const deleteNote = (noteId) => {
         setNotes((prev) => prev.filter((n) => n.id !== noteId));

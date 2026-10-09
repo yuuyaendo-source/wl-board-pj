@@ -99,15 +99,6 @@
     transform: scale(0.97);
 }
 
-.textBtn.delete {
-    background: #ffebee;
-    color: #c62828;
-}
-
-.textBtn.delete:hover {
-    background: #ffcdd2;
-}
-
 /* 機能アイコン: クリックしやすい大きさ */
 .iconBtnWrap {
     position: relative;

@@ -38,8 +38,6 @@ export default function StickyNote({
     isSelected,
     onSelect,
     onMoveSelectedNotes,
-    onMouseDown,
-    onMouseUp,
     isSpacePressed
 }) {
     const [isDragging, setIsDragging] = useState(false);
@@ -87,7 +85,6 @@ export default function StickyNote({
     }, [note.x, note.y, isDragging]);
 
     const handleMouseDown = (e) => {
-        if (onMouseDown) onMouseDown(e);
         if (e.defaultPrevented || e.altKey) return;
 
         if (e.button === 1 || (e.button === 0 && isSpacePressed)) {
@@ -304,7 +301,6 @@ export default function StickyNote({
                 zIndex: isDragging ? 1000 : (isSelected ? 500 : 1),
             }}
             onMouseDown={handleMouseDown}
-            onMouseUp={onMouseUp}
             onTouchStart={handleTouchStart}
         >
             <button
@@ -400,6 +396,8 @@ export default function StickyNote({
                             value={tempDueDate}
                             onChange={(e) => setTempDueDate(e.target.value)}
                             onMouseDown={(e) => e.stopPropagation()}
+                            tabIndex={-1}
+                            aria-hidden="true"
                             style={{
                                 position: "absolute",
                                 width: 0,

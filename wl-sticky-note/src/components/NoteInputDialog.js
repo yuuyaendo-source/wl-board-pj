@@ -88,6 +88,8 @@ export default function NoteInputDialog({
                                 type="date"
                                 value={dueDate}
                                 onChange={(e) => setDueDate(e.target.value)}
+                                tabIndex={-1}
+                                aria-hidden="true"
                                 style={{
                                     position: "absolute",
                                     width: 0,

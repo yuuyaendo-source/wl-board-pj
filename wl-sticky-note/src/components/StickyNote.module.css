@@ -54,10 +54,6 @@
     font-size: 1.5rem;
 }
 
-.note.large .textarea {
-    font-size: 1.5rem;
-}
-
 .pinButton,
 .dateButton,
 .colorButton,
@@ -139,13 +135,6 @@
     align-items: center;
     gap: 6px;
     z-index: 100;
-}
-
-.dateInput {
-    font-size: 12px;
-    padding: 2px 4px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
 }
 
 .saveBtn {

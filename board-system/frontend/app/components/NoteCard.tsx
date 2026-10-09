@@ -97,6 +97,7 @@ function DueDatePicker({
           onChange={(e) => setValue(e.target.value)}
           className="sr-only"
           tabIndex={-1}
+          aria-hidden="true"
         />
       </div>
       <button
