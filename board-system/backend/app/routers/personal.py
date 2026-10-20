@@ -5,7 +5,6 @@ linko-system が GET /api/personal/{person_id}/summary でサマリを取得し�
 POST /api/personal/{person_id}/today でカレンダーキーワード由来の Today を送る。
 """
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

@@ -24,6 +24,10 @@ const INAPPROPRIATE_KEYWORDS = (process.env.INAPPROPRIATE_KEYWORDS || '')
     .split(',')
     .map(s => s.trim().toLowerCase())
     .filter(Boolean);
+const ALLOWED_ORIGINS = new Set(
+    (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000,https://wlboardsys.internal.wonder-link.com')
+        .split(',').map(value => value.trim().replace(/\/$/, '')).filter(Boolean)
+);
 
 function isInappropriateText(text) {
     if (!text || typeof text !== 'string') return false;
@@ -69,33 +73,44 @@ app.prepare().then(() => {
     const httpServer = http.createServer(server);
     const io = new Server(httpServer);
 
-    // リクエストボディのサイズ制限を緩和（画像データ受信のため）
-    server.use(express.json({ limit: '50mb' }));
-    server.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-    // CORS設定（Python側からのリクエストを許可）
+    // CORS許可オリジンを明示し、Hostヘッダーやリバースプロキシに依存しない。
     server.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
+        res.vary('Origin');
+        const origin = req.get('origin');
+        const allowed = origin && ALLOWED_ORIGINS.has(origin.replace(/\/$/, ''));
+        if (allowed) {
+            res.header('Access-Control-Allow-Origin', origin);
+        }
         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         if (req.method === 'OPTIONS') {
-            return res.sendStatus(200);
+            return allowed ? res.sendStatus(204) : res.sendStatus(403);
         }
         next();
     });
 
-    // Same-origin browser mutations prevent cross-site form/fetch requests from
-    // clearing or changing boards. Server-to-server calls without Origin remain supported.
+    // Browser mutations require an allowlisted Origin; reject cross-site fetches
+    // even when a browser omits Origin but identifies its request as cross-site.
     server.use('/api', (req, res, next) => {
         const origin = req.get('origin');
-        if (!origin || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
-        try {
-            if (new URL(origin).host !== req.get('host')) return res.sendStatus(403);
-        } catch (e) {
+        const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+        const fetchSite = req.get('sec-fetch-site');
+        if (isMutation && !origin) {
+            const contentType = req.get('content-type') || '';
+            if ((fetchSite && fetchSite !== 'same-origin') ||
+                (!fetchSite && /^(application\/x-www-form-urlencoded|multipart\/form-data|text\/plain)/i.test(contentType))) {
+                return res.sendStatus(403);
+            }
+        }
+        if (isMutation && origin && !ALLOWED_ORIGINS.has(origin.replace(/\/$/, ''))) {
             return res.sendStatus(403);
         }
         return next();
     });
+
+    // リクエストボディのサイズ制限を緩和（画像データ受信のため）
+    server.use(express.json({ limit: '50mb' }));
+    server.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // ボードデータの読み込み（なければ空で初期化）
     // null prototype prevents special property names (for example __proto__) from
@@ -187,9 +202,6 @@ app.prepare().then(() => {
     process.on('SIGINT', () => handleShutdown('SIGINT'));
     process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
-    // ボードごとのユーザー管理
-    const boardUsers = Object.create(null); // { boardId: { socketId: { username, joinedAt } } }
-
     io.on('connection', (socket) => {
         console.log('Client connected:', socket.id);
 
@@ -213,26 +225,6 @@ app.prepare().then(() => {
             boards[boardId].name = trimmed;
             saveBoards();
             io.to(boardId).emit('board-name-updated', { name: trimmed });
-        });
-
-        // ユーザー参加通知
-        socket.on('user-join', ({ boardId, username }) => {
-            console.log(`User ${username} (${socket.id}) joined board ${boardId}`);
-
-            if (!boardUsers[boardId]) {
-                boardUsers[boardId] = Object.create(null);
-            }
-
-            boardUsers[boardId][socket.id] = {
-                socketId: socket.id,
-                username,
-                joinedAt: Date.now()
-            };
-
-            socket.to(boardId).emit('user-joined', {
-                socketId: socket.id,
-                username
-            });
         });
 
         // 付箋追加
@@ -336,17 +328,6 @@ app.prepare().then(() => {
         socket.on('disconnect', () => {
             console.log('Client disconnected:', socket.id);
 
-            Object.keys(boardUsers).forEach((boardId) => {
-                if (boardUsers[boardId][socket.id]) {
-                    const username = boardUsers[boardId][socket.id].username;
-                    delete boardUsers[boardId][socket.id];
-
-                    socket.to(boardId).emit('user-left', {
-                        socketId: socket.id,
-                        username
-                    });
-                }
-            });
         });
     });
 

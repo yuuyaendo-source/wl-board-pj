@@ -259,9 +259,6 @@ def load_config():
         sanitize_config_urls(cfg, _get_defaults())
     except Exception as e:
         print(f"[security] config URL sanitize skipped: {e}", flush=True)
-    cfg["calendar_remind_minutes_before"] = normalize_calendar_remind_minutes(
-        cfg.get("calendar_remind_minutes_before")
-    )
     mins_list = parse_calendar_remind_minutes_list(cfg)
     cfg["calendar_remind_minutes_before_list"] = mins_list
     cfg["calendar_remind_minutes_before"] = (

@@ -37,7 +37,6 @@ async def reconcile_sticky_notes(
         "remote_total": 0,
         "db_total": 0,
         "created_in_db": 0,
-        "updated_in_remote": 0,
         "archived_in_remote": 0,
         "errors": [],
     }

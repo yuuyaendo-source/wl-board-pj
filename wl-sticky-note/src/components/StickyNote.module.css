@@ -48,12 +48,6 @@
     border: 1px solid #bdbdbd;
 }
 
-.note.large {
-    width: 320px;
-    height: 320px;
-    font-size: 1.5rem;
-}
-
 .pinButton,
 .dateButton,
 .colorButton,
@@ -231,10 +225,6 @@
     font-family: inherit;
     font-size: 1rem;
     outline: none;
-}
-
-.note.large .appendInput {
-    font-size: 1.2rem;
 }
 
 .groupBadge {

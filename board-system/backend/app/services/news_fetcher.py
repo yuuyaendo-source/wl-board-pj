@@ -48,7 +48,7 @@ def _format_entry(entry: Any, tag: str) -> str:
 
 def fetch_rss_text() -> str:
     """
-    テック・おもしろ・Makuake の RSS からそれぞれ上位 TOP_N 件を取得し、
+    テック・おもしろ・Gizmodo の RSS からそれぞれ上位 TOP_N 件を取得し、
     ジャンルタグと URL 付きの1つのテキストにフォーマットして返す。
     """
     lines = []

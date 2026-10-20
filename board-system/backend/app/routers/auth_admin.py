@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
 """管理者認証 API（パスワード保護用）。標準ライブラリで簡易 JWT を発行・検証。"""
-from app.core.time_utils import utc_now_naive
-
-import base64
-import json
-import hmac
-import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+import jwt
+from jwt import InvalidTokenError
 
 from app.config import settings
 
@@ -30,56 +26,25 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
 
 
-def _b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(b64: str) -> bytes:
-    pad = "=" * ((4 - len(b64) % 4) % 4)
-    return base64.urlsafe_b64decode((b64 + pad).encode("ascii"))
-
-
 def create_access_token() -> str:
-    header = {"alg": "HS256", "typ": "JWT"}
-    exp = int(
-        (utc_now_naive() + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()
-    )
-    payload = {"sub": "admin", "exp": exp}
-
-    header_b64 = _b64url_encode(json.dumps(header).encode("utf-8"))
-    payload_b64 = _b64url_encode(json.dumps(payload).encode("utf-8"))
-
-    msg = f"{header_b64}.{payload_b64}".encode("utf-8")
-    signature = hmac.new(
-        settings.jwt_secret.encode("utf-8"), msg, hashlib.sha256
-    ).digest()
-    sig_b64 = _b64url_encode(signature)
-
-    return f"{header_b64}.{payload_b64}.{sig_b64}"
+    payload = {
+        "sub": "admin",
+        "exp": datetime.now(timezone.utc)
+        + timedelta(minutes=settings.jwt_expire_minutes),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 
 def verify_token(token: str) -> bool:
     try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return False
-        header_b64, payload_b64, sig_b64 = parts
-
-        msg = f"{header_b64}.{payload_b64}".encode("utf-8")
-        expected_sig = hmac.new(
-            settings.jwt_secret.encode("utf-8"), msg, hashlib.sha256
-        ).digest()
-
-        if not hmac.compare_digest(_b64url_decode(sig_b64), expected_sig):
-            return False
-
-        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
-        if payload.get("sub") != "admin":
-            return False
-        if payload.get("exp", 0) < int(utc_now_naive().timestamp()):
-            return False
-        return True
-    except Exception as e:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=["HS256"],
+            options={"require": ["sub", "exp"]},
+        )
+        return payload.get("sub") == "admin"
+    except InvalidTokenError as e:
         logger.warning(f"Token verification failed: {e}")
         return False
 

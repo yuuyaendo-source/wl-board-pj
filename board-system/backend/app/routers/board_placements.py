@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, User
@@ -227,6 +227,14 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
     placement = result.scalar_one_or_none()
     if not placement:
         raise HTTPException(status_code=404, detail="Board placement not found")
+
+    # 同じ付箋の配置削除を直列化する。PostgreSQL ではトランザクション終了まで
+    # StickyNote 行をロックし、担当者チェックと削除の間に別削除が割り込むのを防ぐ。
+    await db.execute(
+        select(StickyNote.id)
+        .where(StickyNote.id == placement.note_id)
+        .with_for_update()
+    )
 
     if placement.board_type == BoardType.PERSONAL:
         # 同一タスクに対する他の未完了パーソナル配置があるかチェック (複数人アサイン時の削除制御)

@@ -5,6 +5,7 @@
 """
 import logging
 import hashlib
+import os
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
     admin_password: str = Field(default="admin123")
     jwt_secret: str = Field(default="super-secret-key-change-in-production-12345")
     jwt_expire_minutes: int = 1440  # 24時間
+    environment: str = Field(default="development")
 
     # 社内 LLM Docker を複数台切り替え: 1〜3 を指定すると OLLAMA_URL_n / OLLAMA_MODEL_n を採用。
     # 未設定なら従来どおり OLLAMA_URL / OLLAMA_MODEL のみ。
@@ -170,8 +172,17 @@ class Settings(BaseSettings):
         return u, m
 
     @model_validator(mode="after")
-    def validate_llm_env(self) -> "Settings":
-        """環境変数 LLM_TARGET 指定時、対応 URL が取れることを起動時に検証。"""
+    def validate_runtime_configuration(self) -> "Settings":
+        """本番シークレットと LLM_TARGET の設定を起動時に検証。"""
+        production_modes = {"production", "prod"}
+        if (
+            self.environment.strip().lower() in production_modes
+            or os.getenv("NODE_ENV", "").strip().lower() in production_modes
+        ):
+            if self.admin_password == "admin123":
+                raise ValueError("本番環境では ADMIN_PASSWORD を既定値から変更してください。")
+            if self.jwt_secret == "super-secret-key-change-in-production-12345":
+                raise ValueError("本番環境では JWT_SECRET を安全な値に変更してください。")
         t = self.llm_target
         if t is None:
             return self

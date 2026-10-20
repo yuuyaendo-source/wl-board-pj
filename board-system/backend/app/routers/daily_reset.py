@@ -12,6 +12,7 @@ from app.db import get_db
 from app.core.time_utils import utc_now_naive, JST
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
+from app.services.due_date_rules import should_move_to_today
 from app.services.sync_reconciliation import reconcile_sticky_notes
 
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
@@ -107,8 +108,6 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
         # 手動移動フラグが立っている場合は自動移動をスキップ
         if p.is_manually_moved_to_today:
             continue
-
-        from app.services.due_date_rules import should_move_to_today
 
         target_lane = Lane.TODAY if should_move_to_today(n.due_date, today_jst) else Lane.INBOX
 
@@ -262,7 +261,6 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     from app.config import settings
     from app.models import OAuthPkceState, UserGoogleToken
     from app.routers.auth_google import _refresh_user_calendar_and_today
-    from datetime import datetime
     import logging
 
     log = logging.getLogger(__name__)

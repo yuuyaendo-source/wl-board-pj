@@ -80,6 +80,7 @@ npm run dev
 | `BOARD_SYSTEM_API_URL` | Board System API のベース URL | `http://127.0.0.1:8000` |
 | `NEXT_PUBLIC_BOARD_SYSTEM_URL` | ツールバー（📋）リンク先の Board System URL | `https://wlboardsys.internal.wonder-link.com/boards` |
 | `AI_BOARD_URL` | AI-Board の URL（付箋連携用） | `http://127.0.0.1:5000` |
+| `CORS_ALLOWED_ORIGINS` | APIへのブラウザーアクセスを許可するOrigin（カンマ区切り） | localhost と本番 Board System |
 
 ---
 
@@ -88,6 +89,7 @@ npm run dev
 本番環境では `board-system` と統合管理されています。
 
 - **データ永続化**: Docker 共通ボリューム `sticky_note_data` に `boards.json` を保存。
+- **実行数の前提**: `boards.json` の排他制御はプロセス内のみです。PM2 cluster や複数コンテナで同じファイルを共有しないでください。スケールアウト時はDB/Redis等の共有ストレージへ移行してください。
 - **自動バックアップ**: `deploy.sh` 実行時に、既存コンテナの `boards.json` をサイズガード付きで `backups/sticky-note/` 配下へ自動バックアップ（最新30世代を保持）。
 - **静的アセット同期（改善計画21）**: デプロイ時にホストOSの `/var/www/wlinko-pj/shared_static/sticky-note` へ同期され、Nginx が直接配信します。
 

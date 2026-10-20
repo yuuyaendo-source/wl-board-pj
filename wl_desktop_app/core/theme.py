@@ -18,7 +18,6 @@ import sys
 # プラットフォーム判定 (透過処理の分岐に使う)。
 # -transparentcolor は Windows 専用のため、非 Windows では別処理にする。
 IS_WINDOWS = sys.platform.startswith("win")
-IS_MAC = sys.platform == "darwin"
 
 
 class Theme:

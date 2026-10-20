@@ -207,7 +207,7 @@ async def mark_task_reminder_slot_shown(
     return {"ok": True, "marked": marked}
 
 
-@router.post("/{user_id}/task_reminders/shown")
+@router.post("/{user_id}/task_reminders/shown", deprecated=True)
 async def mark_task_reminder_shown(
     user_id: int,
     body: ShownBody,

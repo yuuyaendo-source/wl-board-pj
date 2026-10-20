@@ -24,6 +24,27 @@ from app.services.llm_settings import get_resolved_ollama_async
 logger = logging.getLogger("uvicorn")
 
 
+async def ensure_postit_sync(request: Request, note: StickyNote, db: AsyncSession) -> bool:
+    """未同期の共有付箋を付箋ボードへ初回同期し、同期IDを保存する。"""
+    if note.is_personal_only or note.postit_note_id:
+        return False
+    from app.config import settings
+
+    try:
+        ok = await _sync_note_to_postit_async(
+            request, note.id, note.content or "", settings.postit_board_id
+        )
+        if not ok:
+            return False
+        note.postit_board_id = settings.postit_board_id
+        note.postit_note_id = f"bs-{note.id}"
+        await db.flush()
+        return True
+    except Exception as e:
+        logger.warning("付箋ボードへの初期同期に失敗 (note_id=%s): %s", note.id, e)
+        return False
+
+
 async def process_new_note_ai_background(app, note_id: int) -> None:
     """HTTP response 後に専用 DB セッションで AI 振り分けを実行する。"""
     request = SimpleNamespace(app=app)
@@ -106,19 +127,7 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
         logger.info("[Linko AI] MOCK_AI 提案適用 Note ID: %s", note_id)
         await _place_on_task_board(db, note_id, 80.0, 80.0, 4)  # 重要列へマッピング
         await db.flush()
-        if not note.postit_note_id:
-            from app.config import settings
-
-            ok = await _sync_note_to_postit_async(
-                request,
-                note.id,
-                note.content or "",
-                settings.postit_board_id,
-            )
-            if ok:
-                note.postit_board_id = settings.postit_board_id
-                note.postit_note_id = f"bs-{note.id}"
-                await db.flush()
+        await ensure_postit_sync(request, note, db)
         return
 
     ollama_url, model_ov = await get_resolved_ollama_async(db)
@@ -142,20 +151,9 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
             "[Linko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
             note_id,
         )
-        if not note.postit_note_id:
-            from app.config import settings
-
-            ok = await _sync_note_to_postit_async(
-                request,
-                note.id,
-                note.content or "",
-                settings.postit_board_id,
-            )
-            if ok:
-                note.postit_board_id = settings.postit_board_id
-                note.postit_note_id = f"bs-{note.id}"
-                await db.flush()
-                logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+        synced = await ensure_postit_sync(request, note, db)
+        if synced:
+            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
         return
 
     if not triage_result.get("is_task"):
@@ -239,20 +237,9 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
     else:
         logger.info("[Linko AI] Note %s 振り分け完了（担当者なし）", note_id)
 
-    if not note.postit_note_id:
-        from app.config import settings
-
-        ok = await _sync_note_to_postit_async(
-            request,
-            note.id,
-            note.content or "",
-            settings.postit_board_id,
-        )
-        if ok:
-            note.postit_board_id = settings.postit_board_id
-            note.postit_note_id = f"bs-{note.id}"
-            await db.flush()
-            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+    synced = await ensure_postit_sync(request, note, db)
+    if synced:
+        logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
 
 
 async def _sync_note_to_postit_async(

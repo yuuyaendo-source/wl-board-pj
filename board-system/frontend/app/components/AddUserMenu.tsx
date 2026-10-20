@@ -30,6 +30,13 @@ function getTeamBadgeStyle(teamId: number): string {
   return TEAM_BADGE_STYLES[index];
 }
 
+const extractTeamIds = (user: any): number[] => {
+  if (Array.isArray(user?.team_ids)) return user.team_ids.map(Number);
+  if (Array.isArray(user?.teams)) return user.teams.map((t: any) => Number(t.id));
+  if (user?.teamId) return [Number(user.teamId)];
+  return [];
+};
+
 export default function AddUserMenu({ members, onSuccess, open: controlledOpen, onOpenChange }: AddUserMenuProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const controlled = controlledOpen !== undefined && onOpenChange !== undefined;
@@ -166,16 +173,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     setEditCallName(targetUser.call_name ?? "");
 
     // チームIDリストを確実に数値配列化
-    let extractedTeamIds: number[] = [];
-    if (Array.isArray(targetUser.team_ids)) {
-      extractedTeamIds = targetUser.team_ids.map(Number);
-    } else if (Array.isArray(targetUser.teams)) {
-      extractedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
-    } else if (targetUser.teamId) {
-      extractedTeamIds = [Number(targetUser.teamId)];
-    }
-
-    setEditTeamIds(extractedTeamIds);
+    setEditTeamIds(extractTeamIds(targetUser));
     setError(null);
   };
 
@@ -415,14 +413,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                       const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
 
                       // 所属チームの判定
-                      let assignedTeamIds: number[] = [];
-                      if (Array.isArray(targetUser.team_ids)) {
-                        assignedTeamIds = targetUser.team_ids.map(Number);
-                      } else if (Array.isArray(targetUser.teams)) {
-                        assignedTeamIds = targetUser.teams.map((t: any) => Number(t.id));
-                      } else if (targetUser.teamId) {
-                        assignedTeamIds = [Number(targetUser.teamId)];
-                      }
+                      const assignedTeamIds = extractTeamIds(targetUser);
 
                       const userTeams = teams.filter((t) => assignedTeamIds.includes(Number(t.id)));
 
@@ -627,16 +618,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                   const memberId = Number(m.ownerId ?? m.id);
                                   const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
 
-                                  let ids: number[] = [];
-                                  if (Array.isArray(targetUser.team_ids)) {
-                                    ids = targetUser.team_ids.map(Number);
-                                  } else if (Array.isArray(targetUser.teams)) {
-                                    ids = targetUser.teams.map((t: any) => Number(t.id));
-                                  } else if (targetUser.teamId) {
-                                    ids = [Number(targetUser.teamId)];
-                                  }
-
-                                  return ids.includes(Number(team.id));
+                                  return extractTeamIds(targetUser).includes(Number(team.id));
                                 })
                                 .map((m: any) => (
                                   <span key={m.ownerId ?? m.id} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
@@ -647,16 +629,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                                 const memberId = Number(m.ownerId ?? m.id);
                                 const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
 
-                                let ids: number[] = [];
-                                if (Array.isArray(targetUser.team_ids)) {
-                                  ids = targetUser.team_ids.map(Number);
-                                } else if (Array.isArray(targetUser.teams)) {
-                                  ids = targetUser.teams.map((t: any) => Number(t.id));
-                                } else if (targetUser.teamId) {
-                                  ids = [Number(targetUser.teamId)];
-                                }
-
-                                return ids.includes(Number(team.id));
+                                return extractTeamIds(targetUser).includes(Number(team.id));
                               }).length === 0 && (
                                   <span className="text-xs text-zinc-400">メンバーなし</span>
                                 )}

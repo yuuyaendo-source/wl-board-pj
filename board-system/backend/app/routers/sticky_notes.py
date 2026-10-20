@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import logging
-from datetime import date as DateType, datetime
+from datetime import date as DateType
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import delete, select, update as sa_update
+from sqlalchemy import select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -28,32 +28,7 @@ router = APIRouter(prefix="/sticky_notes", tags=["sticky_notes"])
 logger = logging.getLogger(__name__)
 
 
-async def _ensure_postit_sync(request: Request, note: "StickyNote", db: AsyncSession) -> bool:
-    """パーソナル専用以外の付箋について、未同期であれば付箋ボードへ初回同期を行う。
-
-    戻り値: 同期を実行した場合 True、スキップまたは失敗の場合 False。
-    """
-    if note.is_personal_only or note.postit_note_id:
-        return False
-    from app.services.orchestrator import _sync_note_to_postit_async
-
-    try:
-        ok = await _sync_note_to_postit_async(
-            request,
-            note.id,
-            note.content or "",
-            settings.postit_board_id,
-        )
-        if ok:
-            note.postit_board_id = settings.postit_board_id
-            note.postit_note_id = f"bs-{note.id}"
-            await db.flush()
-            return True
-    except Exception as e:
-        logger.warning(
-            "付箋ボードへの初期同期に失敗 (note_id=%s): %s", note.id, e
-        )
-    return False
+from app.services.orchestrator import ensure_postit_sync as _ensure_postit_sync
 
 
 def _get_jst_today() -> DateType:
@@ -103,8 +78,6 @@ def _note_response(note: StickyNote) -> StickyNoteResponse:
         content=note.content,
         author_id=note.author_id,
         status=note.status,
-        postit_board_id=note.postit_board_id,
-        postit_note_id=note.postit_note_id,
         due_date=due_date_str,
         is_personal_only=getattr(note, "is_personal_only", False),
         created_at=note.created_at,
@@ -266,7 +239,6 @@ async def create_sticky_note(
             process_new_note_ai_background, request.app, note.id
         )
 
-    await apply_due_date_rules_for_note(note.id, db)
     return _note_response(note)
 
 
@@ -311,10 +283,6 @@ async def create_personal_note(
     # クライアントが明示的に TODAY を指定した場合のみ「手動移動」とみなす
     is_manual = (body.lane == Lane.TODAY)
     initial_lane = body.lane or Lane.INBOX
-
-    # 手動指定でなく、期限が今日以前であれば自動的に TODAY へ
-    if not is_manual and parsed_due_date and parsed_due_date <= _get_jst_today():
-        initial_lane = Lane.TODAY
 
     placement = BoardPlacement(
         note_id=note.id,
@@ -513,7 +481,9 @@ async def delete_sticky_notes_by_postit(
 async def delete_sticky_note(
     request: Request, note_id: int, db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
+    result = await db.execute(
+        select(StickyNote).where(StickyNote.id == note_id).with_for_update()
+    )
     note = result.scalar_one_or_none()
     if not note:
         return

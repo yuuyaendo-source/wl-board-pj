@@ -11,7 +11,6 @@ from collections import deque
 _BUFFER_MAXLEN = 50
 _buffer: deque = deque(maxlen=_BUFFER_MAXLEN)
 _logger: logging.Logger | None = None
-_log_path: str = ""
 
 
 class BufferHandler(logging.Handler):
@@ -50,12 +49,11 @@ def get_log_file_path() -> str:
 
 def setup_app_log() -> logging.Logger:
     """ログを初期化し、ファイルとバッファに出力する Logger を返す。起動時に1回呼ぶ。"""
-    global _logger, _log_path
+    global _logger
     if _logger is not None:
         return _logger
 
-    _log_path = get_log_file_path()
-    log_path = _log_path
+    log_path = get_log_file_path()
 
     logger = logging.getLogger("WonderLinko")
     logger.setLevel(logging.DEBUG)

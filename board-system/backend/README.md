@@ -109,6 +109,8 @@ alembic revision --autogenerate -m "説明"   # モデル変更から新規リ�
 | POST | `/daily_reset/rotate_tasks` | 不要 | 停滞タスクローテーションの手動実行（`?force=true` 対応）[cite: 1] |
 | POST | `/daily_reset/reconcile` | 不要 | 手動 Self-Healing 差分照合・自動修復（`?dry_run=true` 対応）[cite: 1] |
 
+Self-Healing を本番で有効化する前に、`RECONCILIATION_DRY_RUN=true` のログを確認してください。特に `Missing in DB -> Create`（`created_in_db`）と `DB Completed/Archived -> Remote Gray`（`archived_in_remote`）の件数・対象が想定どおりで、定常運用で不要な差分がほぼ 0 件になっていることを確認します。問題がないと判断できた後、本番環境の `.env` で `RECONCILIATION_DRY_RUN=false` を明示してください。手動実行の結果には両件数を含む統計が返ります。
+
 ---
 
 ## 本番デプロイ

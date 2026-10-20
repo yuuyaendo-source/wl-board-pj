@@ -37,7 +37,6 @@ export default function StickyNote({
     // ★跳ね防止：ドラッグ完了から親のprops更新完了までの間、最新位置を保護保持するRef
     const lastDraggedPos = useRef(null);
 
-    const isLarge = note.ratioW && note.ratioW >= 0.2;
     const daysLeft = calcDaysLeft(dueDateVal);
 
     useEffect(() => {
@@ -274,7 +273,7 @@ export default function StickyNote({
             ref={noteRef}
             data-sticky-note="true"
             data-note-id={note.id}
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isSelected ? styles.selected : ''} ${isLarge ? styles.large : ''} ${isGray ? styles.gray : ''} ${cardHighlightClass}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isSelected ? styles.selected : ''} ${isGray ? styles.gray : ''} ${cardHighlightClass}`}
             style={{
                 left: displayX,
                 top: displayY,

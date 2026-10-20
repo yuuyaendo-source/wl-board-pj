@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import io from "socket.io-client";
 import styles from "./page.module.css";
@@ -107,10 +107,6 @@ export default function BoardPage() {
             setIsConnected(true);
             activeSocket.emit("join-board", boardId);
 
-            const currentUsername = localStorage.getItem('wl-sticky-note-username');
-            if (currentUsername) {
-                activeSocket.emit("user-join", { boardId, username: currentUsername });
-            }
         });
 
         activeSocket.on("init-board", (data) => {
@@ -154,14 +150,6 @@ export default function BoardPage() {
             setSelectedNoteIds([]);
         });
 
-        activeSocket.on("user-joined", ({ username: newUsername }) => {
-            console.log(`${newUsername} joined the board`);
-        });
-
-        activeSocket.on("user-left", ({ username: leftUsername }) => {
-            console.log(`${leftUsername} left the board`);
-        });
-
         activeSocket.on("disconnect", () => {
             console.log("Disconnected from server");
             setIsConnected(false);
@@ -180,8 +168,6 @@ export default function BoardPage() {
             activeSocket.off("note-updated");
             activeSocket.off("note-deleted");
             activeSocket.off("board-cleared");
-            activeSocket.off("user-joined");
-            activeSocket.off("user-left");
             activeSocket.off("disconnect");
             activeSocket.off("note-rejected");
             activeSocket.disconnect();
@@ -281,9 +267,6 @@ export default function BoardPage() {
         localStorage.setItem('wl-sticky-note-username', newUsername);
         setShowUserDialog(false);
 
-        if (socketRef.current && socketRef.current.connected) {
-            socketRef.current.emit("user-join", { boardId, username: newUsername });
-        }
     };
 
     const addNote = (initialText = "", dueDate = null) => {
@@ -461,9 +444,8 @@ export default function BoardPage() {
         setSelectedNoteIds([note.id]);
         const container = boardContainerRef.current;
         if (container) {
-            const isLarge = note.ratioW && note.ratioW >= 0.2;
-            const noteW = isLarge ? 320 : 200;
-            const noteH = isLarge ? 320 : 200;
+            const noteW = 200;
+            const noteH = 200;
 
             const targetScale = MAX_SCALE;
             setScale(targetScale);
@@ -652,11 +634,9 @@ export default function BoardPage() {
             const right = Math.max(startX, currentX);
             const bottom = Math.max(startY, currentY);
 
-            const visibleList = hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes;
-            const intersectedIds = visibleList.filter(note => {
-                const isLarge = note.ratioW && note.ratioW >= 0.2;
-                const noteW = isLarge ? 320 : 200;
-                const noteH = isLarge ? 320 : 200;
+            const intersectedIds = visibleNotes.filter(note => {
+                const noteW = 200;
+                const noteH = 200;
                 const noteLeft = note.x;
                 const noteTop = note.y;
                 const noteRight = note.x + noteW;
@@ -697,7 +677,10 @@ export default function BoardPage() {
         }
     };
 
-    const visibleNotes = hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes;
+    const visibleNotes = useMemo(
+        () => (hideGrayNotes ? notes.filter(n => !isGrayNote(n)) : notes),
+        [notes, hideGrayNotes]
+    );
 
     return (
         <div
