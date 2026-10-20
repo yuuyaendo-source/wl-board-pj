@@ -1,2 +1,10 @@
-# シェルスクリプトは常に LF でチェックアウト（本番で /usr/bin/env: `bash\r' エラーを防ぐ）
+# すべてのテキストファイルを LF で統一してコミット
+* text=auto eol=lf
+
+# シェルスクリプトは常に LF を強制
 *.sh text eol=lf
+
+# Windows 専用スクリプトは CRLF のまま保持（必要に応じて）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

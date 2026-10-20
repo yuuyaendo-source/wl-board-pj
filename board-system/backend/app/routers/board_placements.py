@@ -279,5 +279,4 @@ async def delete_board_placement(placement_id: int, db: AsyncSession = Depends(g
             )
 
     await db.delete(placement)
-    await db.commit()
     return None

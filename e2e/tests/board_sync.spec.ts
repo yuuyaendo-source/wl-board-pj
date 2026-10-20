@@ -31,3 +31,26 @@ test.describe('Board System ↔ Postit Board Integration E2E', () => {
         }
     });
 });
+
+test.describe('Sticky note business rules', () => {
+    test('未完了の担当者がいる付箋は削除を拒否し、完了後は削除できる', async ({ request }) => {
+        const apiBase = process.env.TEST_BACKEND_URL || 'http://localhost:8000';
+        const created = await request.post(`${apiBase}/sticky_notes/create_personal`, {
+            data: { owner_id: 1, content: `E2E deletion rule ${Date.now()}` },
+        });
+        expect(created.status()).toBe(201);
+        const note = await created.json();
+
+        const blockedDelete = await request.delete(`${apiBase}/sticky_notes/${note.id}`);
+        expect(blockedDelete.status()).toBe(400);
+        expect((await blockedDelete.json()).detail).toContain('完了');
+
+        const completed = await request.patch(`${apiBase}/sticky_notes/${note.id}`, {
+            data: { status: 'DONE' },
+        });
+        expect(completed.ok()).toBeTruthy();
+
+        const allowedDelete = await request.delete(`${apiBase}/sticky_notes/${note.id}`);
+        expect(allowedDelete.status()).toBe(204);
+    });
+});

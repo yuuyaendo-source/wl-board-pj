@@ -225,8 +225,6 @@ async def import_from_postit(
 
         # 新規作成時は PERSONAL 配置が存在しないため apply_due_date_rules_for_note は呼び出さない
         import_count += 1
-
-    await db.commit()
     return ImportFromPostitResponse(created=import_count, skipped=skip_count)
 
 
@@ -264,7 +262,6 @@ async def create_sticky_note(
         await process_new_note_ai(request, note.id, db)
 
     await apply_due_date_rules_for_note(note.id, db)
-    await db.commit()
     await db.refresh(note)
     return _note_response(note)
 
@@ -327,7 +324,6 @@ async def create_personal_note(
     await db.flush()
 
     await apply_due_date_rules_for_note(note.id, db)
-    await db.commit()
     await db.refresh(note)
     return _note_response(note)
 
@@ -374,8 +370,6 @@ async def sync_from_postit(
             )
             await db.flush()
             await apply_due_date_rules_for_note(note.id, db)
-
-    await db.commit()
     await db.refresh(note)
     return _note_response(note)
 
@@ -473,8 +467,6 @@ async def update_sticky_note(
         )
         await db.flush()
         await apply_due_date_rules_for_note(note_id, db)
-
-    await db.commit()
     await db.refresh(note)
 
     if note.postit_board_id and note.postit_note_id:
@@ -511,7 +503,6 @@ async def delete_sticky_notes_by_postit(
     notes = list(result.scalars().all())
     for note in notes:
         await db.delete(note)
-    await db.commit()
 
 
 @router.delete("/{note_id}", status_code=204)
@@ -561,7 +552,6 @@ async def delete_sticky_note(
             logger.info("[delete_sticky_note] グレー化通知完了")
 
     await db.delete(note)
-    await db.commit()
     logger.info("[delete_sticky_note] note_id=%s 削除完了", note_id)
 
 
@@ -621,8 +611,6 @@ async def move_to_personal(
     await db.flush()
 
     await _ensure_postit_sync(request, note, db)
-
-    await db.commit()
     await db.refresh(placement)
     return placement
 
@@ -676,8 +664,6 @@ async def copy_to_team(
     await db.flush()
 
     await _ensure_postit_sync(request, note, db)
-
-    await db.commit()
     return CopyToTeamResponse(
         created=copied_count,
         user_ids=user_ids,

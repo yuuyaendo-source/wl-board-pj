@@ -85,10 +85,15 @@ app.prepare().then(() => {
     });
 
     // ボードデータの読み込み（なければ空で初期化）
-    let boards = {};
+    // null prototype prevents special property names (for example __proto__) from
+    // resolving to inherited object properties when a boardId is used as a key.
+    let boards = Object.create(null);
     if (fs.existsSync(DATA_FILE)) {
         try {
-            boards = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            const loadedBoards = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+            if (loadedBoards && typeof loadedBoards === 'object' && !Array.isArray(loadedBoards)) {
+                boards = Object.assign(Object.create(null), loadedBoards);
+            }
             // 既存ボードに name が無い場合は空文字を補完（ボード名保存対応）
             for (const id of Object.keys(boards)) {
                 if (boards[id].name === undefined) boards[id].name = '';
@@ -170,7 +175,7 @@ app.prepare().then(() => {
     process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 
     // ボードごとのユーザー管理
-    const boardUsers = {}; // { boardId: { socketId: { username, joinedAt } } }
+    const boardUsers = Object.create(null); // { boardId: { socketId: { username, joinedAt } } }
 
     io.on('connection', (socket) => {
         console.log('Client connected:', socket.id);
@@ -202,7 +207,7 @@ app.prepare().then(() => {
             console.log(`User ${username} (${socket.id}) joined board ${boardId}`);
 
             if (!boardUsers[boardId]) {
-                boardUsers[boardId] = {};
+                boardUsers[boardId] = Object.create(null);
             }
 
             boardUsers[boardId][socket.id] = {

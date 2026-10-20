@@ -256,7 +256,6 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             await db.execute(
                 delete(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
             )
-            await db.commit()
         except SQLAlchemyError as db_err:
             logger.error(
                 f"[OAuth] 破損トークンの削除に失敗しました (User: {user_id}): {db_err}"

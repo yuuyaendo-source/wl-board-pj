@@ -78,7 +78,6 @@ async def fetch_news(db: AsyncSession = Depends(get_db)):
         placement_source=PLACEMENT_SOURCE_NEWS,
     )
     db.add(placement)
-    await db.commit()
     logger.info("ニュース付箋を MORNING に追加しました note_id=%s", note.id)
     return {"ok": True, "created": 1, "note_id": note.id}
 
@@ -97,7 +96,6 @@ async def clear_news(db: AsyncSession = Depends(get_db)):
     )
     note_ids = [r[0] for r in result.all()]
     if not note_ids:
-        await db.commit()
         return {"ok": True, "deleted": 0}
 
     await db.execute(
@@ -107,6 +105,5 @@ async def clear_news(db: AsyncSession = Depends(get_db)):
         )
     )
     await db.execute(delete(StickyNote).where(StickyNote.id.in_(note_ids)))
-    await db.commit()
     logger.info("ニュース付箋を削除しました note_ids=%s", note_ids)
     return {"ok": True, "deleted": len(note_ids)}

@@ -4,6 +4,7 @@
 将来的に PostgreSQL へ切り替える場合は DATABASE_URL を変更するだけにする。
 """
 import logging
+import hashlib
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -89,10 +90,16 @@ class Settings(BaseSettings):
             raise ValueError("TOKEN_ENCRYPTION_KEY が環境変数に設定されていません！")
         v = str(v).strip()
         key_bytes = v.encode("utf-8")
-        if len(key_bytes) < 32:
-            # 32バイト未満の場合はパディング（開発環境向け）
-            v = v.ljust(32, "0")
-        return v[:32]
+        if len(key_bytes) < 32 and key_bytes.isascii():
+            # ASCII の既存設定は従来どおりパディングし、保存済みトークンとの互換性を保つ。
+            return v.ljust(32, "0")
+        if len(key_bytes) == 32 and key_bytes.isascii():
+            return v
+        # 文字数で切るとUTF-8のバイト長が揃わないため、32 ASCII文字へ正規化する。
+        # ASCII で32バイト以上のキーは従来の先頭32文字と同じ結果を維持する。
+        if key_bytes.isascii():
+            return key_bytes[:32].decode("ascii")
+        return hashlib.sha256(key_bytes).hexdigest()[:32]
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
     postit_board_url: str = "http://127.0.0.1:3000"
