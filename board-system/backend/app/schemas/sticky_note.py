@@ -19,13 +19,6 @@ class StickyNoteCreate(BaseModel):
         validation_alias=AliasChoices("due_date", "dueDate"),
     )  # YYYY-MM-DD 形式。dueDate（camelCase）も許容。
 
-    # --- フロントエンドからの誤送信（パーソナル投稿）を吸収するためのフィールド ---
-    owner_id: int | None = Field(
-        default=None,
-        validation_alias=AliasChoices("owner_id", "ownerId"),
-    )
-    lane: str | None = None
-
 
 class StickyNoteUpdate(BaseModel):
     content: str | None = None
@@ -46,12 +39,6 @@ class StickyNoteResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-
-class StickyNoteWithPlacementsResponse(StickyNoteResponse):
-    """付箋 + 配置一覧（ボード View 用）。"""
-
-    pass
 
 
 class ImportFromPostitItem(BaseModel):
@@ -83,7 +70,6 @@ class CopyToTeamBody(BaseModel):
     """チーム全員にコピーするリクエスト。"""
 
     team_id: int
-    lane: str = "INBOX"
 
 
 class CopyToTeamResponse(BaseModel):

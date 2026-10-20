@@ -4,7 +4,7 @@ test.describe('Board System ↔ Postit Board Integration E2E', () => {
 
     test('付箋新規投稿から Task ボード自動配置のフロー', async ({ page }) => {
         // 1. Task ボード画面を開く
-        await page.goto('/boards/task');
+        await page.goto('/boards/taskboard');
         await expect(page.locator('h1, header')).toBeVisible();
 
         // 2. 1行入力コンポーネントから投稿
@@ -25,7 +25,7 @@ test.describe('Board System ↔ Postit Board Integration E2E', () => {
         const taskItem = page.locator('[data-note-id]').first();
         if (await taskItem.isVisible()) {
             // 操作シミュレーション
-            await page.goto('/boards/task');
+            await page.goto('/boards/taskboard');
             // Task ボード側で連動状態を確認
             await expect(page.locator('.task-color-grey, [data-quadrant="5"]')).toBeDefined();
         }

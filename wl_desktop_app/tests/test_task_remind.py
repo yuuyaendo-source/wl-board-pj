@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from task_remind_client import active_slot_now
+from services.task_remind_client import active_slot_now
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -18,6 +18,7 @@ def _dt(h: int, m: int, weekday: int = 0) -> datetime:
     base = datetime(2026, 6, 1, h, m, tzinfo=JST)
     if weekday != 0:
         from datetime import timedelta
+
         base = base + timedelta(days=weekday)
     return base
 

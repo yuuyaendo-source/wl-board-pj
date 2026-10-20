@@ -193,7 +193,7 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
             column_name,
         )
 
-    # --- 4. Personal へ配布 ---
+    # --- 3. Personal へ配布 ---
     assignee_name = triage_result.get("assignee_name")
     if assignee_name and isinstance(assignee_name, str):
         assignee_name = assignee_name.strip()

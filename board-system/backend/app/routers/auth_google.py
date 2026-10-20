@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,48 +89,12 @@ def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) 
     }
 
 
-def _set_code_verifier_on_flow(flow, code_verifier: str) -> None:
-    """Flow の内部クライアントに code_verifier を設定（authorization_url で code_challenge に使われる）。"""
-    try:
-        session = getattr(flow, "oauth2session", None)
-        if session is not None:
-            client = getattr(session, "_client", None) or getattr(
-                session, "client", None
-            )
-            if client is not None:
-                setattr(client, "code_verifier", code_verifier)
-    except Exception:
-        pass
-
-
-def _google_flow(redirect_uri: str, code_verifier: str | None = None):
-    """Google OAuth Flow を生成（同期）。code_verifier を渡すと PKCE で使用。"""
-    from google_auth_oauthlib.flow import Flow
-
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": settings.google_calendar_client_id,
-                "client_secret": settings.google_calendar_client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri],
-            }
-        },
-        scopes=GOOGLE_SCOPE,
-        redirect_uri=redirect_uri,
-    )
-    if code_verifier:
-        _set_code_verifier_on_flow(flow, code_verifier)
-    return flow
-
-
 @router.get("/auth/google")
 async def auth_google_start(
     user_id: int = Query(..., description="ユーザーID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Google OAuth 開始。user_id を state に載せて Google へリダイレクト。PKCE の code_verifier を DB に保存。"""
+    """Google OAuth 開始。ランダム state と PKCE verifier を一時保存する。"""
     if (
         not settings.google_calendar_client_id
         or not settings.google_calendar_client_secret
@@ -142,15 +106,21 @@ async def auth_google_start(
             status_code=503, detail="google_calendar_redirect_uri is not set"
         )
     try:
+        user = await db.execute(select(User.id).where(User.id == user_id))
+        if user.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
         # PKCE: code_verifier を生成し、認可URLを自前で組み立て（ライブラリ任せだと code_challenge が一致しないため）
         code_verifier = secrets.token_urlsafe(32)
         code_challenge = _pkce_code_challenge(code_verifier)
+        # state は OAuth CSRF 防止用の、ユーザーIDから推測できない値にする。
+        state_token = secrets.token_urlsafe(32)
         params = {
             "client_id": settings.google_calendar_client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": " ".join(GOOGLE_SCOPE),
-            "state": str(user_id),
+            "state": state_token,
             "access_type": "offline",
             "prompt": "consent",
             "code_challenge": code_challenge,
@@ -159,16 +129,26 @@ async def auth_google_start(
         authorization_url = GOOGLE_AUTH_URI + "?" + urllib.parse.urlencode(params)
         expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
         await db.execute(
-            delete(OAuthPkceState).where(OAuthPkceState.state == str(user_id))
+            delete(OAuthPkceState).where(
+                or_(
+                    OAuthPkceState.user_id == user_id,
+                    OAuthPkceState.expires_at < datetime.utcnow(),
+                )
+            )
         )
         db.add(
             OAuthPkceState(
-                state=str(user_id), code_verifier=code_verifier, expires_at=expires_at
+                state=state_token,
+                user_id=user_id,
+                code_verifier=code_verifier,
+                expires_at=expires_at,
             )
         )
         await db.flush()
-        logger.info("PKCE state saved for state=%s (user_id=%s)", user_id, user_id)
+        logger.info("PKCE state saved for user_id=%s", user_id)
         return RedirectResponse(url=authorization_url)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -176,16 +156,12 @@ async def auth_google_start(
 @router.get("/auth/google/callback")
 async def auth_google_callback(
     code: str = Query(..., description="OAuth 認可コード"),
-    state: str = Query(..., description="user_id"),
+    state: str = Query(..., description="OAuth CSRF state"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Google OAuth コールバック。トークンを保存し /personal/{user_id} へリダイレクト。"""
+    """Google OAuth コールバック。state に紐付くユーザーへトークンを保存する。"""
     if not code or not state:
         raise HTTPException(status_code=400, detail="code and state are required")
-    try:
-        user_id = int(state)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid state")
     redirect_uri = settings.google_calendar_redirect_uri
     if not redirect_uri:
         raise HTTPException(
@@ -200,16 +176,17 @@ async def auth_google_callback(
     )
     row = result.scalar_one_or_none()
     code_verifier = row.code_verifier if row else None
+    user_id = row.user_id if row else None
     if row:
-        logger.info("PKCE state found for state=%s, deleting", state)
+        logger.info("PKCE state found for user_id=%s, deleting", user_id)
         await db.delete(row)
         await db.flush()
     else:
         logger.warning(
-            "PKCE state not found for state=%s (expired or not saved)", state
+            "PKCE state not found (expired or not saved)"
         )
 
-    if not code_verifier:
+    if not code_verifier or user_id is None:
         raise HTTPException(
             status_code=400,
             detail="OAuth session expired or invalid. Please click 'Google カレンダーと連携' again from the personal board.",
@@ -350,28 +327,24 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         return out, None, None
 
     try:
-        ret = await asyncio.to_thread(_fetch)
-        if len(ret) == 3:
-            events, new_token, new_expiry = ret
-            if new_token is not None:
-                # この代入処理時にも透過的暗号化が行われます。
-                # ただし row はセッションからデタッチされている可能性があるため再度取得またはマージが安全です。
-                result = await db.execute(
-                    select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
-                )
-                refresh_row = result.scalar_one_or_none()
-                if refresh_row:
-                    refresh_row.access_token = new_token
-                    if new_expiry:
-                        refresh_row.token_expiry = (
-                            new_expiry.replace(tzinfo=None)
-                            if getattr(new_expiry, "tzinfo", None)
-                            else new_expiry
-                        )
-                    refresh_row.updated_at = datetime.utcnow()
-                    await db.flush()
-        else:
-            events = ret[0]
+        events, new_token, new_expiry = await asyncio.to_thread(_fetch)
+        if new_token is not None:
+            # この代入処理時にも透過的暗号化が行われます。
+            # ただし row はセッションからデタッチされている可能性があるため再度取得またはマージが安全です。
+            result = await db.execute(
+                select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+            )
+            refresh_row = result.scalar_one_or_none()
+            if refresh_row:
+                refresh_row.access_token = new_token
+                if new_expiry:
+                    refresh_row.token_expiry = (
+                        new_expiry.replace(tzinfo=None)
+                        if getattr(new_expiry, "tzinfo", None)
+                        else new_expiry
+                    )
+                refresh_row.updated_at = datetime.utcnow()
+                await db.flush()
         return events
     except Exception:
         return []
@@ -514,32 +487,6 @@ async def _refresh_user_calendar_and_today(
         sticky_index += 1
     await db.flush()
     return len(events)
-
-
-@router.post("/api/personal/daily_calendar_refresh")
-async def daily_calendar_refresh(db: AsyncSession = Depends(get_db)):
-    """
-    Google 連携済みユーザー全員について、今日の予定（0:00〜23:59 ローカル）を取得し、
-    PersonalSummaryCache の events と today（LLM 短縮文）をクリア＆更新する。
-    毎日 8:00 に cron 等で呼ぶ想定。
-    """
-    if (
-        not settings.google_calendar_client_id
-        or not settings.google_calendar_client_secret
-    ):
-        raise HTTPException(status_code=503, detail="Google Calendar is not configured")
-    result = await db.execute(select(UserGoogleToken.user_id).distinct())
-    user_ids = [r[0] for r in result.all()]
-    refreshed = []
-    failed = []
-    for uid in user_ids:
-        try:
-            await _refresh_user_calendar_and_today(uid, db)
-            refreshed.append(uid)
-        except Exception as e:
-            logger.warning("daily_calendar_refresh user_id=%s: %s", uid, e)
-            failed.append(uid)
-    return {"ok": True, "refreshed": refreshed, "failed": failed}
 
 
 @router.get("/api/personal/{user_id}/calendar/events/live")

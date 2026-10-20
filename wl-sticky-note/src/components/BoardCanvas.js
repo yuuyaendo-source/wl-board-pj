@@ -2,9 +2,7 @@ import styles from "./BoardCanvas.module.css";
 import StickyNote from "./StickyNote";
 
 export default function BoardCanvas({
-    canvasOuterRef,
     notes,
-    lines,
     onUpdateNote,
     onDeleteNote,
     scale,
@@ -34,7 +32,7 @@ export default function BoardCanvas({
     }
 
     return (
-        <div ref={canvasOuterRef} className={styles.canvasOuter}>
+        <div className={styles.canvasOuter}>
             <div
                 className={styles.canvas}
                 style={{
@@ -44,20 +42,6 @@ export default function BoardCanvas({
                     transformOrigin: "0 0",
                 }}
             >
-                <svg className={styles.svgLayer}>
-                    {lines.map((line, i) => (
-                        <line
-                            key={i}
-                            x1={line.x1}
-                            y1={line.y1}
-                            x2={line.x2}
-                            y2={line.y2}
-                            stroke="#333"
-                            strokeWidth="2"
-                        />
-                    ))}
-                </svg>
-
                 {selectionBox && boxStyle && (
                     <div className={styles.selectionBox} style={boxStyle} />
                 )}

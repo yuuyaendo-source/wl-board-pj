@@ -193,7 +193,21 @@ class SpeechBubble:
                 text_color=Theme.BUBBLE_BORDER,
                 fg_color=self._tail_bg,
             )
-            tail.pack(anchor="center", pady=0)
+            # クリックで最新通知のURLを開く
+            def _on_click(event=None):
+                try:
+                    from services.notifications import open_last_notification
+
+                    open_last_notification()
+                except Exception:
+                    pass
+
+            for widget in (frame, label):
+                try:
+                    widget.bind("<Button-1>", _on_click)
+                    widget.configure(cursor="hand2")
+                except Exception:
+                    pass
 
             self._top = top
             self._label = label

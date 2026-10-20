@@ -140,7 +140,7 @@ export default function Toolbar({
                 <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="Board System を開く">
                         <a
-                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || "https://wlboardsys.internal.wonder-link.com/boards").replace(/\/$/, "") + "/task"}
+                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || "https://wlboardsys.internal.wonder-link.com/boards").replace(/\/$/, "") + "/taskboard"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={styles.iconBtn}

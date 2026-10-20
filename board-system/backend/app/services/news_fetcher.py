@@ -12,13 +12,11 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-RSS_IT = (
-    "[https://b.hatena.ne.jp/hotentry/it.rss](https://b.hatena.ne.jp/hotentry/it.rss)"
-)
-RSS_FUN = (
-    "[https://b.hatena.ne.jp/hotentry/fun.rss](https://b.hatena.ne.jp/hotentry/fun.rss)"
-)
-RSS_ITEM = "[https://www.gizmodo.jp/index.xml](https://www.gizmodo.jp/index.xml)"
+# 修正: Markdownリンク構文を除去し、純粋なURL文字列に変更
+RSS_IT = "https://b.hatena.ne.jp/hotentry/it.rss"
+RSS_FUN = "https://b.hatena.ne.jp/hotentry/fun.rss"
+RSS_ITEM = "https://www.gizmodo.jp/index.xml"
+
 TOP_N = 3
 
 NEWS_PROMPT_TEMPLATE = """あなたは明るくて優秀なアシスタント「リン子」です。

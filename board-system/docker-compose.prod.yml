@@ -72,7 +72,8 @@ services:
 
   sticky-note:
     build:
-      context: ../wl-sticky-note/src
+      context: ..
+      dockerfile: wl-sticky-note/src/Dockerfile
       args:
         NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_STICKY_BASE_PATH}
     container_name: linko-sticky-note-${COLOR}

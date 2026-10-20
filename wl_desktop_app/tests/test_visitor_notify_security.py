@@ -18,27 +18,27 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import visitor_notify_client as vnc  # noqa: E402
+from services import visitor_notify_client as vnc  # noqa: E402
 
 
 def _install_fake_deps():
     """_handle_visitor_arrived が関数内で import する依存をフェイクに差し替える。"""
     fakes = {}
 
-    notifications = types.ModuleType("notifications")
+    notifications = types.ModuleType("services.notifications")
     notifications.are_enabled = lambda: True
     notifications.show_toast = lambda *a, **k: None
-    fakes["notifications"] = notifications
+    fakes["services.notifications"] = notifications
 
-    config_loader = types.ModuleType("config_loader")
+    config_loader = types.ModuleType("core.config_loader")
     config_loader.load_config = lambda: {"linko_server_url": "http://x"}
     # 通常来客の音は既定 OFF（opt-in）。セキュリティ警報がこれに依存しないことを確かめる。
     config_loader.is_feature_enabled = lambda name, cfg=None: False
-    fakes["config_loader"] = config_loader
+    fakes["core.config_loader"] = config_loader
 
-    security = types.ModuleType("security")
+    security = types.ModuleType("core.security")
     security.filter_allowed_url = lambda url, cfg, purpose=None: url
-    fakes["security"] = security
+    fakes["core.security"] = security
 
     return fakes
 
@@ -47,7 +47,7 @@ class TestSecurityAlert(unittest.TestCase):
     def setUp(self):
         self._saved = {
             k: sys.modules.get(k)
-            for k in ("notifications", "config_loader", "security")
+            for k in ("services.notifications", "core.config_loader", "core.security")
         }
         sys.modules.update(_install_fake_deps())
 

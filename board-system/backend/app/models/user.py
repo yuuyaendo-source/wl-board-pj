@@ -2,7 +2,7 @@
 """users テーブル。共通ユーザー管理: 名前・Eメール・呼び名。顔画像は user_faces で複数枚保持。"""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Table, Column
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -36,7 +36,6 @@ class User(Base):
     )
     call_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    interest_vector: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

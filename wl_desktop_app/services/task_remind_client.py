@@ -45,6 +45,7 @@ _showing = False
 
 from core.time_utils import normalize_time as _normalize_time
 
+
 def _parse_times(cfg: dict) -> list[str]:
     raw = cfg.get("task_remind_times")
     if isinstance(raw, list) and raw:
@@ -56,10 +57,6 @@ def _parse_times(cfg: dict) -> list[str]:
         if out:
             return out
     return ["13:00", "17:00"]
-
-
-def _is_weekday_jst() -> bool:
-    return datetime.now(JST).weekday() < 5
 
 
 def _is_paused_today(cfg: dict) -> bool:
@@ -186,27 +183,6 @@ def post_shown_slot(cfg: dict, slot: str) -> bool:
         log_warn(f"[task_remind] shown_slot POST 失敗: {e}")
         return False
 
-
-def post_shown(cfg: dict, item: dict, slot: str) -> bool:
-    base = _api_base(cfg)
-    owner = _owner_id(cfg)
-    if not base or owner is None or requests is None:
-        return False
-    url = _personal_api_url(cfg, owner, "task_reminders/shown")
-    try:
-        r = requests.post(
-            url,
-            json={
-                "placement_id": item["placement_id"],
-                "note_id": item["note_id"],
-                "slot": slot,
-            },
-            timeout=10,
-        )
-        return r.status_code == 200
-    except Exception as e:
-        log_warn(f"[task_remind] shown POST 失敗: {e}")
-        return False
 
 
 def post_ack(cfg: dict, item: dict, slot: str, action: str) -> bool:

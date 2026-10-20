@@ -11,36 +11,6 @@ from app.schemas.board_placement import BoardPlacementWithNoteResponse, TakenByU
 router = APIRouter(prefix="/boards", tags=["boards"])
 
 
-@router.get("/main", response_model=list[BoardPlacementWithNoteResponse])
-async def get_board_main(db: AsyncSession = Depends(get_db)):
-    """Main Board: 全付箋（MAIN に配置されているもの）。"""
-    result = await db.execute(
-        select(BoardPlacement, StickyNote)
-        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
-        .where(BoardPlacement.board_type == BoardType.MAIN)
-        .order_by(BoardPlacement.sort_order, BoardPlacement.id)
-    )
-    rows = result.all()
-    return [
-        BoardPlacementWithNoteResponse(
-            id=p.id,
-            note_id=p.note_id,
-            board_type=p.board_type,
-            owner_id=p.owner_id,
-            lane=p.lane,
-            position_x=p.position_x,
-            position_y=p.position_y,
-            matrix_quadrant=p.matrix_quadrant,
-            sort_order=p.sort_order,
-            note_content=n.content,
-            note_status=n.status.value,
-            due_date=n.due_date.isoformat() if n.due_date else None,
-            is_help_request=getattr(n, "is_help_request", False),
-        )
-        for p, n in rows
-    ]
-
-
 def _name_short(name: str) -> str:
     """表示用短縮名（例: 浅川久司 → 浅）。"""
     if not name or not name.strip():
@@ -60,7 +30,6 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
     rows = result.all()
     note_ids = [n.id for _, n in rows]
     taken_by_map: dict[int, list[tuple[int, str, str, bool]]] = {}
-    done_note_ids: set[int] = set()
     help_request_note_ids: set[int] = set()
     accepted_by_others_note_ids: set[int] = set()
 
@@ -105,8 +74,6 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                         (owner_id, u.name, _name_short(u.name), True)
                     )
 
-            if lane == Lane.DONE:
-                done_note_ids.add(note_id)
             if lane == Lane.HELP_REQUEST:
                 help_request_note_ids.add(note_id)
             else:

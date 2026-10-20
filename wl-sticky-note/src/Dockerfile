@@ -3,13 +3,16 @@ FROM node:20-alpine
 WORKDIR /app
 
 # 依存関係のインストール（キャッシュ効率化のため先にコピー）
-COPY package.json ./
+COPY wl-sticky-note/src/package.json ./
 
 # npm install
 RUN npm install
 
-# ソースコードのコピー
-COPY . .
+# 付箋ボード本体のソースコードをコピー
+COPY wl-sticky-note/src ./
+
+# 共通 shared フォルダをプロジェクト内に配置（Turbopackの境界制限対策）
+COPY shared ./shared
 
 # CATO Networks SSL対応: 証明書があれば信頼ストアに追加（ローカルでは省略可）
 RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi

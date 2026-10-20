@@ -30,29 +30,6 @@ def _log(msg: str):
         pass
 
 
-def wait_for_network(
-    host: str, interval_sec: int = 5, max_wait_sec: int = 180, cfg=None
-) -> bool:
-    """
-    社内ネットワーク到達を待つ（HTTP プローブ。ping は使わない）。
-
-    host 引数は後方互換のため残すが、cfg にプローブ URL があれば host は無視する。
-    戻り値: 成功で True、タイムアウトで False。
-    """
-    if cfg is None:
-        try:
-            from core.config_loader import load_config
-
-            cfg = load_config()
-        except Exception:
-            cfg = {}
-    from core.network_readiness import wait_for_network_ready
-
-    return wait_for_network_ready(
-        cfg, interval_sec=interval_sec, max_wait_sec=max_wait_sec
-    )
-
-
 def _version_tuple(version_str: str) -> tuple:
     """バージョン文字列を比較用タプルに変換。例: "1.0.1" -> (1, 0, 1)。"""
     if not version_str or not isinstance(version_str, str):
@@ -166,7 +143,6 @@ def _find_wonderlinko_product_codes():
                 if name and (
                     "WonderLinko" in name
                     or "Wonder Linko" in name
-                    or "WonderLinko" in name
                 ):
                     if sub not in codes:
                         codes.append(sub)

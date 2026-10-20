@@ -29,7 +29,7 @@ Board System の **AI 自動振り分け**を使う場合は、`.env` を用意�
 ```bash
 cd board-system
 cp .env.example .env
-# .env を開いて GEMINI_API_KEY を設定（任意。未設定でも付箋・タスク・パーソナルは利用可能）
+# .env を開いて OLLAMA_URL 等を設定（任意。未設定でも付箋・タスク・パーソナルは利用可能）
 cd ..
 ```
 

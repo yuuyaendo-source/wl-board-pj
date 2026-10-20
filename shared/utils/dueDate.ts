@@ -41,7 +41,7 @@ export function getDueDateStatusText(dueDateStr?: string | null): {
         };
     }
     if (daysLeft === 0) {
-        return { daysLeft, label: "🔥 本期日が期限！", status: "today" };
+        return { daysLeft, label: "🔥 本日が期限！", status: "today" };
     }
     if (daysLeft <= 3) {
         return { daysLeft, label: `⏰ 期限まであと${daysLeft}日`, status: "urgent" };
@@ -68,11 +68,14 @@ export function getDueDateBorderClass(dueDateStr?: string | null): string {
  */
 export function formatWithDay(dueDateStr?: string | null): string {
     if (!dueDateStr) return "";
-    const d = new Date(dueDateStr);
+    // 日付のみの ISO 文字列は UTC として解釈されるため、ローカル日付を明示的に構築する。
+    const parts = dueDateStr.split("-").map(Number);
+    if (parts.length !== 3) return "";
+    const [y, m, day] = parts;
+    if (!y || !m || !day) return "";
+    const d = new Date(y, m - 1, day);
     if (isNaN(d.getTime())) return "";
     const days = ["日", "月", "火", "水", "木", "金", "土"];
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}/${m}/${day} (${days[d.getDay()]})`;
+    const date = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${date} (${days[d.getDay()]})`;
 }

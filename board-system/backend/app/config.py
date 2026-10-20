@@ -95,7 +95,7 @@ class Settings(BaseSettings):
         return v[:32]
 
     # 付箋ボード（02_1）のベースURL。タスクゴミ箱からは削除せず PATCH でグレー化する
-    postit_board_url: str = "[http://127.0.0.1:3000](http://127.0.0.1:3000)"
+    postit_board_url: str = "http://127.0.0.1:3000"
     # 付箋ボードのボードID（Board System でタスクになった付箋をここに反映する）
     postit_board_id: str = "wl"
 
@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     google_calendar_redirect_uri: str | None = (
-        None  # 例: [https://wlboardsys.example.com/auth/google/callback](https://wlboardsys.example.com/auth/google/callback)
+        None  # 例: https://wlboardsys.example.com/auth/google/callback
     )
     # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
     calendar_timezone: str = "Asia/Tokyo"
@@ -117,14 +117,14 @@ class Settings(BaseSettings):
     scheduler_news_interval_minutes: int = 0
     # Google カレンダー予定をキャッシュへ定期同期する間隔（分）。0 で無効。既定 30 分
     scheduler_calendar_interval_minutes: int = 30
-    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: [http://127.0.0.1:8000](http://127.0.0.1:8000)
-    scheduler_base_url: str = "[http://127.0.0.1:8000](http://127.0.0.1:8000)"
+    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
+    scheduler_base_url: str = "http://127.0.0.1:8000"
 
     @field_validator("scheduler_base_url")
     @classmethod
     def strip_scheduler_base_url(cls, v: str | None) -> str:
         if v is None:
-            return "[http://127.0.0.1:8000](http://127.0.0.1:8000)"
+            return "http://127.0.0.1:8000"
         return (v or "").strip().rstrip("/")
 
     @field_validator("oauth_success_redirect_base")

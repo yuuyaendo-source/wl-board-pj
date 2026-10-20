@@ -103,7 +103,7 @@ def parse_task_remind_times_from_text(text: str) -> list[str]:
 
 
 def get_app_base_dir():
-    """アプリのベースディレクトリ（exe 時は exe と同じフォルダ）。config.json・toast_icon の基準に使う。"""
+    """アプリのベースディレクトリ（exe 時は exe と同じフォルダ）。config.json の基準に使う。"""
     return _BASE_DIR
 
 
@@ -124,11 +124,9 @@ def _get_defaults():
         "user_id": _default_user_id(),
         "display_name": "",  # ミニポートから投稿したときに付箋に表示する名前（起動時に入力）
         "face_registry_person_id": "",  # 互換フォールバック（カード URL は board_system_email を正）
-        "open_personal_on_start": False,
         "postit_poll_interval_sec": 60,  # 付箋ボードの新付箋チェック間隔（0で無効）
         "tray_click_action": "postit",  # トレイアイコンクリックで開く先: "postit" | "personal" | "last_notification"
-        "toast_icon_path": "",  # トースト用アイコン（PNG/ICOの絶対パス。空ならデフォルトアイコン）
-        "notifications_enabled": True,  # 通知表示の総合スイッチ（トースト・吹き出し・来客通知・口パク。Windows OS 設定とは別）
+        "notifications_enabled": True,  # 通知表示の総合スイッチ（吹き出し・来客通知・口パク。Windows OS 設定とは別）
         "startup_enabled": True,  # Windows 起動時のスタートアップ自動登録（既定 ON、OS 設定と同期）
         "mini_port_api_url": "https://wlboardsys.internal.wonder-link.com/board/wl",  # Linko Mini-Port 送信先（この URL に POST で送信）
         "mini_port_taskboard_url": "https://wlboardsys.internal.wonder-link.com/boards/taskboard",  # リン子クリックで開く Task ボード URL
@@ -284,7 +282,6 @@ _PASSTHROUGH_KEYS: tuple[str, ...] = (
     "postit_board_id",
     "postit_poll_interval_sec",
     "tray_click_action",
-    "toast_icon_path",
     "notifications_enabled",
     "startup_enabled",
     "mini_port_api_url",
@@ -302,6 +299,7 @@ _PASSTHROUGH_KEYS: tuple[str, ...] = (
     "task_remind_times",
     "task_remind_weekdays_only",
     "task_remind_paused_until",
+    "face_registry_person_id",
 )
 
 

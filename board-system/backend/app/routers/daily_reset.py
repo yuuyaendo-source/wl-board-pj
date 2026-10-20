@@ -4,8 +4,6 @@ Logic 3: Daily Reset API。
 Personal Board の Today レーン未完了タスクについて「持ち越しますか？」メッセージを返す。
 毎朝の Meeting 用: Today を MORNING にコピーする sync_to_morning（cron 等で 10:15 に実行想定）。
 """
-import asyncio
-from datetime import date
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -15,37 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
-from app.ai import run_daily_reset_messages
 from app.services.sync_reconciliation import reconcile_sticky_notes
 
 JST = ZoneInfo("Asia/Tokyo")
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
 
 
-@router.get("/messages")
-async def get_daily_reset_messages(
-    owner_id: int = Query(..., description="Personal の所有者"),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    指定ユーザーの Personal Board の Today レーンにある付箋について、
-    「昨日の『〇〇』は持ち越しますか？」形式の問いかけを LLM で生成して返す。
-    OLLAMA_URL 未設定時は簡易メッセージを返す。
-    """
-    result = await db.execute(
-        select(BoardPlacement, StickyNote)
-        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
-        .where(
-            BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.owner_id == owner_id,
-            BoardPlacement.lane == Lane.TODAY,
-        )
-        .order_by(BoardPlacement.sort_order, BoardPlacement.id)
+async def _clear_morning_board(db: AsyncSession) -> None:
+    """Meeting ボード（MORNING 型配置）の内容を全削除する共通ヘルパー。"""
+    await db.execute(
+        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
     )
-    rows = result.all()
-    items = [{"note_id": p.note_id, "content": n.content} for p, n in rows]
-    messages = await asyncio.to_thread(run_daily_reset_messages, items)
-    return {"owner_id": owner_id, "messages": messages}
+    await db.flush()
 
 
 @router.post("/sync_to_morning")
@@ -55,10 +34,7 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
     毎朝 10:15 に cron や systemd タイマーで呼ぶ想定。テスト時は手動で呼べる。
     """
     # 既存の MORNING 配置を全削除
-    await db.execute(
-        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
-    )
-    await db.flush()
+    await _clear_morning_board(db)
 
     # 全ユーザー取得
     users_result = await db.execute(select(User).order_by(User.id))
@@ -95,13 +71,10 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
 @router.post("/reset_meeting")
 async def reset_meeting(db: AsyncSession = Depends(get_db)):
     """
-    Meeting ボード（MORNING）の内容を全削除する。
-    毎日 8:00 の cron 用および手動リセットボタン用。
+    Meeting ボード（MORNING）の内容を全削除する。手動リセットボタン用。
+    注意: cron は run_8am エンドポイントが内部で呼び出すため、此関数は手動実行専用。
     """
-    await db.execute(
-        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
-    )
-    await db.flush()
+    await _clear_morning_board(db)
     return {"ok": True}
 
 
@@ -136,24 +109,9 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
         if p.is_manually_moved_to_today:
             continue
 
-        days = (n.due_date - today_jst).days
-        target_lane: Lane
+        from app.services.due_date_rules import should_move_to_today
 
-        if days < 0:
-            # 期限切れ: 毎日 Today
-            target_lane = Lane.TODAY
-        elif days < 30:
-            # 短期ルール: 1ヶ月未満
-            if days in (0, 1, 2, 3, 4, 5, 10, 20):
-                target_lane = Lane.TODAY
-            else:
-                target_lane = Lane.INBOX
-        else:
-            # 長期ルール: 1ヶ月以上
-            if days % 30 == 0:
-                target_lane = Lane.TODAY
-            else:
-                target_lane = Lane.INBOX
+        target_lane = Lane.TODAY if should_move_to_today(n.due_date, today_jst) else Lane.INBOX
 
         if p.lane != target_lane:
             p.lane = target_lane
@@ -303,16 +261,19 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     cron で 8:00 にこのエンドポイントを 1 回呼ぶ。
     """
     from app.config import settings
-    from app.models import UserGoogleToken
+    from app.models import OAuthPkceState, UserGoogleToken
     from app.routers.auth_google import _refresh_user_calendar_and_today
+    from datetime import datetime
     import logging
 
     log = logging.getLogger(__name__)
 
+    # 期限切れの OAuth PKCE state をクリーンアップ
     await db.execute(
-        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+        delete(OAuthPkceState).where(OAuthPkceState.expires_at < datetime.utcnow())
     )
-    await db.flush()
+
+    await _clear_morning_board(db)
 
     # 期限タスクの自動移動
     due_date_result = await apply_due_date_rules(db)

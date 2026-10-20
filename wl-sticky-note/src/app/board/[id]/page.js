@@ -9,13 +9,10 @@ import Toolbar from "@/components/Toolbar";
 import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
-
-const TRASH_COLOR = "#e0e0e0";
+import { isGrayNote } from "@shared/utils/grayNote";
 
 export const MIN_SCALE = 0.3;
 export const MAX_SCALE = 2.5;
-
-const isGrayNote = (note) => Boolean(note?.gray || note?.is_gray || note?.isGray);
 
 let socket;
 
@@ -23,7 +20,6 @@ export default function BoardPage() {
     const params = useParams();
     const boardId = params?.id;
     const [notes, setNotes] = useState([]);
-    const [lines, setLines] = useState([]);
     const [color, setColor] = useState("#ffeb3b");
     const [isConnected, setIsConnected] = useState(false);
     const [scale, setScale] = useState(1);
@@ -41,15 +37,22 @@ export default function BoardPage() {
     const [selectionBox, setSelectionBox] = useState(null);
 
     const boardContainerRef = useRef(null);
-    const canvasOuterRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
+    const scaleRef = useRef(scale);
+    scaleRef.current = scale;
+    const panRef = useRef(pan);
+    panRef.current = pan;
 
     const dragStart = useRef({ x: 0, y: 0 });
     const isBoxSelecting = useRef(false);
     const selectionStartPos = useRef({ x: 0, y: 0 });
     const initialSelectedIds = useRef([]);
+    // 矩形選択ロジック用 ref（Stale State 回避）
+    // isShift・座標はクロージャに依存せず ref から同期読み出す
+    const isShiftRef = useRef(false);
+    const selectionBoxRef = useRef({ startX: 0, startY: 0, currentX: 0, currentY: 0 });
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -109,7 +112,6 @@ export default function BoardPage() {
 
         socket.on("init-board", (data) => {
             setNotes(data.notes || []);
-            setLines(data.lines || []);
             setTitle((data.name !== undefined && data.name !== null) ? String(data.name) : "");
         });
 
@@ -123,8 +125,8 @@ export default function BoardPage() {
                 let placed = note;
                 if (note.author === "AI" && boardContainerRef.current) {
                     const container = boardContainerRef.current;
-                    const cx = (container.clientWidth / 2 - pan.x) / scale - 100;
-                    const cy = (container.clientHeight / 2 - pan.y) / scale - 100;
+                    const cx = (container.clientWidth / 2 - panRef.current.x) / scaleRef.current - 100;
+                    const cy = (container.clientHeight / 2 - panRef.current.y) / scaleRef.current - 100;
                     placed = { ...note, x: cx, y: cy };
                     socket.emit("update-note", { boardId, note: placed });
                 }
@@ -143,14 +145,9 @@ export default function BoardPage() {
             setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
         });
 
-        socket.on("line-added", (line) => {
-            setLines((prev) => [...prev, line]);
-        });
-
         socket.on("board-cleared", () => {
             console.log("Board cleared by server.");
             setNotes([]);
-            setLines([]);
             setSelectedNoteIds([]);
         });
 
@@ -173,14 +170,13 @@ export default function BoardPage() {
             socket.off("note-added");
             socket.off("note-updated");
             socket.off("note-deleted");
-            socket.off("line-added");
             socket.off("board-cleared");
             socket.off("user-joined");
             socket.off("user-left");
             socket.off("disconnect");
             socket.disconnect();
         };
-    }, [boardId, scale, pan]);
+    }, [boardId]);
 
     // ボードの中心 (2000, 2000) をビューポート中央に固定配置
     const scrollToCenter = useCallback(() => {
@@ -341,15 +337,6 @@ export default function BoardPage() {
             }
         }
 
-        if (originalNote && originalNote.groupId === 'trash') {
-            const isMoved = updatedNote.x !== originalNote.x || updatedNote.y !== originalNote.y;
-            const isColorChanged = updatedNote.color !== TRASH_COLOR;
-
-            if (isMoved || isColorChanged) {
-                updatedNote.groupId = null;
-            }
-        }
-
         setNotes((prev) => {
             return prev.map((n) => {
                 const updated = notesToUpdate.find(un => un.id === n.id);
@@ -419,7 +406,6 @@ export default function BoardPage() {
             id: boardId,
             title,
             notes,
-            lines,
             exportedAt: new Date().toISOString()
         };
 
@@ -443,7 +429,6 @@ export default function BoardPage() {
 
                 if (boardData.title) setTitle(boardData.title);
                 if (boardData.notes) setNotes(boardData.notes);
-                if (boardData.lines) setLines(boardData.lines);
 
                 boardData.notes?.forEach(note => {
                     socket.emit("add-note", { boardId, note });
@@ -557,7 +542,7 @@ export default function BoardPage() {
 
     const handleClearAllNotes = async () => {
         if (!boardId) return;
-        const confirmed = window.confirm("本当にこのボード上のすべての付箋と線を削除しますか？この操作は取り消せません。");
+        const confirmed = window.confirm("本当にこのボード上のすべての付箋を削除しますか？この操作は取り消せません。");
         if (!confirmed) return;
 
         try {
@@ -570,7 +555,6 @@ export default function BoardPage() {
             if (response.ok && data.success) {
                 console.log(data.message);
                 setNotes([]);
-                setLines([]);
                 setSelectedNoteIds([]);
             } else {
                 console.error('Failed to clear board:', data.error || response.statusText);
@@ -610,12 +594,20 @@ export default function BoardPage() {
             selectionStartPos.current = coords;
             initialSelectedIds.current = e.shiftKey ? [...selectedNoteIds] : [];
 
+            // ロジック用 ref を同期更新（同フレームで handleMouseMove から安全に参照可能）
+            isShiftRef.current = e.shiftKey;
+            selectionBoxRef.current = {
+                startX: coords.x,
+                startY: coords.y,
+                currentX: coords.x,
+                currentY: coords.y,
+            };
+            // 描画用 state は ref と同じ内容を渡す（レンダリングトリガー用途）
             setSelectionBox({
                 startX: coords.x,
                 startY: coords.y,
                 currentX: coords.x,
                 currentY: coords.y,
-                isShift: e.shiftKey
             });
         }
     };
@@ -639,6 +631,9 @@ export default function BoardPage() {
             const currentX = coords.x;
             const currentY = coords.y;
 
+            // ref を先に同期更新してからロジック判定に使用（Stale State 回避）
+            selectionBoxRef.current.currentX = currentX;
+            selectionBoxRef.current.currentY = currentY;
             setSelectionBox(prev => prev ? ({ ...prev, currentX, currentY }) : null);
 
             const left = Math.min(startX, currentX);
@@ -659,7 +654,8 @@ export default function BoardPage() {
                 return !(noteRight < left || noteLeft > right || noteBottom < top || noteTop > bottom);
             }).map(n => n.id);
 
-            if (selectionBox?.isShift) {
+            // isShift は ref から読む（state の古い値を参照しない）
+            if (isShiftRef.current) {
                 const base = initialSelectedIds.current;
                 const combined = Array.from(new Set([...base, ...intersectedIds]));
                 setSelectedNoteIds(combined);
@@ -678,12 +674,12 @@ export default function BoardPage() {
         }
 
         if (isBoxSelecting.current) {
-            if (selectionBox) {
-                const dx = Math.abs(selectionBox.currentX - selectionBox.startX);
-                const dy = Math.abs(selectionBox.currentY - selectionBox.startY);
-                if (dx < 5 && dy < 5 && !selectionBox.isShift) {
-                    setSelectedNoteIds([]);
-                }
+            // クリック微小移動判定も ref を参照（handleMouseUp クロージャは state の古い値を見る恐れがある）
+            const ref = selectionBoxRef.current;
+            const dx = Math.abs(ref.currentX - ref.startX);
+            const dy = Math.abs(ref.currentY - ref.startY);
+            if (dx < 5 && dy < 5 && !isShiftRef.current) {
+                setSelectedNoteIds([]);
             }
             isBoxSelecting.current = false;
             setSelectionBox(null);
@@ -750,9 +746,7 @@ export default function BoardPage() {
 
             <div className={styles.canvasWrapper}>
                 <BoardCanvas
-                    canvasOuterRef={canvasOuterRef}
                     notes={visibleNotes}
-                    lines={lines}
                     onUpdateNote={updateNote}
                     onDeleteNote={deleteNote}
                     scale={scale}

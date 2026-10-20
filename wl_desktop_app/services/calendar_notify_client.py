@@ -30,14 +30,6 @@ POLL_INTERVAL_SEC = 60
 DEFAULT_MINUTES_BEFORE = 15
 
 
-def calendar_remind_minutes(cfg: dict) -> int:
-    """後方互換: 先頭1件の「何分前」を返す。"""
-    from core.config_loader import parse_calendar_remind_minutes_list
-
-    mins = parse_calendar_remind_minutes_list(cfg)
-    return mins[0] if mins else DEFAULT_MINUTES_BEFORE
-
-
 def calendar_remind_minutes_list(cfg: dict) -> list[int]:
     from core.config_loader import parse_calendar_remind_minutes_list
 
@@ -140,13 +132,20 @@ def start_calendar_notify_poll(
         return False
 
     def _dispatch(items: list[dict]) -> None:
+        # 追加: 配信処理完了後に確実にロックを解放するラッパー関数
+        def _run():
+            try:
+                on_remind(items)
+            finally:
+                notify_delivery_done()
+
         if tk_master is not None:
             try:
-                tk_master.after(0, lambda its=items: on_remind(its))
+                tk_master.after(0, _run)  # 修正: ラッパー関数を呼び出す
                 return
             except Exception:
                 pass
-        on_remind(items)
+        _run()  # 修正: ラッパー関数を呼び出す
 
     def loop():
         global _busy

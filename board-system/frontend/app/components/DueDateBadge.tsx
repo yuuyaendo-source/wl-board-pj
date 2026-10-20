@@ -23,9 +23,9 @@ export default function DueDateBadge({ dueDate, className = "" }: DueDateBadgePr
         badgeCls = "bg-red-600 text-white font-extrabold text-sm py-1 px-3 shadow-md animate-pulse";
     } else if (statusInfo.status === "today") {
         badgeCls = "bg-amber-500 text-white font-extrabold text-sm py-1 px-3 shadow-md";
-    } else if (statusInfo.daysLeft !== null && statusInfo.daysLeft <= 3) {
+    } else if (statusInfo.daysLeft <= 3) {
         badgeCls = "bg-orange-500 text-white font-bold text-xs py-1 px-2.5 shadow-sm";
-    } else if (statusInfo.daysLeft !== null && statusInfo.daysLeft <= 10) {
+    } else if (statusInfo.daysLeft <= 10) {
         badgeCls = "bg-yellow-400 text-zinc-900 font-bold text-xs py-1 px-2.5 shadow-sm";
     } else {
         badgeCls = "bg-blue-100 text-blue-800 font-semibold text-xs py-1 px-2.5";

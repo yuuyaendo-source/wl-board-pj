@@ -161,16 +161,18 @@ def play_wav(
         else:
             winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
 
-            def _cleanup():
-                import time as _t
+            # 再生完了を見計らって安全に削除（常駐時のディスク蓄積防止と過剰スレッド生成抑止）
+            delay = (duration_sec + 2.0) if (duration_sec is not None and duration_sec > 0) else 15.0
 
-                _t.sleep(30)
+            def _delayed_unlink(file_path: str):
                 try:
-                    os.unlink(path)
+                    os.unlink(file_path)
                 except Exception:
                     pass
 
-            threading.Thread(target=_cleanup, daemon=True).start()
+            timer = threading.Timer(delay, _delayed_unlink, args=[path])
+            timer.daemon = True
+            timer.start()
     except Exception as e:
         log_warn(f"{log_prefix} 再生エラー: {e}")
         try:

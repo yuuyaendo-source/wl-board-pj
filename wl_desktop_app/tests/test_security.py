@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
-"""security.py のユニットテスト。"""
+"""core/security.py のユニットテスト。"""
 import os
+import sys
 import unittest
+from pathlib import Path
+
+# ルートディレクトリを sys.path に追加
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 # テスト中は常に allowlist 有効
 os.environ.pop("WLINKO_DISABLE_URL_ALLOWLIST", None)
 
-from security import (  # noqa: E402
+from core.security import (  # noqa: E402
     is_host_allowed,
     sanitize_config_urls,
     validate_http_url,

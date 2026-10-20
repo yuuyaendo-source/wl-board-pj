@@ -28,6 +28,7 @@ def _placement_response(p: BoardPlacement) -> BoardPlacementResponse:
         matrix_quadrant=p.matrix_quadrant,
         sort_order=p.sort_order,
         placement_source=getattr(p, "placement_source", None),
+        is_manually_moved_to_today=p.is_manually_moved_to_today,
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
@@ -152,20 +153,19 @@ async def update_board_placement(
         if body.lane == Lane.HELP_REQUEST:
             if note:
                 note.is_help_request = True
-        else:
-            # 他ユーザー（引き取った担当者など）が HELP_REQUEST 以外のレーンに移動させた場合、
-            # 同一付箋で HELP_REQUEST レーンにいる他ユーザー（要請者）の配置を INBOX に自動復帰させる
-            await db.execute(
-                sa_update(BoardPlacement)
-                .where(
+        elif prev_lane == Lane.HELP_REQUEST:
+            # 要請者本人が HELP_REQUEST から通常レーンへ移動した場合（自己取り下げ）
+            # 他に HELP_REQUEST レーンに留まっている配置がなければ is_help_request を解除
+            r_other_help = await db.execute(
+                select(BoardPlacement).where(
                     BoardPlacement.note_id == placement.note_id,
                     BoardPlacement.board_type == BoardType.PERSONAL,
-                    BoardPlacement.owner_id != placement.owner_id,
+                    BoardPlacement.id != placement.id,
                     BoardPlacement.lane == Lane.HELP_REQUEST,
                 )
-                .values(lane=Lane.INBOX)
             )
-            await db.flush()
+            if not r_other_help.scalars().first() and note:
+                note.is_help_request = False
 
         r_task = await db.execute(
             select(BoardPlacement).where(
@@ -189,8 +189,9 @@ async def update_board_placement(
                 task_placement.matrix_quadrant = 5
                 if note:
                     note.status = NoteStatus.DONE
+                    note.is_help_request = False
             elif prev_lane == Lane.DONE and body.lane in (Lane.INBOX, Lane.TODAY):
-                task_placement.matrix_quadrant = 4
+                task_placement.matrix_quadrant = 1
                 if note:
                     note.status = NoteStatus.ACTIVE
 
@@ -198,6 +199,7 @@ async def update_board_placement(
         if body.matrix_quadrant == 5:
             if note:
                 note.status = NoteStatus.DONE
+                note.is_help_request = False
         elif prev_matrix == 5 and body.matrix_quadrant != 5:
             if note:
                 note.status = NoteStatus.ACTIVE

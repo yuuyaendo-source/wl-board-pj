@@ -96,7 +96,6 @@ class ChatPanel(ctk.CTkToplevel):
         self.minsize(360, 420)
         self._messages: list[dict] = []
         self._streaming = False
-        self._assistant_start_index = None
         self._last_assistant_text = ""
         self._pending_attachment = None
         self._pending_proposal_id: Optional[str] = None
@@ -278,15 +277,6 @@ class ChatPanel(ctk.CTkToplevel):
             hover_color=("#2f7a33", "#145214"),
         )
         self._send_btn.pack(side="right")
-        self._mic_btn = ctk.CTkButton(
-            bottom,
-            text="🎤",
-            width=36,
-            state="disabled",
-            fg_color="transparent",
-            border_width=1,
-        )
-        self._mic_btn.pack(side="right", padx=(0, 6))
 
     def _format_proposal_detail(self, draft: dict) -> str:
         summary = (draft.get("summary") or "（無題）").strip()

@@ -121,7 +121,8 @@ from services import notifications
 from services.postit_poll import start_postit_poll, fetch_summary_with_error
 from core import startup
 from core.version import __version__
-from core.update_checker import check_and_notify, wait_for_network
+from core.update_checker import check_and_notify
+from core.network_readiness import wait_for_network_ready as wait_for_network
 from core.network_readiness import resolve_probe_url
 from hardware.audio_player import cleanup_temp_audio_files
 
@@ -558,7 +559,7 @@ def _test_postit_connection(*args):
                 duration_sec=5,
             )
             return
-        summary, err = fetch_summary_with_error(url, board_id)
+        summary, err = fetch_summary_with_error(url, board_id, cfg=cfg)
         if err:
             notifications.show_toast(
                 "付箋ボード接続テスト",
@@ -632,7 +633,9 @@ def _board_system_login_clicked(*args) -> None:
     from services.board_system_auth import login_with_email
 
     success, msg, personal_url = login_with_email(email, _config)
-    notifications.show_toast("Wonder Linko", msg, duration_sec=4 if success else 5, force_show=True)
+    notifications.show_toast(
+        "Wonder Linko", msg, duration_sec=4 if success else 5, force_show=True
+    )
     if success and personal_url:
         from core.security import safe_webbrowser_open
 

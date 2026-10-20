@@ -8,7 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from network_readiness import resolve_probe_url, unreachable_backoff_sec  # noqa: E402
+from core.network_readiness import (
+    resolve_probe_url,
+    unreachable_backoff_sec,
+)  # noqa: E402
 
 
 def test_resolve_probe_url_prefers_explicit():

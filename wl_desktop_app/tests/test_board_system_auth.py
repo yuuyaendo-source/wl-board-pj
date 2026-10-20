@@ -17,16 +17,18 @@ from services.board_system_auth import (
 class TestBoardSystemAuth(unittest.TestCase):
     def setUp(self):
         self.cfg = {
-            "board_system_url": "https://example.com/board/wl",
+            "board_system_url": "https://wlboardsys.internal.wonder-link.com/api/bs",
         }
 
     def test_resolve_empty_email(self):
         with self.assertRaises(BoardSystemAuthError):
-            resolve_user_by_email("", self.cfg)
+            resolve_user_by_email("", self.cfg["board_system_url"], self.cfg)
 
     def test_resolve_invalid_email(self):
         with self.assertRaises(BoardSystemAuthError):
-            resolve_user_by_email("invalid-email", self.cfg)
+            resolve_user_by_email(
+                "invalid-email", self.cfg["board_system_url"], self.cfg
+            )
 
     @patch("services.board_system_auth.requests.get")
     def test_resolve_user_success(self, mock_get):
@@ -39,7 +41,9 @@ class TestBoardSystemAuth(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        data = resolve_user_by_email("user@example.com", self.cfg)
+        data = resolve_user_by_email(
+            "user@example.com", self.cfg["board_system_url"], self.cfg
+        )
         self.assertEqual(data["id"], 123)
         self.assertEqual(data["email"], "user@example.com")
 

@@ -67,7 +67,7 @@ src/
 
 ## 技術スタック
 
-- **フロントエンド**: Next.js 16.x, React 19.x, Three.js (`@pixiv/three-vrm`)
+- **フロントエンド**: Next.js 16.x, React 19.x
 - **バックエンド**: Express.js 5.x, Socket.IO 4.x
 - **プロセス管理**: PM2（非 Docker 運用時）/ Docker Compose（本番コンテナ運用時）
 - **データストア**: `boards.json`（自動デバウンス保存）

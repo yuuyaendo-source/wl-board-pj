@@ -23,13 +23,13 @@ def _postit_board_open_url(postit_board_url, board_id):
     return f"{base}/board/{board_id}"
 
 
-def fetch_summary(postit_board_url, board_id):
+def fetch_summary(postit_board_url, board_id, cfg=None):
     """付箋ボードのサマリーを取得。失敗時は None。"""
     url = _postit_summary_url(postit_board_url, board_id)
     try:
         from core.security import validate_http_url
 
-        ok, _ = validate_http_url(url, purpose="postit_poll")
+        ok, _ = validate_http_url(url, cfg=cfg, purpose="postit_poll")
         if not ok:
             return None
     except Exception:
@@ -43,7 +43,7 @@ def fetch_summary(postit_board_url, board_id):
     return None
 
 
-def fetch_summary_with_error(postit_board_url, board_id):
+def fetch_summary_with_error(postit_board_url, board_id, cfg=None):
     """
     付箋ボードのサマリーを取得。戻り値は (summary_dict or None, error_message or None)。
     接続テスト用。失敗時は理由を返す。
@@ -52,7 +52,7 @@ def fetch_summary_with_error(postit_board_url, board_id):
     try:
         from core.security import validate_http_url
 
-        ok, err = validate_http_url(url, purpose="postit_poll")
+        ok, err = validate_http_url(url, cfg=cfg, purpose="postit_poll")
         if not ok:
             return None, err or "URL が許可されていません"
     except Exception as e:
@@ -118,7 +118,7 @@ def start_postit_poll(config_getter, on_new_notes):
             if not url or not board_ids:
                 continue
             for board_id in board_ids:
-                summary = fetch_summary(url, board_id)
+                summary = fetch_summary(url, board_id, cfg=cfg)
                 if not summary:
                     continue
                 notes_count = summary.get("notesCount", 0)

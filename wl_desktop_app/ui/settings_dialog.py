@@ -23,8 +23,8 @@ except ImportError as e:  # 開発時 / venv 不整合での失敗を可視化
     )
     raise
 
-from config_loader import load_config, save_config
-from version import __version__
+from core.config_loader import load_config, save_config
+from core.version import __version__
 
 
 # --- features の表示メタデータ -------------------------------------------------

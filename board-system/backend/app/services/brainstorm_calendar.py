@@ -80,7 +80,9 @@ def proposal_payload(p: CalendarProposal) -> dict[str, Any]:
     }
 
 
-def extract_calendar_from_conversation(messages: list[dict[str, str]]) -> dict[str, Any] | None:
+def extract_calendar_from_conversation(
+    messages: list[dict[str, str]],
+) -> dict[str, Any] | None:
     """会話からカレンダー登録意図を抽出。JSON を返す。"""
     convo = []
     for m in messages[-8:]:
@@ -152,20 +154,31 @@ def revise_draft(proposal: CalendarProposal, user_text: str) -> dict[str, Any] |
     draft = data.get("draft")
     if not isinstance(draft, dict):
         return None
-    return {"draft": draft, "spoken": (data.get("spoken") or "").strip() or _format_spoken_summary(draft)}
+    return {
+        "draft": draft,
+        "spoken": (data.get("spoken") or "").strip() or _format_spoken_summary(draft),
+    }
 
 
-async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[bool, str, dict[str, Any]]:
+async def create_google_event(
+    user_id: int, draft: dict[str, Any], db
+) -> tuple[bool, str, dict[str, Any]]:
     """Google Calendar にイベントを作成。戻り値: ok, message, extra"""
     from sqlalchemy import select
 
     from app.models import UserGoogleToken
     from app.routers.auth_google import GOOGLE_SCOPE, _sync_user_calendar_events_cache
 
-    result = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    result = await db.execute(
+        select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+    )
     row = result.scalar_one_or_none()
     if not row:
-        return False, "Google カレンダーがまだ連携されていません。パーソナルボードから連携してください。", {}
+        return (
+            False,
+            "Google カレンダーがまだ連携されていません。パーソナルボードから連携してください。",
+            {},
+        )
 
     summary = (draft.get("summary") or "予定").strip()
     start = (draft.get("start") or "").strip()
@@ -190,11 +203,12 @@ async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[
         if row.token_expiry and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         service = build("calendar", "v3", credentials=creds)
+        tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
         body = {
             "summary": summary,
             "description": (draft.get("description") or "").strip(),
-            "start": {"dateTime": start, "timeZone": "Asia/Tokyo"},
-            "end": {"dateTime": end, "timeZone": "Asia/Tokyo"},
+            "start": {"dateTime": start, "timeZone": tz_name},
+            "end": {"dateTime": end, "timeZone": tz_name},
         }
         return service.events().insert(calendarId="primary", body=body).execute()
 
@@ -204,7 +218,9 @@ async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[
         event = await asyncio.to_thread(_insert)
     except Exception as e:
         err = str(e)
-        logger.warning("[brainstorm_calendar] insert failed user_id=%s: %s", user_id, err[:200])
+        logger.warning(
+            "[brainstorm_calendar] insert failed user_id=%s: %s", user_id, err[:200]
+        )
         if "insufficient" in err.lower() or "scope" in err.lower() or "403" in err:
             return (
                 False,
@@ -217,10 +233,16 @@ async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[
         await _sync_user_calendar_events_cache(user_id, db)
     except Exception:
         pass
-    return True, f"入れました。「{summary}」です。", {"event_id": event.get("id"), "html_link": event.get("htmlLink")}
+    return (
+        True,
+        f"入れました。「{summary}」です。",
+        {"event_id": event.get("id"), "html_link": event.get("htmlLink")},
+    )
 
 
-def handle_new_calendar_intent(user_id: int, messages: list[dict[str, str]]) -> dict[str, Any]:
+def handle_new_calendar_intent(
+    user_id: int, messages: list[dict[str, str]]
+) -> dict[str, Any]:
     """新規依頼。提案作成 or 質問文を返す。"""
     extracted = extract_calendar_from_conversation(messages)
     if not extracted or extracted.get("intent") != "calendar_create":
@@ -235,13 +257,20 @@ def handle_new_calendar_intent(user_id: int, messages: list[dict[str, str]]) -> 
     if not isinstance(draft, dict) or not draft.get("start") or not draft.get("end"):
         return {"mode": "clarify", "spoken": "日時をもう少し教えてもらえますか？"}
     p = create_proposal(user_id, draft)
-    return {"mode": "proposal", "proposal": p, "spoken": _format_spoken_summary(p.draft)}
+    return {
+        "mode": "proposal",
+        "proposal": p,
+        "spoken": _format_spoken_summary(p.draft),
+    }
 
 
 def handle_pending(user_id: int, proposal_id: str, user_text: str) -> dict[str, Any]:
     p = get_proposal(proposal_id, user_id)
     if p is None:
-        return {"mode": "expired", "spoken": "確認の期限が切れました。もう一度予定を教えてください。"}
+        return {
+            "mode": "expired",
+            "spoken": "確認の期限が切れました。もう一度予定を教えてください。",
+        }
     kind = interpret_pending_message(user_text)
     if kind == "cancel":
         delete_proposal(proposal_id, user_id)
@@ -250,8 +279,18 @@ def handle_pending(user_id: int, proposal_id: str, user_text: str) -> dict[str, 
         return {"mode": "confirm", "proposal": p}
     revised = revise_draft(p, user_text)
     if not revised:
-        return {"mode": "clarify", "spoken": "すみません、修正内容が分かりませんでした。もう一度教えてください。"}
+        return {
+            "mode": "clarify",
+            "spoken": "すみません、修正内容が分かりませんでした。もう一度教えてください。",
+        }
     updated = update_draft(proposal_id, user_id, revised["draft"])
     if updated is None:
-        return {"mode": "expired", "spoken": "確認の期限が切れました。もう一度予定を教えてください。"}
-    return {"mode": "proposal", "proposal": updated, "spoken": revised.get("spoken") or _format_spoken_summary(updated.draft)}
+        return {
+            "mode": "expired",
+            "spoken": "確認の期限が切れました。もう一度予定を教えてください。",
+        }
+    return {
+        "mode": "proposal",
+        "proposal": updated,
+        "spoken": revised.get("spoken") or _format_spoken_summary(updated.draft),
+    }

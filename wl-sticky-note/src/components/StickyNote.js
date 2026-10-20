@@ -1,34 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import LinkifiedText from "./LinkifiedText";
 import styles from "./StickyNote.module.css";
+import { calcDaysLeft, formatWithDay } from "@shared/utils/dueDate";
+import { isGrayNote } from "@shared/utils/grayNote";
 
 const COLORS = [
     "#ffeb3b", "#a7ffeb", "#ffcdd2", "#e1bee7",
     "#fff9c4", "#c5e1a5", "#ffccbc", "#b3e5fc", "#ffffff"
 ];
-
-function calcDaysLeft(dueDateStr) {
-    if (!dueDateStr) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const [y, m, d] = dueDateStr.split("-").map(Number);
-    if (!y || !m || !d) return null;
-    const due = new Date(y, m - 1, d);
-    due.setHours(0, 0, 0, 0);
-    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-/** 曜日付きフォーマット関数 */
-function formatWithDay(dateStr) {
-    if (!dateStr) return "";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "";
-    const days = ["日", "月", "火", "水", "木", "金", "土"];
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}/${m}/${day} (${days[d.getDay()]})`;
-}
 
 export default function StickyNote({
     note,
@@ -269,7 +248,7 @@ export default function StickyNote({
         } else if (daysLeft === 0) {
             badgeClass = styles.badgeToday;
             cardHighlightClass = styles.noteTodayBorder;
-            badgeText = "🔥 本期日が期限！";
+            badgeText = "🔥 本日が期限！";
         } else if (daysLeft <= 3) {
             badgeClass = styles.badgeToday;
             badgeText = `⏰ 期限まであと${daysLeft}日`;
@@ -288,16 +267,18 @@ export default function StickyNote({
         displayY = lastDraggedPos.current.y;
     }
 
+    const isGray = isGrayNote(note);
+
     return (
         <div
             ref={noteRef}
             data-sticky-note="true"
             data-note-id={note.id}
-            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isSelected ? styles.selected : ''} ${isLarge ? styles.large : ''} ${note.gray ? styles.gray : ''} ${cardHighlightClass}`}
+            className={`${styles.note} ${note.pinned ? styles.pinned : ''} ${isSelected ? styles.selected : ''} ${isLarge ? styles.large : ''} ${isGray ? styles.gray : ''} ${cardHighlightClass}`}
             style={{
                 left: displayX,
                 top: displayY,
-                backgroundColor: note.gray ? '#e0e0e0' : (note.color || COLORS[0]),
+                backgroundColor: isGray ? '#e0e0e0' : (note.color || COLORS[0]),
                 zIndex: isDragging ? 1000 : (isSelected ? 500 : 1),
             }}
             onMouseDown={handleMouseDown}

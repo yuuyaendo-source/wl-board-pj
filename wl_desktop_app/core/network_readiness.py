@@ -64,8 +64,6 @@ def is_network_ready(
 
 def wait_for_network_ready(
     cfg: dict | None = None,
-    interval_sec: int = 5,
-    max_wait_sec: int = 180,
 ) -> bool:
     """プローブ URL が応答するまで待つ。タイムアウト時 False。"""
     if cfg is None:
@@ -75,8 +73,15 @@ def wait_for_network_ready(
     probe = resolve_probe_url(cfg)
     if not probe:
         return True
-    deadline = time.monotonic() + max(0, int(max_wait_sec))
-    interval = max(1, int(interval_sec))
+
+    # config.json の設定値を読み込む（未設定時はデフォルト値）
+    raw_interval = cfg.get("update_network_check_interval_sec")
+    interval_sec = int(raw_interval) if raw_interval is not None else 5
+    raw_max = cfg.get("update_network_check_max_wait_sec")
+    max_wait_sec = int(raw_max) if raw_max is not None else 180
+
+    deadline = time.monotonic() + max(0, max_wait_sec)
+    interval = max(1, interval_sec)
     while time.monotonic() < deadline:
         if is_network_ready(cfg, use_cache=False):
             _log(f"ネットワーク確立: {probe} へ到達確認")

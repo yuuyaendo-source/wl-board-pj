@@ -156,7 +156,6 @@ export const api = {
   },
 
   boards: {
-    main: () => fetchApi<PlacementWithNote[]>("/boards/main"),
     task: () => fetchApi<PlacementWithNote[]>("/boards/task"),
     personal: (ownerId: number) => fetchApi<PlacementWithNote[]>(`/boards/personal?owner_id=${ownerId}`),
     morning: () => fetchApi<PlacementWithNote[]>("/boards/morning"),

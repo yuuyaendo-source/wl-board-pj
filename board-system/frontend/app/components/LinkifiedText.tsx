@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 // 共通ユーティリティからインポート
 import { parseTextWithLinks } from "@shared/utils/linkify";
 

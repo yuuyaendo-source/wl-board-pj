@@ -6,13 +6,17 @@
         "./*"
       ],
       "@shared/*": [
-        "../shared/*"
+        "./shared/*",
+        "../shared/*",
+        "../../shared/*"
       ]
     }
   },
   "include": [
     "**/*",
-    "../shared/**/*"
+    "shared/**/*",
+    "../shared/**/*",
+    "../../shared/**/*"
   ],
   "exclude": [
     "node_modules",

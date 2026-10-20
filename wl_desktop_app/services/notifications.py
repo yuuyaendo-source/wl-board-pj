@@ -58,10 +58,23 @@ def show_toast(
             try:
                 from ui import linko_avatar
 
+                # タイトルが存在する場合は先頭に付与して吹き出しに反映
+                display_text = f"【{title}】\n{msg}" if title else msg
+
                 if is_feature_enabled("linko_avatar", cfg) and linko_avatar.is_ready():
                     # OSネイティブトーストの代わりに、吹き出し(スタンドアロン)として一時表示
                     linko_avatar.say(
-                        text=msg, duration_sec=float(duration_sec), standalone=True
+                        text=display_text,
+                        duration_sec=float(duration_sec),
+                        standalone=True,
+                    )
+                else:
+                    # アバター機能が無効・未準備の場合のフォールバック (吹き出しのみを表示)
+                    linko_avatar.say(
+                        text=display_text,
+                        duration_sec=float(duration_sec),
+                        lipsync=False,
+                        standalone=True,
                     )
             except Exception as e:
                 log_info(f"[Notify] avatar say 失敗: {e}")

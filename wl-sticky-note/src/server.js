@@ -101,11 +101,17 @@ app.prepare().then(() => {
     // アトミック保存および排他制御
     // 頻繁なディスク書き込みや高頻度リクエストによる競合を防ぐため isSaving フラグでロック制御
     let isSaving = false;
+    let needsResave = false;
     let saveTimeout = null;
 
     const flushBoardsToDiskAsync = async () => {
-        if (isSaving) return;
+        if (isSaving) {
+            // 保存中に更新が入った場合は、完了後に必ず最新状態を保存する。
+            needsResave = true;
+            return;
+        }
         isSaving = true;
+        needsResave = false;
         const dataStr = JSON.stringify(boards, null, 2);
         const tempFile = `${DATA_FILE}.tmp`;
         try {
@@ -117,6 +123,9 @@ app.prepare().then(() => {
             try { await fsPromises.unlink(tempFile); } catch (e) { } // 失敗時は一時ファイルを確実に消去
         } finally {
             isSaving = false;
+            if (needsResave) {
+                saveBoards();
+            }
         }
     };
 
@@ -172,7 +181,7 @@ app.prepare().then(() => {
             console.log(`Socket ${socket.id} joined board ${boardId}`);
 
             if (!boards[boardId]) {
-                boards[boardId] = { notes: [], lines: [], name: '' };
+                boards[boardId] = { notes: [], name: '' };
                 saveBoards();
             }
 
@@ -201,9 +210,6 @@ app.prepare().then(() => {
                 username,
                 joinedAt: Date.now()
             };
-
-            const usersList = Object.values(boardUsers[boardId]);
-            io.to(boardId).emit('users-list', usersList);
 
             socket.to(boardId).emit('user-joined', {
                 socketId: socket.id,
@@ -305,36 +311,6 @@ app.prepare().then(() => {
             }
         });
 
-        // 線追加（付箋間の接続）
-        socket.on('add-line', ({ boardId, line }) => {
-            if (boards[boardId]) {
-                boards[boardId].lines.push(line);
-                io.to(boardId).emit('line-added', line);
-                saveBoards();
-            }
-        });
-
-        // ボード全体をクリア（付箋と線を全削除）
-        socket.on('clear-board', (boardId) => {
-            if (boards[boardId]) {
-                boards[boardId].notes = [];
-                boards[boardId].lines = [];
-                saveBoards();
-
-                io.to(boardId).emit('board-cleared');
-                console.log(`Board ${boardId} cleared by socket event.`);
-
-                try {
-                    safeFetch(`${AI_BOARD_BASE}/api/clear_board`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ boardId })
-                    }).catch(err => console.error('Failed to notify AI-Board clear:', err.message));
-                } catch (e) {
-                    console.error('Error notifying AI-Board clear:', e);
-                }
-            }
-        });
 
         // 切断処理
         socket.on('disconnect', () => {
@@ -344,9 +320,6 @@ app.prepare().then(() => {
                 if (boardUsers[boardId][socket.id]) {
                     const username = boardUsers[boardId][socket.id].username;
                     delete boardUsers[boardId][socket.id];
-
-                    const usersList = Object.values(boardUsers[boardId]);
-                    io.to(boardId).emit('users-list', usersList);
 
                     socket.to(boardId).emit('user-left', {
                         socketId: socket.id,
@@ -389,7 +362,7 @@ app.prepare().then(() => {
         try {
             const boardId = req.params.id;
             if (!boards[boardId]) {
-                boards[boardId] = { notes: [], lines: [], name: '' };
+                boards[boardId] = { notes: [], name: '' };
                 saveBoards();
             }
             const notes = (boards[boardId].notes || []).map((n) => ({
@@ -467,7 +440,7 @@ app.prepare().then(() => {
             }
 
             if (!boards[boardId]) {
-                boards[boardId] = { notes: [], lines: [] };
+                boards[boardId] = { notes: [], name: '' };
             }
 
             const existingIndex = boards[boardId].notes.findIndex((n) => n.id === note.id);
@@ -514,7 +487,6 @@ app.prepare().then(() => {
             }
 
             boards[boardId].notes = [];
-            boards[boardId].lines = [];
             saveBoards();
 
             io.to(boardId).emit('board-cleared');

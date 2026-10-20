@@ -129,7 +129,7 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
                 )
             ok, msg, _extra = await create_google_event(req.user_id, p.draft, db)
             delete_proposal(p.proposal_id, req.user_id)
-            return _sse_from_spoken(msg if ok else msg)
+            return _sse_from_spoken(msg)
         if mode == "proposal":
             p = result.get("proposal")
             if p is None:
