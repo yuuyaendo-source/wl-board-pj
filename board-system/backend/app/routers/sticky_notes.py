@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 import logging
 from datetime import date as DateType, datetime
-from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
+from app.core.time_utils import now_jst
 from app.models import BoardPlacement, BoardType, StickyNote, Team, User
 from app.models.board_placement import Lane
 from app.models.sticky_note import NoteStatus
@@ -58,7 +58,7 @@ async def _ensure_postit_sync(request: Request, note: "StickyNote", db: AsyncSes
 
 def _get_jst_today() -> DateType:
     """JST基準の現在日付を取得"""
-    return datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    return now_jst().date()
 
 
 async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
@@ -230,7 +230,10 @@ async def import_from_postit(
 
 @router.post("", response_model=StickyNoteResponse, status_code=201)
 async def create_sticky_note(
-    request: Request, body: StickyNoteCreate, db: AsyncSession = Depends(get_db)
+    request: Request,
+    body: StickyNoteCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ):
     parsed_due_date = None
     if body.due_date:
@@ -257,12 +260,13 @@ async def create_sticky_note(
     await db.flush()
 
     if not note.is_personal_only:
-        from app.services.orchestrator import process_new_note_ai
+        from app.services.orchestrator import process_new_note_ai_background
 
-        await process_new_note_ai(request, note.id, db)
+        background_tasks.add_task(
+            process_new_note_ai_background, request.app, note.id
+        )
 
     await apply_due_date_rules_for_note(note.id, db)
-    await db.refresh(note)
     return _note_response(note)
 
 

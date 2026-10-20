@@ -9,17 +9,31 @@ import asyncio
 import logging
 import os
 import time
+from types import SimpleNamespace
 
 from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import run_matrix_scoring, run_triage
+from app.db import async_session_maker
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.services.llm_settings import get_resolved_ollama_async
 
 logger = logging.getLogger("uvicorn")
+
+
+async def process_new_note_ai_background(app, note_id: int) -> None:
+    """HTTP response 後に専用 DB セッションで AI 振り分けを実行する。"""
+    request = SimpleNamespace(app=app)
+    async with async_session_maker() as db:
+        try:
+            await process_new_note_ai(request, note_id, db)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception("[Linko AI] Background processing failed for note %s", note_id)
 
 # アイゼンハワー象限(1-4) → Taskボード列(1=アイデア, 2=短期, 3=長期, 4=重要)
 EISENHOWER_TO_COLUMN = {1: 4, 2: 3, 3: 2, 4: 1}

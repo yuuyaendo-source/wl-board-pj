@@ -249,13 +249,13 @@ start "" "{exe}"
 echo [update] done >> "{trace_log}"
 del "%~f0"
 """
-        # 日本語パス（ユーザー名等）が含まれる場合にパス破壊を防ぐため cp932 を使用
-        with open(bat_path, "w", encoding="cp932", errors="replace") as f:
+        # UTF-8 で保存し、呼び出し側でコードページを UTF-8 にしてからバッチを読む。
+        with open(bat_path, "w", encoding="utf-8", newline="\r\n") as f:
             f.write(bat)
 
         CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
         subprocess.Popen(
-            ["cmd.exe", "/c", bat_path],
+            ["cmd.exe", "/c", f'chcp 65001>nul & call "{bat_path}"'],
             creationflags=CREATE_NEW_CONSOLE,
             close_fds=True,
             cwd=tmp,

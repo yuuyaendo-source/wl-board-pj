@@ -4,13 +4,12 @@
 SCHEDULER_ENABLED が true（既定）のとき有効。SCHEDULER_BASE_URL で自サーバの URL を指定。
 """
 import logging
-from zoneinfo import ZoneInfo
+from app.core.time_utils import JST
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 _scheduler = None
-JST = ZoneInfo("Asia/Tokyo")
 
 
 def _post(path: str) -> None:

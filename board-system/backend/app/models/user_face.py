@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """user_faces テーブル。1ユーザーあたり複数枚の顔画像（カメラ・アップロード両対応）。"""
+from app.core.time_utils import utc_now_naive
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, LargeBinary, String
@@ -17,6 +19,6 @@ class UserFace(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     image_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     source: Mapped[str | None] = mapped_column(String(32), nullable=True)  # "camera" | "upload" 等
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
 
     user = relationship("User", back_populates="faces")

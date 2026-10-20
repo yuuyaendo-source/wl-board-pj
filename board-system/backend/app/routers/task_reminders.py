@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -31,6 +30,8 @@ from app.models import (
 from app.models.sticky_note import NoteStatus
 from app.services.calendar_placement import include_in_task_remind
 
+from app.core.time_utils import get_timezone, utc_now_naive
+
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
 logger = logging.getLogger(__name__)
 
@@ -39,10 +40,7 @@ MAX_TITLE_LEN = 40
 
 def _jst_today() -> str:
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     return datetime.now(tz).strftime("%Y-%m-%d")
 
 
@@ -78,6 +76,7 @@ class PendingResponse(BaseModel):
 
 class ShownSlotBody(BaseModel):
     """スロット単位で Today 全タスクを表示済みにする（一括リマインド用）。"""
+
 
     slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
 
@@ -293,7 +292,7 @@ async def ack_task_reminder(
         raise HTTPException(status_code=404, detail="Placement not found")
 
     log_row.action = body.action
-    log_row.acked_at = datetime.utcnow()
+    log_row.acked_at = utc_now_naive()
 
     if body.action == "done" and placement.lane != Lane.DONE:
         prev_lane = placement.lane

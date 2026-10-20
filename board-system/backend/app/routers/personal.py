@@ -15,11 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.personal_summary import PersonalSummaryCache
 
+from app.core.time_utils import utc_now_naive
+
 router = APIRouter(prefix="/api/personal", tags=["personal"])
 
 
 class TodayItem(BaseModel):
     """Today 1件。label 必須、他は任意。"""
+
     label: str
     summary: str = ""
     start: str = ""
@@ -91,7 +94,7 @@ async def post_personal_today(
         db.add(row)
     else:
         row.today = today_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
     return {"ok": True}
 
@@ -119,6 +122,6 @@ async def post_personal_events(
         db.add(row)
     else:
         row.events = events_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
     return {"ok": True}

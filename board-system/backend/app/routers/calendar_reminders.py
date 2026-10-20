@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.models import CalendarReminderLog, User, UserGoogleToken
+from app.core.time_utils import get_timezone
 
 router = APIRouter(prefix="/api/personal", tags=["calendar_reminders"])
 logger = logging.getLogger(__name__)
@@ -31,10 +32,7 @@ WINDOW_MARGIN_MIN = 2.0
 
 def _jst_now() -> datetime:
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     return datetime.now(tz)
 
 
@@ -143,10 +141,7 @@ async def get_pending_calendar_reminders(
     logged = await _logged_starts_by_event(user_id, remind_date, remind_kind, db)
 
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     now = _jst_now()
 
     items: list[CalendarPendingItem] = []

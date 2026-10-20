@@ -14,7 +14,7 @@ import { isGrayNote } from "@shared/utils/grayNote";
 export const MIN_SCALE = 0.3;
 export const MAX_SCALE = 2.5;
 
-let socket;
+
 
 export default function BoardPage() {
     const params = useParams();
@@ -37,6 +37,7 @@ export default function BoardPage() {
     const [selectionBox, setSelectionBox] = useState(null);
 
     const boardContainerRef = useRef(null);
+    const socketRef = useRef(null);
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
@@ -92,34 +93,36 @@ export default function BoardPage() {
             setShowUserDialog(true);
         }
 
-        socket = io({
+        const activeSocket = io({
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
             reconnectionAttempts: Infinity
         });
 
-        socket.on("connect", () => {
+        socketRef.current = activeSocket;
+
+        activeSocket.on("connect", () => {
             console.log("Connected to server");
             setIsConnected(true);
-            socket.emit("join-board", boardId);
+            activeSocket.emit("join-board", boardId);
 
             const currentUsername = localStorage.getItem('wl-sticky-note-username');
             if (currentUsername) {
-                socket.emit("user-join", { boardId, username: currentUsername });
+                activeSocket.emit("user-join", { boardId, username: currentUsername });
             }
         });
 
-        socket.on("init-board", (data) => {
+        activeSocket.on("init-board", (data) => {
             setNotes(data.notes || []);
             setTitle((data.name !== undefined && data.name !== null) ? String(data.name) : "");
         });
 
-        socket.on("board-name-updated", ({ name }) => {
+        activeSocket.on("board-name-updated", ({ name }) => {
             setTitle(name != null ? String(name) : "");
         });
 
-        socket.on("note-added", (note) => {
+        activeSocket.on("note-added", (note) => {
             setNotes((prev) => {
                 if (prev.some(n => n.id === note.id)) return prev;
                 let placed = note;
@@ -128,53 +131,61 @@ export default function BoardPage() {
                     const cx = (container.clientWidth / 2 - panRef.current.x) / scaleRef.current - 100;
                     const cy = (container.clientHeight / 2 - panRef.current.y) / scaleRef.current - 100;
                     placed = { ...note, x: cx, y: cy };
-                    socket.emit("update-note", { boardId, note: placed });
+                    activeSocket.emit("update-note", { boardId, note: placed });
                 }
                 return [...prev, placed];
             });
         });
 
-        socket.on("note-updated", (updatedNote) => {
+        activeSocket.on("note-updated", (updatedNote) => {
             setNotes((prev) =>
                 prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
             );
         });
 
-        socket.on("note-deleted", (noteId) => {
+        activeSocket.on("note-deleted", (noteId) => {
             setNotes((prev) => prev.filter((n) => n.id !== noteId));
             setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
         });
 
-        socket.on("board-cleared", () => {
+        activeSocket.on("board-cleared", () => {
             console.log("Board cleared by server.");
             setNotes([]);
             setSelectedNoteIds([]);
         });
 
-        socket.on("user-joined", ({ username: newUsername }) => {
+        activeSocket.on("user-joined", ({ username: newUsername }) => {
             console.log(`${newUsername} joined the board`);
         });
 
-        socket.on("user-left", ({ username: leftUsername }) => {
+        activeSocket.on("user-left", ({ username: leftUsername }) => {
             console.log(`${leftUsername} left the board`);
         });
 
-        socket.on("disconnect", () => {
+        activeSocket.on("disconnect", () => {
             console.log("Disconnected from server");
             setIsConnected(false);
         });
 
+        activeSocket.on("note-rejected", ({ reason }) => {
+            if (reason === "inappropriate_content") {
+                window.alert("付箋の内容が投稿ルールに合わないため、保存されませんでした。");
+            }
+        });
+
         return () => {
-            socket.off("init-board");
-            socket.off("board-name-updated");
-            socket.off("note-added");
-            socket.off("note-updated");
-            socket.off("note-deleted");
-            socket.off("board-cleared");
-            socket.off("user-joined");
-            socket.off("user-left");
-            socket.off("disconnect");
-            socket.disconnect();
+            activeSocket.off("init-board");
+            activeSocket.off("board-name-updated");
+            activeSocket.off("note-added");
+            activeSocket.off("note-updated");
+            activeSocket.off("note-deleted");
+            activeSocket.off("board-cleared");
+            activeSocket.off("user-joined");
+            activeSocket.off("user-left");
+            activeSocket.off("disconnect");
+            activeSocket.off("note-rejected");
+            activeSocket.disconnect();
+            if (socketRef.current === activeSocket) socketRef.current = null;
         };
     }, [boardId]);
 
@@ -270,8 +281,8 @@ export default function BoardPage() {
         localStorage.setItem('wl-sticky-note-username', newUsername);
         setShowUserDialog(false);
 
-        if (socket && socket.connected) {
-            socket.emit("user-join", { boardId, username: newUsername });
+        if (socketRef.current && socketRef.current.connected) {
+            socketRef.current.emit("user-join", { boardId, username: newUsername });
         }
     };
 
@@ -297,7 +308,7 @@ export default function BoardPage() {
             createdAt: Date.now()
         };
         setNotes((prev) => [...prev, newNote]);
-        socket.emit("add-note", { boardId, note: newNote });
+        socketRef.current.emit("add-note", { boardId, note: newNote });
     };
 
     const handleNoteSubmit = (text, dueDate) => {
@@ -350,7 +361,7 @@ export default function BoardPage() {
 
         updateTimeout.current = setTimeout(() => {
             notesToUpdate.forEach(note => {
-                socket.emit("update-note", { boardId, note });
+                socketRef.current.emit("update-note", { boardId, note });
             });
         }, 100);
     }, [boardId]);
@@ -378,7 +389,7 @@ export default function BoardPage() {
         if (updateTimeout.current) clearTimeout(updateTimeout.current);
         updateTimeout.current = setTimeout(() => {
             notesToUpdate.forEach(note => {
-                socket.emit("update-note", { boardId, note });
+                socketRef.current.emit("update-note", { boardId, note });
             });
         }, 100);
     }, [boardId, selectedNoteIds]);
@@ -398,7 +409,7 @@ export default function BoardPage() {
     const deleteNote = (noteId) => {
         setNotes((prev) => prev.filter((n) => n.id !== noteId));
         setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
-        socket.emit("delete-note", { boardId, noteId });
+        socketRef.current.emit("delete-note", { boardId, noteId });
     };
 
     const handleDownload = () => {
@@ -431,7 +442,7 @@ export default function BoardPage() {
                 if (boardData.notes) setNotes(boardData.notes);
 
                 boardData.notes?.forEach(note => {
-                    socket.emit("add-note", { boardId, note });
+                    socketRef.current.emit("add-note", { boardId, note });
                 });
 
                 alert('ボードを復元しました!');
@@ -510,7 +521,7 @@ export default function BoardPage() {
         );
 
         updatedNotes.forEach(note => {
-            socket.emit("update-note", { boardId, note });
+            socketRef.current.emit("update-note", { boardId, note });
         });
 
         alert(`${noteIds.length}個の付箋をグループ化しました`);
@@ -534,7 +545,7 @@ export default function BoardPage() {
         );
 
         updatedNotes.forEach(note => {
-            socket.emit("update-note", { boardId, note });
+            socketRef.current.emit("update-note", { boardId, note });
         });
 
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
@@ -707,8 +718,8 @@ export default function BoardPage() {
                         setTitle(v);
                         if (nameSaveTimeoutRef.current) clearTimeout(nameSaveTimeoutRef.current);
                         nameSaveTimeoutRef.current = setTimeout(() => {
-                            if (socket && boardIdRef.current) {
-                                socket.emit("board-set-name", { boardId: boardIdRef.current, name: v });
+                            if (socketRef.current && boardIdRef.current) {
+                                socketRef.current.emit("board-set-name", { boardId: boardIdRef.current, name: v });
                             }
                         }, 600);
                     }}
@@ -717,8 +728,8 @@ export default function BoardPage() {
                             clearTimeout(nameSaveTimeoutRef.current);
                             nameSaveTimeoutRef.current = null;
                         }
-                        if (socket && boardIdRef.current) {
-                            socket.emit("board-set-name", { boardId: boardIdRef.current, name: title });
+                        if (socketRef.current && boardIdRef.current) {
+                            socketRef.current.emit("board-set-name", { boardId: boardIdRef.current, name: title });
                         }
                     }}
                     placeholder="ボードタイトルを入力..."

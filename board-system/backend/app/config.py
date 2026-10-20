@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     scheduler_calendar_interval_minutes: int = 30
     # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
     scheduler_base_url: str = "http://127.0.0.1:8000"
+    reconciliation_dry_run: bool = True
 
     @field_validator("scheduler_base_url")
     @classmethod

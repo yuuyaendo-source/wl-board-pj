@@ -84,6 +84,19 @@ app.prepare().then(() => {
         next();
     });
 
+    // Same-origin browser mutations prevent cross-site form/fetch requests from
+    // clearing or changing boards. Server-to-server calls without Origin remain supported.
+    server.use('/api', (req, res, next) => {
+        const origin = req.get('origin');
+        if (!origin || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+        try {
+            if (new URL(origin).host !== req.get('host')) return res.sendStatus(403);
+        } catch (e) {
+            return res.sendStatus(403);
+        }
+        return next();
+    });
+
     // ボードデータの読み込み（なければ空で初期化）
     // null prototype prevents special property names (for example __proto__) from
     // resolving to inherited object properties when a boardId is used as a key.
@@ -227,6 +240,7 @@ app.prepare().then(() => {
             if (boards[boardId]) {
                 if (isInappropriateText(note.text)) {
                     console.log('Add-note rejected: inappropriate content');
+                    socket.emit('note-rejected', { reason: 'inappropriate_content' });
                     return;
                 }
                 boards[boardId].notes.push(note);
@@ -258,6 +272,7 @@ app.prepare().then(() => {
                 const index = boards[boardId].notes.findIndex((n) => n.id === note.id);
                 if (index !== -1) {
                     if (isInappropriateText(note.text)) {
+                        socket.emit('note-rejected', { reason: 'inappropriate_content' });
                         boards[boardId].notes = boards[boardId].notes.filter((n) => n.id !== note.id);
                         io.to(boardId).emit('note-deleted', note.id);
                         saveBoards();

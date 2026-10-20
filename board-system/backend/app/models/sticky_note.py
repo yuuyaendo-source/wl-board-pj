@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """sticky_notes テーブル。付箋本文・投稿者・ステータス。"""
+from app.core.time_utils import utc_now_naive
+
 import enum
 from datetime import date, datetime
 
@@ -47,9 +49,9 @@ class StickyNote(Base):
     is_help_request: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now_naive, onupdate=utc_now_naive
     )
 
     author = relationship("User", back_populates="sticky_notes")

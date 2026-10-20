@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+from app.core.time_utils import get_timezone
+
 from app.ai.client import generate_json
 from app.services.calendar_proposal_store import (
     CalendarProposal,
@@ -31,13 +33,9 @@ _CANCEL_RE = re.compile(
 
 
 def _tz() -> ZoneInfo:
-    try:
-        from app.config import settings
+    from app.config import settings
 
-        name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-        return ZoneInfo(name)
-    except Exception:
-        return ZoneInfo("Asia/Tokyo")
+    return get_timezone(settings.calendar_timezone)
 
 
 def _now_ctx() -> str:

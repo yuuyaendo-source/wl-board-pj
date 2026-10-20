@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import os
+import queue
 import sys
 import tempfile
 import threading
@@ -19,6 +20,31 @@ from core.config_loader import load_config, is_feature_enabled
 from core.security import validate_http_url, assert_http_url
 from services.notifications import are_enabled
 from core.app_log import log_info, log_warn
+
+_playback_queue: queue.Queue[str] = queue.Queue()
+
+
+def _audio_worker() -> None:
+    """Serialize asynchronous PlaySound calls so later audio cannot cut off the current clip."""
+    while True:
+        path = _playback_queue.get()
+        try:
+            import winsound
+
+            winsound.PlaySound(path, winsound.SND_FILENAME)
+        except Exception as e:
+            log_warn(f"[audio] queued playback failed: {e}")
+        finally:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+            _playback_queue.task_done()
+
+
+if sys.platform == "win32":
+    _audio_thread = threading.Thread(target=_audio_worker, name="audio-playback", daemon=True)
+    _audio_thread.start()
 
 
 def get_audio_temp_prefix() -> str:
@@ -159,20 +185,7 @@ def play_wav(
             except Exception:
                 pass
         else:
-            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-
-            # 再生完了を見計らって安全に削除（常駐時のディスク蓄積防止と過剰スレッド生成抑止）
-            delay = (duration_sec + 2.0) if (duration_sec is not None and duration_sec > 0) else 15.0
-
-            def _delayed_unlink(file_path: str):
-                try:
-                    os.unlink(file_path)
-                except Exception:
-                    pass
-
-            timer = threading.Timer(delay, _delayed_unlink, args=[path])
-            timer.daemon = True
-            timer.start()
+            _playback_queue.put(path)
     except Exception as e:
         log_warn(f"{log_prefix} 再生エラー: {e}")
         try:

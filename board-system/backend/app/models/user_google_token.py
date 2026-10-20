@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """user_google_tokens テーブル。ユーザーごとの Google カレンダー OAuth トークン。"""
+from app.core.time_utils import utc_now_naive
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Text
@@ -43,7 +45,7 @@ class UserGoogleToken(Base):
     )
 
     token_expiry: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now_naive, onupdate=utc_now_naive
     )

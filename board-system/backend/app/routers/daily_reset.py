@@ -4,23 +4,22 @@ Logic 3: Daily Reset API。
 Personal Board の Today レーン未完了タスクについて「持ち越しますか？」メッセージを返す。
 毎朝の Meeting 用: Today を MORNING にコピーする sync_to_morning（cron 等で 10:15 に実行想定）。
 """
-from zoneinfo import ZoneInfo
-
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.core.time_utils import utc_now_naive, JST
 from app.models import BoardPlacement, BoardType, StickyNote, User
 from app.models.board_placement import Lane
 from app.services.sync_reconciliation import reconcile_sticky_notes
 
-JST = ZoneInfo("Asia/Tokyo")
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
 
 
 async def _clear_morning_board(db: AsyncSession) -> None:
     """Meeting ボード（MORNING 型配置）の内容を全削除する共通ヘルパー。"""
+
     await db.execute(
         delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
     )
@@ -270,7 +269,7 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
 
     # 期限切れの OAuth PKCE state をクリーンアップ
     await db.execute(
-        delete(OAuthPkceState).where(OAuthPkceState.expires_at < datetime.utcnow())
+        delete(OAuthPkceState).where(OAuthPkceState.expires_at < utc_now_naive())
     )
 
     await _clear_morning_board(db)
@@ -289,8 +288,14 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
 
     # 付箋データと DB の差分照合・自動補正バッチ (初期は dry_run=True で安全運用)
     client = getattr(request.app.state, "http_client", None)
-    reconcile_result = await reconcile_sticky_notes(db, client=client, dry_run=True)
-    log.info("run_8am: 差分照合実行結果 (dry_run=True): %s", reconcile_result)
+    reconcile_result = await reconcile_sticky_notes(
+        db, client=client, dry_run=settings.reconciliation_dry_run
+    )
+    log.info(
+        "run_8am: 差分照合実行結果 (dry_run=%s): %s",
+        settings.reconciliation_dry_run,
+        reconcile_result,
+    )
 
     if (
         not settings.google_calendar_client_id

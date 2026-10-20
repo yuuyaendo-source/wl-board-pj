@@ -53,4 +53,42 @@ test.describe('Sticky note business rules', () => {
         const allowedDelete = await request.delete(`${apiBase}/sticky_notes/${note.id}`);
         expect(allowedDelete.status()).toBe(204);
     });
+
+    test('チームへ付箋を複数人コピーし、応援引き受けで依頼者のレーンを戻す', async ({ request }) => {
+        const apiBase = process.env.TEST_BACKEND_URL || 'http://localhost:8000';
+        const created = await request.post(`${apiBase}/sticky_notes/create_personal`, {
+            data: { owner_id: 1, content: `E2E team/help rule ${Date.now()}` },
+        });
+        expect(created.status()).toBe(201);
+        const note = await created.json();
+
+        try {
+            const copied = await request.post(`${apiBase}/sticky_notes/${note.id}/copy_to_team`, {
+                data: { team_id: 1 },
+            });
+            expect(copied.ok()).toBeTruthy();
+            expect((await copied.json()).created).toBeGreaterThan(0);
+
+            const placements = await request.get(`${apiBase}/board_placements?board_type=PERSONAL&owner_id=1`);
+            const ownerPlacement = (await placements.json()).find((item: { note_id: number }) => item.note_id === note.id);
+            expect(ownerPlacement).toBeTruthy();
+
+            const helpRequest = await request.patch(`${apiBase}/board_placements/${ownerPlacement.id}`, {
+                data: { lane: 'HELP_REQUEST' },
+            });
+            expect(helpRequest.ok()).toBeTruthy();
+
+            const accepted = await request.post(`${apiBase}/sticky_notes/${note.id}/move_to_personal`, {
+                data: { owner_id: 2, lane: 'INBOX' },
+            });
+            expect(accepted.ok()).toBeTruthy();
+            expect((await accepted.json()).lane).toBe('INBOX');
+
+            const requesterAfterAccept = await request.get(`${apiBase}/board_placements/${ownerPlacement.id}`);
+            expect((await requesterAfterAccept.json()).lane).toBe('INBOX');
+        } finally {
+            await request.patch(`${apiBase}/sticky_notes/${note.id}`, { data: { status: 'DONE' } });
+            await request.delete(`${apiBase}/sticky_notes/${note.id}`);
+        }
+    });
 });

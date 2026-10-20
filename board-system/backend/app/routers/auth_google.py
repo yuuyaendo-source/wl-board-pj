@@ -38,6 +38,7 @@ from app.services.calendar_placement import (
     placement_source_for_event,
     should_skip_calendar_sticky,
 )
+from app.core.time_utils import get_timezone, utc_now_naive
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 def _pkce_code_challenge(verifier: str) -> str:
     """PKCE: code_verifier から S256 の code_challenge を計算。"""
+
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
@@ -127,12 +129,12 @@ async def auth_google_start(
             "code_challenge_method": "S256",
         }
         authorization_url = GOOGLE_AUTH_URI + "?" + urllib.parse.urlencode(params)
-        expires_at = datetime.utcnow() + timedelta(seconds=PKCE_TTL_SECONDS)
+        expires_at = utc_now_naive() + timedelta(seconds=PKCE_TTL_SECONDS)
         await db.execute(
             delete(OAuthPkceState).where(
                 or_(
                     OAuthPkceState.user_id == user_id,
-                    OAuthPkceState.expires_at < datetime.utcnow(),
+                    OAuthPkceState.expires_at < utc_now_naive(),
                 )
             )
         )
@@ -171,7 +173,7 @@ async def auth_google_callback(
     result = await db.execute(
         select(OAuthPkceState).where(
             OAuthPkceState.state == state,
-            OAuthPkceState.expires_at > datetime.utcnow(),
+            OAuthPkceState.expires_at > utc_now_naive(),
         )
     )
     row = result.scalar_one_or_none()
@@ -211,7 +213,7 @@ async def auth_google_callback(
         if data["refresh_token"]:
             row.refresh_token = data["refresh_token"]
         row.token_expiry = expiry
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     else:
         token = UserGoogleToken(
             user_id=user_id,
@@ -264,16 +266,11 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         return []
 
     def _fetch():
-        from zoneinfo import ZoneInfo
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
         from google.auth.transport.requests import Request
 
-        tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-        try:
-            tz = ZoneInfo(tz_name)
-        except Exception:
-            tz = timezone.utc
+        tz = get_timezone(settings.calendar_timezone)
         # その日 0:00〜23:59（ローカル）で取得
         now_local = datetime.now(tz)
         start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -342,7 +339,7 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
                         if getattr(new_expiry, "tzinfo", None)
                         else new_expiry
                     )
-                refresh_row.updated_at = datetime.utcnow()
+                refresh_row.updated_at = utc_now_naive()
                 await db.flush()
         return events
     except Exception:
@@ -366,7 +363,7 @@ async def _sync_user_calendar_events_cache(
         db.add(row)
     else:
         row.events = events_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
     return len(events)
 
@@ -417,7 +414,7 @@ async def _refresh_user_calendar_and_today(
     else:
         row.events = events_json
         row.today = today_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
 
     # カレンダー由来の Today 付箋を削除してから今回分を追加（重複防止）

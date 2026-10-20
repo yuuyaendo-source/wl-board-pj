@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """users テーブル。共通ユーザー管理: 名前・Eメール・呼び名。顔画像は user_faces で複数枚保持。"""
+from app.core.time_utils import utc_now_naive
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Table, Column
@@ -36,9 +38,9 @@ class User(Base):
     )
     call_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now_naive, onupdate=utc_now_naive
     )
 
     # リレーション

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """board_placements テーブル。付箋がどのボードのどこにあるかを管理。"""
+from app.core.time_utils import utc_now_naive
+
 import enum
 from datetime import datetime
 
@@ -52,8 +54,8 @@ class BoardPlacement(Base):
     position_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     matrix_quadrant: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
     # カレンダー更新で作成した Today 付箋（'calendar' 終日 | 'calendar_timed' 時刻付き | NULL）
     placement_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # 手動で Today に移動された場合 True。期限による自動移動をスキップするフラグ。

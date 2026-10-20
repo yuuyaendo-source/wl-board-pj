@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
-
-JST = ZoneInfo("Asia/Tokyo")
+from app.core.time_utils import JST
 
 
 def should_move_to_today(due_date: Optional[date], today: Optional[date] = None) -> bool:

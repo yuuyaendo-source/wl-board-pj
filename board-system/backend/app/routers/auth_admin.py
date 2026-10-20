@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """管理者認証 API（パスワード保護用）。標準ライブラリで簡易 JWT を発行・検証。"""
+from app.core.time_utils import utc_now_naive
+
 import base64
 import json
 import hmac
@@ -40,7 +42,7 @@ def _b64url_decode(b64: str) -> bytes:
 def create_access_token() -> str:
     header = {"alg": "HS256", "typ": "JWT"}
     exp = int(
-        (datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()
+        (utc_now_naive() + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()
     )
     payload = {"sub": "admin", "exp": exp}
 
@@ -74,7 +76,7 @@ def verify_token(token: str) -> bool:
         payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
         if payload.get("sub") != "admin":
             return False
-        if payload.get("exp", 0) < int(datetime.utcnow().timestamp()):
+        if payload.get("exp", 0) < int(utc_now_naive().timestamp()):
             return False
         return True
     except Exception as e:
