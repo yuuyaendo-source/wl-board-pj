@@ -4,8 +4,9 @@ Logic 3: Daily Reset API。
 Personal Board の Today レーン未完了タスクについて「持ち越しますか？」メッセージを返す。
 毎朝の Meeting 用: Today を MORNING にコピーする sync_to_morning（cron 等で 10:15 に実行想定）。
 """
+from datetime import date, datetime as _dt
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -18,23 +19,41 @@ from app.services.sync_reconciliation import reconcile_sticky_notes
 router = APIRouter(prefix="/daily_reset", tags=["daily_reset"])
 
 
-async def _clear_morning_board(db: AsyncSession) -> None:
-    """Meeting ボード（MORNING 型配置）の内容を全削除する共通ヘルパー。"""
+async def _clear_morning_board(db: AsyncSession, exclude_news: bool = False) -> None:
+    """Meeting ボード（MORNING 型配置）の内容を削除する共通ヘルパー。"""
+    if not exclude_news:
+        # 完全リセット時は孤立蓄積を防ぐため、ニュース付箋本体 (StickyNote) も合わせて削除
+        r_news = await db.execute(
+            select(BoardPlacement.note_id).where(
+                BoardPlacement.board_type == BoardType.MORNING,
+                BoardPlacement.placement_source == "news",
+            )
+        )
+        news_note_ids = [r[0] for r in r_news.all()]
+        if news_note_ids:
+            await db.execute(delete(StickyNote).where(StickyNote.id.in_(news_note_ids)))
 
-    await db.execute(
-        delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
-    )
+    stmt = delete(BoardPlacement).where(BoardPlacement.board_type == BoardType.MORNING)
+    if exclude_news:
+        # ニュース付箋配置を保護し、通常付箋の配置のみを削除対象とする
+        stmt = stmt.where(
+            or_(
+                BoardPlacement.placement_source.is_(None),
+                BoardPlacement.placement_source != "news",
+            )
+        )
+    await db.execute(stmt)
     await db.flush()
 
 
 @router.post("/sync_to_morning")
 async def sync_to_morning(db: AsyncSession = Depends(get_db)):
     """
-    全ユーザーの Personal Today を MORNING にコピーする（既存の MORNING は削除）。
-    毎朝 10:15 に cron や systemd タイマーで呼ぶ想定。テスト時は手動で呼べる。
+    全ユーザーの Personal Today を MORNING にコピーする（ニュース付箋以外の既存 MORNING 配置を削除）。
+    毎朝 10:15 にスケジューラから直列パイプライン経由で呼ばれる。
     """
-    # 既存の MORNING 配置を全削除
-    await _clear_morning_board(db)
+    # 既存の MORNING 配置を削除（ニュース付箋は除外して保護）
+    await _clear_morning_board(db, exclude_news=True)
 
     # 全ユーザー取得
     users_result = await db.execute(select(User).order_by(User.id))
@@ -72,31 +91,28 @@ async def sync_to_morning(db: AsyncSession = Depends(get_db)):
 async def reset_meeting(db: AsyncSession = Depends(get_db)):
     """
     Meeting ボード（MORNING）の内容を全削除する。手動リセットボタン用。
-    注意: cron は run_8am エンドポイントが内部で呼び出すため、此関数は手動実行専用。
     """
-    await _clear_morning_board(db)
+    await _clear_morning_board(db, exclude_news=False)
     return {"ok": True}
 
 
 async def apply_due_date_rules(db: AsyncSession) -> dict:
     """
     期限（due_date）の設定されたパーソナル配置に対して、期限までの日数に応じて Today または INBOX に自動移動する。
-    - DONE レーンの配置は除外（完了済みタスクは自動移動しない）。
+    - DONE および HELP_REQUEST（応援要請）レーンの配置は除外。
     - is_manually_moved_to_today == True の配置はスキップ（手動移動が優先）。
     - 日本時間（JST）を基準として判定する。
     戻り値: {"today_count": int, "inbox_count": int} 各レーンへ移動した件数。
     """
-    from datetime import datetime as _dt
-
     today_jst = _dt.now(JST).date()
 
-    # DONE 以外の PERSONAL 配置で、期限が設定されているものを取得
+    # DONE および HELP_REQUEST 以外の PERSONAL 配置で、期限が設定されているものを取得
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
         .where(
             BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.lane != Lane.DONE,
+            BoardPlacement.lane.notin_([Lane.DONE, Lane.HELP_REQUEST]),
             StickyNote.due_date.isnot(None),
         )
     )
@@ -105,11 +121,12 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
     today_count = 0
     inbox_count = 0
     for p, n in rows:
-        # 手動移動フラグが立っている場合は自動移動をスキップ
         if p.is_manually_moved_to_today:
             continue
 
-        target_lane = Lane.TODAY if should_move_to_today(n.due_date, today_jst) else Lane.INBOX
+        target_lane = (
+            Lane.TODAY if should_move_to_today(n.due_date, today_jst) else Lane.INBOX
+        )
 
         if p.lane != target_lane:
             p.lane = target_lane
@@ -122,16 +139,49 @@ async def apply_due_date_rules(db: AsyncSession) -> dict:
     return {"today_count": today_count, "inbox_count": inbox_count}
 
 
+def _rotate_placement_items(
+    items: list[tuple[BoardPlacement, StickyNote]],
+    today_jst: date,
+    threshold: int,
+    rotate_count: int,
+) -> int:
+    """
+    非除外タスク（期限10日以内を除く）を抽出し、先頭 rotate_count 件を末尾に回して
+    sort_order を連番で再採番する共通ヘルパー関数。
+    """
+    rotatable_indices: list[int] = []
+    rotatable_items: list[tuple[BoardPlacement, StickyNote]] = []
+
+    for idx, (p, n) in enumerate(items):
+        if n.due_date is not None and (n.due_date - today_jst).days <= 10:
+            continue
+        rotatable_indices.append(idx)
+        rotatable_items.append((p, n))
+
+    if len(rotatable_items) >= threshold:
+        rotated_slice = rotatable_items[:rotate_count]
+        remaining_slice = rotatable_items[rotate_count:]
+        new_rotatable = remaining_slice + rotated_slice
+
+        new_ordered = list(items)
+        for orig_idx, item in zip(rotatable_indices, new_rotatable):
+            new_ordered[orig_idx] = item
+
+        for idx, (p, _) in enumerate(new_ordered):
+            p.sort_order = idx
+        return rotate_count
+
+    return 0
+
+
 async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
     """
     タスクレーンに長期間滞留しているタスクを1日おき（2日に1回）に循環させる。
-    - 期限が今日から10日以内のタスク（優先度高）は先頭位置をキープ（除外）。
+    - 期限が今日から10日以内のタスク（優先度高）は元のインデックス位置をキープ（除外）。
     - Task Board: 完了以外の各列で、対象タスクが11件以上ある場合、先頭10件を末尾へ移動。
     - Personal Board: 各ユーザーの INBOX で、対象タスクが4件以上ある場合、先頭3件を末尾へ移動。
-    - リスト全体の sort_order を 0 から連番で再採番（正規化）。
+    - 元の並び順位置を保持したまま循環対象のみをスライドさせ、sort_order を連番で再採番（正規化）。
     """
-    from datetime import datetime as _dt
-
     today_jst = _dt.now(JST).date()
 
     if not force and today_jst.toordinal() % 2 != 0:
@@ -155,31 +205,15 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
     )
     task_rows = task_res.all()
 
-    # 象限（列）ごとにグループ化
     task_by_q: dict[int, list[tuple[BoardPlacement, StickyNote]]] = {}
     for p, n in task_rows:
         q = p.matrix_quadrant or 1
         task_by_q.setdefault(q, []).append((p, n))
 
     for q, items in task_by_q.items():
-        keep_top: list[tuple[BoardPlacement, StickyNote]] = []
-        rotatable: list[tuple[BoardPlacement, StickyNote]] = []
-
-        for p, n in items:
-            if n.due_date is not None and (n.due_date - today_jst).days <= 10:
-                keep_top.append((p, n))
-            else:
-                rotatable.append((p, n))
-
-        # 11件以上ある場合のみ先頭10件を末尾へ
-        if len(rotatable) >= 11:
-            rotate_count = 10
-            rotated_slice = rotatable[:rotate_count]
-            remaining_slice = rotatable[rotate_count:]
-            new_ordered = keep_top + remaining_slice + rotated_slice
-            for idx, (p, _) in enumerate(new_ordered):
-                p.sort_order = idx
-            task_rotated_count += rotate_count
+        task_rotated_count += _rotate_placement_items(
+            items, today_jst, threshold=11, rotate_count=10
+        )
 
     # 2. Personal Board のローテーション（各ユーザーの INBOX レーン）
     personal_res = await db.execute(
@@ -193,31 +227,15 @@ async def rotate_stale_tasks(db: AsyncSession, force: bool = False) -> dict:
     )
     personal_rows = personal_res.all()
 
-    # ユーザーごとにグループ化
     personal_by_owner: dict[int, list[tuple[BoardPlacement, StickyNote]]] = {}
     for p, n in personal_rows:
         if p.owner_id is not None:
             personal_by_owner.setdefault(p.owner_id, []).append((p, n))
 
     for owner_id, items in personal_by_owner.items():
-        keep_top: list[tuple[BoardPlacement, StickyNote]] = []
-        rotatable: list[tuple[BoardPlacement, StickyNote]] = []
-
-        for p, n in items:
-            if n.due_date is not None and (n.due_date - today_jst).days <= 10:
-                keep_top.append((p, n))
-            else:
-                rotatable.append((p, n))
-
-        # 4件以上ある場合のみ先頭3件を末尾へ
-        if len(rotatable) >= 4:
-            rotate_count = 3
-            rotated_slice = rotatable[:rotate_count]
-            remaining_slice = rotatable[rotate_count:]
-            new_ordered = keep_top + remaining_slice + rotated_slice
-            for idx, (p, _) in enumerate(new_ordered):
-                p.sort_order = idx
-            personal_rotated_count += rotate_count
+        personal_rotated_count += _rotate_placement_items(
+            items, today_jst, threshold=4, rotate_count=3
+        )
 
     await db.flush()
     return {
@@ -270,7 +288,8 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
         delete(OAuthPkceState).where(OAuthPkceState.expires_at < utc_now_naive())
     )
 
-    await _clear_morning_board(db)
+    # 8:00 のリセットは前日のニュースも含め完全クリア（StickyNote 本体も削除）
+    await _clear_morning_board(db, exclude_news=False)
 
     # 期限タスクの自動移動
     due_date_result = await apply_due_date_rules(db)
@@ -284,7 +303,7 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     rotation_result = await rotate_stale_tasks(db)
     log.info("run_8am: タスクローテーション実行結果: %s", rotation_result)
 
-    # 付箋データと DB の差分照合・自動補正バッチ (初期は dry_run=True で安全運用)
+    # 付箋データと DB の差分照合・自動補正バッチ
     client = getattr(request.app.state, "http_client", None)
     reconcile_result = await reconcile_sticky_notes(
         db, client=client, dry_run=settings.reconciliation_dry_run
@@ -294,6 +313,9 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
         settings.reconciliation_dry_run,
         reconcile_result,
     )
+
+    # 前半のバッチ更新を確定コミット
+    await db.commit()
 
     if (
         not settings.google_calendar_client_id
@@ -315,11 +337,15 @@ async def run_8am(request: Request, db: AsyncSession = Depends(get_db)):
     failed = []
     for uid in user_ids:
         try:
-            await _refresh_user_calendar_and_today(uid, db)
-            refreshed.append(uid)
+            # ③ 各ユーザー単位でセーブポイント（begin_nested）を作成し、1人の失敗がセッション全体を破綻させないように隔離
+            async with db.begin_nested():
+                await _refresh_user_calendar_and_today(uid, db)
+                refreshed.append(uid)
+            await db.commit()
         except Exception as e:
             log.warning("run_8am user_id=%s: %s", uid, e)
             failed.append(uid)
+
     return {
         "ok": True,
         "refreshed": refreshed,

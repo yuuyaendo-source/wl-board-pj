@@ -34,7 +34,6 @@ from app.routers import (
 
 logger = logging.getLogger(__name__)
 
-# デスクトップアプリ自動更新用リリース置き場（backend/desktop_app_releases）
 _DESKTOP_APP_RELEASES_DIR = (
     Path(__file__).resolve().parent.parent / "desktop_app_releases"
 )
@@ -49,8 +48,10 @@ async def lifespan(app: FastAPI):
     await seed_personal_users()
     await seed_teams()
 
-    # イベントループ内で httpx.AsyncClient を生成し app.state に格納
-    app.state.http_client = httpx.AsyncClient(timeout=5.0)
+    # 内部API通信用のシークレットヘッダーを含めてクライアントを初期化
+    app.state.http_client = httpx.AsyncClient(
+        timeout=5.0, headers={"x-internal-secret": settings.internal_api_secret}
+    )
 
     url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
     if url:
@@ -75,15 +76,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # アプリケーション終了時に共有クライアントを安全に破棄
     await app.state.http_client.aclose()
 
     try:
         from app.scheduler import shutdown_scheduler
 
         shutdown_scheduler()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("スケジューラ停止時にエラーが発生しました: %s", e)
 
 
 app = FastAPI(
@@ -93,12 +93,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS の許可オリジンをパースして厳格に指定（ワイルドカードと allow_credentials=True の共存を排除）
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in settings.cors_allowed_origins.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins or ["https://wlboardsys.internal.wonder-link.com"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "x-internal-secret"],
 )
 
 app.include_router(users.router)
@@ -116,7 +123,6 @@ app.include_router(auth_google.router)
 app.include_router(admin_llm.router)
 app.include_router(brainstorm.router)
 
-# デスクトップアプリ自動更新: /desktop-app/latest.json と /desktop-app/WonderLinko.msi を配信
 if _DESKTOP_APP_RELEASES_DIR.is_dir():
     app.mount(
         "/desktop-app",

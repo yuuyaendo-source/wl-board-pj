@@ -32,7 +32,6 @@ _stop_event = threading.Event()
 
 
 def start_visitor_notify() -> bool:
-    """config.json を読んで features.visitor_notify=True のときだけ接続を開始する。"""
     global _client, _thread
 
     log_info("[visitor_notify] start_visitor_notify() entered")
@@ -82,58 +81,113 @@ def start_visitor_notify() -> bool:
         return False
 
     _stop_event.clear()
-    _client = _sio.Client(
+    client = _sio.Client(
         reconnection=True,
-        reconnection_attempts=0,  # 0 = 無限
+        reconnection_attempts=0,
         reconnection_delay=2,
         reconnection_delay_max=30,
     )
-    _register_handlers(_client)
+    _client = client
+    _register_handlers(client)
 
     def runner():
+        global _client, _thread
         import time as _time
         from core.network_readiness import is_network_ready, unreachable_backoff_sec
-        from core.config_loader import load_config
+        from core.config_loader import load_config, is_feature_enabled
+        from core.security import validate_http_url
 
         backoff_schedule = [5, 10, 20, 30]
         attempt = 0
-        while not _stop_event.is_set():
-            cfg = load_config()
-            if not is_network_ready(cfg):
-                wait_sec = unreachable_backoff_sec(cfg)
-                if attempt == 0 or attempt % 5 == 0:
+        last_url = ""
+
+        try:
+            while not _stop_event.is_set():
+                cfg = load_config()
+
+                if not is_feature_enabled("visitor_notify", cfg):
                     log_info(
-                        f"[visitor_notify] 社内ネットワーク未到達のため接続待機 ({wait_sec}秒)"
+                        "[visitor_notify] features.visitor_notify=False を検知したため接続を終了します"
                     )
+                    if getattr(client, "connected", False):
+                        try:
+                            client.disconnect()
+                        except Exception:
+                            pass
+                    break
+
+                current_url = (cfg.get("linko_server_url") or "").strip()
+                if not current_url:
+                    log_warn("[visitor_notify] linko_server_url が空です。待機します。")
+                    _time.sleep(10)
+                    continue
+
+                ok, err = validate_http_url(
+                    current_url, cfg, purpose="socketio_connect"
+                )
+                if not ok:
+                    log_warn(f"[visitor_notify] linko_server_url を拒否: {err}")
+                    _time.sleep(10)
+                    continue
+
+                if last_url and last_url != current_url:
+                    log_info(
+                        f"[visitor_notify] 接続先URLの変更を検知 ({last_url} -> {current_url})"
+                    )
+                    if getattr(client, "connected", False):
+                        try:
+                            client.disconnect()
+                        except Exception:
+                            pass
+                last_url = current_url
+
+                if not is_network_ready(cfg):
+                    wait_sec = unreachable_backoff_sec(cfg)
+                    if attempt == 0 or attempt % 5 == 0:
+                        log_info(
+                            f"[visitor_notify] 社内ネットワーク未到達のため接続待機 ({wait_sec}秒)"
+                        )
+                    for _ in range(wait_sec):
+                        if _stop_event.is_set():
+                            return
+                        _time.sleep(1)
+                    continue
+
+                attempt += 1
+                try:
+                    log_info(
+                        f"[visitor_notify] {current_url} へ接続を試みます… (attempt={attempt})"
+                    )
+                    client.connect(current_url, transports=["websocket", "polling"])
+                    log_info("[visitor_notify] connect() returned, waiting for events")
+                    client.wait()
+                    log_info("[visitor_notify] wait() returned (loop ended)")
+                    if _stop_event.is_set():
+                        break
+                    attempt = 0
+                except Exception as e:
+                    import traceback
+
+                    log_warn(f"[visitor_notify] 接続エラー (attempt={attempt}): {e}")
+                    if attempt == 1:
+                        log_warn(
+                            f"[visitor_notify] traceback:\n{traceback.format_exc()}"
+                        )
+
+                wait_idx = (
+                    max(0, min(attempt - 1, len(backoff_schedule) - 1))
+                    if attempt > 0
+                    else 0
+                )
+                wait_sec = backoff_schedule[wait_idx]
+                log_info(f"[visitor_notify] {wait_sec}秒後に再試行します")
                 for _ in range(wait_sec):
                     if _stop_event.is_set():
                         return
                     _time.sleep(1)
-                continue
-            attempt += 1
-            try:
-                log_info(
-                    f"[visitor_notify] {url} へ接続を試みます… (attempt={attempt})"
-                )
-                _client.connect(url, transports=["websocket", "polling"])
-                log_info("[visitor_notify] connect() returned, waiting for events")
-                _client.wait()
-                log_info("[visitor_notify] wait() returned (loop ended)")
-                if _stop_event.is_set():
-                    break
-                attempt = 0
-            except Exception as e:
-                import traceback
-
-                log_warn(f"[visitor_notify] 接続エラー (attempt={attempt}): {e}")
-                if attempt == 1:
-                    log_warn(f"[visitor_notify] traceback:\n{traceback.format_exc()}")
-            wait_sec = backoff_schedule[min(attempt - 1, len(backoff_schedule) - 1)]
-            log_info(f"[visitor_notify] {wait_sec}秒後に再試行します")
-            for _ in range(wait_sec):
-                if _stop_event.is_set():
-                    return
-                _time.sleep(1)
+        finally:
+            _client = None
+            _thread = None
 
     _thread = threading.Thread(target=runner, name="visitor_notify_client", daemon=True)
     _thread.start()
@@ -142,12 +196,12 @@ def start_visitor_notify() -> bool:
 
 
 def stop_visitor_notify() -> None:
-    """接続を切る (features.visitor_notify を OFF にしたとき / アプリ終了時に呼ぶ)。"""
     global _client, _thread
     _stop_event.set()
-    if _client is not None:
+    c = _client
+    if c is not None:
         try:
-            _client.disconnect()
+            c.disconnect()
         except Exception:
             pass
     _client = None
@@ -176,26 +230,26 @@ def _register_handlers(c: "_sio.Client") -> None:
 
 
 def _handle_visitor_arrived(data: dict) -> None:
-    """visitor_arrived payload を処理してトースト + (opt-in なら) 音声再生。"""
+    action = (data.get("action") or "").strip()
+    is_security_alert = action == "unlock_failed"
+
     try:
         from services.notifications import are_enabled
 
-        if not are_enabled():
+        if not are_enabled() and not is_security_alert:
             log_info(
                 "[visitor_notify] notifications_enabled=False のため来客通知をスキップ"
             )
             return
     except Exception:
         pass
+
     name = (data.get("name") or "来客").strip() or "来客"
     location = (data.get("location") or "entrance").strip()
     message = (data.get("message") or f"{name} さんが来訪されました").strip()
     audio_text = (data.get("audio_text") or message or "").strip()
     audio_url = (data.get("audio_url") or "").strip()
     server_click_url = (data.get("click_url") or "").strip()
-    action = (data.get("action") or "").strip()
-
-    is_security_alert = action == "unlock_failed"
 
     title_map = {"entrance": "入口", "office_lobby": "ロビー", "meeting_room": "会議室"}
     title = (
@@ -204,7 +258,7 @@ def _handle_visitor_arrived(data: dict) -> None:
 
     log_info(
         f"[visitor_notify] visitor_arrived 受信: name={name} location={location} "
-        f"audio_url={audio_url!r} click_url={server_click_url!r}"
+        f"audio_url={audio_url!r} click_url={server_click_url!r} is_security_alert={is_security_alert}"
     )
 
     try:
@@ -273,7 +327,6 @@ def _handle_visitor_arrived(data: dict) -> None:
 
 
 def _play_security_alert() -> None:
-    """なりすまし疑い等のセキュリティ警報音。"""
     import threading
 
     def _beep():
@@ -291,7 +344,6 @@ def _play_security_alert() -> None:
 
 
 def _play_visitor_audio(audio_url: str, audio_text: str = "") -> None:
-    """audio_url の WAV をダウンロードして再生。"""
     from hardware.audio_player import play_linko_audio
 
     play_linko_audio(audio_url, text=audio_text, log_prefix="[visitor_notify]")

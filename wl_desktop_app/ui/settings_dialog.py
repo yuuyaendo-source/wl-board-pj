@@ -611,7 +611,14 @@ class SettingsDialog(ctk.CTkToplevel):
                 "アップデート", "更新チェック URL が設定されていません。"
             )
             return
-        has_update, latest, download_url = check_for_update(__version__, url)
+
+        # SHA-256 を含むタプル (has_update, latest, download_url, expected_sha256) を安全にアンパック
+        update_info = check_for_update(__version__, url)
+        has_update = update_info[0]
+        latest = update_info[1]
+        download_url = update_info[2]
+        expected_sha256 = update_info[3] if len(update_info) > 3 else ""
+
         if not has_update:
             messagebox.showinfo("アップデート", f"最新版です (v{__version__})。")
             return
@@ -621,8 +628,10 @@ class SettingsDialog(ctk.CTkToplevel):
             "更新を開始するとアプリは一度終了し、完了後に自動で起動します。\n\n今すぐ更新しますか？",
         ):
             return
-        # download_and_install は成功時 sys.exit する (バッチ経由で更新)
-        ok, err = download_and_install(download_url)
+
+        # download_and_install に expected_sha256 を渡して完全性検証を実行
+        # 成功時は sys.exit する (バッチ経由で更新)
+        ok, err = download_and_install(download_url, expected_sha256=expected_sha256)
         if not ok:
             messagebox.showerror("アップデート", f"更新に失敗しました:\n{err}")
 

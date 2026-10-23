@@ -107,7 +107,11 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
             self._show_error("自分の顔を登録", str(e))
             self._on_close()
             return
-        if not self._status_data.get("face_enabled"):
+
+        is_face_enabled = self._status_data.get("face_enabled")
+        if is_face_enabled is None:
+            is_face_enabled = self._status_data.get("enabled", False)
+        if not is_face_enabled:
             self._show_error(
                 "自分の顔を登録",
                 "管理者が顔セルフ登録を有効にしていません。\n管理者に名簿登録・有効化を依頼してください。",

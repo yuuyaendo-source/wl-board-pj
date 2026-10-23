@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Linko Mini-Port: 常駐型フローティング入力ウィンドウ。
-通常時はリン子ボタンと投稿ボタンのみ。「投稿」クリックで入力欄を表示し、送信ボタンで POST /sticky_notes に送信。
+通常時はリン子ボタンと投稿ボタンのみ。「投稿」クリックで入力欄を表示し、送信ボタンで Board System のパーソナルボードへ送信。
 """
 from __future__ import annotations
 
 import os
-import re
 import sys
 import threading
-import time
-import webbrowser
 from typing import Tuple
 
 try:
@@ -24,7 +21,6 @@ except ImportError as e:
 
 from core.config_loader import (
     load_config,
-    save_config,
     get_board_system_personal_url,
     get_effective_board_system_url,
     get_app_base_dir,
@@ -42,16 +38,14 @@ except ImportError:
     _HAS_PIL = False
 
 
-def _sticky_note_api_url():
-    """付箋ボードの REST API URL（POST /api/sticky_notes）。board URL から導出。"""
-    cfg = load_config()
-    board_url = (
-        cfg.get("mini_port_api_url")
-        or "https://wlboardsys.internal.wonder-link.com/board/wl"
-    ).rstrip("/")
-    # https://wlboardsys.../board/wl → https://wlboardsys.../api/sticky_notes
-    base = re.sub(r"/board/.*$", "", board_url).rstrip("/")
-    return f"{base}/api/sticky_notes"
+def _taskboard_url(cfg: dict | None = None) -> str:
+    """Task ボードの URL を取得する。"""
+    if cfg is None:
+        cfg = load_config()
+    return (
+        cfg.get("mini_port_taskboard_url")
+        or "https://wlboardsys.internal.wonder-link.com/boards/taskboard"
+    ).strip()
 
 
 def _personal_sticky_note_api_url(cfg):
@@ -64,12 +58,6 @@ def _personal_sticky_note_api_url(cfg):
         return f"{base}/sticky_notes/create_personal", int(owner_id)
     except (TypeError, ValueError):
         return None, None
-
-
-def _board_id():
-    """送信先ボードID（例: wl）。"""
-    cfg = load_config()
-    return (cfg.get("postit_board_id") or "wl").strip() or "wl"
 
 
 def _prompt_email_and_resolve_personal(parent=None) -> str | None:
@@ -94,6 +82,7 @@ def _prompt_email_and_resolve_personal(parent=None) -> str | None:
     success, _msg, personal_url = login_with_email(email, cfg)
     return personal_url if success else None
 
+
 def _post_personal_note(
     url: str, owner_id: int, text: str, cfg: dict
 ) -> Tuple[bool, str]:
@@ -114,55 +103,18 @@ def _post_personal_note(
         return False, f"パーソナル投稿に失敗しました: {str(exc)[:80]}"
 
 
-def _post_legacy_note(text: str, cfg: dict) -> Tuple[bool, str]:
-    """ログイン前の互換動作として、従来の付箋ボードへ投稿する。"""
-    url = _sticky_note_api_url()
-    board_id = _board_id()
-    author = (cfg.get("display_name") or "").strip() or "Mini-Port"
-    note_id = f"miniport-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
-    note = {
-        "id": note_id,
-        "text": text,
-        "x": 100,
-        "y": 100,
-        "color": "#fff59d",
-        "pinned": False,
-        "author": author,
-        "createdAt": int(time.time() * 1000),
-    }
-    try:
-        from core.security import assert_http_url
-
-        assert_http_url(url, cfg, purpose="sticky_notes")
-    except ValueError as e:
-        return False, f"送信先が許可されていません: {str(e)[:80]}"
-    try:
-        response = requests.post(
-            url, json={"boardId": board_id, "note": note}, timeout=10
-        )
-        if response.status_code in (200, 201):
-            return True, "送信しました"
-        try:
-            body = (response.text or "")[:120].strip()
-            detail = f" {body}" if body else ""
-        except Exception:
-            detail = ""
-        return False, f"エラー: {response.status_code}{detail}"
-    except requests.exceptions.RequestException as e:
-        return False, f"接続エラー: {str(e)[:80]}"
-
-
 def _send_content(text: str) -> Tuple[bool, str]:
-    """ログイン済みなら Personal、それ以外は従来の付箋ボードへ投稿する。"""
+    """ログイン済みの Personal Board へ投稿する。未ログイン時はログインを促す。"""
     text = (text or "").strip()
     if not text:
         return False, "入力が空です"
 
     cfg = load_config()
     personal_url, owner_id = _personal_sticky_note_api_url(cfg)
-    if personal_url:
-        return _post_personal_note(personal_url, owner_id, text, cfg)
-    return _post_legacy_note(text, cfg)
+    if not personal_url or owner_id is None:
+        return False, "パーソナル未ログインです。「パーソナル」からログインしてください"
+
+    return _post_personal_note(personal_url, owner_id, text, cfg)
 
 
 def _linko_icon_path() -> str:
@@ -727,7 +679,7 @@ class MiniPortWindow(ctk.CTk):
         except Exception:
             pass
 
-    def _set_avatar_pose(self, pose: str) -> None:
+    def _set_avatar_pose(self, pose: str):
         if not getattr(self, "_avatar_enabled", False):
             return
         try:
@@ -820,7 +772,13 @@ class MiniPortWindow(ctk.CTk):
         ボタン・テキストボックスがある場合は、それらの上では
         ドラッグによるウィンドウ移動を開始しないようにする。
         """
-        base = (self.btn_linko, self.btn_post, self.btn_send, self.btn_close, self.textbox)
+        base = (
+            self.btn_linko,
+            self.btn_post,
+            self.btn_send,
+            self.btn_close,
+            self.textbox,
+        )
         if hasattr(self, "btn_board"):
             base += (self.btn_board,)
         if hasattr(self, "btn_notify"):
@@ -936,7 +894,8 @@ class MiniPortWindow(ctk.CTk):
             if url:
                 safe_webbrowser_open(url, cfg)
                 return
-        safe_webbrowser_open(_taskboard_url(), cfg)
+        # ★バグ修正: 未定義だった _taskboard_url() を安全に呼び出す
+        safe_webbrowser_open(_taskboard_url(cfg), cfg)
 
     def _position_bottom_right(self, compact: bool = True):
         self.update_idletasks()
@@ -977,7 +936,7 @@ class MiniPortWindow(ctk.CTk):
         self.btn_send.configure(state="normal")
         if ok:
             self.label_feedback.configure(
-                text="✓ 送信しました（表示されない場合は付箋ボードを再読み込み）",
+                text="✓ パーソナルボードに送信しました",
                 text_color=Theme.FEEDBACK_OK,
             )
             self.textbox.delete("1.0", "end")

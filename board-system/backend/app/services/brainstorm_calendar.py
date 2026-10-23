@@ -2,6 +2,7 @@
 """リン子ブレストからの Google カレンダー登録（確認フロー・A案: チャットで修正）。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -9,8 +10,7 @@ from datetime import datetime
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from app.core.time_utils import get_timezone
-
+from app.core.time_utils import get_timezone, utc_now_naive
 from app.ai.client import generate_json
 from app.services.calendar_proposal_store import (
     CalendarProposal,
@@ -80,6 +80,8 @@ def proposal_payload(p: CalendarProposal) -> dict[str, Any]:
 
 def extract_calendar_from_conversation(
     messages: list[dict[str, str]],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
 ) -> dict[str, Any] | None:
     """会話からカレンダー登録意図を抽出。JSON を返す。"""
     convo = []
@@ -117,13 +119,19 @@ def extract_calendar_from_conversation(
 - 終了時刻が無ければ開始から30分後を end にする
 - タイムゾーンは +09:00 (Asia/Tokyo)
 """
-    data = generate_json(prompt)
+    # ⑦ 解決された ollama_url / model_override を渡す
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not isinstance(data, dict):
         return None
     return data
 
 
-def revise_draft(proposal: CalendarProposal, user_text: str) -> dict[str, Any] | None:
+def revise_draft(
+    proposal: CalendarProposal,
+    user_text: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any] | None:
     prompt = f"""カレンダー登録案をユーザーの修正指示で更新し、JSON のみ返してください。
 
 現在日時: {_now_ctx()}
@@ -146,7 +154,8 @@ def revise_draft(proposal: CalendarProposal, user_text: str) -> dict[str, Any] |
   "spoken": "修正後の確認をリン子口調で1文"
 }}
 """
-    data = generate_json(prompt)
+    # ⑦ 解決された ollama_url / model_override を渡す
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not isinstance(data, dict) or not data.get("ready"):
         return None
     draft = data.get("draft")
@@ -197,23 +206,46 @@ async def create_google_event(
             client_id=settings.google_calendar_client_id,
             client_secret=settings.google_calendar_client_secret,
             scopes=GOOGLE_SCOPE,
+            expiry=row.token_expiry,
         )
-        if row.token_expiry and creds.expired and creds.refresh_token:
+        refreshed = False
+        if creds.refresh_token and (creds.expired or not creds.valid):
             creds.refresh(Request())
+            refreshed = True
+
         service = build("calendar", "v3", credentials=creds)
         tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+
+        start_payload = (
+            {"dateTime": start, "timeZone": tz_name}
+            if "T" in start
+            else {"date": start}
+        )
+        end_payload = (
+            {"dateTime": end, "timeZone": tz_name} if "T" in end else {"date": end}
+        )
+
         body = {
             "summary": summary,
             "description": (draft.get("description") or "").strip(),
-            "start": {"dateTime": start, "timeZone": tz_name},
-            "end": {"dateTime": end, "timeZone": tz_name},
+            "start": start_payload,
+            "end": end_payload,
         }
-        return service.events().insert(calendarId="primary", body=body).execute()
-
-    import asyncio
+        event_res = service.events().insert(calendarId="primary", body=body).execute()
+        return event_res, (creds.token, creds.expiry) if refreshed else (None, None)
 
     try:
-        event = await asyncio.to_thread(_insert)
+        event, (new_token, new_expiry) = await asyncio.to_thread(_insert)
+        if new_token:
+            row.access_token = new_token
+            if new_expiry:
+                row.token_expiry = (
+                    new_expiry.replace(tzinfo=None)
+                    if getattr(new_expiry, "tzinfo", None)
+                    else new_expiry
+                )
+            row.updated_at = utc_now_naive()
+            await db.flush()
     except Exception as e:
         err = str(e)
         logger.warning(
@@ -239,10 +271,15 @@ async def create_google_event(
 
 
 def handle_new_calendar_intent(
-    user_id: int, messages: list[dict[str, str]]
+    user_id: int,
+    messages: list[dict[str, str]],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
 ) -> dict[str, Any]:
     """新規依頼。提案作成 or 質問文を返す。"""
-    extracted = extract_calendar_from_conversation(messages)
+    extracted = extract_calendar_from_conversation(
+        messages, ollama_url=ollama_url, model_override=model_override
+    )
     if not extracted or extracted.get("intent") != "calendar_create":
         return {"mode": "chat"}
     if not extracted.get("ready"):
@@ -262,7 +299,13 @@ def handle_new_calendar_intent(
     }
 
 
-def handle_pending(user_id: int, proposal_id: str, user_text: str) -> dict[str, Any]:
+def handle_pending(
+    user_id: int,
+    proposal_id: str,
+    user_text: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
     p = get_proposal(proposal_id, user_id)
     if p is None:
         return {
@@ -275,7 +318,9 @@ def handle_pending(user_id: int, proposal_id: str, user_text: str) -> dict[str, 
         return {"mode": "cancelled", "spoken": "わかりました。登録はしません。"}
     if kind == "confirm":
         return {"mode": "confirm", "proposal": p}
-    revised = revise_draft(p, user_text)
+    revised = revise_draft(
+        p, user_text, ollama_url=ollama_url, model_override=model_override
+    )
     if not revised:
         return {
             "mode": "clarify",

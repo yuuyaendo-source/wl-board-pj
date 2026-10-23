@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-自動更新: 更新チェック用 URL から JSON を取得し、バージョン比較・MSI ダウンロード・インストールを実行する。
-JSON 形式: {"version": "1.0.1", "url": "https://.../WonderLinko.msi"}
+自動更新: 更新チェック用 URL から JSON を取得し、バージョン比較・SHA-256 検証・MSI ダウンロード・インストールを実行する。
+JSON 形式: {"version": "1.0.1", "url": "https://.../WonderLinko.msi", "sha256": "..."}
 
 MSI は「ファイル使用中」を避けるため、msiexec でインストーラーを起動したら自プロセスを即終了する。
 """
+import hashlib
 import logging
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import threading
-import subprocess
 import time
 
 try:
@@ -49,25 +50,25 @@ def is_newer(latest: str, current: str) -> bool:
 def check_for_update(current_version: str, check_url: str, timeout: int = 10):
     """
     更新チェック用 URL に GET し、新しいバージョンがあればその情報を返す。
-    戻り値: (has_update: bool, latest_version: str, download_url: str)
+    戻り値: (has_update: bool, latest_version: str, download_url: str, expected_sha256: str)
     """
     log = logging.getLogger("WonderLinko")
     if not check_url or not (check_url := check_url.strip()):
         log.info("更新チェック: URL が空のためスキップ")
-        return False, "", ""
+        return False, "", "", ""
     if not requests:
         log.warning("更新チェック: requests が利用できないためスキップ")
-        return False, "", ""
+        return False, "", "", ""
     try:
         from core.config_loader import load_config
-        from core.security import validate_update_check_url, validate_msi_download_url
+        from core.security import validate_msi_download_url, validate_update_check_url
 
         cfg = load_config()
         ok, err = validate_update_check_url(check_url, cfg)
         if not ok:
             log.warning("更新チェック: URL 拒否: %s", err)
             _log(f"更新チェック URL 拒否: {err}")
-            return False, "", ""
+            return False, "", "", ""
         _log(f"更新チェック GET 実行: {check_url}")
         log.info("更新チェック GET: %s", check_url)
         r = requests.get(check_url, timeout=timeout)
@@ -76,31 +77,34 @@ def check_for_update(current_version: str, check_url: str, timeout: int = 10):
         data = r.json()
         latest = (data.get("version") or "").strip()
         url = (data.get("url") or "").strip()
+        expected_sha256 = (data.get("sha256") or "").strip().lower()
+
         if not latest or not url:
             log.info("更新チェック: version または url が空のためスキップ")
-            return False, "", ""
+            return False, "", "", ""
         ok_dl, err_dl = validate_msi_download_url(url, cfg)
         if not ok_dl:
             log.warning("更新チェック: ダウンロード URL 拒否: %s", err_dl)
             _log(f"更新 DL URL 拒否: {err_dl}")
-            return False, "", ""
+            return False, "", "", ""
         if is_newer(latest, current_version):
-            log.info("更新あり: 現在=%s 最新=%s url=%s", current_version, latest, url)
-            return True, latest, url
+            log.info(
+                "更新あり: 現在=%s 最新=%s url=%s sha256=%s",
+                current_version,
+                latest,
+                url,
+                expected_sha256,
+            )
+            return True, latest, url, expected_sha256
         log.info("更新なし: 現在=%s 最新=%s", current_version, latest)
-        return False, latest, ""
+        return False, latest, "", expected_sha256
     except Exception as e:
         log.exception("更新チェック エラー: %s", e)
-        return False, "", ""
+        return False, "", "", ""
 
 
 def _find_wonderlinko_product_codes():
-    """レジストリの Uninstall キーから WonderLinko の ProductCode ({GUID}) を全部集める。
-
-    cx_Freeze の MSI はメジャーアップグレードが効かず、新バージョンを入れても旧版が
-    並存する (古い方が起動する) ため、ここで列挙した ProductCode を msiexec /x で
-    個別にアンインストールしてから新版を入れる。
-    """
+    """レジストリの Uninstall キーから WonderLinko の ProductCode ({GUID}) を全部集める。"""
     codes = []
     try:
         import winreg
@@ -140,10 +144,7 @@ def _find_wonderlinko_product_codes():
                     sk.Close()
                 except OSError:
                     continue
-                if name and (
-                    "WonderLinko" in name
-                    or "Wonder Linko" in name
-                ):
+                if name and ("WonderLinko" in name or "Wonder Linko" in name):
                     if sub not in codes:
                         codes.append(sub)
         finally:
@@ -154,20 +155,11 @@ def _find_wonderlinko_product_codes():
     return codes
 
 
-def download_and_install(download_url: str, timeout: int = 120):
+def download_and_install(
+    download_url: str, expected_sha256: str = "", timeout: int = 120
+):
     """
-    MSI をダウンロードし、更新バッチ経由でインストール → アプリ再起動する。
-
-    旧実装は「自 exe が起動中のまま msiexec を起動」していたため、exe の
-    ファイルロックでインストールが完了せず、バージョンが上がらない問題があった。
-    本実装は **バッチ経由** で:
-      1. 自プロセス (PID) の完全終了を待つ
-      2. 旧バージョンを UpgradeCode で検出してサイレントアンインストール
-         (cx_Freeze MSI のメジャーアップグレードが効かず製品が並存するのを防ぐ)
-      3. 新 MSI をインストール (/l*v で詳細ログを %TEMP% に出力)
-      4. 新 exe を起動
-    することで確実に上書き更新する。
-    成功時は sys.exit(0) で終了。失敗時のみ (False, message) を返す。
+    MSI をダウンロードし、SHA-256 検証後に更新バッチ経由でインストール → アプリ再起動する。
     """
     if not download_url or not (download_url := download_url.strip()):
         return False, "URL が空です"
@@ -191,15 +183,40 @@ def download_and_install(download_url: str, timeout: int = 120):
         msi_path = os.path.join(
             tempfile.gettempdir(), f"WonderLinko_update_{int(time.time())}.msi"
         )
+        hasher = hashlib.sha256()
         size = 0
         with open(msi_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=65536):
                 if chunk:
                     f.write(chunk)
+                    hasher.update(chunk)
                     size += len(chunk)
+
         _log(f"更新 DL 完了: {msi_path} ({size} bytes)")
         if size < 1_000_000:
+            try:
+                os.unlink(msi_path)
+            except Exception:
+                pass
             return False, f"ダウンロードした MSI が小さすぎます ({size} bytes)"
+
+        # SHA-256 の整合性検証
+        actual_sha256 = hasher.hexdigest().lower()
+        if expected_sha256:
+            if actual_sha256 != expected_sha256.lower():
+                _log(
+                    f"MSI ハッシュ不一致: expected={expected_sha256}, actual={actual_sha256}"
+                )
+                try:
+                    os.unlink(msi_path)
+                except Exception:
+                    pass
+                return False, "ファイルの完全性検証に失敗しました (SHA-256 不一致)"
+            _log("MSI ハッシュ検証成功 (SHA-256 一致)")
+        else:
+            _log(
+                "警告: latest.json に sha256 が定義されていないため、ハッシュ検証をスキップしました"
+            )
 
         tmp = tempfile.gettempdir()
         install_log = os.path.join(tmp, "WonderLinko_install.log")
@@ -207,13 +224,12 @@ def download_and_install(download_url: str, timeout: int = 120):
         exe = sys.executable
         pid = os.getpid()
 
-        # 既存の WonderLinko 製品 (ProductCode) を列挙して個別アンインストールする。
         product_codes = _find_wonderlinko_product_codes()
         _log(f"既存製品 ProductCode: {product_codes}")
         if product_codes:
             uninstall_block = "\n".join(
                 f'echo [update] uninstall {c} >> "{trace_log}"\n'
-                f"msiexec /x {c} /qn /norestart"
+                f"start /wait msiexec /x {c} /qn /norestart"
                 for c in product_codes
             )
         else:
@@ -221,8 +237,21 @@ def download_and_install(download_url: str, timeout: int = 120):
                 f'echo [update] no existing product found >> "{trace_log}"'
             )
 
+        program_files_exe = os.path.join(
+            os.environ.get("ProgramFiles", r"C:\Program Files"),
+            "WonderLink",
+            "WonderLinko",
+            "WonderLinko.exe",
+        )
+
         bat_path = os.path.join(tmp, "wonderlinko_update.bat")
         bat = f"""@echo off
+chcp 65001 >nul
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
 echo [update] started %DATE% %TIME% >> "{trace_log}"
 echo [update] waiting for PID {pid} >> "{trace_log}"
 set WL_WAIT=0
@@ -242,14 +271,17 @@ goto waitloop
 echo [update] uninstalling old products >> "{trace_log}"
 {uninstall_block}
 echo [update] installing new msi >> "{trace_log}"
-msiexec /i "{msi_path}" /passive /norestart /l*v "{install_log}"
+start /wait msiexec /i "{msi_path}" /passive /norestart /l*v "{install_log}"
 echo [update] msiexec exit=%errorlevel% >> "{trace_log}"
 echo [update] launching app >> "{trace_log}"
-start "" "{exe}"
+if exist "{program_files_exe}" (
+  start "" "{program_files_exe}"
+) else (
+  start "" "{exe}"
+)
 echo [update] done >> "{trace_log}"
 del "%~f0"
 """
-        # UTF-8 で保存し、呼び出し側でコードページを UTF-8 にしてからバッチを読む。
         with open(bat_path, "w", encoding="utf-8", newline="\r\n") as f:
             f.write(bat)
 
@@ -274,7 +306,8 @@ del "%~f0"
 
 def check_and_notify(current_version: str, check_url: str, on_result):
     """
-    バックグラウンドで更新チェックし、結果を on_result(has_update, latest_version, download_url) でコールバックする。
+    バックグラウンドで更新チェックし、結果を on_result(has_update, latest_version, download_url, expected_sha256) でコールバックする。
+    旧仕様の3引数コールバックに対しても後方互換でフォールバック呼び出しを行う。
     """
 
     def run():
@@ -282,6 +315,12 @@ def check_and_notify(current_version: str, check_url: str, on_result):
         result = check_for_update(current_version, check_url)
         try:
             on_result(*result)
+        except TypeError:
+            # 3引数コールバック (has_update, latest, download_url) への後方互換対応
+            try:
+                on_result(result[0], result[1], result[2])
+            except Exception:
+                pass
         except Exception:
             pass
 

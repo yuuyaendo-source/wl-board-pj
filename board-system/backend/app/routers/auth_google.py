@@ -4,6 +4,8 @@ Google カレンダー OAuth と今日の予定取得。
 /auth/google?user_id= で Google へリダイレクト、/auth/google/callback でトークン保存。
 PKCE: 認可開始時に自前で code_verifier を生成して DB に保存し、コールバックで取得して fetch_token に渡す。
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -13,13 +15,15 @@ import urllib.parse
 from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 
+from cryptography.exceptions import InvalidKey, InvalidSignature, InvalidTag
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, func, or_, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.time_utils import get_timezone, now_jst, utc_now_naive
 from app.db import get_db
 from app.models import (
     BoardPlacement,
@@ -38,12 +42,10 @@ from app.services.calendar_placement import (
     placement_source_for_event,
     should_skip_calendar_sticky,
 )
-from app.core.time_utils import get_timezone, utc_now_naive
 
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
 
-# 読み取り + 予定の作成・変更（ブレスト経由のカレンダー登録用）。既存連携ユーザは再認可が必要。
 GOOGLE_SCOPE = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
@@ -52,16 +54,16 @@ PKCE_TTL_SECONDS = 600
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
+# 復号失敗と断定できる例外クラス群
+DECRYPTION_ERRORS = (ValueError, InvalidKey, InvalidTag, InvalidSignature)
+
 
 def _pkce_code_challenge(verifier: str) -> str:
-    """PKCE: code_verifier から S256 の code_challenge を計算。"""
-
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) -> dict:
-    """トークンエンドポイントに code_verifier を付けて POST（自前実装で確実に送る）。"""
     import requests
 
     resp = requests.post(
@@ -82,7 +84,6 @@ def _exchange_token_with_pkce(code: str, redirect_uri: str, code_verifier: str) 
     expiry = None
     if data.get("expires_in"):
         expiry = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
-        # PostgreSQL TIMESTAMP WITHOUT TIME ZONE 用に naive UTC に変換
         expiry = expiry.replace(tzinfo=None)
     return {
         "access_token": data["access_token"],
@@ -96,7 +97,6 @@ async def auth_google_start(
     user_id: int = Query(..., description="ユーザーID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Google OAuth 開始。ランダム state と PKCE verifier を一時保存する。"""
     if (
         not settings.google_calendar_client_id
         or not settings.google_calendar_client_secret
@@ -112,10 +112,8 @@ async def auth_google_start(
         if user.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # PKCE: code_verifier を生成し、認可URLを自前で組み立て（ライブラリ任せだと code_challenge が一致しないため）
         code_verifier = secrets.token_urlsafe(32)
         code_challenge = _pkce_code_challenge(code_verifier)
-        # state は OAuth CSRF 防止用の、ユーザーIDから推測できない値にする。
         state_token = secrets.token_urlsafe(32)
         params = {
             "client_id": settings.google_calendar_client_id,
@@ -157,13 +155,15 @@ async def auth_google_start(
 
 @router.get("/auth/google/callback")
 async def auth_google_callback(
-    code: str = Query(..., description="OAuth 認可コード"),
     state: str = Query(..., description="OAuth CSRF state"),
+    code: str | None = Query(None, description="OAuth 認可コード"),
+    error: str | None = Query(
+        None, description="OAuth エラー (アクセス拒否/キャンセル等)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
-    """Google OAuth コールバック。state に紐付くユーザーへトークンを保存する。"""
-    if not code or not state:
-        raise HTTPException(status_code=400, detail="code and state are required")
+    if not state:
+        raise HTTPException(status_code=400, detail="state is required")
     redirect_uri = settings.google_calendar_redirect_uri
     if not redirect_uri:
         raise HTTPException(
@@ -184,9 +184,7 @@ async def auth_google_callback(
         await db.delete(row)
         await db.flush()
     else:
-        logger.warning(
-            "PKCE state not found (expired or not saved)"
-        )
+        logger.warning("PKCE state not found (expired or not saved)")
 
     if not code_verifier or user_id is None:
         raise HTTPException(
@@ -194,21 +192,35 @@ async def auth_google_callback(
             detail="OAuth session expired or invalid. Please click 'Google カレンダーと連携' again from the personal board.",
         )
 
+    base = (settings.oauth_success_redirect_base or "/boards").strip().rstrip("/")
+
+    # Google 認証画面でユーザーがキャンセルまたは拒否した場合、パーソナルボードへ安全に戻す
+    if error or not code:
+        err_param = "cancelled" if error == "access_denied" else "error"
+        path = f"{base}/personal/{user_id}?google_auth={err_param}".lstrip("/")
+        logger.info(
+            "OAuth cancelled or error for user_id=%s (error=%s), redirecting to %s",
+            user_id,
+            error,
+            path,
+        )
+        return RedirectResponse(url=f"/{path}", status_code=302)
+
     try:
         data = await asyncio.to_thread(
             _exchange_token_with_pkce, code, redirect_uri, code_verifier
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"token exchange failed: {e}")
+        logger.warning("token exchange failed for user_id=%s: %s", user_id, e)
+        path = f"{base}/personal/{user_id}?google_auth=error".lstrip("/")
+        return RedirectResponse(url=f"/{path}", status_code=302)
 
-    # upsert user_google_tokens
     result = await db.execute(
         select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
     )
     row = result.scalar_one_or_none()
     expiry = data["expiry"]
     if row:
-        # 代入処理時に暗号化保存が行われる
         row.access_token = data["access_token"]
         if data["refresh_token"]:
             row.refresh_token = data["refresh_token"]
@@ -224,10 +236,7 @@ async def auth_google_callback(
         db.add(token)
     await db.flush()
 
-    # フロントのパーソナルボードへ。本番は basePath /boards のため oauth_success_redirect_base で /boards を指定すること
-    base = (settings.oauth_success_redirect_base or "").strip().rstrip("/")
-    path = f"{base}/personal/{user_id}".lstrip("/")
-    # 連携直後に今日の予定を取得して Today を更新
+    path = f"{base}/personal/{user_id}?google_auth=success".lstrip("/")
     try:
         await _refresh_user_calendar_and_today(user_id, db)
     except Exception as e:
@@ -235,10 +244,9 @@ async def auth_google_callback(
     return RedirectResponse(url=f"/{path}", status_code=302)
 
 
-async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[dict]:
-    """指定ユーザーの Google トークンで今日の予定を取得。"""
-
-    # 復号エラー（暗号化キー不一致や破損等）を安全にフォールバックする
+async def _fetch_today_events_for_user(
+    user_id: int, db: AsyncSession
+) -> list[dict] | None:
     try:
         result = await db.execute(
             select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
@@ -246,35 +254,51 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
         row = result.scalar_one_or_none()
         if not row:
             return []
+    except (OperationalError, DBAPIError, SQLAlchemyError) as db_err:
+        logger.error("[OAuth] DBクエリ一時エラー (User: %s): %s", user_id, db_err)
+        return None
 
-        # access_token 等への参照時に暗号化型からの透過的復号が発生します。
+    try:
+        # StringEncryptedType のプロパティ参照時に AES 復号が実行される
         raw_access_token = row.access_token
         raw_refresh_token = row.refresh_token
         token_expiry = row.token_expiry
-    except Exception as e:
-        logger.warning(f"[OAuth] トークンの復号に失敗しました (User: {user_id}): {e}")
+    except DECRYPTION_ERRORS as decrypt_err:
+        # 暗号キーの変更や不正パディングなど、データ破損・復号不能が確定した場合のみレコードを削除
+        logger.warning(
+            "[OAuth] トークン復号失敗 (暗号不整合)。レコードを安全に破棄します (User: %s): %s",
+            user_id,
+            decrypt_err,
+        )
         try:
-            # 復号不能なトークンは安全に削除して再連携を促す
             await db.execute(
                 delete(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
             )
-        except SQLAlchemyError as db_err:
+            await db.flush()
+        except SQLAlchemyError as del_err:
             logger.error(
-                f"[OAuth] 破損トークンの削除に失敗しました (User: {user_id}): {db_err}"
+                "[OAuth] 破損トークン削除処理失敗 (User: %s): %s", user_id, del_err
             )
             await db.rollback()
-        return []
+        return None
+    except Exception as unexpected_err:
+        # DB セッションの内部エラーやその他の一時的例外ではトークンを削除せず中断
+        logger.error(
+            "[OAuth] トークン読み出し中に予期しない例外が発生しました (User: %s): %s",
+            user_id,
+            unexpected_err,
+        )
+        return None
 
     def _fetch():
+        from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
-        from google.auth.transport.requests import Request
 
         tz = get_timezone(settings.calendar_timezone)
-        # その日 0:00〜23:59（ローカル）で取得
         now_local = datetime.now(tz)
         start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start + timedelta(days=1)  # 翌日 0:00（その日 23:59:59.999 まで含む）
+        end = start + timedelta(days=1)
         time_min = start.isoformat()
         time_max = end.isoformat()
 
@@ -285,9 +309,10 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
             client_id=settings.google_calendar_client_id,
             client_secret=settings.google_calendar_client_secret,
             scopes=GOOGLE_SCOPE,
+            expiry=token_expiry,
         )
         refreshed = False
-        if token_expiry and creds.expired and creds.refresh_token:
+        if creds.refresh_token and (creds.expired or not creds.valid):
             creds.refresh(Request())
             refreshed = True
         service = build("calendar", "v3", credentials=creds)
@@ -325,8 +350,6 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
     try:
         events, new_token, new_expiry = await asyncio.to_thread(_fetch)
         if new_token is not None:
-            # この代入処理時にも透過的暗号化が行われます。
-            # ただし row はセッションからデタッチされている可能性があるため再度取得またはマージが安全です。
             result = await db.execute(
                 select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
             )
@@ -342,16 +365,20 @@ async def _fetch_today_events_for_user(user_id: int, db: AsyncSession) -> list[d
                 refresh_row.updated_at = utc_now_naive()
                 await db.flush()
         return events
-    except Exception:
-        return []
+    except Exception as e:
+        logger.error(
+            "[OAuth] Google Calendar API 取得失敗 (user_id=%s): %s", user_id, e
+        )
+        return None
 
 
 async def _sync_user_calendar_events_cache(
     user_id: int, db: AsyncSession, events: list[dict] | None = None
 ) -> int:
-    """Google から今日の予定を取得し PersonalSummaryCache の events のみ更新（LLM・付箋なし）。"""
     if events is None:
         events = await _fetch_today_events_for_user(user_id, db)
+        if events is None:
+            return 0
     person_id = str(user_id)
     events_json = json.dumps(events)
     result = await db.execute(
@@ -371,22 +398,22 @@ async def _sync_user_calendar_events_cache(
 async def _refresh_user_calendar_and_today(
     user_id: int, db: AsyncSession, events: list[dict] | None = None
 ) -> int:
-    """
-    指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、
-    PersonalSummaryCache の events と today（LLM 短縮文）を上書き保存する。
-    events を渡した場合は再取得しない（live 同期の二重取得回避）。
-    戻り値: 取得した予定件数。トークンなし・エラー時は 0。
-    """
     if events is None:
         events = await _fetch_today_events_for_user(user_id, db)
+        if events is None:
+            return 0
     person_id = str(user_id)
     events_json = json.dumps(events)
     today_items = []
     if events:
         try:
             from app.ai import run_today_short_summaries
+            from app.services.llm_settings import get_resolved_ollama_async
 
-            today_items = await asyncio.to_thread(run_today_short_summaries, events)
+            ollama_url, model_ov = await get_resolved_ollama_async(db)
+            today_items = await asyncio.to_thread(
+                run_today_short_summaries, events, ollama_url, model_ov
+            )
         except Exception as e:
             logger.warning("Today 短縮文生成に失敗 user_id=%s: %s", user_id, e)
     if events and not today_items:
@@ -417,44 +444,43 @@ async def _refresh_user_calendar_and_today(
         row.updated_at = utc_now_naive()
     await db.flush()
 
-    # カレンダー由来の Today 付箋を削除してから今回分を追加（重複防止）
-    r_cal = await db.execute(
-        select(BoardPlacement).where(
+    today_date = now_jst().date()
+
+    r_old_cal = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
             BoardPlacement.board_type == BoardType.PERSONAL,
             BoardPlacement.owner_id == user_id,
-            BoardPlacement.lane == Lane.TODAY,
             BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
+            StickyNote.due_date < today_date,
         )
     )
-    cal_placements = list(r_cal.scalars().all())
-    note_ids_to_check = [p.note_id for p in cal_placements]
-    for p in cal_placements:
-        await db.delete(p)
-    await db.flush()
-    # 他に参照が無い付箋だけ削除
-    for nid in note_ids_to_check:
+    for p_old, n_old in r_old_cal.all():
+        old_note_id = p_old.note_id
+        await db.delete(p_old)
+        await db.flush()
         r_other = await db.execute(
-            select(BoardPlacement.id).where(BoardPlacement.note_id == nid).limit(1)
+            select(BoardPlacement.id)
+            .where(BoardPlacement.note_id == old_note_id)
+            .limit(1)
         )
         if r_other.scalar_one_or_none() is None:
-            r_note = await db.execute(select(StickyNote).where(StickyNote.id == nid))
-            note_row = r_note.scalar_one_or_none()
-            if note_row:
-                await db.delete(note_row)
-    await db.flush()
+            await db.delete(n_old)
 
-    # 要約を P 付箋として Personal の Today レーンに追加
-    next_sort = 0
-    if today_items:
-        r = await db.execute(
-            select(func.coalesce(func.max(BoardPlacement.sort_order), -1)).where(
-                BoardPlacement.board_type == BoardType.PERSONAL,
-                BoardPlacement.owner_id == user_id,
-                BoardPlacement.lane == Lane.TODAY,
-            )
+    r_cal = await db.execute(
+        select(BoardPlacement, StickyNote)
+        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
+        .where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
+            StickyNote.due_date == today_date,
         )
-        next_sort = (r.scalar() or 0) + 1
-    sticky_index = 0
+    )
+    existing_pairs = r_cal.all()
+
+    target_events = []
     for i, item in enumerate(today_items):
         if i >= len(events):
             break
@@ -462,12 +488,99 @@ async def _refresh_user_calendar_and_today(
         if should_skip_calendar_sticky(ev):
             continue
         label = (item.get("label") or item.get("summary") or "").strip() or "(無題)"
+        summary = (ev.get("summary") or "").strip()
+        ev_id = str(ev.get("id") or "").strip()
+        target_events.append(
+            {
+                "ev": ev,
+                "event_id": ev_id,
+                "label": label,
+                "summary": summary,
+                "source": placement_source_for_event(ev),
+            }
+        )
+
+    matched_placement_ids = set()
+    matched_event_indices = set()
+
+    for t_idx, target in enumerate(target_events):
+        if not target["event_id"]:
+            continue
+        ev_key = target["event_id"][:64]
+        for p, n in existing_pairs:
+            if p.id in matched_placement_ids:
+                continue
+            if n.postit_note_id and n.postit_note_id == ev_key:
+                matched_placement_ids.add(p.id)
+                matched_event_indices.add(t_idx)
+                if p.lane == Lane.TODAY:
+                    if n.content != target["label"]:
+                        n.content = target["label"]
+                    if p.placement_source != target["source"]:
+                        p.placement_source = target["source"]
+                break
+
+    for t_idx, target in enumerate(target_events):
+        if t_idx in matched_event_indices:
+            continue
+        target_label = target["label"]
+        target_summary = target["summary"]
+        for p, n in existing_pairs:
+            if p.id in matched_placement_ids:
+                continue
+            note_content = (n.content or "").strip()
+            if note_content in (target_label, target_summary):
+                matched_placement_ids.add(p.id)
+                matched_event_indices.add(t_idx)
+                if target["event_id"] and not n.postit_note_id:
+                    n.postit_note_id = target["event_id"][:64]
+                if p.lane == Lane.TODAY:
+                    if n.content != target_label:
+                        n.content = target_label
+                    if p.placement_source != target["source"]:
+                        p.placement_source = target["source"]
+                break
+
+    for p, n in existing_pairs:
+        if p.id not in matched_placement_ids:
+            if p.lane == Lane.TODAY:
+                nid = p.note_id
+                await db.delete(p)
+                await db.flush()
+                r_other = await db.execute(
+                    select(BoardPlacement.id)
+                    .where(BoardPlacement.note_id == nid)
+                    .limit(1)
+                )
+                if r_other.scalar_one_or_none() is None:
+                    r_note = await db.execute(
+                        select(StickyNote).where(StickyNote.id == nid)
+                    )
+                    note_row = r_note.scalar_one_or_none()
+                    if note_row:
+                        await db.delete(note_row)
+
+    r_sort = await db.execute(
+        select(func.coalesce(func.max(BoardPlacement.sort_order), -1)).where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.lane == Lane.TODAY,
+        )
+    )
+    next_sort = (r_sort.scalar() or 0) + 1
+
+    for t_idx, target in enumerate(target_events):
+        if t_idx in matched_event_indices:
+            continue
+
         note = StickyNote(
-            content=label,
+            content=target["label"],
             author_id=None,
             status=NoteStatus.ACTIVE,
             postit_board_id=None,
-            postit_note_id=None,
+            postit_note_id=target["event_id"][:64] if target["event_id"] else None,
+            due_date=today_date,
+            is_personal_only=True,
         )
         db.add(note)
         await db.flush()
@@ -476,18 +589,18 @@ async def _refresh_user_calendar_and_today(
             board_type=BoardType.PERSONAL,
             owner_id=user_id,
             lane=Lane.TODAY,
-            sort_order=next_sort + sticky_index,
-            placement_source=placement_source_for_event(ev),
+            sort_order=next_sort,
+            placement_source=target["source"],
         )
         db.add(placement)
-        sticky_index += 1
+        next_sort += 1
+
     await db.flush()
     return len(events)
 
 
 @router.get("/api/personal/{user_id}/calendar/events/live")
 async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Google から今日の予定をリアルタイム取得。変更があれば Today 紫付箋も更新する。"""
     result = await db.execute(select(User).where(User.id == user_id))
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -509,6 +622,8 @@ async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_
             cached_events = []
 
     events = await _fetch_today_events_for_user(user_id, db)
+    if events is None:
+        return {"events": cached_events, "synced": False, "stickies_updated": False}
     stickies_updated = events_fingerprint(cached_events) != events_fingerprint(events)
     if stickies_updated:
         await _refresh_user_calendar_and_today(user_id, db, events=events)
@@ -519,7 +634,6 @@ async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_
 
 @router.post("/api/personal/calendar_sync_all")
 async def calendar_sync_all_events(db: AsyncSession = Depends(get_db)):
-    """全 Google 連携ユーザーの今日の予定を Google から取得し、キャッシュ events のみ更新（定期同期用）。"""
     if (
         not settings.google_calendar_client_id
         or not settings.google_calendar_client_secret
@@ -529,13 +643,36 @@ async def calendar_sync_all_events(db: AsyncSession = Depends(get_db)):
     user_ids = [r[0] for r in result.all()]
     synced = []
     failed = []
+
     for uid in user_ids:
         try:
-            await _sync_user_calendar_events_cache(uid, db)
-            synced.append(uid)
+            async with db.begin_nested():
+                person_id = str(uid)
+                r_cache = await db.execute(
+                    select(PersonalSummaryCache).where(
+                        PersonalSummaryCache.person_id == person_id
+                    )
+                )
+                cache_row = r_cache.scalar_one_or_none()
+                cached_events: list[dict] = []
+                if cache_row and cache_row.events:
+                    try:
+                        cached_events = json.loads(cache_row.events)
+                    except Exception:
+                        cached_events = []
+
+                events = await _fetch_today_events_for_user(uid, db)
+                if events is not None:
+                    if events_fingerprint(cached_events) != events_fingerprint(events):
+                        await _refresh_user_calendar_and_today(uid, db, events=events)
+                    else:
+                        await _sync_user_calendar_events_cache(uid, db, events=events)
+                    synced.append(uid)
+            await db.commit()
         except Exception as e:
-            logger.warning("calendar_sync_all user_id=%s: %s", uid, e)
+            logger.warning("calendar_sync_all user_id=%s failed: %s", uid, e)
             failed.append(uid)
+
     return {"ok": True, "synced": synced, "failed": failed}
 
 
@@ -544,7 +681,6 @@ async def refresh_personal_calendar(
     user_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """指定ユーザーの Google カレンダーから今日の予定（0:00〜23:59 ローカル）を取得し、events と Today 短縮文を保存。"""
     if (
         not settings.google_calendar_client_id
         or not settings.google_calendar_client_secret

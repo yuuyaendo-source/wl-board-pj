@@ -982,23 +982,38 @@ class FaceRegistryAdminDialog(ctk.CTkToplevel):
         except FaceRegistryError as e:
             self._show_error("音声を確認", str(e))
             return
-        path = None
-        try:
-            import winsound
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        # 修正⑩: audio_player の共通キューに再生・自動クリーンアップを委譲
+        try:
+            from hardware.audio_player import get_audio_temp_prefix, play_wav
+
+            fd, path = tempfile.mkstemp(suffix=".wav", prefix=get_audio_temp_prefix())
+            os.close(fd)
+            with open(path, "wb") as f:
                 f.write(raw)
-                path = f.name
-            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+
+            duration_sec = None
+            try:
+                import wave
+
+                with wave.open(path, "rb") as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    if rate:
+                        duration_sec = frames / float(rate)
+            except Exception:
+                pass
+
+            play_wav(
+                path,
+                text="",
+                duration_sec=duration_sec,
+                blocking=False,
+                log_prefix="[voice_check]",
+            )
             self._show_info("音声を確認", f"{person_name} の登録音声を再生しています。")
         except Exception as e:
             self._show_error("音声を確認", f"再生に失敗: {e}")
-        finally:
-            if path:
-                try:
-                    self.after(8000, lambda p=path: os.path.exists(p) and os.remove(p))
-                except Exception:
-                    pass
 
     def _delete_face(self, person_id: str, person_name: str) -> None:
         from tkinter import messagebox

@@ -102,6 +102,12 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
         else:
             task_color = "yellow"
 
+        # 応援要請フラグを持つ付箋についてのみ、他者が引き受け済みかを評価
+        is_accepted = False
+        if is_help and (n.id in accepted_by_others_note_ids):
+            # 応援要請状態で、HELP_REQUEST以外の通常レーンに配置した担当者がいる場合
+            is_accepted = True
+
         out.append(
             BoardPlacementWithNoteResponse(
                 id=p.id,
@@ -117,7 +123,7 @@ async def get_board_task(db: AsyncSession = Depends(get_db)):
                 note_status=n.status.value,
                 taken_by=taken_by,
                 task_color=task_color,
-                is_accepted_by_others=n.id in accepted_by_others_note_ids,
+                is_accepted_by_others=is_accepted,
                 due_date=n.due_date.isoformat() if n.due_date else None,
                 is_help_request=is_help,
             )
@@ -186,7 +192,6 @@ async def get_board_personal(
                 taken_by_map[nid] = []
 
             is_done = lane == Lane.DONE
-            # 同一人物の重複を排除しつつ、is_doneフラグを更新
             existing = next((x for x in taken_by_map[nid] if x.id == oid), None)
             if not existing:
                 taken_by_map[nid].append(

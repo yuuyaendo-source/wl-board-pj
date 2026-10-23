@@ -13,7 +13,10 @@ from app.db import get_db
 from app.models import BoardPlacement, BoardType, StickyNote
 from app.models.board_placement import Lane
 from app.models.sticky_note import NoteStatus
-from app.services.llm_settings import ollama_configured_async
+from app.services.llm_settings import (
+    get_resolved_ollama_async,
+    ollama_configured_async,
+)
 from app.services.news_fetcher import fetch_and_summarize_news
 
 logger = logging.getLogger(__name__)
@@ -23,11 +26,34 @@ router = APIRouter(prefix="/news", tags=["news"])
 PLACEMENT_SOURCE_NEWS = "news"
 
 
+async def _clear_existing_news_internal(db: AsyncSession) -> int:
+    """既存のニュース付箋と配置をクリーンアップする内部ヘルパー。"""
+    result = await db.execute(
+        select(BoardPlacement.note_id).where(
+            BoardPlacement.board_type == BoardType.MORNING,
+            BoardPlacement.placement_source == PLACEMENT_SOURCE_NEWS,
+        )
+    )
+    note_ids = [r[0] for r in result.all()]
+    if not note_ids:
+        return 0
+
+    await db.execute(
+        delete(BoardPlacement).where(
+            BoardPlacement.board_type == BoardType.MORNING,
+            BoardPlacement.placement_source == PLACEMENT_SOURCE_NEWS,
+        )
+    )
+    await db.execute(delete(StickyNote).where(StickyNote.id.in_(note_ids)))
+    await db.flush()
+    return len(note_ids)
+
+
 @router.post("/fetch")
 async def fetch_news(db: AsyncSession = Depends(get_db)):
     """
     RSS を取得し Ollama で要約して、Meeting（MORNING）ボードに付箋として追加する。
-    OLLAMA_URL 未設定時はスキップ。テスト・手動用および 10:15 スケジューラから呼ぶ。
+    OLLAMA_URL 未設定時はスキップ。10:15 スケジューラから sync_to_morning 完了後に呼ばれる。
     """
     if not await ollama_configured_async(db):
         return {
@@ -37,8 +63,10 @@ async def fetch_news(db: AsyncSession = Depends(get_db)):
             "created": 0,
         }
 
+    url, model_ov = await get_resolved_ollama_async(db)
+
     def _run() -> str | None:
-        return fetch_and_summarize_news()
+        return fetch_and_summarize_news(ollama_url=url, model_override=model_ov)
 
     try:
         markdown = await asyncio.to_thread(_run)
@@ -49,7 +77,10 @@ async def fetch_news(db: AsyncSession = Depends(get_db)):
     if not markdown:
         return {"ok": True, "skipped": True, "reason": "要約結果が空", "created": 0}
 
-    # 既存の MORNING の最大 sort_order を取得（ニュースを末尾に）
+    # 既に今日のニュース付箋が存在する場合は重複を避けるため事前にクリーンアップ
+    await _clear_existing_news_internal(db)
+
+    # 既存の MORNING の最大 sort_order を取得（ニュースを末尾に配置）
     r = await db.execute(
         select(BoardPlacement.sort_order)
         .where(BoardPlacement.board_type == BoardType.MORNING)
@@ -78,6 +109,7 @@ async def fetch_news(db: AsyncSession = Depends(get_db)):
         placement_source=PLACEMENT_SOURCE_NEWS,
     )
     db.add(placement)
+    await db.flush()
     logger.info("ニュース付箋を MORNING に追加しました note_id=%s", note.id)
     return {"ok": True, "created": 1, "note_id": note.id}
 
@@ -88,22 +120,6 @@ async def clear_news(db: AsyncSession = Depends(get_db)):
     ニュース付箋のみ削除（MORNING の placement_source=news の配置と対応する付箋を削除）。
     毎日 10:00 のスケジューラおよび手動「クリア」ボタン用。
     """
-    result = await db.execute(
-        select(BoardPlacement.note_id).where(
-            BoardPlacement.board_type == BoardType.MORNING,
-            BoardPlacement.placement_source == PLACEMENT_SOURCE_NEWS,
-        )
-    )
-    note_ids = [r[0] for r in result.all()]
-    if not note_ids:
-        return {"ok": True, "deleted": 0}
-
-    await db.execute(
-        delete(BoardPlacement).where(
-            BoardPlacement.board_type == BoardType.MORNING,
-            BoardPlacement.placement_source == PLACEMENT_SOURCE_NEWS,
-        )
-    )
-    await db.execute(delete(StickyNote).where(StickyNote.id.in_(note_ids)))
-    logger.info("ニュース付箋を削除しました note_ids=%s", note_ids)
-    return {"ok": True, "deleted": len(note_ids)}
+    deleted_count = await _clear_existing_news_internal(db)
+    logger.info("ニュース付箋を削除しました deleted=%s", deleted_count)
+    return {"ok": True, "deleted": deleted_count}

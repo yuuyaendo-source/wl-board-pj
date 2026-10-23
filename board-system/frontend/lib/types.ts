@@ -43,7 +43,6 @@ export interface User {
   email: string | null;
   call_name: string | null;
   role: string | null;
-  team_id?: number | null; // 後方互換用
   team_ids?: number[];
   teams?: Pick<Team, "id" | "name">[];
   face_count?: number;

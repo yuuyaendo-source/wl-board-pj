@@ -10,11 +10,7 @@ import CommentListPanel from "@/components/CommentListPanel";
 import UserDialog from "@/components/UserDialog";
 import NoteInputDialog from "@/components/NoteInputDialog";
 import { isGrayNote } from "@shared/utils/grayNote";
-
-export const MIN_SCALE = 0.3;
-export const MAX_SCALE = 2.5;
-
-
+import { MIN_SCALE, MAX_SCALE } from "@/constants/board";
 
 export default function BoardPage() {
     const params = useParams();
@@ -41,17 +37,11 @@ export default function BoardPage() {
     const nameSaveTimeoutRef = useRef(null);
     const boardIdRef = useRef(boardId);
     boardIdRef.current = boardId;
-    const scaleRef = useRef(scale);
-    scaleRef.current = scale;
-    const panRef = useRef(pan);
-    panRef.current = pan;
 
     const dragStart = useRef({ x: 0, y: 0 });
     const isBoxSelecting = useRef(false);
     const selectionStartPos = useRef({ x: 0, y: 0 });
     const initialSelectedIds = useRef([]);
-    // 矩形選択ロジック用 ref（Stale State 回避）
-    // isShift・座標はクロージャに依存せず ref から同期読み出す
     const isShiftRef = useRef(false);
     const selectionBoxRef = useRef({ startX: 0, startY: 0, currentX: 0, currentY: 0 });
 
@@ -106,7 +96,6 @@ export default function BoardPage() {
             console.log("Connected to server");
             setIsConnected(true);
             activeSocket.emit("join-board", boardId);
-
         });
 
         activeSocket.on("init-board", (data) => {
@@ -121,15 +110,7 @@ export default function BoardPage() {
         activeSocket.on("note-added", (note) => {
             setNotes((prev) => {
                 if (prev.some(n => n.id === note.id)) return prev;
-                let placed = note;
-                if (note.author === "AI" && boardContainerRef.current) {
-                    const container = boardContainerRef.current;
-                    const cx = (container.clientWidth / 2 - panRef.current.x) / scaleRef.current - 100;
-                    const cy = (container.clientHeight / 2 - panRef.current.y) / scaleRef.current - 100;
-                    placed = { ...note, x: cx, y: cy };
-                    activeSocket.emit("update-note", { boardId, note: placed });
-                }
-                return [...prev, placed];
+                return [...prev, note];
             });
         });
 
@@ -175,7 +156,6 @@ export default function BoardPage() {
         };
     }, [boardId]);
 
-    // ボードの中心 (2000, 2000) をビューポート中央に固定配置
     const scrollToCenter = useCallback(() => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -193,11 +173,6 @@ export default function BoardPage() {
         scrollToCenter();
     }, []);
 
-    const handleCenter = () => {
-        scrollToCenter();
-    };
-
-    // マウスカーソルを中心としたスムーズズーム
     useEffect(() => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -237,7 +212,6 @@ export default function BoardPage() {
         };
     }, []);
 
-    // ツールバーのズームボタン変更時（画面中央基準で拡大縮小）
     const handleSetScale = (newScaleOrFn) => {
         const container = boardContainerRef.current;
         if (!container) return;
@@ -266,12 +240,11 @@ export default function BoardPage() {
         setUsername(newUsername);
         localStorage.setItem('wl-sticky-note-username', newUsername);
         setShowUserDialog(false);
-
     };
 
     const addNote = (initialText = "", dueDate = null) => {
         const timestamp = Date.now().toString(36);
-        const random = Math.random().toString(36).substr(2, 9);
+        const random = Math.random().toString(36).slice(2, 11);
 
         const container = boardContainerRef.current;
         if (!container) return;
@@ -291,7 +264,7 @@ export default function BoardPage() {
             createdAt: Date.now()
         };
         setNotes((prev) => [...prev, newNote]);
-        socketRef.current.emit("add-note", { boardId, note: newNote });
+        socketRef.current?.emit("add-note", { boardId, note: newNote });
     };
 
     const handleNoteSubmit = (text, dueDate) => {
@@ -304,7 +277,40 @@ export default function BoardPage() {
         notesRef.current = notes;
     }, [notes]);
 
-    const updateTimeout = useRef(null);
+    const updateTimeoutRef = useRef(null);
+    const pendingNotesRef = useRef(new Map());
+
+    const flushPendingNotes = useCallback(() => {
+        if (updateTimeoutRef.current) {
+            clearTimeout(updateTimeoutRef.current);
+            updateTimeoutRef.current = null;
+        }
+        if (pendingNotesRef.current.size > 0 && socketRef.current) {
+            const notesToSend = Array.from(pendingNotesRef.current.values());
+            pendingNotesRef.current.clear();
+            notesToSend.forEach((note) => {
+                socketRef.current.emit("update-note", { boardId: boardIdRef.current, note });
+            });
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            flushPendingNotes();
+        };
+    }, [flushPendingNotes]);
+
+    const queueNotesUpdate = useCallback((notesToUpdate) => {
+        notesToUpdate.forEach((note) => {
+            pendingNotesRef.current.set(note.id, note);
+        });
+        if (updateTimeoutRef.current) {
+            clearTimeout(updateTimeoutRef.current);
+        }
+        updateTimeoutRef.current = setTimeout(() => {
+            flushPendingNotes();
+        }, 100);
+    }, [flushPendingNotes]);
 
     const updateNote = useCallback((updatedNote) => {
         const currentNotes = notesRef.current;
@@ -338,16 +344,8 @@ export default function BoardPage() {
             });
         });
 
-        if (updateTimeout.current) {
-            clearTimeout(updateTimeout.current);
-        }
-
-        updateTimeout.current = setTimeout(() => {
-            notesToUpdate.forEach(note => {
-                socketRef.current.emit("update-note", { boardId, note });
-            });
-        }, 100);
-    }, [boardId]);
+        queueNotesUpdate(notesToUpdate);
+    }, [queueNotesUpdate]);
 
     const handleMoveSelectedNotes = useCallback((draggedNoteId, dx, dy) => {
         const currentNotes = notesRef.current;
@@ -369,13 +367,8 @@ export default function BoardPage() {
             return updated || n;
         }));
 
-        if (updateTimeout.current) clearTimeout(updateTimeout.current);
-        updateTimeout.current = setTimeout(() => {
-            notesToUpdate.forEach(note => {
-                socketRef.current.emit("update-note", { boardId, note });
-            });
-        }, 100);
-    }, [boardId, selectedNoteIds]);
+        queueNotesUpdate(notesToUpdate);
+    }, [selectedNoteIds, queueNotesUpdate]);
 
     const handleSelectNote = useCallback((noteId, isShift) => {
         setSelectedNoteIds((prev) => {
@@ -392,7 +385,7 @@ export default function BoardPage() {
     const deleteNote = (noteId) => {
         setNotes((prev) => prev.filter((n) => n.id !== noteId));
         setSelectedNoteIds((prev) => prev.filter(id => id !== noteId));
-        socketRef.current.emit("delete-note", { boardId, noteId });
+        socketRef.current?.emit("delete-note", { boardId, noteId });
     };
 
     const handleDownload = () => {
@@ -412,7 +405,10 @@ export default function BoardPage() {
         link.download = `board-${boardId}-${Date.now()}.json`;
         link.click();
 
-        URL.revokeObjectURL(url);
+        // すぐに破棄せず、ブラウザの非同期ダウンロードが完了する猶予を設ける
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 1000);
     };
 
     const handleUpload = (file) => {
@@ -425,7 +421,7 @@ export default function BoardPage() {
                 if (boardData.notes) setNotes(boardData.notes);
 
                 boardData.notes?.forEach(note => {
-                    socketRef.current.emit("add-note", { boardId, note });
+                    socketRef.current?.emit("add-note", { boardId, note });
                 });
 
                 alert('ボードを復元しました!');
@@ -503,7 +499,7 @@ export default function BoardPage() {
         );
 
         updatedNotes.forEach(note => {
-            socketRef.current.emit("update-note", { boardId, note });
+            socketRef.current?.emit("update-note", { boardId, note });
         });
 
         alert(`${noteIds.length}個の付箋をグループ化しました`);
@@ -527,7 +523,7 @@ export default function BoardPage() {
         );
 
         updatedNotes.forEach(note => {
-            socketRef.current.emit("update-note", { boardId, note });
+            socketRef.current?.emit("update-note", { boardId, note });
         });
 
         alert(`${noteIds.length}個の付箋のグループ化を解除しました`);
@@ -587,7 +583,6 @@ export default function BoardPage() {
             selectionStartPos.current = coords;
             initialSelectedIds.current = e.shiftKey ? [...selectedNoteIds] : [];
 
-            // ロジック用 ref を同期更新（同フレームで handleMouseMove から安全に参照可能）
             isShiftRef.current = e.shiftKey;
             selectionBoxRef.current = {
                 startX: coords.x,
@@ -595,7 +590,6 @@ export default function BoardPage() {
                 currentX: coords.x,
                 currentY: coords.y,
             };
-            // 描画用 state は ref と同じ内容を渡す（レンダリングトリガー用途）
             setSelectionBox({
                 startX: coords.x,
                 startY: coords.y,
@@ -624,7 +618,6 @@ export default function BoardPage() {
             const currentX = coords.x;
             const currentY = coords.y;
 
-            // ref を先に同期更新してからロジック判定に使用（Stale State 回避）
             selectionBoxRef.current.currentX = currentX;
             selectionBoxRef.current.currentY = currentY;
             setSelectionBox(prev => prev ? ({ ...prev, currentX, currentY }) : null);
@@ -645,7 +638,6 @@ export default function BoardPage() {
                 return !(noteRight < left || noteLeft > right || noteBottom < top || noteTop > bottom);
             }).map(n => n.id);
 
-            // isShift は ref から読む（state の古い値を参照しない）
             if (isShiftRef.current) {
                 const base = initialSelectedIds.current;
                 const combined = Array.from(new Set([...base, ...intersectedIds]));
@@ -665,7 +657,6 @@ export default function BoardPage() {
         }
 
         if (isBoxSelecting.current) {
-            // クリック微小移動判定も ref を参照（handleMouseUp クロージャは state の古い値を見る恐れがある）
             const ref = selectionBoxRef.current;
             const dx = Math.abs(ref.currentX - ref.startX);
             const dy = Math.abs(ref.currentY - ref.startY);
@@ -732,7 +723,7 @@ export default function BoardPage() {
                 onDownload={handleDownload}
                 onUpload={handleUpload}
                 onToggleCommentPanel={() => setShowCommentPanel(!showCommentPanel)}
-                onCenter={handleCenter}
+                onCenter={scrollToCenter}
                 onClearAllNotes={handleClearAllNotes}
                 hideGrayNotes={hideGrayNotes}
                 onToggleHideGrayNotes={() => setHideGrayNotes(!hideGrayNotes)}

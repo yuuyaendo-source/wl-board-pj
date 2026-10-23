@@ -5,19 +5,21 @@
  */
 export function calcDaysLeft(dueDateStr?: string | null): number | null {
     if (!dueDateStr) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     const parts = dueDateStr.split("-").map(Number);
     if (parts.length !== 3) return null;
     const [y, m, d] = parts;
     if (!y || !m || !d) return null;
 
-    const due = new Date(y, m - 1, d);
-    due.setHours(0, 0, 0, 0);
-    if (isNaN(due.getTime())) return null;
+    const today = new Date();
+    // 修正4: タイムゾーン遷移や夏時間による時間差のブレを防ぐため、年月日を直接 UTC 基準にして純粋なカレンダー日数を比較
+    const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const utcDue = Date.UTC(y, m - 1, d);
 
-    return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (isNaN(utcDue)) return null;
+
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    return Math.trunc((utcDue - utcToday) / MS_PER_DAY);
 }
 
 /**
@@ -68,7 +70,6 @@ export function getDueDateBorderClass(dueDateStr?: string | null): string {
  */
 export function formatWithDay(dueDateStr?: string | null): string {
     if (!dueDateStr) return "";
-    // 日付のみの ISO 文字列は UTC として解釈されるため、ローカル日付を明示的に構築する。
     const parts = dueDateStr.split("-").map(Number);
     if (parts.length !== 3) return "";
     const [y, m, day] = parts;

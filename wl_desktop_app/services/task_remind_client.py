@@ -31,7 +31,6 @@ except Exception:
 try:
     JST = ZoneInfo("Asia/Tokyo")
 except Exception:
-    # Windows 等で tzdata 未インストール時のフォールバック (UTC+9 固定)
     from datetime import timezone, timedelta
 
     JST = timezone(timedelta(hours=9))
@@ -177,12 +176,22 @@ def post_shown_slot(cfg: dict, slot: str) -> bool:
         return False
     url = _personal_api_url(cfg, owner, "task_reminders/shown_slot")
     try:
+        from core.security import validate_http_url
+
+        ok, err = validate_http_url(url, cfg, purpose="task_remind")
+        if not ok:
+            log_warn(f"[task_remind] shown_slot URL 拒否: {err}")
+            return False
+    except Exception as e:
+        log_warn(f"[task_remind] shown_slot URL 検証エラー: {e}")
+        return False
+
+    try:
         r = requests.post(url, json={"slot": slot}, timeout=15)
         return r.status_code == 200
     except Exception as e:
         log_warn(f"[task_remind] shown_slot POST 失敗: {e}")
         return False
-
 
 
 def post_ack(cfg: dict, item: dict, slot: str, action: str) -> bool:
@@ -191,6 +200,17 @@ def post_ack(cfg: dict, item: dict, slot: str, action: str) -> bool:
     if not base or owner is None or requests is None:
         return False
     url = _personal_api_url(cfg, owner, "task_reminders/ack")
+    try:
+        from core.security import validate_http_url
+
+        ok, err = validate_http_url(url, cfg, purpose="task_remind")
+        if not ok:
+            log_warn(f"[task_remind] ack URL 拒否: {err}")
+            return False
+    except Exception as e:
+        log_warn(f"[task_remind] ack URL 検証エラー: {e}")
+        return False
+
     try:
         r = requests.post(
             url,
@@ -246,12 +266,14 @@ def start_task_remind_poll(
         while True:
             try:
                 from core.config_loader import is_feature_enabled, load_config
+                from services.notifications import are_enabled
                 from core.network_readiness import (
                     is_network_ready,
                     unreachable_backoff_sec,
                 )
 
-                cfg = load_config()
+                # デッド引数を解消: 渡された config_getter を優先し、未設定時のみ load_config() を呼ぶ
+                cfg = config_getter() if callable(config_getter) else load_config()
                 if not is_network_ready(cfg):
                     time.sleep(unreachable_backoff_sec(cfg))
                     continue
@@ -268,7 +290,7 @@ def start_task_remind_poll(
                 if _is_paused_today(cfg):
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
-                if not are_notifications_ok(cfg):
+                if not are_enabled():
                     diag = "notifications_enabled=OFF (🔕)"
                     if diag != last_diag:
                         log_info(f"[task_remind] スキップ: {diag}")
@@ -297,6 +319,10 @@ def start_task_remind_poll(
                     continue
                 with _showing_lock:
                     _showing = True
+
+                mark_slot_shown_today(cfg, slot)
+                post_shown_slot(cfg, slot)
+
                 last_diag = ""
                 titles = ", ".join((it.get("title") or "?")[:24] for it in items[:3])
                 if len(items) > 3:
@@ -312,15 +338,6 @@ def start_task_remind_poll(
     _thread = threading.Thread(target=loop, daemon=True, name="task_remind_poll")
     _thread.start()
     return True
-
-
-def are_notifications_ok(cfg: dict) -> bool:
-    try:
-        from services.notifications import are_enabled
-
-        return are_enabled()
-    except Exception:
-        return True
 
 
 def notify_dialog_closed() -> None:

@@ -68,16 +68,21 @@ export default function PersonalBoardView({
 
   const fetchPersonal = useCallback(async () => {
     try {
-      setError(null);
       const list = await api.boards.personal(ownerId);
-      const next: Record<LaneType, PlacementWithNote[]> = { INBOX: [], TODAY: [], DONE: [], HELP_REQUEST: [] };
+      const next: Record<LaneType, PlacementWithNote[]> = {
+        INBOX: [],
+        TODAY: [],
+        DONE: [],
+        HELP_REQUEST: [],
+      };
       for (const p of list) {
-        const lane = (p.lane ?? "INBOX") as LaneType;
-        if (lane in next) next[lane].push(p);
+        const lane = p.lane || "INBOX";
+        if (next[lane]) next[lane].push(p);
       }
-      flushSync(() => setByLane(next));
+      setByLane(next);
+      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      setError(e instanceof Error ? e.message : "取得に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -86,18 +91,21 @@ export default function PersonalBoardView({
   const fetchSummary = useCallback(async () => {
     try {
       const data = await api.personalSummary(ownerId);
-      setSummary({ events: data.events ?? [], today: data.today ?? [] });
+      setSummary(data);
     } catch {
-      setSummary({ events: [], today: [] });
+      setSummary(null);
     } finally {
       setSummaryLoading(false);
     }
   }, [ownerId]);
 
   useEffect(() => {
+    setLoading(true);
     fetchPersonal();
   }, [fetchPersonal]);
+
   useEffect(() => {
+    setSummaryLoading(true);
     fetchSummary();
   }, [fetchSummary]);
 
@@ -238,7 +246,6 @@ export default function PersonalBoardView({
         <h1 className="mb-4 text-xl font-bold">パーソナルボード — {displayName}</h1>
         <OneLineInput placeholder="タスクやメモを入力..." onSubmit={handlePost} />
 
-        {/* 統一された操作エラー警告バナー */}
         {actionError && (
           <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 shadow-sm">
             <div className="flex items-center gap-2">
@@ -275,6 +282,7 @@ export default function PersonalBoardView({
           />
         ))}
         <PersonalCalendarPanel
+          key={ownerId}
           ownerId={ownerId}
           events={summary?.events ?? []}
           today={summary?.today ?? []}
@@ -400,49 +408,126 @@ function PersonalCalendarPanel({
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const [liveEvents, setLiveEvents] = useState<SummaryEvent[]>(events);
+  const [isNotSynced, setIsNotSynced] = useState(false);
   const hasEvents = liveEvents.length > 0;
+  const initialCheckRef = useRef(false);
 
   useEffect(() => {
     setLiveEvents(events);
   }, [events]);
 
+  const authUrl = `${API_BASE}/auth/google?user_id=${ownerId}`;
+
+  const authStatus =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("google_auth")
+      : null;
+
+  const handleManualAuth = useCallback(() => {
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem(`google_auth_attempted_${ownerId}`);
+      } catch { }
+    }
+  }, [ownerId]);
+
   useEffect(() => {
     let cancelled = false;
-    const pollLive = async () => {
+    const pollLive = async (isInitial = false) => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       try {
         const data = await api.personalCalendarLive(ownerId);
-        if (!cancelled && data.synced && Array.isArray(data.events)) {
+        if (cancelled) return;
+
+        if (data.synced && Array.isArray(data.events)) {
           setLiveEvents(data.events);
+          setIsNotSynced(false);
+          if (typeof window !== "undefined") {
+            try {
+              sessionStorage.removeItem(`google_auth_attempted_${ownerId}`);
+            } catch { }
+          }
           if (data.stickies_updated) {
             await onRefresh();
             if (onAfterCalendarRefresh) await onAfterCalendarRefresh();
           }
+        } else if (!data.synced) {
+          setIsNotSynced(true);
+
+          // 初回ロード時のみ自動リダイレクト判定を実行（定期ポーリング・タブ復帰時は除外）
+          if (isInitial && typeof window !== "undefined") {
+            const urlParams = new URLSearchParams(window.location.search);
+            const authParam = urlParams.get("google_auth");
+            // Google認証画面から戻った直後（キャンセル・エラー・成功等）の場合はリダイレクトしない
+            const isReturningFromAuth = Boolean(authParam);
+
+            // 当該タブセッションですでに自動リダイレクトを試行済みか判定（無限ループ防止）
+            let alreadyAttempted = false;
+            try {
+              alreadyAttempted =
+                sessionStorage.getItem(`google_auth_attempted_${ownerId}`) === "true";
+            } catch { }
+
+            // ガードに該当しない場合のみ自動遷移を実行
+            if (!isReturningFromAuth && !alreadyAttempted) {
+              try {
+                sessionStorage.setItem(`google_auth_attempted_${ownerId}`, "true");
+              } catch { }
+              window.location.href = authUrl;
+              return;
+            }
+          }
         }
       } catch {
+        // 通信一時エラー時は状態を破壊しない
       }
     };
-    const id = window.setInterval(pollLive, CALENDAR_LIVE_POLL_MS);
+
+    const id = window.setInterval(() => pollLive(false), CALENDAR_LIVE_POLL_MS);
     const onVis = () => {
-      if (document.visibilityState === "visible") pollLive();
+      if (document.visibilityState === "visible") pollLive(false);
     };
     document.addEventListener("visibilitychange", onVis);
-    pollLive();
+
+    // 初回マウント時のみ isInitial = true で呼び出し
+    if (!initialCheckRef.current) {
+      initialCheckRef.current = true;
+      pollLive(true);
+    } else {
+      pollLive(false);
+    }
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [ownerId, onRefresh, onAfterCalendarRefresh]);
+  }, [ownerId, onRefresh, onAfterCalendarRefresh, authUrl]);
 
   const handleRefreshFromGoogle = useCallback(async () => {
     setRefreshing(true);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem(`google_auth_attempted_${ownerId}`);
+      } catch { }
+    }
     try {
       await api.personalCalendarRefresh(ownerId);
       try {
         const data = await api.personalCalendarLive(ownerId);
         if (data.synced && Array.isArray(data.events)) {
           setLiveEvents(data.events);
+          setIsNotSynced(false);
+        } else if (!data.synced) {
+          setIsNotSynced(true);
+          // ユーザー自らの明示的な「予定を更新」押下時に未連携だった場合、確認ダイアログを出して安全に遷移
+          if (
+            typeof window !== "undefined" &&
+            window.confirm("Google カレンダーの連携が切れているか未連携です。連携画面に移動しますか？")
+          ) {
+            window.location.href = authUrl;
+            return;
+          }
         }
       } catch {
       }
@@ -452,11 +537,42 @@ function PersonalCalendarPanel({
     } finally {
       setRefreshing(false);
     }
-  }, [ownerId, onRefresh, onAfterCalendarRefresh]);
+  }, [ownerId, onRefresh, onAfterCalendarRefresh, authUrl]);
 
   return (
     <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-4">
       <h2 className="mb-3 font-semibold text-zinc-700">今日の予定（カレンダー連携）</h2>
+
+      {/* 連携が切れている / 未連携の場合のインライン警告バナー */}
+      {isNotSynced && (
+        <div className="mb-3 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 shadow-sm">
+          <div className="flex items-center gap-1.5 font-bold">
+            <span>⚠️</span>
+            <span>
+              {authStatus === "cancelled"
+                ? "Google カレンダー連携がキャンセルされました"
+                : authStatus === "error"
+                  ? "Google カレンダー連携でエラーが発生しました"
+                  : "Google カレンダーとの連携が必要です"}
+            </span>
+          </div>
+          <p className="text-zinc-600">
+            {authStatus === "cancelled"
+              ? "連携が完了していないため、最新の予定は同期されません。利用する場合は再連携を行ってください。"
+              : "連携が解除されているか未連携のため、最新の予定が同期できません。同期するには再連携を行ってください。"}
+          </p>
+          <div className="mt-1 flex justify-end">
+            <a
+              href={authUrl}
+              onClick={handleManualAuth}
+              className="inline-flex items-center gap-1 rounded bg-amber-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-amber-700"
+            >
+              Google アカウントと連携する →
+            </a>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-sm text-zinc-500">読み込み中...</p>
       ) : !hasEvents ? (
@@ -475,11 +591,8 @@ function PersonalCalendarPanel({
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <a
-          href={
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/bs/auth/google?user_id=${ownerId}`
-              : `${API_BASE}/auth/google?user_id=${ownerId}`
-          }
+          href={authUrl}
+          onClick={handleManualAuth}
           rel="noopener noreferrer"
           className="text-[var(--primary)] underline hover:opacity-80"
         >
@@ -559,7 +672,7 @@ function LaneColumn({
       onDrop={handleDrop}
     >
       <h2 className="mb-3 font-semibold text-zinc-700">{label}</h2>
-      <div className="flex flex-col gap-2" data-lane-cards>
+      <div className="flex flex-1 flex-col gap-2" data-lane-cards>
         {placements.map((p) => (
           <div key={p.id} data-placement-id={p.id}>
             <NoteCard
@@ -574,7 +687,7 @@ function LaneColumn({
               showCalendarBadge={isCalendarPlacement(p.placement_source)}
               cardColor={personalCardColor(lane, p)}
               dragData={{ isFromTask: String(!!p.is_from_task), canReleaseToTask: "true" }}
-              takenBy={p.taken_by} // ← 修正点: 他担当者バッジデータを明示的に渡す
+              takenBy={p.taken_by}
               onAppendContent={onAppendContent}
               onDueDateChange={onDueDateChange}
               onDragEnd={onRefresh}

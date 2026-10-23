@@ -21,19 +21,23 @@ from core.security import validate_http_url, assert_http_url
 from services.notifications import are_enabled
 from core.app_log import log_info, log_warn
 
-_playback_queue: queue.Queue[str] = queue.Queue()
+_playback_queue: queue.Queue[tuple[str, str, Optional[float], str]] = queue.Queue()
+_playsound_lock = threading.Lock()
 
 
 def _audio_worker() -> None:
     """Serialize asynchronous PlaySound calls so later audio cannot cut off the current clip."""
     while True:
-        path = _playback_queue.get()
+        path, text, duration_sec, log_prefix = _playback_queue.get()
         try:
+            # キューから取り出され、実際に再生される直前にアバターのアニメーションと吹き出しを開始
+            _start_avatar(text, duration_sec, log_prefix)
             import winsound
 
-            winsound.PlaySound(path, winsound.SND_FILENAME)
+            with _playsound_lock:
+                winsound.PlaySound(path, winsound.SND_FILENAME)
         except Exception as e:
-            log_warn(f"[audio] queued playback failed: {e}")
+            log_warn(f"{log_prefix} queued playback failed: {e}")
         finally:
             try:
                 os.unlink(path)
@@ -43,7 +47,9 @@ def _audio_worker() -> None:
 
 
 if sys.platform == "win32":
-    _audio_thread = threading.Thread(target=_audio_worker, name="audio-playback", daemon=True)
+    _audio_thread = threading.Thread(
+        target=_audio_worker, name="audio-playback", daemon=True
+    )
     _audio_thread.start()
 
 
@@ -147,14 +153,23 @@ def _start_avatar(text: str, duration_sec: Optional[float], log_prefix: str) -> 
     try:
         if is_feature_enabled("linko_avatar"):
             from ui import linko_avatar
+            from services.notifications import _ui_dispatch
 
-            if linko_avatar.is_ready():
-                if duration_sec is not None and duration_sec > 0:
-                    linko_avatar.say(
-                        text=text, duration_sec=duration_sec, base_pose="normal"
-                    )
-                else:
-                    linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
+            def _run():
+                if linko_avatar.is_ready():
+                    if duration_sec is not None and duration_sec > 0:
+                        linko_avatar.say(
+                            text=text, duration_sec=duration_sec, base_pose="normal"
+                        )
+                    else:
+                        linko_avatar.start_lipsync(
+                            duration_sec=None, base_pose="normal"
+                        )
+
+            if _ui_dispatch:
+                _ui_dispatch(_run)
+            else:
+                _run()
     except Exception as e:
         log_warn(f"{log_prefix} lipsync/bubble start 失敗: {e}")
 
@@ -166,7 +181,7 @@ def play_wav(
     blocking: bool = False,
     log_prefix: str = "[audio]",
 ) -> None:
-    """一時 WAV を winsound で再生 (Windows のみ)。"""
+    """一時 WAV を winsound で再生 (Windows のみ)。_playsound_lock によりプロセス全体で排他制御。"""
     if sys.platform != "win32":
         log_info(f"{log_prefix} 音声再生は Windows のみ対応 (開発環境ではスキップ)。")
         try:
@@ -175,17 +190,18 @@ def play_wav(
             pass
         return
     try:
-        _start_avatar(text, duration_sec, log_prefix)
         import winsound
 
         if blocking:
-            winsound.PlaySound(path, winsound.SND_FILENAME)
+            _start_avatar(text, duration_sec, log_prefix)
+            with _playsound_lock:
+                winsound.PlaySound(path, winsound.SND_FILENAME)
             try:
                 os.unlink(path)
             except Exception:
                 pass
         else:
-            _playback_queue.put(path)
+            _playback_queue.put((path, text, duration_sec, log_prefix))
     except Exception as e:
         log_warn(f"{log_prefix} 再生エラー: {e}")
         try:

@@ -23,12 +23,11 @@ from app.schemas.sticky_note import (
     StickyNoteResponse,
     StickyNoteUpdate,
 )
+from app.services.due_date_rules import should_move_to_today
+from app.services.orchestrator import ensure_postit_sync as _ensure_postit_sync
 
 router = APIRouter(prefix="/sticky_notes", tags=["sticky_notes"])
 logger = logging.getLogger(__name__)
-
-
-from app.services.orchestrator import ensure_postit_sync as _ensure_postit_sync
 
 
 def _get_jst_today() -> DateType:
@@ -37,7 +36,7 @@ def _get_jst_today() -> DateType:
 
 
 async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
-    """期限連動移動ロジック"""
+    """期限連動移動ロジック（完了・応援要請は除外）"""
     result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
     note = result.scalar_one_or_none()
     if not note:
@@ -56,12 +55,11 @@ async def apply_due_date_rules_for_note(note_id: int, db: AsyncSession) -> None:
     today = _get_jst_today()
 
     for p in placements:
-        if p.lane == Lane.DONE or p.lane == "DONE":
+        # DONE および HELP_REQUEST（応援要請）レーンにある配置は自動移動の対象外とする
+        if p.lane in (Lane.DONE, Lane.HELP_REQUEST):
             continue
         if p.is_manually_moved_to_today:
             continue
-
-        from app.services.due_date_rules import should_move_to_today
 
         should_be_today = should_move_to_today(note.due_date, today)
         p.lane = Lane.TODAY if should_be_today else Lane.INBOX
@@ -112,20 +110,27 @@ async def _notify_postit_note_async(
         logger.warning(f"付箋ボード更新通知失敗: {e}")
 
 
-async def _notify_postit_archive_async(
-    request: Request, board_id: str, note_id: str
+async def _notify_postit_gray_async(
+    request: Request, board_id: str, note_id: str, gray: bool = True
 ) -> bool:
-    """request.app.state から共有クライアントを取得し非同期でグレー化通知を送信。"""
+    """request.app.state から共有クライアントを取得し非同期でグレー化/解除通知を送信。"""
     url = (
         f"{settings.postit_board_url.rstrip('/')}/api/boards/{board_id}/notes/{note_id}"
     )
     try:
         client = request.app.state.http_client
-        resp = await client.patch(url, json={"gray": True}, timeout=5.0)
+        resp = await client.patch(url, json={"gray": gray}, timeout=5.0)
         return 200 <= resp.status_code < 300
     except Exception as e:
-        logger.warning(f"グレー化通知送信失敗: {e}")
+        logger.warning(f"グレー状態({gray})通知送信失敗: {e}")
         return False
+
+
+async def _notify_postit_archive_async(
+    request: Request, board_id: str, note_id: str
+) -> bool:
+    """request.app.state から共有クライアントを取得し非同期でグレー化通知を送信。"""
+    return await _notify_postit_gray_async(request, board_id, note_id, gray=True)
 
 
 @router.get("", response_model=list[StickyNoteResponse])
@@ -195,8 +200,6 @@ async def import_from_postit(
             placement_source="postit",
         )
         db.add(placement)
-
-        # 新規作成時は PERSONAL 配置が存在しないため apply_due_date_rules_for_note は呼び出さない
         import_count += 1
     return ImportFromPostitResponse(created=import_count, skipped=skip_count)
 
@@ -235,9 +238,19 @@ async def create_sticky_note(
     if not note.is_personal_only:
         from app.services.orchestrator import process_new_note_ai_background
 
-        background_tasks.add_task(
-            process_new_note_ai_background, request.app, note.id
+        background_tasks.add_task(process_new_note_ai_background, request.app, note.id)
+    elif note.author_id:
+        placement = BoardPlacement(
+            note_id=note.id,
+            board_type=BoardType.PERSONAL,
+            owner_id=note.author_id,
+            lane=Lane.INBOX,
+            sort_order=0,
         )
+        db.add(placement)
+        await db.flush()
+        await apply_due_date_rules_for_note(note.id, db)
+        await db.refresh(note)
 
     return _note_response(note)
 
@@ -280,8 +293,7 @@ async def create_personal_note(
     db.add(note)
     await db.flush()
 
-    # クライアントが明示的に TODAY を指定した場合のみ「手動移動」とみなす
-    is_manual = (body.lane == Lane.TODAY)
+    is_manual = body.lane == Lane.TODAY
     initial_lane = body.lane or Lane.INBOX
 
     placement = BoardPlacement(
@@ -326,9 +338,9 @@ async def sync_from_postit(
     if body.content is not None:
         note.content = body.content
 
-    if body.due_date is not None:
+    if "due_date" in body.model_fields_set:
         parsed_due_date = None
-        if body.due_date != "":
+        if body.due_date is not None and body.due_date != "":
             try:
                 parsed_due_date = DateType.fromisoformat(body.due_date)
             except ValueError:
@@ -342,6 +354,7 @@ async def sync_from_postit(
             )
             await db.flush()
             await apply_due_date_rules_for_note(note.id, db)
+
     await db.refresh(note)
     return _note_response(note)
 
@@ -372,9 +385,13 @@ async def update_sticky_note(
 
     if body.status is not None:
         note.status = body.status
-        # 付箋のステータス変更に合わせて Task ボードの象限および Personal ボードのレーンを連動更新
         if body.status in (NoteStatus.DONE, NoteStatus.ARCHIVED):
             note.is_help_request = False
+            if note.postit_board_id and note.postit_note_id:
+                await _notify_postit_archive_async(
+                    request, note.postit_board_id, note.postit_note_id
+                )
+
             await db.execute(
                 sa_update(BoardPlacement)
                 .where(
@@ -392,15 +409,23 @@ async def update_sticky_note(
                 .values(lane=Lane.DONE)
             )
         elif body.status == NoteStatus.ACTIVE:
-            await db.execute(
-                sa_update(BoardPlacement)
-                .where(
+            from app.routers.board_placements import _restore_task_quadrant
+
+            if note.postit_board_id and note.postit_note_id:
+                await _notify_postit_gray_async(
+                    request, note.postit_board_id, note.postit_note_id, gray=False
+                )
+
+            r_task = await db.execute(
+                select(BoardPlacement).where(
                     BoardPlacement.note_id == note_id,
                     BoardPlacement.board_type == BoardType.TASK,
                     BoardPlacement.matrix_quadrant == 5,
                 )
-                .values(matrix_quadrant=1)
             )
+            for tp in r_task.scalars().all():
+                tp.matrix_quadrant = _restore_task_quadrant(tp)
+
             await db.execute(
                 sa_update(BoardPlacement)
                 .where(
@@ -474,6 +499,32 @@ async def delete_sticky_notes_by_postit(
     )
     notes = list(result.scalars().all())
     for note in notes:
+        if not note.is_personal_only:
+            r_others = await db.execute(
+                select(BoardPlacement).where(
+                    BoardPlacement.note_id == note.id,
+                    BoardPlacement.board_type == BoardType.PERSONAL,
+                    BoardPlacement.lane != Lane.DONE,
+                )
+            )
+            if r_others.scalars().first():
+                logger.info(
+                    "[delete_sticky_notes_by_postit] 未完了担当者が存在するためアーカイブ状態に留めます note_id=%s",
+                    note.id,
+                )
+                note.status = NoteStatus.ARCHIVED
+                note.is_help_request = False
+
+                await db.execute(
+                    sa_update(BoardPlacement)
+                    .where(
+                        BoardPlacement.note_id == note.id,
+                        BoardPlacement.board_type == BoardType.TASK,
+                    )
+                    .values(matrix_quadrant=5)
+                )
+                continue
+
         await db.delete(note)
 
 
@@ -481,30 +532,31 @@ async def delete_sticky_notes_by_postit(
 async def delete_sticky_note(
     request: Request, note_id: int, db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(
-        select(StickyNote).where(StickyNote.id == note_id).with_for_update()
-    )
+    stmt = select(StickyNote).where(StickyNote.id == note_id)
+    if db.get_bind().dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     note = result.scalar_one_or_none()
     if not note:
         return
 
-    # タスクボード／直削除ガード: 未完了の担当者がいる場合は削除をブロック
-    r_others = await db.execute(
-        select(BoardPlacement, User)
-        .join(User, BoardPlacement.owner_id == User.id)
-        .where(
-            BoardPlacement.note_id == note_id,
-            BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.lane != Lane.DONE,
+    if not note.is_personal_only:
+        r_others = await db.execute(
+            select(BoardPlacement, User)
+            .join(User, BoardPlacement.owner_id == User.id)
+            .where(
+                BoardPlacement.note_id == note_id,
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.lane != Lane.DONE,
+            )
         )
-    )
-    others = r_others.all()
-    if others:
-        names = ", ".join([u.name for p, u in others])
-        raise HTTPException(
-            status_code=400,
-            detail=f"担当者（{names}）が完了にするまで削除できません",
-        )
+        others = r_others.all()
+        if others:
+            names = ", ".join([u.name for p, u in others])
+            raise HTTPException(
+                status_code=400,
+                detail=f"担当者（{names}）が完了にするまで削除できません",
+            )
 
     postit_board_id = note.postit_board_id
     postit_note_id = note.postit_note_id
@@ -570,8 +622,6 @@ async def move_to_personal(
 
     await db.flush()
 
-    # 自分以外の HELP_REQUEST レーンを INBOX に戻す (応援引き取り)
-    # ※ is_help_request フラグは DONE になるまで維持する（仕様: 応援要請は完了まで赤色表示）
     await db.execute(
         sa_update(BoardPlacement)
         .where(
@@ -637,9 +687,58 @@ async def copy_to_team(
 
     await db.flush()
 
+    await db.execute(
+        sa_update(BoardPlacement)
+        .where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.lane == Lane.HELP_REQUEST,
+        )
+        .values(lane=Lane.INBOX)
+    )
+    await db.flush()
+
     await _ensure_postit_sync(request, note, db)
     return CopyToTeamResponse(
         created=copied_count,
         user_ids=user_ids,
         message=f"チームメンバー {copied_count} 名の Personal ボードへ追加しました",
     )
+
+
+@router.post("/{note_id}/release_to_task_board")
+async def release_to_task_board(
+    request: Request,
+    note_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(StickyNote).where(StickyNote.id == note_id))
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Sticky note not found")
+
+    note.is_personal_only = False
+
+    r_task = await db.execute(
+        select(BoardPlacement).where(
+            BoardPlacement.note_id == note_id,
+            BoardPlacement.board_type == BoardType.TASK,
+            BoardPlacement.owner_id.is_(None),
+        )
+    )
+    task_placement = r_task.scalar_one_or_none()
+    if not task_placement:
+        task_placement = BoardPlacement(
+            note_id=note_id,
+            board_type=BoardType.TASK,
+            owner_id=None,
+            matrix_quadrant=1,
+            sort_order=0,
+            placement_source="personal_release",
+        )
+        db.add(task_placement)
+
+    await db.flush()
+
+    await _ensure_postit_sync(request, note, db)
+    return {"ok": True, "note_id": note_id}

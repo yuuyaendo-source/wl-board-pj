@@ -3,20 +3,21 @@ FROM node:20-alpine
 
 WORKDIR /app/board-system/frontend
 
-# 依存関係ファイルだけ先にコピー（キャッシュ効率化）
+# 依存関係ファイルと Cato 証明書（あれば）を先にコピー
 COPY board-system/frontend/package.json board-system/frontend/package-lock.json* ./
+COPY board-system/frontend/cato-ca.crt* ./
 
-# インストール実行
+# CATO Networks SSL対応: 証明書があれば信頼ストアに追加（ローカル・Cato切断時は自動スキップ）
+RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+# インストール実行（Cato切断時は通常通り高速に完了します）
 RUN npm install
 
 # 共通 shared フォルダをプロジェクト内外の両方にコピー
 COPY shared /app/shared
 COPY shared /app/board-system/frontend/shared
 COPY board-system/frontend ./
-
-# CATO Networks SSL対応: 証明書があれば信頼ストアに追加（ローカルでは省略可）
-RUN if [ -f cato-ca.crt ]; then cat cato-ca.crt >> /etc/ssl/certs/ca-certificates.crt; fi
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 # ビルド時に環境変数を受け取る（NEXT_PUBLIC_* はビルド時に埋め込まれる）
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000

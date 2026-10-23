@@ -23,9 +23,10 @@ class StickyNoteCreate(BaseModel):
 class StickyNoteUpdate(BaseModel):
     content: str | None = None
     status: NoteStatus | None = None
-    due_date: str | None = (
-        None  # YYYY-MM-DD 形式。空文字列「""」で送信すると期限をクリア。
-    )
+    due_date: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("due_date", "dueDate"),
+    )  # YYYY-MM-DD 形式。空文字列「""」で送信すると期限をクリア。
 
 
 class StickyNoteResponse(BaseModel):

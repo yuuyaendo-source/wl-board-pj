@@ -24,7 +24,9 @@ from app.services.llm_settings import get_resolved_ollama_async
 logger = logging.getLogger("uvicorn")
 
 
-async def ensure_postit_sync(request: Request, note: StickyNote, db: AsyncSession) -> bool:
+async def ensure_postit_sync(
+    request: Request, note: StickyNote, db: AsyncSession
+) -> bool:
     """未同期の共有付箋を付箋ボードへ初回同期し、同期IDを保存する。"""
     if note.is_personal_only or note.postit_note_id:
         return False
@@ -51,10 +53,12 @@ async def process_new_note_ai_background(app, note_id: int) -> None:
     async with async_session_maker() as db:
         try:
             await process_new_note_ai(request, note_id, db)
-            await db.commit()
         except Exception:
             await db.rollback()
-            logger.exception("[Linko AI] Background processing failed for note %s", note_id)
+            logger.exception(
+                "[Linko AI] Background processing failed for note %s", note_id
+            )
+
 
 # アイゼンハワー象限(1-4) → Taskボード列(1=アイデア, 2=短期, 3=長期, 4=重要)
 EISENHOWER_TO_COLUMN = {1: 4, 2: 3, 3: 2, 4: 1}
@@ -81,7 +85,6 @@ async def _resolve_assignee_user_async(
     if not raw and not normalized:
         return None
 
-    # 完全一致を優先
     for candidate in (normalized, raw):
         if not candidate:
             continue
@@ -90,7 +93,6 @@ async def _resolve_assignee_user_async(
         if user:
             return user
 
-    # 部分一致
     for candidate in (normalized, raw):
         if not candidate:
             continue
@@ -125,9 +127,13 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
     # E2E テスト環境用 モック判定 (MOCK_AI=true)
     if os.environ.get("MOCK_AI", "").lower() in ("true", "1"):
         logger.info("[Linko AI] MOCK_AI 提案適用 Note ID: %s", note_id)
-        await _place_on_task_board(db, note_id, 80.0, 80.0, 4)  # 重要列へマッピング
-        await db.flush()
-        await ensure_postit_sync(request, note, db)
+        await _place_on_task_board(db, note_id, 80.0, 80.0, 4)
+        await db.commit()
+        try:
+            await ensure_postit_sync(request, note, db)
+            await db.commit()
+        except Exception as e:
+            logger.warning("[Linko AI] MOCK_AI sync failed: %s", e)
         return
 
     ollama_url, model_ov = await get_resolved_ollama_async(db)
@@ -146,14 +152,18 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
             "[Linko AI] Triage 未実行（APIキー未設定または失敗）。振り分け結果: アイデア列に配置。"
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
-        await db.flush()
+        await db.commit()
         logger.info(
             "[Linko AI] Note %s 振り分け完了: アイデア列（Triage 未実行のためデフォルト）",
             note_id,
         )
-        synced = await ensure_postit_sync(request, note, db)
-        if synced:
-            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+        try:
+            synced = await ensure_postit_sync(request, note, db)
+            if synced:
+                await db.commit()
+                logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+        except Exception as e:
+            logger.warning("[Linko AI] Postit sync failed: %s", e)
         return
 
     if not triage_result.get("is_task"):
@@ -164,46 +174,48 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
             reason,
         )
         await _place_on_task_board(db, note_id, 50.0, 50.0, 1)
-        await db.flush()
+        await db.commit()
+        try:
+            synced = await ensure_postit_sync(request, note, db)
+            if synced:
+                await db.commit()
+                logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+        except Exception as e:
+            logger.warning("[Linko AI] Postit sync failed: %s", e)
+        return
 
     triage_reason = triage_result.get("reason") or ""
-    if triage_reason and triage_result.get("is_task"):
+    if triage_reason:
         logger.info("[Linko AI] Note %s Triage 理由: %s", note_id, triage_reason)
 
     # --- 2. Matrix Scoring ---
     urgency, importance, column = 50.0, 50.0, 1
-    column_name = "アイデア"
-    if triage_result.get("is_task"):
-        try:
-            matrix_result = await asyncio.to_thread(
-                run_matrix_scoring, content, ollama_url, model_ov
-            )
-        except Exception as e:
-            logger.warning("[Linko AI] Matrix scoring failed: %s", e)
-            matrix_result = None
-        if matrix_result:
-            urgency = float(matrix_result.get("urgency", 50))
-            importance = float(matrix_result.get("importance", 50))
-            quadrant_eisenhower = matrix_result.get("matrix_quadrant", 4)
-            column = EISENHOWER_TO_COLUMN.get(quadrant_eisenhower, 1)
-        COLUMN_NAMES = {1: "アイデア", 2: "短期タスク", 3: "長期タスク", 4: "重要"}
-        column_name = COLUMN_NAMES.get(column, "アイデア")
-        matrix_reason = (matrix_result or {}).get("reason") or ""
-        logger.info(
-            "[Linko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
-            note_id,
-            urgency,
-            importance,
-            column_name,
-            matrix_reason,
+    try:
+        matrix_result = await asyncio.to_thread(
+            run_matrix_scoring, content, ollama_url, model_ov
         )
-        await _place_on_task_board(db, note_id, urgency, importance, column)
-        await db.flush()
-        logger.info(
-            "[Linko AI] Note %s 振り分け完了: Task の「%s」列に配置",
-            note_id,
-            column_name,
-        )
+    except Exception as e:
+        logger.warning("[Linko AI] Matrix scoring failed: %s", e)
+        matrix_result = None
+
+    if matrix_result:
+        urgency = float(matrix_result.get("urgency", 50))
+        importance = float(matrix_result.get("importance", 50))
+        quadrant_eisenhower = matrix_result.get("matrix_quadrant", 4)
+        column = EISENHOWER_TO_COLUMN.get(quadrant_eisenhower, 1)
+
+    COLUMN_NAMES = {1: "アイデア", 2: "短期タスク", 3: "長期タスク", 4: "重要"}
+    column_name = COLUMN_NAMES.get(column, "アイデア")
+    matrix_reason = (matrix_result or {}).get("reason") or ""
+    logger.info(
+        "[Linko AI] Note %s 採点: U=%s, I=%s → 列「%s」｜%s",
+        note_id,
+        urgency,
+        importance,
+        column_name,
+        matrix_reason,
+    )
+    await _place_on_task_board(db, note_id, urgency, importance, column)
 
     # --- 3. Personal へ配布 ---
     assignee_name = triage_result.get("assignee_name")
@@ -226,7 +238,6 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
                 sort_order=0,
             )
             db.add(personal)
-            await db.flush()
             logger.info(
                 "[Linko AI] Note %s 振り分け完了: Task + Personal（%s）に配布",
                 note_id,
@@ -237,9 +248,21 @@ async def process_new_note_ai(request: Request, note_id: int, db: AsyncSession) 
     else:
         logger.info("[Linko AI] Note %s 振り分け完了（担当者なし）", note_id)
 
-    synced = await ensure_postit_sync(request, note, db)
-    if synced:
-        logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+    # 修正3: 外部 API との通信前に DB 側のタスク・パーソナル配置を確実にコミットして確定する
+    await db.commit()
+
+    # 外部付箋ボード同期（失敗しても DB 登録はロールバックさせない）
+    try:
+        synced = await ensure_postit_sync(request, note, db)
+        if synced:
+            await db.commit()
+            logger.info("[Linko AI] Note %s を付箋ボードに反映しました", note.id)
+    except Exception as e:
+        logger.warning(
+            "[Linko AI] Note %s の付箋ボード同期に失敗しましたが、タスク保存は完了しています: %s",
+            note.id,
+            e,
+        )
 
 
 async def _sync_note_to_postit_async(

@@ -108,6 +108,17 @@ def post_shown(
         return False
     url = f"{base}/api/personal/{owner}/calendar_reminders/shown"
     try:
+        from core.security import validate_http_url
+
+        ok, err = validate_http_url(url, cfg, purpose="calendar_remind")
+        if not ok:
+            log_warn(f"[calendar_notify] shown URL 拒否: {err}")
+            return False
+    except Exception as e:
+        log_warn(f"[calendar_notify] shown URL 検証エラー: {e}")
+        return False
+
+    try:
         r = requests.post(
             url,
             params={"minutes_before": minutes_before},
@@ -132,7 +143,6 @@ def start_calendar_notify_poll(
         return False
 
     def _dispatch(items: list[dict]) -> None:
-        # 追加: 配信処理完了後に確実にロックを解放するラッパー関数
         def _run():
             try:
                 on_remind(items)
@@ -141,18 +151,20 @@ def start_calendar_notify_poll(
 
         if tk_master is not None:
             try:
-                tk_master.after(0, _run)  # 修正: ラッパー関数を呼び出す
+                tk_master.after(0, _run)
                 return
             except Exception:
                 pass
-        _run()  # 修正: ラッパー関数を呼び出す
+        _run()
 
     def loop():
         global _busy
         while True:
             try:
                 from core.config_loader import is_feature_enabled, load_config
-                from services.task_remind_client import are_notifications_ok
+
+                # ⑫ 冗長な task_remind_client ラッパーを排し notifications から直接インポート
+                from services.notifications import are_enabled
                 from core.network_readiness import (
                     is_network_ready,
                     unreachable_backoff_sec,
@@ -168,7 +180,8 @@ def start_calendar_notify_poll(
                 if _owner_id(cfg) is None:
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
-                if not are_notifications_ok(cfg):
+                # ⑫ are_enabled を直接判定
+                if not are_enabled():
                     time.sleep(POLL_INTERVAL_SEC)
                     continue
                 with _busy_lock:
@@ -185,6 +198,13 @@ def start_calendar_notify_poll(
                     f"[calendar_notify] リマインド ({len(items)}件, offsets={calendar_remind_minutes_list(cfg)}): "
                     + ", ".join((it.get("title") or "?")[:20] for it in items[:3])
                 )
+                for it in items:
+                    post_shown(
+                        cfg,
+                        it,
+                        minutes_before=it.get("minutes_before", DEFAULT_MINUTES_BEFORE),
+                    )
+
                 _dispatch(items)
             except Exception as e:
                 log_warn(f"[calendar_notify] poll エラー: {e}")

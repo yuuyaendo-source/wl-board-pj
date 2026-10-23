@@ -634,6 +634,12 @@ class ChatPanel(ctk.CTkToplevel):
                         blocking=True,
                         log_prefix="[chat_panel]",
                     )
+                else:
+                    if path and os.path.isfile(path):
+                        try:
+                            os.unlink(path)
+                        except Exception:
+                            pass
             except Exception as e:
                 _log(f"[chat_panel] 文音声 再生失敗: {e}")
 

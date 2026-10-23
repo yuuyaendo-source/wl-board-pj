@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import LinkifiedText from "./LinkifiedText";
 import styles from "./StickyNote.module.css";
-import { calcDaysLeft, formatWithDay } from "@shared/utils/dueDate";
+import { getDueDateStatusText, formatWithDay } from "@shared/utils/dueDate";
 import { isGrayNote } from "@shared/utils/grayNote";
 
 const COLORS = [
@@ -21,6 +21,7 @@ export default function StickyNote({
 }) {
     const [isDragging, setIsDragging] = useState(false);
     const [appendText, setAppendText] = useState("");
+    const appendTextRef = useRef(""); // 修正⑦: 最新入力を同期管理するRef
     const [showColorPicker, setShowColorPicker] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
 
@@ -34,16 +35,28 @@ export default function StickyNote({
     const dragOffset = useRef({ x: 0, y: 0 });
     const initialPos = useRef({ x: note.x, y: note.y });
 
-    // ★跳ね防止：ドラッグ完了から親のprops更新完了までの間、最新位置を保護保持するRef
+    // 跳ね防止：ドラッグ完了から親のprops更新完了までの間、最新位置を保護保持するRef
     const lastDraggedPos = useRef(null);
 
-    const daysLeft = calcDaysLeft(dueDateVal);
+    const dueDateStatus = getDueDateStatusText(dueDateVal);
 
     useEffect(() => {
         setTempDueDate(note.dueDate ?? "");
     }, [note.dueDate]);
 
-    // ★親から新しい note.x, note.y が届いたら保護フラグをクリア
+    // 連動移動時：直接掴んでいない付箋もドラッグ確定座標を受け取って保護保持する
+    useEffect(() => {
+        const handleRemoteDragged = (e) => {
+            const moved = e.detail?.[note.id];
+            if (moved) {
+                lastDraggedPos.current = { x: moved.x, y: moved.y };
+            }
+        };
+        window.addEventListener("wl-note-dragged", handleRemoteDragged);
+        return () => window.removeEventListener("wl-note-dragged", handleRemoteDragged);
+    }, [note.id]);
+
+    // 親から新しい note.x, note.y が届いたら保護フラグをクリア
     useEffect(() => {
         if (lastDraggedPos.current) {
             if (Math.abs(note.x - lastDraggedPos.current.x) < 0.1 && Math.abs(note.y - lastDraggedPos.current.y) < 0.1) {
@@ -53,7 +66,8 @@ export default function StickyNote({
     }, [note.x, note.y]);
 
     useEffect(() => {
-        if (!isDragging && noteRef.current && !lastDraggedPos.current) {
+        const isFollowing = noteRef.current?.getAttribute("data-drag-following") === "true";
+        if (!isDragging && !isFollowing && noteRef.current && !lastDraggedPos.current) {
             noteRef.current.style.left = `${note.x}px`;
             noteRef.current.style.top = `${note.y}px`;
             noteRef.current.style.transform = "none";
@@ -72,7 +86,12 @@ export default function StickyNote({
         if (e.button !== 0) return;
         if (note.pinned) return;
 
-        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
+        if (
+            e.target.tagName === "TEXTAREA" ||
+            e.target.tagName === "INPUT" ||
+            e.target.closest('button') ||
+            e.target.closest('a')
+        ) return;
 
         e.stopPropagation();
 
@@ -89,7 +108,12 @@ export default function StickyNote({
 
     const handleTouchStart = (e) => {
         if (note.pinned || isSpacePressed) return;
-        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT" || e.target.closest('button')) return;
+        if (
+            e.target.tagName === "TEXTAREA" ||
+            e.target.tagName === "INPUT" ||
+            e.target.closest('button') ||
+            e.target.closest('a')
+        ) return;
 
         if (onSelect) {
             onSelect(note.id, false);
@@ -110,6 +134,7 @@ export default function StickyNote({
                 .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
                 .forEach((el) => {
                     if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
+                    el.setAttribute("data-drag-following", "true");
                     el.style.willChange = "transform";
                     el.style.transition = "none";
                     el.style.transform = `translate3d(${dragOffset.current.x}px, ${dragOffset.current.y}px, 0)`;
@@ -142,6 +167,12 @@ export default function StickyNote({
                 if (noteRef.current) {
                     noteRef.current.style.transform = "none";
                 }
+                document
+                    .querySelectorAll(`[data-sticky-note="true"][data-drag-following="true"]`)
+                    .forEach((el) => {
+                        el.removeAttribute("data-drag-following");
+                        el.style.transform = "none";
+                    });
                 return;
             }
 
@@ -158,17 +189,31 @@ export default function StickyNote({
             }
 
             if (onMoveSelectedNotes && isSelected) {
+                const movedNotes = {};
+                movedNotes[note.id] = { x: newX, y: newY };
+
                 document
                     .querySelectorAll(`[data-sticky-note="true"].${styles.selected}`)
                     .forEach((el) => {
                         if (el === noteRef.current || el.classList.contains(styles.pinned)) return;
                         const currentLeft = parseFloat(el.style.left) || 0;
                         const currentTop = parseFloat(el.style.top) || 0;
+                        const targetX = currentLeft + dx;
+                        const targetY = currentTop + dy;
                         el.style.transition = "none";
-                        el.style.left = `${currentLeft + dx}px`;
-                        el.style.top = `${currentTop + dy}px`;
+                        el.style.left = `${targetX}px`;
+                        el.style.top = `${targetY}px`;
                         el.style.transform = "none";
+                        el.removeAttribute("data-drag-following");
+
+                        const nid = el.getAttribute("data-note-id");
+                        if (nid) {
+                            movedNotes[nid] = { x: targetX, y: targetY };
+                        }
                     });
+
+                // 連動移動したすべての付箋のドラッグ確定座標を各インスタンスに同期
+                window.dispatchEvent(new CustomEvent("wl-note-dragged", { detail: movedNotes }));
 
                 onMoveSelectedNotes(note.id, dx, dy);
                 return;
@@ -212,12 +257,20 @@ export default function StickyNote({
         setShowDatePicker(false);
     };
 
+    // 修正⑦: 入力変更ハンドラでRefを同期更新
+    const handleAppendChange = (e) => {
+        setAppendText(e.target.value);
+        appendTextRef.current = e.target.value;
+    };
+
+    // 修正⑦: Refを参照し、送信時に即時初期化して二重発火を抑止
     const submitAppend = () => {
-        const trimmed = appendText.trim();
+        const trimmed = appendTextRef.current.trim();
         if (!trimmed) return;
+        appendTextRef.current = "";
+        setAppendText("");
         const newText = (note.text || "").trim() ? `${(note.text || "").trim()}\n${trimmed}` : trimmed;
         onUpdate({ ...note, text: newText });
-        setAppendText("");
     };
 
     const handleOpenPicker = (e) => {
@@ -239,24 +292,20 @@ export default function StickyNote({
     let cardHighlightClass = "";
     let badgeText = `📅 期限: ${formatWithDay(dueDateVal)}`;
 
-    if (daysLeft !== null) {
-        if (daysLeft < 0) {
-            badgeClass = styles.badgeExpired;
-            cardHighlightClass = styles.noteExpiredBorder;
-            badgeText = `⚠️ 期限切れ（${Math.abs(daysLeft)}日経過）`;
-        } else if (daysLeft === 0) {
-            badgeClass = styles.badgeToday;
-            cardHighlightClass = styles.noteTodayBorder;
-            badgeText = "🔥 本日が期限！";
-        } else if (daysLeft <= 3) {
-            badgeClass = styles.badgeToday;
-            badgeText = `⏰ 期限まであと${daysLeft}日`;
-        } else if (daysLeft <= 10) {
-            badgeClass = styles.badgeWarning;
-            badgeText = `📅 期限まであと${daysLeft}日`;
-        } else {
-            badgeText = `📅 期限: ${formatWithDay(dueDateVal)}`;
-        }
+    if (dueDateStatus.status === "expired") {
+        badgeClass = styles.badgeExpired;
+        cardHighlightClass = styles.noteExpiredBorder;
+        badgeText = dueDateStatus.label;
+    } else if (dueDateStatus.status === "today") {
+        badgeClass = styles.badgeToday;
+        cardHighlightClass = styles.noteTodayBorder;
+        badgeText = dueDateStatus.label;
+    } else if (dueDateStatus.status === "urgent") {
+        badgeClass = styles.badgeToday;
+        badgeText = dueDateStatus.label;
+    } else if (dueDateStatus.daysLeft !== null && dueDateStatus.daysLeft <= 10) {
+        badgeClass = styles.badgeWarning;
+        badgeText = dueDateStatus.label;
     }
 
     let displayX = note.x;
@@ -406,12 +455,6 @@ export default function StickyNote({
                 </div>
             )}
 
-            {note.imageUrl && (
-                <div className={styles.imageContainer}>
-                    <img src={note.imageUrl} alt="Sticky note capture" className={styles.image} />
-                </div>
-            )}
-
             {dueDateVal && (
                 <div className={styles.dueDateContainer}>
                     <span
@@ -438,14 +481,16 @@ export default function StickyNote({
                 className={styles.appendInput}
                 placeholder={note.text ? "追記... (Shift+Enter: 改行 / Enter: 反映)" : "入力... (Shift+Enter: 改行 / Enter: 反映)"}
                 value={appendText}
-                onChange={(e) => setAppendText(e.target.value)}
+                onChange={handleAppendChange}
                 onKeyDown={(e) => {
+                    // 日本語IME変換中のEnter打鍵（確定操作）時は送信処理をバイパス
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         submitAppend();
                     }
                 }}
-                onBlur={() => appendText.trim() && submitAppend()}
+                onBlur={() => appendTextRef.current.trim() && submitAppend()}
                 onMouseDown={(e) => e.stopPropagation()}
             />
             {note.groupId && (

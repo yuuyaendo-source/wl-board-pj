@@ -33,7 +33,7 @@ function getTeamBadgeStyle(teamId: number): string {
 const extractTeamIds = (user: any): number[] => {
   if (Array.isArray(user?.team_ids)) return user.team_ids.map(Number);
   if (Array.isArray(user?.teams)) return user.teams.map((t: any) => Number(t.id));
-  if (user?.teamId) return [Number(user.teamId)];
+  if (Array.isArray(user?.teamIds)) return user.teamIds.map(Number);
   return [];
 };
 
@@ -133,7 +133,6 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           call_name: callName.trim(),
           team_ids: teamIds,
         });
-        // 取得レスポンスを直接ステートに追加して同期ズレを防止
         setFullUsers((prev) => [...prev, newUser]);
         onSuccess();
         setOpen(false);
@@ -164,15 +163,12 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
 
   const startEdit = (m: any) => {
     const targetId = Number(m.ownerId ?? m.id);
-    // fullUsersの最新データから参照
     const targetUser = fullUsers.find((u) => Number(u.id) === targetId) ?? m;
 
     setEditingId(targetId);
     setEditName(targetUser.name ?? "");
     setEditEmail(targetUser.email ?? "");
     setEditCallName(targetUser.call_name ?? "");
-
-    // チームIDリストを確実に数値配列化
     setEditTeamIds(extractTeamIds(targetUser));
     setError(null);
   };
@@ -194,7 +190,6 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
           team_ids: editTeamIds,
         });
 
-        // サーバーから返ってきた最新データを直接ステートに反映（同期ズレ解消）
         setFullUsers((prev) =>
           prev.map((u) => (Number(u.id) === Number(editingId) ? updatedUser : u))
         );
@@ -295,8 +290,12 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                   checked={checked}
                   onChange={(e) => {
                     const targetId = Number(t.id);
-                    if (e.target.checked) onChange([...selectedIds.map(Number), targetId]);
-                    else onChange(selectedIds.map(Number).filter((id) => id !== targetId));
+                    // ⑨ Set を用いて重複 ID の混入を防止
+                    if (e.target.checked) {
+                      onChange(Array.from(new Set([...selectedIds.map(Number), targetId])));
+                    } else {
+                      onChange(selectedIds.map(Number).filter((id) => id !== targetId));
+                    }
                   }}
                   disabled={submitting}
                 />
@@ -309,7 +308,6 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
     </div>
   );
 
-  // 一覧表示データは fullUsers を最優先
   const displayList = fullUsers.length > 0 ? fullUsers : members;
 
   return (
@@ -411,10 +409,7 @@ export default function AddUserMenu({ members, onSuccess, open: controlledOpen, 
                     {displayList.map((m: any) => {
                       const memberId = Number(m.ownerId ?? m.id);
                       const targetUser = fullUsers.find((u) => Number(u.id) === memberId) ?? m;
-
-                      // 所属チームの判定
                       const assignedTeamIds = extractTeamIds(targetUser);
-
                       const userTeams = teams.filter((t) => assignedTeamIds.includes(Number(t.id)));
 
                       return (

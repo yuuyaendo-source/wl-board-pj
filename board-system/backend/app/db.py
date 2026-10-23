@@ -5,6 +5,7 @@ SQLite (aiosqlite) と PostgreSQL (asyncpg) の両方に対応。
 """
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, selectinload
 
@@ -25,6 +26,16 @@ engine = create_async_engine(
     connect_args=connect_args,  # ここで動的に引数を渡す
     echo=False,  # 開発時は True で SQL ログ出力
 )
+
+# SQLite利用時に外部キー制約（ON DELETE CASCADE 等）を有効化
+if "sqlite" in db_url:
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 
 # 非同期セッション工場
 async_session_maker = async_sessionmaker(
@@ -59,7 +70,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-# パーソナルボード用メンバー（id 1-7）。起動時に存在しなければ作成する
+# パーソナルボード用メンバー（id 1-8）。起動時に存在しなければ作成する
 PERSONAL_USER_NAMES = [
     "堀 高喜",
     "福山 一道",
@@ -74,7 +85,7 @@ PERSONAL_USER_NAMES = [
 # 初期チーム名。起動時に存在しなければ作成する
 SEED_TEAMS = ["ネットワーク", "構築"]
 
-# 初期ユーザーへの初期チーム割り当て（id 1-7 が未所属の場合のみ）
+# 初期ユーザーへの初期チーム割り当て（id 1-8 が未所属の場合のみ）
 # 奇数ID → ネットワーク, 偶数ID → 構築
 SEED_USER_TEAM_MAP: dict[int, str] = {
     1: "ネットワーク",
@@ -89,12 +100,9 @@ SEED_USER_TEAM_MAP: dict[int, str] = {
 
 
 async def seed_personal_users() -> None:
-    """パーソナルボード用ユーザー（id 1-7）がなければ作成する。"""
-    # 循環参照を防ぐため関数内でインポート
+    """パーソナルボード用ユーザー（id 1-8）がなければ作成する。"""
     from sqlalchemy import select
-    from app.models.user import (
-        User,
-    )  # ※パスに注意: app.models 直下か app.models.user か確認してください
+    from app.models.user import User
 
     async with async_session_maker() as session:
         for i, name in enumerate(PERSONAL_USER_NAMES, 1):

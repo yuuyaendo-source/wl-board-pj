@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """管理者認証 API（パスワード保護用）。標準ライブラリで簡易 JWT を発行・検証。"""
-from datetime import datetime, timedelta, timezone
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
 import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
+from pydantic import BaseModel
 
 from app.config import settings
 
@@ -51,7 +52,8 @@ def verify_token(token: str) -> bool:
 
 @router.post("/login", response_model=LoginResponse)
 async def login_admin(body: LoginRequest):
-    if body.password != settings.admin_password:
+    # タイミング攻撃を防ぐため定数時間比較を使用
+    if not secrets.compare_digest(body.password, settings.admin_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",

@@ -177,8 +177,8 @@ sudo systemctl reload nginx
 
 echo "Deployment to $NEW_COLOR successful!"
 
-# 旧環境の停止
+# 旧環境の停止（ロールバックに備えてコンテナ削除(down)ではなく停止(stop)にとどめる）
 echo "Stopping old environment ($CURRENT_COLOR)..."
-docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$CURRENT_COLOR" down
+docker compose -f "$DOCKER_COMPOSE_FILE" -p "board-system-$CURRENT_COLOR" stop
 
 echo "Done."

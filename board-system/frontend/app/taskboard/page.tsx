@@ -159,7 +159,7 @@ export default function TaskBoardPage() {
     async (noteId: number, teamId: number, teamName: string) => {
       setActionError(null);
       try {
-        const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId, lane: "INBOX" });
+        const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId });
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
         setImportMessage(res.message);

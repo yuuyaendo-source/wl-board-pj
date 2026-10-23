@@ -9,9 +9,9 @@ POST /api/bs/brainstorm
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -33,6 +33,7 @@ from app.services.brainstorm_calendar import (
     handle_pending,
     proposal_payload,
 )
+from app.services.llm_settings import get_resolved_ollama_async
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +67,13 @@ class ChatMessage(BaseModel):
 
 class BrainstormRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., description="会話履歴 (古い順)")
-    user_id: Optional[int] = Field(
+    user_id: int | None = Field(
         None, description="Board ユーザ ID (カレンダー登録時必須)"
     )
     calendar_create_enabled: bool = Field(
         False, description="カレンダー登録アクションを有効化"
     )
-    pending_proposal_id: Optional[str] = Field(
+    pending_proposal_id: str | None = Field(
         None, description="確認待ちの提案 ID (修正・承認用)"
     )
 
@@ -114,11 +115,20 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
     if not msgs:
         return None
 
+    ollama_url, model_override = await get_resolved_ollama_async(db)
+
     if req.pending_proposal_id:
         user_text = _last_user_text(req)
         if not user_text:
             return None
-        result = handle_pending(req.user_id, req.pending_proposal_id, user_text)
+        result = await asyncio.to_thread(
+            handle_pending,
+            req.user_id,
+            req.pending_proposal_id,
+            user_text,
+            ollama_url,
+            model_override,
+        )
         mode = result.get("mode")
         spoken = (result.get("spoken") or "").strip()
         if mode == "confirm":
@@ -137,8 +147,13 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
             return _sse_from_spoken(spoken, proposal_payload(p))
         return _sse_from_spoken(spoken or "わかりました。")
 
-    # 新規: 直近の user 発話がカレンダー依頼か判定
-    result = handle_new_calendar_intent(req.user_id, msgs)
+    result = await asyncio.to_thread(
+        handle_new_calendar_intent,
+        req.user_id,
+        msgs,
+        ollama_url,
+        model_override,
+    )
     mode = result.get("mode")
     if mode == "chat":
         return None
@@ -192,7 +207,7 @@ async def brainstorm(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    url, model_override = settings.resolve_ollama_for_target(settings.llm_target)
+    url, model_override = await get_resolved_ollama_async(db)
     if not url:
         raise HTTPException(
             status_code=503, detail="LLM (OLLAMA_URL) が設定されていません"

@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # DB: SQLite (開発) は sqlite+aiosqlite。本番は postgresql+asyncpg 等に変更
     database_url: str = "sqlite+aiosqlite:///./board.db"
 
+    # CORS 許可オリジン（カンマ区切り）
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3010,http://127.0.0.1:3010,https://wlboardsys.internal.wonder-link.com"
+    )
+
+    # 内部通信用共有シークレット（付箋ボード・内部API間認証）
+    internal_api_secret: str = Field(default="wl-internal-secret-change-in-production")
+
     # 管理者用パスワードと JWT 設定
     admin_password: str = Field(default="admin123")
     jwt_secret: str = Field(default="super-secret-key-change-in-production-12345")
@@ -87,18 +95,25 @@ class Settings(BaseSettings):
     @field_validator("token_encryption_key", mode="before")
     @classmethod
     def validate_encryption_key_length(cls, v: object) -> str:
-        # None または 空文字 の場合はエラーを出してアプリ起動を止める
         if v is None or str(v).strip() == "":
-            raise ValueError("TOKEN_ENCRYPTION_KEY が環境変数に設定されていません！")
+            env = (
+                os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development"))
+                .strip()
+                .lower()
+            )
+            if env in ("production", "prod"):
+                raise ValueError("本番環境では TOKEN_ENCRYPTION_KEY の設定が必須です！")
+            logger.warning(
+                "[Config] TOKEN_ENCRYPTION_KEY 未設定のため開発用ダミーキーを使用します。"
+            )
+            return "dev-dummy-encryption-key-32bytes!"
+
         v = str(v).strip()
         key_bytes = v.encode("utf-8")
         if len(key_bytes) < 32 and key_bytes.isascii():
-            # ASCII の既存設定は従来どおりパディングし、保存済みトークンとの互換性を保つ。
             return v.ljust(32, "0")
         if len(key_bytes) == 32 and key_bytes.isascii():
             return v
-        # 文字数で切るとUTF-8のバイト長が揃わないため、32 ASCII文字へ正規化する。
-        # ASCII で32バイト以上のキーは従来の先頭32文字と同じ結果を維持する。
         if key_bytes.isascii():
             return key_bytes[:32].decode("ascii")
         return hashlib.sha256(key_bytes).hexdigest()[:32]
@@ -111,22 +126,16 @@ class Settings(BaseSettings):
     # Google カレンダー連携（OAuth 2.0）。未設定ならカレンダー連携は無効
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
-    google_calendar_redirect_uri: str | None = (
-        None  # 例: https://wlboardsys.example.com/auth/google/callback
-    )
-    # カレンダー「今日」のタイムゾーン。その日 0:00〜23:59 の取得に使用（例: Asia/Tokyo）
+    google_calendar_redirect_uri: str | None = None
     calendar_timezone: str = "Asia/Tokyo"
 
-    # OAuth 成功後のリダイレクト先のプレフィックス。本番で Next basePath が /boards のときは "/boards" を指定
+    # OAuth 成功後のリダイレクト先のプレフィックス
     oauth_success_redirect_base: str = ""
 
-    # 日次スケジュール（日本時間 8:00 run_8am / 10:00 clear_news / 10:15 sync_to_morning + fetch_news）。無効にする場合は false
+    # 日次スケジュール
     scheduler_enabled: bool = True
-    # テスト用: ニュース取得を N 分ごとに実行（0 または未設定で無効）。例: 3 で 3 分ごと
     scheduler_news_interval_minutes: int = 0
-    # Google カレンダー予定をキャッシュへ定期同期する間隔（分）。0 で無効。既定 30 分
     scheduler_calendar_interval_minutes: int = 30
-    # スケジューラが POST する自サーバの URL（同一プロセス内で HTTP 呼び出しするため）。例: http://127.0.0.1:8000
     scheduler_base_url: str = "http://127.0.0.1:8000"
     reconciliation_dry_run: bool = True
 
@@ -155,10 +164,6 @@ class Settings(BaseSettings):
     def resolve_ollama_for_target(
         self, target: int | None
     ) -> tuple[str | None, str | None]:
-        """
-        スロット target（None = 環境の OLLAMA_URL のみ）に対応する (base_url, model_override)。
-        model_override が None のときは Ollama 側でモデル自動解決。
-        """
         if target is None:
             return self.ollama_url, self.ollama_model
         urls = {1: self.ollama_url_1, 2: self.ollama_url_2, 3: self.ollama_url_3}
@@ -173,16 +178,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> "Settings":
-        """本番シークレットと LLM_TARGET の設定を起動時に検証。"""
         production_modes = {"production", "prod"}
         if (
             self.environment.strip().lower() in production_modes
             or os.getenv("NODE_ENV", "").strip().lower() in production_modes
         ):
             if self.admin_password == "admin123":
-                raise ValueError("本番環境では ADMIN_PASSWORD を既定値から変更してください。")
+                raise ValueError(
+                    "本番環境では ADMIN_PASSWORD を既定値から変更してください。"
+                )
             if self.jwt_secret == "super-secret-key-change-in-production-12345":
-                raise ValueError("本番環境では JWT_SECRET を安全な値に変更してください。")
+                raise ValueError(
+                    "本番環境では JWT_SECRET を安全な値に変更してください。"
+                )
+            if self.internal_api_secret == "wl-internal-secret-change-in-production":
+                raise ValueError(
+                    "本番環境では INTERNAL_API_SECRET を既定値から変更してください。"
+                )
         t = self.llm_target
         if t is None:
             return self
@@ -198,7 +210,6 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# 本番環境向けの警告ログ
 if settings.admin_password == "admin123":
     logger.warning(
         "WARNING: admin_password がデフォルト値 ('admin123') です。本番環境では .env で安全なパスワードに変更してください。"

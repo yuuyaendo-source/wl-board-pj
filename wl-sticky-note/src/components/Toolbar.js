@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import styles from "./Toolbar.module.css";
-import { MIN_SCALE, MAX_SCALE } from "../app/board/[id]/page";
+import { MIN_SCALE, MAX_SCALE } from "@/constants/board";
 
 const COLORS = [
     "#ffeb3b", // Yellow
@@ -38,6 +38,11 @@ export default function Toolbar({
         }
     };
 
+    // 修正⑨: 開発環境ではローカルの 3001 ポートへフォールバック
+    const defaultBoardUrl = process.env.NODE_ENV === "production"
+        ? "https://wlboardsys.internal.wonder-link.com/boards"
+        : "http://localhost:3001/boards";
+
     return (
         <div className={styles.toolbar}>
             <div className={styles.primaryBlock}>
@@ -72,7 +77,6 @@ export default function Toolbar({
 
                 <div className={styles.divider} role="separator" aria-hidden="true" />
 
-                {/* 並び順: センターへ戻る → 付箋一覧表示 → 付箋一覧保存 → 付箋データをインポート → 全削除 */}
                 <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="センターへ戻る">
                         <button type="button" className={styles.iconBtn} onClick={onCenter} aria-label="センターへ戻る">🎯</button>
@@ -140,7 +144,7 @@ export default function Toolbar({
                 <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="Board System を開く">
                         <a
-                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || "https://wlboardsys.internal.wonder-link.com/boards").replace(/\/$/, "") + "/taskboard"}
+                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || defaultBoardUrl).replace(/\/$/, "") + "/taskboard"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={styles.iconBtn}
@@ -152,7 +156,6 @@ export default function Toolbar({
                     </span>
                 </div>
             </div>
-
         </div>
     );
 }

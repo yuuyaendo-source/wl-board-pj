@@ -77,8 +77,6 @@ import signal
 import subprocess
 import threading
 import time
-import warnings
-import webbrowser
 from urllib.parse import quote_plus
 import pystray
 
@@ -118,7 +116,7 @@ ImageDraw = _PIL_ImageDraw
 
 from core.config_loader import load_config, save_config
 from services import notifications
-from services.postit_poll import start_postit_poll, fetch_summary_with_error
+from services.postit_poll import start_postit_poll
 from core import startup
 from core.version import __version__
 from core.update_checker import check_and_notify
@@ -429,14 +427,16 @@ def _on_calendar_remind_ui(items):
         try:
             from services.calendar_notify_client import (
                 post_shown,
-                calendar_remind_minutes,
+                calendar_remind_minutes_list,
+                DEFAULT_MINUTES_BEFORE,
             )
             from services.remind_notify import deliver_remind
 
             cfg = load_config()
             minutes = item.get("minutes_before")
             if minutes is None:
-                minutes = calendar_remind_minutes(cfg)
+                mins_list = calendar_remind_minutes_list(cfg)
+                minutes = mins_list[0] if mins_list else DEFAULT_MINUTES_BEFORE
             if not post_shown(cfg, item, minutes_before=minutes):
                 log_info("[calendar_notify] shown API 失敗")
             deliver_remind(
@@ -547,66 +547,6 @@ def quit_app(icon, item):
         on_closing()
 
 
-def _test_postit_connection(*args):
-    def do_test():
-        cfg = load_config()
-        url = (cfg.get("postit_board_url") or "").strip().rstrip("/")
-        board_id = (cfg.get("postit_board_id") or "").strip()
-        if not url or not board_id:
-            notifications.show_toast(
-                "付箋ボード接続テスト",
-                "config.json の postit_board_url と postit_board_id を設定してください。",
-                duration_sec=5,
-            )
-            return
-        summary, err = fetch_summary_with_error(url, board_id, cfg=cfg)
-        if err:
-            notifications.show_toast(
-                "付箋ボード接続テスト",
-                "接続できません: " + err,
-                duration_sec=8,
-            )
-        else:
-            n = summary.get("notesCount", 0)
-            notifications.show_toast(
-                "付箋ボード接続テスト",
-                f"接続できました。付箋 {n} 件（通知は約1分間隔でチェックしています）",
-                duration_sec=5,
-            )
-
-    threading.Thread(target=do_test, daemon=True).start()
-
-
-def _show_notification_help(*args):
-    msg = (
-        "通知をオフにすると、アプリや再インストールではオンに戻せません。\n\n"
-        "【対処1】設定でオンに戻す\n"
-        "  設定 → システム → 通知 で「Wonder Linko」等を探し、スイッチをオンに。\n\n"
-        "【対処2】一覧に出てこない場合\n"
-        "  docs の「通知設定をリセットする.ps1」を実行（アプリ終了後）。\n\n"
-        "【対処3】レジストリ削除でも直らない場合\n"
-        "  最新版の MSI で再インストールしてください。新版は通知用IDを変更しているため、通知が復活することがあります。"
-    )
-    try:
-        from tkinter import messagebox
-
-        if _miniport_window is not None:
-            messagebox.showinfo(
-                "Wonder Linko - 通知が表示されない場合", msg, parent=_miniport_window
-            )
-        else:
-            import tkinter
-
-            root = tkinter.Tk()
-            root.withdraw()
-            messagebox.showinfo(
-                "Wonder Linko - 通知が表示されない場合", msg, parent=root
-            )
-            root.destroy()
-    except Exception:
-        pass
-
-
 def _show_email_login_dialog() -> str | None:
     """メールアドレス入力ダイアログを表示し、入力値を返す。"""
     try:
@@ -618,28 +558,6 @@ def _show_email_login_dialog() -> str | None:
         )
     except Exception:
         return None
-
-
-def _board_system_login_clicked(*args) -> None:
-    """トレイメニュー等から Board System ログインを実行する。"""
-    global _config
-    _config = load_config()
-
-    email = _show_email_login_dialog()
-    # キャンセル（None）の場合は何もしない。空入力は警告を出す。
-    if email is None:
-        return
-
-    from services.board_system_auth import login_with_email
-
-    success, msg, personal_url = login_with_email(email, _config)
-    notifications.show_toast(
-        "Wonder Linko", msg, duration_sec=4 if success else 5, force_show=True
-    )
-    if success and personal_url:
-        from core.security import safe_webbrowser_open
-
-        safe_webbrowser_open(personal_url, _config)
 
 
 def build_menu(icon):

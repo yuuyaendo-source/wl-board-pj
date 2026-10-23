@@ -2,7 +2,7 @@
 """ミニポート用 2D リン子アバターのマネージャ。
 
 - features.linko_avatar=True のとき有効化
-- 11 ポーズ (normal/happy/sad/angry/funny + 母音 a/i/u/e/o) を assets/avatar/ から読む
+- 10 ポーズ (normal/happy/sad/angry/funny + 母音 a/i/u/e/o) を assets/avatar/ から読む
 - 音声再生中に start_lipsync(duration_sec) を呼ぶと a/i/u/e/o をランダム切替
 - 終了時に stop_lipsync() で normal に戻す
 - mini_port から register_ui_callback(cb) を呼んで UI 更新フックを登録
@@ -267,12 +267,13 @@ def say(
     base_pose: str = "normal",
     lipsync: bool = True,
     standalone: bool = False,
+    force_show: bool = False,
 ) -> None:
-    """吹き出し + (任意で) 口パくを開始する統合 API。"""
+    """吹き出し + (任意で) 口パクを開始する統合 API。force_show=True の場合は通知スイッチが OFF でも表示する。"""
     try:
         from services.notifications import are_enabled
 
-        if not are_enabled():
+        if not are_enabled() and not force_show:
             return
     except Exception:
         pass

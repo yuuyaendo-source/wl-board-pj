@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """管理用: LLM エンドポイント（スロット）の切替。DB で環境変数 LLM_TARGET を上書き。"""
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException

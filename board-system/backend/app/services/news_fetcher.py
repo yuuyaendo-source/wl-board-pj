@@ -67,12 +67,19 @@ def fetch_rss_text() -> str:
     return "\n".join(lines) if lines else ""
 
 
-def fetch_and_summarize_news() -> str | None:
+def fetch_and_summarize_news(
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> str | None:
     """
     RSS を取得し、Ollama で要約テキスト（Markdown）を生成する。
     OLLAMA_URL 未設定時・失敗時は None。
     """
-    resolved_url, _ = settings.resolve_ollama_for_target(settings.llm_target)
+    if ollama_url is None:
+        resolved_url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
+    else:
+        resolved_url, model_ov = ollama_url, model_override
+
     if not resolved_url:
         logger.info("ニュース要約: OLLAMA が未設定のためスキップ")
         return None
@@ -81,7 +88,7 @@ def fetch_and_summarize_news() -> str | None:
         logger.warning("ニュース要約: 取得したニュースが空でした")
         return None
     prompt = NEWS_PROMPT_TEMPLATE.format(news_text=news_text)
-    result = generate_text(prompt)
+    result = generate_text(prompt, ollama_url=resolved_url, model_override=model_ov)
     if not result or not result.strip():
         logger.warning("ニュース要約: LLM が空の応答を返しました")
         return None

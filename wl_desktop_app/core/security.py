@@ -31,7 +31,6 @@ _DEFAULT_EXACT_HOSTS = frozenset(
 URL_CONFIG_KEYS = (
     "ai_board_url",
     "postit_board_url",
-    "mini_port_api_url",
     "mini_port_taskboard_url",
     "update_check_url",
     "board_system_url",

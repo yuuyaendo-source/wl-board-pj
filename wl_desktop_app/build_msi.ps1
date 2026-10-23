@@ -75,7 +75,6 @@ if ([string]::IsNullOrWhiteSpace($certPwd)) {
 
 # 証明書の有効期限チェック (絶対パス化 & 詳細エラー出力)
 try {
-    # .NET のファイル参照エラーを防ぐため絶対パスで読み込み
     $pfxFullPath = (Get-Item $certPfx).FullName
     $certObj = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxFullPath, $certPwd)
     $daysLeft = ($certObj.NotAfter - [datetime]::Now).Days
@@ -198,6 +197,15 @@ if ($msiPath) {
         Copy-Item -Path "scripts\install.bat" -Destination "dist\" -Force
     }
 
+    # 8. SHA-256 チェックサムの算出と表示
+    $msiHash = (Get-FileHash -Algorithm SHA256 -Path $msiPath.FullName).Hash.ToLower()
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host "MSI SHA-256 Checksum:" -ForegroundColor Yellow
+    Write-Host "$msiHash" -ForegroundColor White
+    Write-Host "backend/desktop_app_releases/latest.json の sha256 に設定してください。" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host ""
     Write-Host "Distribute the contents of 'dist/' directory as a ZIP." -ForegroundColor Cyan
 }
 else {
