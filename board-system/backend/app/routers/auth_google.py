@@ -446,28 +446,7 @@ async def _refresh_user_calendar_and_today(
 
     today_date = now_jst().date()
 
-    r_old_cal = await db.execute(
-        select(BoardPlacement, StickyNote)
-        .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
-        .where(
-            BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.owner_id == user_id,
-            BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
-            StickyNote.due_date < today_date,
-        )
-    )
-    for p_old, n_old in r_old_cal.all():
-        old_note_id = p_old.note_id
-        await db.delete(p_old)
-        await db.flush()
-        r_other = await db.execute(
-            select(BoardPlacement.id)
-            .where(BoardPlacement.note_id == old_note_id)
-            .limit(1)
-        )
-        if r_other.scalar_one_or_none() is None:
-            await db.delete(n_old)
-
+    # 当該ユーザーのパーソナルにあるすべてのカレンダー由来付箋を取得（due_date の NULL や過去日・別レーンも網羅）
     r_cal = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -475,7 +454,6 @@ async def _refresh_user_calendar_and_today(
             BoardPlacement.board_type == BoardType.PERSONAL,
             BoardPlacement.owner_id == user_id,
             BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
-            StickyNote.due_date == today_date,
         )
     )
     existing_pairs = r_cal.all()
@@ -503,6 +481,7 @@ async def _refresh_user_calendar_and_today(
     matched_placement_ids = set()
     matched_event_indices = set()
 
+    # 1. イベントIDによるマッチング
     for t_idx, target in enumerate(target_events):
         if not target["event_id"]:
             continue
@@ -513,6 +492,8 @@ async def _refresh_user_calendar_and_today(
             if n.postit_note_id and n.postit_note_id == ev_key:
                 matched_placement_ids.add(p.id)
                 matched_event_indices.add(t_idx)
+                if n.due_date != today_date:
+                    n.due_date = today_date
                 if p.lane == Lane.TODAY:
                     if n.content != target["label"]:
                         n.content = target["label"]
@@ -520,6 +501,7 @@ async def _refresh_user_calendar_and_today(
                         p.placement_source = target["source"]
                 break
 
+    # 2. タイトル（ラベルまたはサマリ）によるマッチング
     for t_idx, target in enumerate(target_events):
         if t_idx in matched_event_indices:
             continue
@@ -534,6 +516,8 @@ async def _refresh_user_calendar_and_today(
                 matched_event_indices.add(t_idx)
                 if target["event_id"] and not n.postit_note_id:
                     n.postit_note_id = target["event_id"][:64]
+                if n.due_date != today_date:
+                    n.due_date = today_date
                 if p.lane == Lane.TODAY:
                     if n.content != target_label:
                         n.content = target_label
@@ -541,24 +525,22 @@ async def _refresh_user_calendar_and_today(
                         p.placement_source = target["source"]
                 break
 
+    # 3. 今日の予定にマッチしなかったカレンダー付箋を削除（レーン・日付に関わらず確実に削除）
     for p, n in existing_pairs:
         if p.id not in matched_placement_ids:
-            if p.lane == Lane.TODAY:
-                nid = p.note_id
-                await db.delete(p)
-                await db.flush()
-                r_other = await db.execute(
-                    select(BoardPlacement.id)
-                    .where(BoardPlacement.note_id == nid)
-                    .limit(1)
+            nid = p.note_id
+            await db.delete(p)
+            await db.flush()
+            r_other = await db.execute(
+                select(BoardPlacement.id).where(BoardPlacement.note_id == nid).limit(1)
+            )
+            if r_other.scalar_one_or_none() is None:
+                r_note = await db.execute(
+                    select(StickyNote).where(StickyNote.id == nid)
                 )
-                if r_other.scalar_one_or_none() is None:
-                    r_note = await db.execute(
-                        select(StickyNote).where(StickyNote.id == nid)
-                    )
-                    note_row = r_note.scalar_one_or_none()
-                    if note_row:
-                        await db.delete(note_row)
+                note_row = r_note.scalar_one_or_none()
+                if note_row:
+                    await db.delete(note_row)
 
     r_sort = await db.execute(
         select(func.coalesce(func.max(BoardPlacement.sort_order), -1)).where(
@@ -569,6 +551,7 @@ async def _refresh_user_calendar_and_today(
     )
     next_sort = (r_sort.scalar() or 0) + 1
 
+    # 4. 新規予定の付箋作成
     for t_idx, target in enumerate(target_events):
         if t_idx in matched_event_indices:
             continue
@@ -624,7 +607,23 @@ async def get_live_calendar_events(user_id: int, db: AsyncSession = Depends(get_
     events = await _fetch_today_events_for_user(user_id, db)
     if events is None:
         return {"events": cached_events, "synced": False, "stickies_updated": False}
-    stickies_updated = events_fingerprint(cached_events) != events_fingerprint(events)
+
+    # DB内の現在のカレンダー付箋数を取得して、予定数との乖離も検知
+    r_has_cal = await db.execute(
+        select(func.count(BoardPlacement.id)).where(
+            BoardPlacement.board_type == BoardType.PERSONAL,
+            BoardPlacement.owner_id == user_id,
+            BoardPlacement.placement_source.in_(CALENDAR_PLACEMENT_SOURCES),
+        )
+    )
+    current_cal_count = r_has_cal.scalar() or 0
+    valid_events_count = len(
+        [e for e in (events or []) if not should_skip_calendar_sticky(e)]
+    )
+    fingerprint_diff = events_fingerprint(cached_events) != events_fingerprint(events)
+
+    # フィンガープリント変更、またはDB付箋数とカレンダー予定数に不一致がある場合は必ず同期・削除を実施
+    stickies_updated = fingerprint_diff or (current_cal_count != valid_events_count)
     if stickies_updated:
         await _refresh_user_calendar_and_today(user_id, db, events=events)
     else:
@@ -663,7 +662,28 @@ async def calendar_sync_all_events(db: AsyncSession = Depends(get_db)):
 
                 events = await _fetch_today_events_for_user(uid, db)
                 if events is not None:
-                    if events_fingerprint(cached_events) != events_fingerprint(events):
+                    r_has_cal = await db.execute(
+                        select(func.count(BoardPlacement.id)).where(
+                            BoardPlacement.board_type == BoardType.PERSONAL,
+                            BoardPlacement.owner_id == uid,
+                            BoardPlacement.placement_source.in_(
+                                CALENDAR_PLACEMENT_SOURCES
+                            ),
+                        )
+                    )
+                    current_cal_count = r_has_cal.scalar() or 0
+                    valid_events_count = len(
+                        [
+                            e
+                            for e in (events or [])
+                            if not should_skip_calendar_sticky(e)
+                        ]
+                    )
+                    fingerprint_diff = events_fingerprint(
+                        cached_events
+                    ) != events_fingerprint(events)
+
+                    if fingerprint_diff or (current_cal_count != valid_events_count):
                         await _refresh_user_calendar_and_today(uid, db, events=events)
                     else:
                         await _sync_user_calendar_events_cache(uid, db, events=events)
