@@ -24,6 +24,28 @@ def _api_root(cfg: dict) -> str:
     return f"{base}/api/face_registry"
 
 
+def capture_page_url(cfg: dict, person_id: str, token: str) -> Optional[str]:
+    """linko-system の撮影専用画面（/capture）の URL。許可されていなければ None。
+
+    撮影は linko-system の画面で行う（構えて、ゆっくり動かす・採点・複数枚登録。/manager と同じ部品）。
+    トークンは URL のフラグメント（#p=…&t=…）に置く＝サーバへ送られずアクセスログに残らない。
+    検証はトークンを付ける前の URL で行う（拒否ログにトークンを残さない）。
+    """
+    base = (cfg.get("linko_server_url") or "").strip().rstrip("/")
+    if not base or not person_id or not token:
+        return None
+    page = f"{base}/capture"
+    try:
+        from core.security import validate_http_url
+
+        ok, _err = validate_http_url(page, cfg, purpose="browser")
+    except Exception:
+        ok = False
+    if not ok:
+        return None
+    return f"{page}#p={quote(str(person_id), safe='')}&t={quote(str(token), safe='')}"
+
+
 def _headers(token: Optional[str] = None) -> dict[str, str]:
     h = {"Accept": "application/json"}
     if token:
