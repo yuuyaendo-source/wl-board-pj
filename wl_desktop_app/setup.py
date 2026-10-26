@@ -117,28 +117,9 @@ build_exe_options = {
         # Phase 5a 資料添付: PDF/Word テキスト抽出
         "pypdf",
         "docx",
-        # 自前モジュールも明示。app.py の try/except 内 import は cx_Freeze の
-        # 静的解析が拾い損ねる可能性があるため。
-        "visitor_notify_client",
-        "settings_dialog",
-        "linko_avatar",
-        "speech_bubble",
-        "theme",
-        "chat_panel",
-        "audio_player",
-        "task_remind_client",
-        "task_remind_dialog",
-        "linko_cards",
-        "calendar_notify_client",
-        "remind_notify",
-        "face_registry_client",
-        "face_registry_admin_dialog",
-        "face_registry_self_client",
-        "face_registry_self_dialog",
-        "voice_registry_self_dialog",
-        "webcam_capture",
-        "voice_capture",
-        "edit_name_dialog",
+        # 自前モジュールは下の "packages" で core/services/ui/hardware を丸ごと
+        # 取り込む（app.py の try/except 内 import を cx_Freeze の静的解析が拾い
+        # 損ねても確実に凍結される／モジュール移動でも壊れない）。
     ],
     "packages": [
         "customtkinter",
@@ -149,6 +130,11 @@ build_exe_options = {
         "cv2",
         "numpy",
         "sounddevice",
+        # 自前パッケージ（再編後）。サブモジュールごと凍結する。
+        "core",
+        "services",
+        "ui",
+        "hardware",
     ],
     "zip_exclude_packages": ["*"],
 }
