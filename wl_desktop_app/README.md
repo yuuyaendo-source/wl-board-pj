@@ -177,20 +177,54 @@ flowchart TD
 
 ## 開発者向け：ビルドとリリース
 
+> **ビルドはすべて `wl_desktop_app/` ディレクトリで実行**します（`.\build_msi.ps1` / `.\scripts\generate_cert.ps1`）。
+> 下記 0〜2 は **新しいビルド PC では 0 → 1 → 2 の順**に。0・1 は初回のみ、2 が毎回のビルドです。
+
+### 0. 前提ツールの準備（ビルド PC で初回のみ）
+
+- **Windows SDK（signtool.exe）**: コード署名に `signtool.exe` が必要です。未導入だとビルドが
+  「`signtool.exe が見つかりません`」で停止します。管理者 PowerShell で導入:
+
+  ```powershell
+  winget install --id Microsoft.WindowsSDK.10.0.26100 -e
+  # バージョンは環境により異なる。`winget search "Windows SDK"` で最新の Microsoft.WindowsSDK.10.x を選べば可。
+  # winget が使えない場合は Windows SDK 単体インストーラで「Signing Tools for Desktop Apps」のみでも可。
+  # 導入後は PATH 反映のため PowerShell を開き直す。
+  ```
+
+  `build_msi.ps1` は `C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe`（と 8.1）を自動探索します。
+
 ### 1. 署名証明書の作成（初回のみ）
 
 ```powershell
+# 先にプロジェクトルート（= wl_desktop_app）の .env に CERT_PASSWORD を設定しておく
+#   .env 例:  CERT_PASSWORD=<好きな半角英数のパスワード>
 .\scripts\generate_cert.ps1
-# エクスポート用パスワードを入力 → プロジェクトルートの .env に CERT_PASSWORD=パスワード を設定
+# → cert\WonderLink_CodeSigning.pfx（秘密鍵付き）と cert\WonderLink_InternalRoot.cer（公開鍵）を生成
 ```
 
-### 2. MSI パッケージのビルド
+- `.env` の `CERT_PASSWORD` を先に設定してから `generate_cert.ps1` を実行すると、pfx の保護パスワードと
+  `build_msi.ps1` が開くパスワードが一致します（後で入れ直すと食い違うので先に設定）。
+- 🔑 `cert\*.pfx` は **秘密鍵を含むので git に上げない**（`.gitignore` 済み）。各ビルド PC で初回に生成します。
+
+### 2. MSI パッケージのビルド（毎回）
 
 ```powershell
 .\build_msi.ps1
 # → dist\WonderLinko.msi が生成され、バイナリおよび MSI にコード署名が自動付与されます
+# 末尾に MSI の SHA-256 が表示される（下の「3. 配信」で使用）
 ```
 
 ### 3. 本番サーバへの配信
 
-生成された `dist\WonderLinko.msi` を本番サーバの `board-system/backend/desktop_app_releases/` へ転送し、`latest.json` のバージョンを更新します（詳細は [desktop_app_releases/README.md](../board-system/backend/desktop_app_releases/README.md) 参照）。
+生成された `dist\WonderLinko.msi` を本番サーバの `board-system/backend/desktop_app_releases/` へ転送し、`latest.json` のバージョン・`sha256`（ビルド末尾に表示される値）を更新します（詳細は [desktop_app_releases/README.md](../board-system/backend/desktop_app_releases/README.md) 参照）。
+
+### よくあるビルドエラーと対処
+
+| 症状 | 原因 | 対処 |
+|------|------|------|
+| `.ps1` 実行時にパースエラー（例「単項演算子 '--' の後に式が…」） | `.ps1` が **UTF-8 BOM なし**で、日本語を含むと Windows PowerShell 5.1 が Shift-JIS と誤認してパーサが崩れる | `.ps1` は **UTF-8 BOM 付き**で保存する（`build_msi.ps1`/`start_app.ps1`/`scripts\generate_cert.ps1` は対応済み。`.gitattributes` で `*.ps1 text eol=crlf`） |
+| `signtool.exe が見つかりません` | Windows SDK 未導入 | 上記「0. 前提ツールの準備」で Windows SDK を導入し、PowerShell を開き直す |
+| `証明書ファイル (cert\WonderLink_CodeSigning.pfx) が見つかりません` | 初回セットアップ未実施 | 「1. 署名証明書の作成」を実施（`.env` に `CERT_PASSWORD` → `generate_cert.ps1`） |
+| `ModuleNotFoundError: No module named '<自前モジュール>'`（setup.py で停止） | ディレクトリ再編でモジュールを `core/ services/ ui/ hardware/` へ移したのに import が旧トップレベル名のまま | import は `from core.xxx import ...` のようにパッケージ修飾する（`core/` 等を sys.path に通す仕組みは無い） |
+| `ImportError: No module named '<自前モジュール>'`（build_exe / cx_Freeze で停止） | `setup.py` の `build_exe_options` が旧トップレベル名で自前モジュールを `includes` 列挙していた | 自前モジュールは個別列挙せず、`packages` に `core`/`services`/`ui`/`hardware` を入れてサブモジュールごと丸ごと凍結する（モジュール移動に強い） |
