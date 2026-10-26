@@ -1,4 +1,4 @@
-# 初回セットアップ用: 自己署名コードサイニング証明書の生成
+﻿# 初回セットアップ用: 自己署名コードサイニング証明書の生成
 Set-Location $PSScriptRoot\..
 
 if (-not (Test-Path "cert")) {

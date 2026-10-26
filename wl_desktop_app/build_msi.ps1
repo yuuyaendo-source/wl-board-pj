@@ -1,4 +1,4 @@
-# Wonder Linko Desktop App - MSI ビルド（cx_Freeze）
+﻿# Wonder Linko Desktop App - MSI ビルド（cx_Freeze）
 # 会社ポリシーで exe 直接実行が不可なため、MSI 形式で配布する。
 # 実行: .\build_msi.ps1
 # 出力: dist\WonderLinko.msi およびインストール用スクリプト
