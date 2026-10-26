@@ -10,6 +10,7 @@ export interface PersonalMember {
   name: string;
   email?: string | null;
   call_name?: string | null;
+  teamIds: number[];
 }
 
 /** API の /users からメンバー一覧を取得。メンバー増減に対応する */
@@ -35,6 +36,11 @@ export function usePersonalMembers(): {
           name: u.name,
           email: u.email ?? undefined,
           call_name: u.call_name ?? undefined,
+          teamIds: Array.isArray(u.team_ids)
+            ? u.team_ids.map(Number)
+            : Array.isArray(u.teams)
+              ? u.teams.map((t) => Number(t.id))
+              : [],
         }))
       );
     } catch (e) {

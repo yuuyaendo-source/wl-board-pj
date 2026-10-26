@@ -1,0 +1,869 @@
+# -*- coding: utf-8 -*-
+"""リン子とのブレスト用チャットパネル (Phase 5a)。
+
+アバタークリックで開く。board-system の /brainstorm (SSE streaming) に会話履歴を
+送り、応答を 1 トークンずつ表示する。会話履歴はパネルを開いている間メモリ保持。
+"""
+from __future__ import annotations
+
+import json
+import os
+import queue
+import re
+import threading
+from typing import Optional
+
+_EMOJI_RE = re.compile(
+    "[\U0001f300-\U0001faff\U0001f1e6-\U0001f1ff"
+    "\U00002600-\U000027bf\U00002b00-\U00002bff\U0000fe00-\U0000fe0f]+"
+)
+_SPEAKABLE_RE = re.compile("[0-9A-Za-z぀-ゟ゠-ヿ㐀-鿿ｦ-ﾟ]")
+
+
+def _clean_for_tts(text: str) -> str:
+    cleaned = _EMOJI_RE.sub("", text).strip()
+    if not _SPEAKABLE_RE.search(cleaned):
+        return ""
+    return cleaned
+
+
+try:
+    import customtkinter as ctk
+except ImportError as e:
+    print("customtkinter が見つかりません。", e)
+    raise
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+from core.config_loader import load_config
+
+try:
+    from core.app_log import log_info as _log
+except Exception:
+
+    def _log(msg: str) -> None:
+        print(msg, flush=True)
+
+
+_panel_instance: Optional["ChatPanel"] = None
+
+
+def _board_api_base() -> str:
+    cfg = load_config()
+    base = (cfg.get("board_system_url") or "").strip().rstrip("/")
+    if not base:
+        base = "https://wlboardsys.internal.wonder-link.com/api/bs"
+    return base
+
+
+def _brainstorm_url() -> str:
+    return _board_api_base() + "/brainstorm"
+
+
+def _board_user_id(cfg: Optional[dict] = None) -> Optional[int]:
+    if cfg is None:
+        cfg = load_config()
+    pid = (cfg.get("board_system_personal_id") or "").strip()
+    if pid.isdigit():
+        return int(pid)
+    return None
+
+
+def _tts_url() -> Optional[str]:
+    cfg = load_config()
+    base = (cfg.get("linko_server_url") or "").strip().rstrip("/")
+    if not base:
+        return None
+    return base + "/api/v2/tts"
+
+
+class ChatPanel(ctk.CTkToplevel):
+    WIDTH = 420
+    HEIGHT = 560
+    _GAP = 8
+
+    @staticmethod
+    def _rects_overlap(x1, y1, w1, h1, x2, y2, w2, h2) -> bool:
+        return not (x1 + w1 <= x2 or x1 >= x2 + w2 or y1 + h1 <= y2 or y1 >= y2 + h2)
+
+    def __init__(self, master=None):
+        super().__init__(master)
+        self.title("リン子とブレスト")
+        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        self.minsize(360, 420)
+        self._messages: list[dict] = []
+        self._streaming = False
+        self._last_assistant_text = ""
+        self._pending_attachment = None
+        self._pending_proposal_id: Optional[str] = None
+        self._pending_draft: Optional[dict] = None
+        self._sentence_q: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._audio_q: "queue.Queue" = queue.Queue(maxsize=6)
+        self._tts_workers_started = False
+        self._tts_cancel = threading.Event()
+        self._build_ui()
+        self._position_near(master)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.lift()
+        self.focus_force()
+        self._append_line(
+            "リン子",
+            "こんにちは。何でも相談してくださいね。アイデア出しのお手伝いもしますよ。",
+        )
+
+    def _position_near(self, master) -> None:
+        if master is None:
+            return
+        try:
+            self.update_idletasks()
+            master.update_idletasks()
+            mx = master.winfo_rootx()
+            my = master.winfo_rooty()
+            mw = master.winfo_width() or 264
+            mh = master.winfo_height() or 224
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            pw, ph = self.WIDTH, self.HEIGHT
+            gap = self._GAP
+
+            def clamp_x(x: int) -> int:
+                return max(0, min(int(x), max(0, sw - pw - gap)))
+
+            def clamp_y(y: int) -> int:
+                return max(0, min(int(y), max(0, sh - ph - gap)))
+
+            def fits(x: int, y: int) -> bool:
+                return (
+                    x >= 0
+                    and y >= 0
+                    and x + pw <= sw
+                    and y + ph <= sh
+                    and not self._rects_overlap(x, y, pw, ph, mx, my, mw, mh)
+                )
+
+            candidates = [
+                (mx + mw - pw, my - ph - gap),
+                (mx, my - ph - gap),
+                (mx + mw - pw, my + mh + gap),
+                (mx, my + mh + gap),
+                (mx - pw - gap, my),
+                (mx - pw - gap, my + mh - ph),
+                (mx + mw + gap, my),
+            ]
+
+            x, y = candidates[0]
+            for cx, cy in candidates:
+                cx, cy = clamp_x(cx), clamp_y(cy)
+                if fits(cx, cy):
+                    x, y = cx, cy
+                    break
+            else:
+                x, y = clamp_x(mx + mw - pw), clamp_y(my - ph - gap)
+
+            self.geometry(f"{pw}x{ph}+{x}+{y}")
+        except Exception:
+            pass
+
+    def _build_ui(self) -> None:
+        self._chat = ctk.CTkTextbox(self, wrap="word", font=ctk.CTkFont(size=13))
+        self._chat.pack(fill="both", expand=True, padx=10, pady=(10, 6))
+        self._chat.configure(state="disabled")
+
+        self._proposal_frame = ctk.CTkFrame(
+            self, fg_color=("#e8f4e8", "#1e2e1e"), corner_radius=8
+        )
+        self._proposal_title = ctk.CTkLabel(
+            self._proposal_frame,
+            text="📅 予定の確認",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        self._proposal_title.pack(fill="x", padx=10, pady=(8, 2))
+        self._proposal_detail = ctk.CTkLabel(
+            self._proposal_frame,
+            text="",
+            anchor="w",
+            justify="left",
+            wraplength=self.WIDTH - 48,
+        )
+        self._proposal_detail.pack(fill="x", padx=10, pady=(0, 4))
+        self._proposal_hint = ctk.CTkLabel(
+            self._proposal_frame,
+            text="チャットで「15時にして」「はい」でも操作できます",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+        )
+        self._proposal_hint.pack(fill="x", padx=10, pady=(0, 6))
+        prop_btns = ctk.CTkFrame(self._proposal_frame, fg_color="transparent")
+        prop_btns.pack(fill="x", padx=10, pady=(0, 8))
+        self._proposal_confirm_btn = ctk.CTkButton(
+            prop_btns,
+            text="登録する",
+            width=88,
+            command=self._on_proposal_confirm,
+            fg_color=("#3d8b40", "#1b5e20"),
+        )
+        self._proposal_confirm_btn.pack(side="left")
+        self._proposal_cancel_btn = ctk.CTkButton(
+            prop_btns,
+            text="やめる",
+            width=72,
+            command=self._on_proposal_cancel,
+            fg_color="transparent",
+            border_width=1,
+        )
+        self._proposal_cancel_btn.pack(side="left", padx=(8, 0))
+
+        self._note_btn = ctk.CTkButton(
+            self,
+            text="📝 リン子の回答を付箋にする",
+            height=32,
+            command=self._on_make_note,
+            state="disabled",
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        )
+        self._note_btn.pack(fill="x", padx=10, pady=(0, 6))
+
+        attach_row = ctk.CTkFrame(self, fg_color="transparent")
+        attach_row.pack(fill="x", padx=10, pady=(0, 6))
+        self._attach_label = ctk.CTkLabel(
+            attach_row,
+            text="📎 添付なし",
+            anchor="w",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=12),
+        )
+        self._attach_label.pack(side="left", fill="x", expand=True)
+        self._attach_btn = ctk.CTkButton(
+            attach_row,
+            text="📎 資料を添付",
+            width=110,
+            height=28,
+            command=self._on_attach,
+            fg_color=("#dcefdd", "#22692a"),
+            hover_color=("#c8e6c9", "#2e7d32"),
+            text_color=("#1b5e20", "#e8f5e9"),
+        )
+        self._attach_btn.pack(side="right")
+
+        self._hint_label = ctk.CTkLabel(
+            self,
+            text="Ctrl + Enter で送信",
+            text_color=("gray40", "gray60"),
+            font=ctk.CTkFont(size=11),
+            anchor="e",
+        )
+        self._hint_label.pack(fill="x", padx=14, pady=(0, 2))
+
+        bottom = ctk.CTkFrame(self, fg_color="transparent")
+        bottom.pack(fill="x", padx=10, pady=(0, 10))
+        self._entry = ctk.CTkTextbox(
+            bottom, height=60, wrap="word", font=ctk.CTkFont(size=13)
+        )
+        self._entry.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        self._entry.bind("<Control-Return>", self._on_send_shortcut)
+        self._send_btn = ctk.CTkButton(
+            bottom,
+            text="送信",
+            width=64,
+            command=self._on_send,
+            fg_color=("#3d8b40", "#1b5e20"),
+            hover_color=("#2f7a33", "#145214"),
+        )
+        self._send_btn.pack(side="right")
+
+    def _format_proposal_detail(self, draft: dict) -> str:
+        summary = (draft.get("summary") or "（無題）").strip()
+        start = (draft.get("start") or "").strip()
+        end = (draft.get("end") or "").strip()
+        try:
+            from datetime import datetime
+
+            st = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            en = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            if st.tzinfo:
+                st = st.astimezone()
+                en = en.astimezone()
+            line = f"{st.strftime('%m/%d %H:%M')}〜{en.strftime('%H:%M')}"
+        except Exception:
+            line = f"{start} 〜 {end}".strip(" 〜")
+        return f"{summary}\n{line}"
+
+    def _show_proposal_card(self) -> None:
+        if not self._pending_draft:
+            return
+        self._proposal_detail.configure(
+            text=self._format_proposal_detail(self._pending_draft)
+        )
+        if not self._proposal_frame.winfo_ismapped():
+            self._proposal_frame.pack(
+                fill="x", padx=10, pady=(0, 6), before=self._note_btn
+            )
+
+    def _clear_proposal_card(self) -> None:
+        self._pending_proposal_id = None
+        self._pending_draft = None
+        try:
+            self._proposal_frame.pack_forget()
+        except Exception:
+            pass
+
+    def _brainstorm_payload(self) -> dict:
+        payload: dict = {"messages": self._messages}
+        try:
+            from core.config_loader import is_feature_enabled
+
+            if is_feature_enabled("calendar_create"):
+                payload["calendar_create_enabled"] = True
+                uid = _board_user_id()
+                if uid is not None:
+                    payload["user_id"] = uid
+        except Exception:
+            pass
+        if self._pending_proposal_id:
+            payload["pending_proposal_id"] = self._pending_proposal_id
+        return payload
+
+    def _on_proposal_confirm(self) -> None:
+        if not self._pending_proposal_id:
+            return
+        self._proposal_confirm_btn.configure(state="disabled")
+        threading.Thread(
+            target=self._proposal_action_work, args=("confirm",), daemon=True
+        ).start()
+
+    def _on_proposal_cancel(self) -> None:
+        if not self._pending_proposal_id:
+            self._clear_proposal_card()
+            return
+        threading.Thread(
+            target=self._proposal_action_work, args=("cancel",), daemon=True
+        ).start()
+
+    def _proposal_action_work(self, action: str) -> None:
+        if requests is None:
+            self.after(0, lambda: self._append_line("システム", "通信できません。"))
+            return
+        uid = _board_user_id()
+        pid = self._pending_proposal_id
+        if uid is None or not pid:
+            self.after(
+                0,
+                lambda: self._append_line("システム", "パーソナルログインが必要です。"),
+            )
+            return
+        url = _board_api_base() + f"/brainstorm/calendar/{action}"
+        try:
+            from core.security import assert_http_url
+
+            assert_http_url(url, load_config(), purpose="brainstorm_calendar")
+        except ValueError as e:
+            self.after(0, lambda: self._append_line("システム", str(e)[:80]))
+            return
+        try:
+            r = requests.post(
+                url, json={"proposal_id": pid, "user_id": uid}, timeout=30
+            )
+            if r.status_code >= 400:
+                detail = ""
+                try:
+                    detail = (r.json() or {}).get("detail") or r.text[:120]
+                except Exception:
+                    detail = r.text[:120]
+                self.after(0, lambda: self._append_line("システム", f"失敗: {detail}"))
+                self.after(
+                    0, lambda: self._proposal_confirm_btn.configure(state="normal")
+                )
+                return
+            msg = (r.json() or {}).get("message") or (
+                "登録しました。" if action == "confirm" else "キャンセルしました。"
+            )
+            self.after(0, self._clear_proposal_card)
+            self.after(0, lambda: self._append_line("リン子", msg))
+        except Exception as e:
+            self.after(
+                0, lambda: self._append_line("システム", f"エラー: {str(e)[:80]}")
+            )
+            self.after(0, lambda: self._proposal_confirm_btn.configure(state="normal"))
+
+    def _on_action_proposal(self, obj: dict) -> None:
+        self._pending_proposal_id = str(obj.get("proposal_id") or "") or None
+        draft = obj.get("draft")
+        self._pending_draft = dict(draft) if isinstance(draft, dict) else None
+        if self._pending_proposal_id and self._pending_draft:
+            self._show_proposal_card()
+        else:
+            self._clear_proposal_card()
+
+    def _on_send_shortcut(self, event=None):
+        self._on_send()
+        return "break"
+
+    MAX_ATTACH_CHARS = 12000
+
+    def _on_attach(self) -> None:
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            title="リン子に読ませる資料を選択",
+            filetypes=[
+                ("対応ファイル", "*.txt *.md *.csv *.json *.log *.py *.pdf *.docx"),
+                ("すべて", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        name = os.path.basename(path)
+        text, err = _extract_text(path)
+        if err:
+            self._append_line("システム", f"資料の読み込みに失敗: {err}")
+            return
+        if not (text or "").strip():
+            self._append_line(
+                "システム", "資料からテキストを抽出できませんでした (画像 PDF など)。"
+            )
+            return
+        truncated = False
+        if len(text) > self.MAX_ATTACH_CHARS:
+            text = text[: self.MAX_ATTACH_CHARS]
+            truncated = True
+        self._pending_attachment = {"name": name, "text": text}
+        label = f"📎 {name} ({len(text)}字{'・以降省略' if truncated else ''})"
+        self._attach_label.configure(text=label)
+        self._append_line(
+            "システム",
+            f"資料「{name}」を添付しました。質問を入力して送信してください。",
+        )
+
+    def _on_send(self) -> None:
+        if self._streaming:
+            return
+        text = self._entry.get("1.0", "end").strip()
+        if not text:
+            return
+        if requests is None:
+            self._append_line("システム", "requests が利用できないため送信できません。")
+            return
+        self._entry.delete("1.0", "end")
+
+        attach = self._pending_attachment
+        if attach:
+            llm_content = (
+                f"【添付資料: {attach['name']}】\n{attach['text']}\n\n"
+                f"【質問・指示】\n{text}"
+            )
+            self._append_line("あなた", f"[📎 {attach['name']}] {text}")
+            self._pending_attachment = None
+            self._attach_label.configure(text="📎 添付なし")
+        else:
+            llm_content = text
+            self._append_line("あなた", text)
+
+        self._messages.append({"role": "user", "content": llm_content})
+        self._send_btn.configure(state="disabled")
+        threading.Thread(target=self._stream_response, daemon=True).start()
+
+    def _stream_response(self) -> None:
+        self._streaming = True
+        url = _brainstorm_url()
+        try:
+            from core.config_loader import is_feature_enabled
+
+            voice_planned = bool(is_feature_enabled("brainstorm_voice")) and bool(
+                _tts_url()
+            )
+        except Exception:
+            voice_planned = False
+        if voice_planned:
+            self._ensure_tts_workers()
+        self.after(0, self._begin_assistant)
+        lipsync_started = False
+        sentence_buf = ""
+
+        def _start_lipsync_once():
+            try:
+                from ui import linko_avatar
+
+                if linko_avatar.is_ready():
+                    linko_avatar.start_lipsync(duration_sec=None, base_pose="normal")
+            except Exception:
+                pass
+
+        acc = ""
+        try:
+            from core.security import assert_http_url
+
+            assert_http_url(url, load_config(), purpose="brainstorm")
+        except ValueError as e:
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
+            self._messages.append({"role": "assistant", "content": ""})
+            self._streaming = False
+            self.after(0, self._end_assistant)
+            return
+        try:
+            with requests.post(
+                url, json=self._brainstorm_payload(), stream=True, timeout=(10, 120)
+            ) as r:
+                if r.status_code != 200:
+                    self.after(
+                        0,
+                        lambda: self._append_assistant_token(
+                            f"[エラー: HTTP {r.status_code}]"
+                        ),
+                    )
+                else:
+                    for line in r.iter_lines(decode_unicode=True):
+                        if self._tts_cancel.is_set():
+                            break
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[len("data:") :].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            obj = json.loads(data)
+                        except Exception:
+                            continue
+                        if obj.get("error"):
+                            self.after(
+                                0,
+                                lambda m=obj["error"]: self._append_assistant_token(
+                                    f"[エラー: {m}]"
+                                ),
+                            )
+                            continue
+                        if obj.get("type") == "action_proposal":
+                            self.after(0, lambda o=obj: self._on_action_proposal(o))
+                            continue
+                        tok = obj.get("token")
+                        if tok:
+                            if not lipsync_started:
+                                lipsync_started = True
+                                if not voice_planned:
+                                    _start_lipsync_once()
+                            acc += tok
+                            self.after(0, lambda t=tok: self._append_assistant_token(t))
+                            if voice_planned:
+                                sentence_buf = self._flush_sentences(sentence_buf + tok)
+        except Exception as e:
+            _log(f"[chat_panel] streaming エラー: {e}")
+            self.after(
+                0, lambda: self._append_assistant_token(f"[エラー: {str(e)[:80]}]")
+            )
+        finally:
+            self._messages.append({"role": "assistant", "content": acc})
+            self._last_assistant_text = acc
+            self._streaming = False
+            self.after(0, self._end_assistant)
+            if (
+                self._pending_proposal_id
+                and acc
+                and ("入れました" in acc or "登録" in acc and "しません" not in acc)
+            ):
+                self.after(0, self._clear_proposal_card)
+            if not voice_planned:
+                try:
+                    from ui import linko_avatar
+
+                    if linko_avatar.is_ready():
+                        linko_avatar.stop_lipsync(base_pose="normal")
+                except Exception:
+                    pass
+            else:
+                tail = _clean_for_tts(sentence_buf)
+                if tail and not self._tts_cancel.is_set():
+                    self._sentence_q.put(tail)
+
+    _SENTENCE_ENDERS = "。．！？!?\n"
+
+    def _flush_sentences(self, buf: str) -> str:
+        start = 0
+        for i, ch in enumerate(buf):
+            if ch in self._SENTENCE_ENDERS:
+                seg = _clean_for_tts(buf[start : i + 1])
+                if seg and not self._tts_cancel.is_set():
+                    self._sentence_q.put(seg)
+                start = i + 1
+        return buf[start:]
+
+    def _ensure_tts_workers(self) -> None:
+        if self._tts_workers_started:
+            return
+        self._tts_workers_started = True
+        threading.Thread(target=self._tts_fetch_worker, daemon=True).start()
+        threading.Thread(target=self._tts_play_worker, daemon=True).start()
+
+    def _tts_fetch_worker(self) -> None:
+        while not self._tts_cancel.is_set():
+            try:
+                sentence = self._sentence_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if sentence is None or self._tts_cancel.is_set():
+                break
+            item = self._fetch_sentence_audio(sentence)
+            if item and not self._tts_cancel.is_set():
+                self._audio_q.put(item)
+        self._audio_q.put(None)
+
+    def _tts_play_worker(self) -> None:
+        from hardware.audio_player import play_wav
+
+        while not self._tts_cancel.is_set():
+            try:
+                item = self._audio_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if item is None or self._tts_cancel.is_set():
+                break
+            path, text, duration = item
+            try:
+                if not self._tts_cancel.is_set():
+                    play_wav(
+                        path,
+                        text=text,
+                        duration_sec=duration,
+                        blocking=True,
+                        log_prefix="[chat_panel]",
+                    )
+                else:
+                    if path and os.path.isfile(path):
+                        try:
+                            os.unlink(path)
+                        except Exception:
+                            pass
+            except Exception as e:
+                _log(f"[chat_panel] 文音声 再生失敗: {e}")
+
+    def _fetch_sentence_audio(self, text: str):
+        if requests is None or not text.strip() or self._tts_cancel.is_set():
+            return None
+        url = _tts_url()
+        if not url:
+            return None
+        try:
+            from core.security import assert_http_url
+
+            assert_http_url(url, load_config(), purpose="brainstorm_tts")
+        except ValueError as e:
+            _log(f"[chat_panel] TTS URL 拒否: {e}")
+            return None
+        try:
+            r = requests.post(url, json={"text": text}, timeout=(5, 60))
+            if r.status_code == 503:
+                _log("[chat_panel] TTS 混雑のため音声スキップ (503)")
+                return None
+            if r.status_code != 200:
+                _log(f"[chat_panel] TTS HTTP {r.status_code}")
+                return None
+            audio_url = (r.json() or {}).get("audio_url")
+        except Exception as e:
+            _log(f"[chat_panel] TTS 取得失敗: {e}")
+            return None
+        if not audio_url or self._tts_cancel.is_set():
+            return None
+        try:
+            from hardware.audio_player import download_linko_wav
+
+            res = download_linko_wav(audio_url, log_prefix="[chat_panel]")
+        except Exception as e:
+            _log(f"[chat_panel] 音声DL失敗: {e}")
+            return None
+        if not res:
+            return None
+        path, duration = res
+        return (path, text, duration)
+
+    def _append_line(self, speaker: str, text: str) -> None:
+        self._chat.configure(state="normal")
+        if self._chat.get("1.0", "end").strip():
+            self._chat.insert("end", "\n\n")
+        self._chat.insert("end", f"{speaker}: {text}")
+        self._chat.see("end")
+        self._chat.configure(state="disabled")
+
+    def _begin_assistant(self) -> None:
+        self._chat.configure(state="normal")
+        if self._chat.get("1.0", "end").strip():
+            self._chat.insert("end", "\n\n")
+        self._chat.insert("end", "リン子: ")
+        self._chat.see("end")
+        self._chat.configure(state="disabled")
+
+    def _append_assistant_token(self, token: str) -> None:
+        self._chat.configure(state="normal")
+        self._chat.insert("end", token)
+        self._chat.see("end")
+        self._chat.configure(state="disabled")
+
+    def _end_assistant(self) -> None:
+        try:
+            self._send_btn.configure(state="normal")
+            if (self._last_assistant_text or "").strip():
+                self._note_btn.configure(state="normal")
+        except Exception:
+            pass
+
+    def _on_make_note(self) -> None:
+        text = (self._last_assistant_text or "").strip()
+        if not text:
+            return
+        self._note_btn.configure(state="disabled", text="📝 投稿中…")
+
+        def do_post():
+            ok, msg = (False, "送信処理が見つかりません")
+            try:
+                from ui.mini_port import _send_content
+
+                ok, msg = _send_content(text)
+            except Exception as e:
+                ok, msg = False, str(e)[:80]
+            self.after(0, lambda: self._on_note_done(ok, msg))
+
+        threading.Thread(target=do_post, daemon=True).start()
+
+    def _on_note_done(self, ok: bool, msg: str) -> None:
+        self._append_line(
+            "システム", "付箋に投稿しました。" if ok else f"付箋投稿に失敗: {msg}"
+        )
+        try:
+            self._note_btn.configure(state="normal", text="📝 リン子の回答を付箋にする")
+        except Exception:
+            pass
+
+    def _on_close(self) -> None:
+        global _panel_instance
+        _panel_instance = None
+        self._tts_cancel.set()
+
+        # キューに残ったデータをクリアし、生成された一時WAVファイルを消去
+        while not self._sentence_q.empty():
+            try:
+                self._sentence_q.get_nowait()
+            except Exception:
+                pass
+        while not self._audio_q.empty():
+            try:
+                item = self._audio_q.get_nowait()
+                if item and isinstance(item, tuple) and len(item) > 0 and item[0]:
+                    try:
+                        if os.path.isfile(item[0]):
+                            os.unlink(item[0])
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        try:
+            self._sentence_q.put_nowait(None)
+        except Exception:
+            pass
+        try:
+            self._audio_q.put_nowait(None)
+        except Exception:
+            pass
+
+        try:
+            from ui import linko_avatar
+
+            linko_avatar.stop_lipsync(base_pose="normal")
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
+def _extract_text(path: str):
+    ext = os.path.splitext(path)[1].lower()
+    text_exts = (
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".log",
+        ".py",
+        ".ini",
+        ".yaml",
+        ".yml",
+        ".html",
+        ".xml",
+    )
+    try:
+        if ext in text_exts or ext == "":
+            for enc in ("utf-8", "utf-8-sig", "cp932"):
+                try:
+                    with open(path, "r", encoding=enc) as f:
+                        return f.read(), None
+                except UnicodeDecodeError:
+                    continue
+            return None, "文字コードを判別できませんでした"
+        if ext == ".pdf":
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                return None, "PDF 対応ライブラリ (pypdf) が無い環境です"
+            reader = PdfReader(path)
+            parts = []
+            for page in reader.pages:
+                try:
+                    parts.append(page.extract_text() or "")
+                except Exception:
+                    continue
+            return "\n".join(parts), None
+        if ext == ".docx":
+            try:
+                import docx
+            except ImportError:
+                return None, "Word 対応ライブラリ (python-docx) が無い環境です"
+            d = docx.Document(path)
+            return "\n".join(p.text for p in d.paragraphs), None
+        return None, f"未対応の形式です ({ext})"
+    except Exception as e:
+        return None, str(e)[:100]
+
+
+def open_chat_panel(master=None) -> ChatPanel:
+    global _panel_instance
+    if _panel_instance is not None:
+        try:
+            _panel_instance._position_near(master)
+            _panel_instance.lift()
+            _panel_instance.focus_force()
+            return _panel_instance
+        except Exception:
+            _panel_instance = None
+    _panel_instance = ChatPanel(master=master)
+    return _panel_instance
+
+
+def open_chat_panel_with_task(
+    master=None,
+    task_title: str = "",
+    note_id: Optional[int] = None,
+) -> ChatPanel:
+    panel = open_chat_panel(master=master)
+    title = (task_title or "（無題）").strip()
+    ctx = (
+        f"Today のタスクについて相談したいです。\n"
+        f"タスク: 『{title}』\n"
+        f"進め方・優先度・次の一歩を一緒に整理してください。"
+    )
+    if note_id is not None:
+        ctx += f"\n（Board note_id={note_id}）"
+    try:
+        panel._entry.delete("1.0", "end")
+        panel._entry.insert("1.0", ctx)
+        panel.after(300, panel._on_send)
+    except Exception as e:
+        _log(f"[chat_panel] task consult setup failed: {e}")
+    return panel

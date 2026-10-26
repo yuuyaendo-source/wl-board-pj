@@ -22,7 +22,11 @@ def _quadrant_from_xy(x: float, y: float) -> int:
     return 4
 
 
-def run_matrix_scoring(content: str) -> dict | None:
+def run_matrix_scoring(
+    content: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict | None:
     """
     付箋本文から緊急度・重要度を 0-100 で取得する。
     戻り値: None or {"urgency": 0-100, "importance": 0-100}
@@ -40,7 +44,7 @@ def run_matrix_scoring(content: str) -> dict | None:
 回答は必ず次の JSON 形式のみにしてください。
 {{"urgency": 0以上100以下の整数, "importance": 0以上100以下の整数, "reason": "採点理由を1行で"}}
 """
-    data = generate_json(prompt)
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not data:
         return None
     try:

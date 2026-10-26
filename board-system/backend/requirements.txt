@@ -1,18 +1,20 @@
-# Board System (Wonder Rinko) - Backend. Python 3.10+
+# Board System (Wonder Linko) - Backend. Python 3.10+
 # FastAPI + async SQLAlchemy (SQLite, later PostgreSQL)
 
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-sqlalchemy[asyncio]>=2.0.0
+sqlalchemy[asyncio]>=2.0.0,<2.1.0
 aiosqlite>=0.20.0
 psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
 pydantic-settings>=2.0.0
 alembic>=1.14.0
-google-genai>=1.0.0
 google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.100.0
 requests>=2.28.0
 httpx>=0.27.0
 apscheduler>=3.10.0
 feedparser>=6.0.0
+sqlalchemy-utils>=0.41.1
+cryptography>=41.0.0
+PyJWT>=2.8.0,<3.0.0

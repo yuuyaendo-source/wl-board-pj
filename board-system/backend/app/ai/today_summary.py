@@ -5,7 +5,11 @@
 from app.ai.client import generate_json
 
 
-def run_today_short_summaries(events: list[dict]) -> list[dict]:
+def run_today_short_summaries(
+    events: list[dict],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> list[dict]:
     """
     今日の予定リストを短縮した 1 行ラベルにし、Today 表示用の項目リストを返す。
     events: [{"summary": str, "start": str, "end": str}, ...]
@@ -27,7 +31,7 @@ def run_today_short_summaries(events: list[dict]) -> list[dict]:
 回答は必ず JSON の配列のみにしてください。順番は予定一覧と同じにし、各要素は短いラベル文字列1つにしてください。
 ["ラベル1", "ラベル2", ...]
 """
-    data = generate_json(prompt)
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     labels = []
     if isinstance(data, list) and len(data) >= len(events):
         labels = [str(x).strip()[:80] if x else "" for x in data[: len(events)]]
@@ -39,10 +43,12 @@ def run_today_short_summaries(events: list[dict]) -> list[dict]:
         labels = [((e.get("summary") or "")[:50] or "(無題)") for e in events]
     out = []
     for e, label in zip(events, labels):
-        out.append({
-            "label": label or (e.get("summary") or "")[:50] or "(無題)",
-            "summary": e.get("summary", ""),
-            "start": e.get("start", ""),
-            "end": e.get("end", ""),
-        })
+        out.append(
+            {
+                "label": label or (e.get("summary") or "")[:50] or "(無題)",
+                "summary": e.get("summary", ""),
+                "start": e.get("start", ""),
+                "end": e.get("end", ""),
+            }
+        )
     return out

@@ -3,6 +3,7 @@ export interface TakenByUser {
   id: number;
   name: string;
   name_short: string;
+  is_done?: boolean;
 }
 
 /** ボード View 用: 配置 + 付箋本文 */
@@ -26,6 +27,14 @@ export interface PlacementWithNote {
   taken_by?: TakenByUser[];
   /** Task 用: 付箋の色 yellow=未引き取り green=引き取り中 grey=誰かがDone red=応援要請 */
   task_color?: "yellow" | "green" | "grey" | "red";
+  /** 応援要請に対して、元の担当者以外の第三者が引き受けた（コピーした）か */
+  is_accepted_by_others?: boolean;
+  /** 手動で Today に移動されたフラグ。True のとき期限による自動移動をスキップ */
+  is_manually_moved_to_today?: boolean;
+  /** 紐づく付箋の期限（YYYY-MM-DD 文字列）*/
+  due_date?: string | null;
+  /** 応援要請 */
+  is_help_request?: boolean;
 }
 
 export interface User {
@@ -34,6 +43,33 @@ export interface User {
   email: string | null;
   call_name: string | null;
   role: string | null;
+  team_ids?: number[];
+  teams?: Pick<Team, "id" | "name">[];
+  face_count?: number;
+}
+
+export interface Team {
+  id: number;
+  name: string;
+  member_count: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type LaneType = "INBOX" | "TODAY" | "DONE" | "HELP_REQUEST";
+
+export interface StickyNoteCreatePayload {
+  content: string;
+  author_id?: number;
+  postit_board_id?: string;
+  postit_note_id?: string;
+  personal_only?: boolean;
+  due_date?: string | null;
+}
+
+export interface PersonalNoteCreatePayload {
+  content: string;
+  owner_id: number;
+  lane?: LaneType;
+  due_date?: string | null;
+}

@@ -35,6 +35,7 @@ class BoardPlacementResponse(BaseModel):
     matrix_quadrant: int | None
     sort_order: int
     placement_source: str | None = None
+    is_manually_moved_to_today: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -48,6 +49,7 @@ class MoveToPersonalBody(BaseModel):
 
 class ReorderPersonalLaneBody(BaseModel):
     """同一レーン内の並び替え。placement_ids の順に sort_order を 0,1,2,... で設定する。"""
+
     owner_id: int
     lane: Lane
     placement_ids: list[int]
@@ -55,13 +57,16 @@ class ReorderPersonalLaneBody(BaseModel):
 
 class TakenByUser(BaseModel):
     """Task 付箋をパーソナルに引き取ったユーザー（アイコン表示用）。"""
+
     id: int
     name: str
     name_short: str  # 例: 浅川久司 → 浅
+    is_done: bool = False  # 追加: このユーザーが完了(DONE)にしたかどうか
 
 
 class BoardPlacementWithNoteResponse(BaseModel):
     """配置 + 付箋本文（ボード View 用）。Personal 用 is_from_task、Task 用 taken_by / task_color。"""
+
     id: int
     note_id: int
     board_type: BoardType
@@ -78,3 +83,8 @@ class BoardPlacementWithNoteResponse(BaseModel):
     # Task 用: 誰が引き取ったか・付箋の色（yellow=未引き取り, green=引き取り中, grey=Done, red=応援要請）
     taken_by: list[TakenByUser] = []
     task_color: str = "yellow"  # "yellow" | "green" | "grey" | "red"
+    is_accepted_by_others: bool = False
+    is_manually_moved_to_today: bool = False
+    # 紐づく付箋の期限（YYYY-MM-DD 文字列）
+    due_date: str | None = None
+    is_help_request: bool = False  # 追加: 応援要請フラグ

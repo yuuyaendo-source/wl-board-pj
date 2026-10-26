@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { flushSync } from "react-dom";
 import { api } from "@/lib/api";
-import type { PlacementWithNote } from "@/lib/types";
+import {
+  fetchLegacyPostitNotes,
+  LEGACY_POSTIT_BOARD_ID,
+} from "@/lib/legacyPostit";
+import type { PlacementWithNote, Team } from "@/lib/types";
 import { usePersonalMembers } from "@/lib/personalMembers";
 import ApiErrorBanner from "../components/ApiErrorBanner";
 import NoteCard from "../components/NoteCard";
-
-const POSTIT_BOARD_URL =
-  process.env.NEXT_PUBLIC_LEGACY_BOARD_URL || "http://localhost:3000";
-const POSTIT_BOARD_ID = "wl";
+import { OperationPanel } from "../components/OperationPanel";
 
 /** mutation 直後の refetch で古いレスポンスが返るのを防ぐ */
 const REFETCH_DELAY_MS = 120;
@@ -21,31 +22,29 @@ const AUTO_IMPORT_STORAGE_KEY = "board-system:taskboard:autoImport";
 function getStoredAutoImport(): boolean {
   if (typeof window === "undefined") return true;
   const stored = window.localStorage.getItem(AUTO_IMPORT_STORAGE_KEY);
-  if (stored === null) return true; // 未設定時はON（バックグラウンドで実行）
+  if (stored === null) return true; // 未設定時はON
   return stored === "true";
 }
 
-/** 5列: アイデア(1), 短期タスク(2), 長期タスク(3), 重要(4), 完了(5) */
 const COLUMNS = [
-  { q: 1, title: "アイデア" },
-  { q: 2, title: "短期タスク" },
-  { q: 3, title: "長期タスク" },
-  { q: 4, title: "重要" },
-  { q: 5, title: "完了" },
+  { id: "unassigned", title: "応援要請・未振り分け", targetQ: null, droppable: false },
+  { id: "ideas", title: "アイデア", targetQ: 1, droppable: true },
+  { id: "tasks", title: "タスク", targetQ: 2, droppable: true },
+  { id: "done", title: "完了", targetQ: 5, droppable: true },
 ] as const;
-
-type PostitNote = { id: string; text: string; author?: string; createdAt?: number; gray?: boolean };
 
 export default function TaskBoardPage() {
   const [placements, setPlacements] = useState<PlacementWithNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [autoImportEnabled, setAutoImportEnabledState] = useState(true);
   const { members: personalMembers } = usePersonalMembers();
+  const [teams, setTeams] = useState<Team[]>([]);
 
-  // 初回マウント時に localStorage から復元（デフォルトはON）
+  // 初回マウント時に localStorage から復元
   useEffect(() => {
     setAutoImportEnabledState(getStoredAutoImport());
   }, []);
@@ -72,25 +71,28 @@ export default function TaskBoardPage() {
     }
   }, []);
 
+  const fetchTeams = useCallback(async () => {
+    try {
+      const data = await api.teams.list();
+      setTeams(data);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => {
     fetchTask();
-  }, [fetchTask]);
+    fetchTeams();
+  }, [fetchTask, fetchTeams]);
 
   const handleImportFromPostit = useCallback(async () => {
     setImporting(true);
     setImportMessage(null);
+    setActionError(null);
     try {
-      const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
-      if (!res.ok) throw new Error("付箋ボードの取得に失敗しました");
-      const data = (await res.json()) as { notes: PostitNote[] };
-      const notes = (data.notes || [])
-        .filter((n) => !n.gray)
-        .map((n) => ({
-          id: String(n.id),
-          text: n.text || "",
-        }));
+      const notes = await fetchLegacyPostitNotes();
       const result = await api.stickyNotes.importFromPostit({
-        board_id: POSTIT_BOARD_ID,
+        board_id: LEGACY_POSTIT_BOARD_ID,
         notes,
       });
       const msg =
@@ -103,7 +105,7 @@ export default function TaskBoardPage() {
       await delay(REFETCH_DELAY_MS);
       await fetchTask();
     } catch (e) {
-      setImportMessage(e instanceof Error ? e.message : "取り込みに失敗しました");
+      setActionError(e instanceof Error ? e.message : "取り込みに失敗しました");
     } finally {
       setImporting(false);
     }
@@ -115,32 +117,28 @@ export default function TaskBoardPage() {
     return () => window.removeEventListener("task-import-request", handler);
   }, [handleImportFromPostit]);
 
-  // 自動取り込み（ON 時に1回実行し、以降5分ごと）
+  // 自動取り込み（5分ごと）
   useEffect(() => {
     if (!autoImportEnabled) return;
     const runImport = async () => {
       try {
-        const res = await fetch(`${POSTIT_BOARD_URL}/api/boards/${POSTIT_BOARD_ID}/notes`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { notes: PostitNote[] };
-        const notes = (data.notes || [])
-          .filter((n) => !n.gray)
-          .map((n) => ({ id: String(n.id), text: n.text || "" }));
+        const notes = await fetchLegacyPostitNotes();
         if (notes.length === 0) return;
-        await api.stickyNotes.importFromPostit({ board_id: POSTIT_BOARD_ID, notes });
+        await api.stickyNotes.importFromPostit({ board_id: LEGACY_POSTIT_BOARD_ID, notes });
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch {
-        // 自動取り込みは失敗しても静かにスキップ
+        // silent
       }
     };
-    runImport(); // 有効化直後に1回
+    runImport();
     const interval = setInterval(runImport, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [autoImportEnabled, fetchTask]);
 
   const handleCopyToPersonal = useCallback(
     async (noteId: number, ownerId: number) => {
+      setActionError(null);
       try {
         await api.stickyNotes.moveToPersonal(noteId, {
           owner_id: ownerId,
@@ -151,7 +149,23 @@ export default function TaskBoardPage() {
         setImportMessage("パーソナルボードにコピーしました");
         setTimeout(() => setImportMessage(null), 2000);
       } catch (err) {
-        setImportMessage(err instanceof Error ? err.message : "コピーに失敗しました");
+        setActionError(err instanceof Error ? err.message : "コピーに失敗しました");
+      }
+    },
+    [fetchTask]
+  );
+
+  const handleCopyToTeam = useCallback(
+    async (noteId: number, teamId: number, teamName: string) => {
+      setActionError(null);
+      try {
+        const res = await api.stickyNotes.copyToTeam(noteId, { team_id: teamId });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+        setImportMessage(res.message);
+        setTimeout(() => setImportMessage(null), 3000);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : `${teamName} へのコピーに失敗しました`);
       }
     },
     [fetchTask]
@@ -159,12 +173,33 @@ export default function TaskBoardPage() {
 
   const handleAppendContent = useCallback(
     async (noteId: number, currentContent: string | null, appendedText: string) => {
+      setActionError(null);
       const newContent = (currentContent || "").trim()
         ? `${(currentContent || "").trim()}\n${appendedText}`
         : appendedText;
-      await api.stickyNotes.update(noteId, { content: newContent });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      try {
+        await api.stickyNotes.update(noteId, { content: newContent });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "更新に失敗しました");
+      }
+    },
+    [fetchTask]
+  );
+
+  const handleDueDateChange = useCallback(
+    async (noteId: number, dueDateStr: string) => {
+      setActionError(null);
+      try {
+        await api.stickyNotes.update(noteId, {
+          due_date: dueDateStr === "" ? "" : dueDateStr,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "期限の更新に失敗しました");
+      }
     },
     [fetchTask]
   );
@@ -172,42 +207,64 @@ export default function TaskBoardPage() {
   const handleTrashDrop = useCallback(
     async (noteId: number) => {
       setImportMessage(null);
+      setActionError(null);
       try {
         await api.stickyNotes.delete(noteId);
         await delay(REFETCH_DELAY_MS);
         await fetchTask();
       } catch (e) {
-        setImportMessage(e instanceof Error ? e.message : "削除に失敗しました");
-        setTimeout(() => setImportMessage(null), 5000);
+        setActionError(e instanceof Error ? e.message : "削除に失敗しました");
+        await fetchTask();
       }
     },
     [fetchTask]
   );
 
-  const byColumnRaw = placements.reduce(
-    (acc, p) => {
+  const byColumnRaw: Record<string, PlacementWithNote[]> = {
+    unassigned: [],
+    ideas: [],
+    tasks: [],
+    done: [],
+  };
+
+  placements.forEach((p) => {
+    const isUnassignedRed = p.task_color === "red" && !p.is_accepted_by_others;
+    if (isUnassignedRed || p.task_color === "yellow") {
+      byColumnRaw.unassigned.push(p);
+    } else {
       const q = p.matrix_quadrant ?? 1;
-      if (!acc[q]) acc[q] = [];
-      acc[q].push(p);
-      return acc;
-    },
-    {} as Record<number, PlacementWithNote[]>
-  );
-  // 応援要請（赤）の付箋を各列の一番上に
-  const byColumn: Record<number, PlacementWithNote[]> = {};
-  for (const q of Object.keys(byColumnRaw).map(Number)) {
-    byColumn[q] = [...(byColumnRaw[q] ?? [])].sort((a, b) =>
+      if (q === 1) {
+        byColumnRaw.ideas.push(p);
+      } else if (q === 2 || q === 3 || q === 4) {
+        byColumnRaw.tasks.push(p);
+      } else if (q === 5) {
+        byColumnRaw.done.push(p);
+      } else {
+        byColumnRaw.ideas.push(p);
+      }
+    }
+  });
+
+  const byColumn: Record<string, PlacementWithNote[]> = {};
+  for (const key of Object.keys(byColumnRaw)) {
+    byColumn[key] = [...byColumnRaw[key]].sort((a, b) =>
       (a.task_color === "red" ? 0 : 1) - (b.task_color === "red" ? 0 : 1)
     );
   }
 
   const handleDrop = useCallback(
     async (placementId: number, column: number) => {
-      await api.boardPlacements.patch(placementId, {
-        matrix_quadrant: column,
-      });
-      await delay(REFETCH_DELAY_MS);
-      await fetchTask();
+      setActionError(null);
+      try {
+        await api.boardPlacements.patch(placementId, {
+          matrix_quadrant: column,
+        });
+        await delay(REFETCH_DELAY_MS);
+        await fetchTask();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : "移動に失敗しました");
+        await fetchTask();
+      }
     },
     [fetchTask]
   );
@@ -222,63 +279,63 @@ export default function TaskBoardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      {/* メニューバー・ゴミ箱・パーソナルへコピーはスクロールについてくる */}
-      <div className="sticky top-[52px] z-10 -mx-4 border-b border-[var(--border)] bg-white px-4 py-3 shadow-sm">
-        {(importing || importMessage) && (
-          <div className="mb-2 text-sm text-zinc-500">
-            {importing ? "取り込み中…" : importMessage}
+      {/* メニューバー・ゴミ箱・コピー先 */}
+      <div className="sticky top-[52px] z-10 -mx-4 mb-4">
+        {actionError && (
+          <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{actionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="text-xs text-amber-700 hover:underline font-bold"
+            >
+              ✕
+            </button>
           </div>
         )}
-        <div className="mb-2 items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => handleImportFromPostit()}
-            disabled={importing}
-            className="shrink-0 rounded-xl px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            style={{ background: "var(--primary)" }}
-          >
-            付箋ボードから取り込む
-          </button>
-          
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-600">
-            <input
-              type="checkbox"
-              checked={autoImportEnabled}
-              onChange={(e) => setAutoImportEnabled(e.target.checked)}
-              className="rounded border-[var(--border)]"
-            />
-            <span>自動で付箋ボードから取り込む（5分ごと・AIで振り分け）※オフにするときだけチェックを外してください</span>
-          </label>
 
-        </div>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-zinc-500">ゴミ箱</span>
-          <TrashDropZone onDrop={handleTrashDrop} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <span className="text-sm text-zinc-500">パーソナルボードへコピー（付箋をメンバーにドロップ）</span>
-          <div className="flex flex-wrap gap-2">
-            {personalMembers.map(({ ownerId, name }) => (
-              <MemberDropZone
-                key={ownerId}
-                name={name}
-                onDrop={(noteId) => handleCopyToPersonal(noteId, ownerId)}
-              />
-            ))}
+        {(importing || importMessage) && (
+          <div className="mb-2 flex items-center justify-between text-xs font-medium text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 shadow-xs">
+            <span>{importing ? "取り込み中…" : importMessage}</span>
+            <button
+              type="button"
+              onClick={() => setImportMessage(null)}
+              className="text-xs text-emerald-600 hover:underline font-bold"
+            >
+              ✕
+            </button>
           </div>
-        </div>
+        )}
+
+        <OperationPanel
+          members={personalMembers}
+          teams={teams}
+          autoImport={autoImportEnabled}
+          isImporting={importing}
+          onAutoImportChange={setAutoImportEnabled}
+          onImportClick={handleImportFromPostit}
+          onTrashDrop={handleTrashDrop}
+          onMemberDrop={handleCopyToPersonal}
+          onTeamDrop={handleCopyToTeam}
+        />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {COLUMNS.map(({ q, title }) => (
-          <ColumnDropZone
-            key={q}
-            column={q}
-            title={title}
-            placements={byColumn[q] ?? []}
-            onDrop={(placementId) => handleDrop(placementId, q)}
+      {/* タスクボード4列 */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {COLUMNS.map((col) => (
+          <Column
+            key={col.id}
+            title={col.title}
+            placements={byColumn[col.id] || []}
+            droppable={col.droppable}
+            targetQ={col.targetQ}
+            onDrop={handleDrop}
             onRefresh={fetchTask}
             onAppendContent={handleAppendContent}
+            onDueDateChange={handleDueDateChange}
           />
         ))}
       </div>
@@ -286,110 +343,55 @@ export default function TaskBoardPage() {
   );
 }
 
-function TrashDropZone({ onDrop }: { onDrop: (noteId: number) => void }) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`flex items-center gap-2 rounded-xl border-2 border-dashed px-4 py-2 text-sm transition-colors ${
-        over ? "border-red-400 bg-red-50" : "border-zinc-300 bg-zinc-100"
-      }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <span className="text-lg">🗑️</span>
-      <span>ゴミ箱</span>
-    </div>
-  );
-}
-
-function MemberDropZone({
-  name,
-  onDrop,
-}: {
-  name: string;
-  onDrop: (noteId: number) => void;
-}) {
-  const [over, setOver] = useState(false);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
-    setOver(true);
-  };
-  const handleDragLeave = () => setOver(false);
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setOver(false);
-    const noteId = e.dataTransfer.getData("noteId") || e.dataTransfer.getData("text/plain");
-    if (noteId) onDrop(Number(noteId));
-  };
-
-  return (
-    <div
-      className={`min-w-[80px] rounded-xl border-2 border-dashed px-3 py-1.5 text-sm transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50" : "border-[var(--border)] bg-white"
-      }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {name}
-    </div>
-  );
-}
-
-function ColumnDropZone({
-  column,
+function Column({
   title,
   placements,
+  droppable,
+  targetQ,
   onDrop,
   onRefresh,
   onAppendContent,
+  onDueDateChange,
 }: {
-  column: number;
   title: string;
   placements: PlacementWithNote[];
-  onDrop: (placementId: number) => void;
+  droppable: boolean;
+  targetQ: number | null;
+  onDrop: (placementId: number, targetQ: number) => void;
   onRefresh: () => void;
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
 }) {
   const [over, setOver] = useState(false);
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (!droppable) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setOver(true);
   };
+
   const handleDragLeave = () => setOver(false);
-  const handleDrop = async (e: React.DragEvent) => {
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!droppable || targetQ == null) return;
     e.preventDefault();
-    setOver(false);
-    const id = e.dataTransfer.getData("placementId");
-    if (id) await Promise.resolve(onDrop(Number(id)));
+    try {
+      const id = e.dataTransfer.getData("placementId");
+      if (id && !isNaN(Number(id))) {
+        onDrop(Number(id), targetQ);
+      }
+    } finally {
+      setOver(false);
+    }
   };
 
   return (
     <div
-      className={`min-h-[200px] rounded-xl border-2 border-dashed border-[var(--border)] bg-white p-3 transition-colors ${
-        over ? "border-[var(--primary)] bg-green-50/50" : ""
-      }`}
+      role="region"
+      aria-label={`${title} カラム`}
+      className={`rounded-xl border-2 border-dashed p-4 transition-colors ${over ? "border-[var(--primary)] bg-green-50/50" : "border-[var(--border)] bg-white"
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -401,9 +403,9 @@ function ColumnDropZone({
             key={p.id}
             placement={p}
             draggable
-            cardColor={p.task_color}
             takenBy={p.taken_by}
             onAppendContent={onAppendContent}
+            onDueDateChange={onDueDateChange}
             onDragEnd={onRefresh}
           />
         ))}

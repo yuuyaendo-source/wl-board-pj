@@ -9,17 +9,27 @@ Personal Today タスクのリマインド API（デスクトップアプリ用�
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.time_utils import get_timezone, utc_now_naive
 from app.db import get_db
-from app.models import BoardPlacement, BoardType, Lane, StickyNote, TaskReminderLog, User
+from app.models import (
+    BoardPlacement,
+    BoardType,
+    Lane,
+    StickyNote,
+    TaskReminderLog,
+    User,
+)
+from app.models.sticky_note import NoteStatus
+from app.routers.sticky_notes import _notify_postit_archive_async
 from app.services.calendar_placement import include_in_task_remind
 
 router = APIRouter(prefix="/api/personal", tags=["task_reminders"])
@@ -30,10 +40,7 @@ MAX_TITLE_LEN = 40
 
 def _jst_today() -> str:
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     return datetime.now(tz).strftime("%Y-%m-%d")
 
 
@@ -56,6 +63,7 @@ class PendingItem(BaseModel):
     note_id: int
     title: str
     message: str
+    due_date: str | None = None
 
 
 class PendingResponse(BaseModel):
@@ -68,12 +76,7 @@ class PendingResponse(BaseModel):
 
 class ShownSlotBody(BaseModel):
     """スロット単位で Today 全タスクを表示済みにする（一括リマインド用）。"""
-    slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
 
-
-class ShownBody(BaseModel):
-    placement_id: int
-    note_id: int
     slot: str = Field(..., pattern=r"^\d{2}:\d{2}$")
 
 
@@ -90,7 +93,9 @@ async def _ensure_user(user_id: int, db: AsyncSession) -> None:
         raise HTTPException(status_code=404, detail="User not found")
 
 
-async def _today_placements(user_id: int, db: AsyncSession) -> list[tuple[BoardPlacement, StickyNote]]:
+async def _today_placements(
+    user_id: int, db: AsyncSession
+) -> list[tuple[BoardPlacement, StickyNote]]:
     result = await db.execute(
         select(BoardPlacement, StickyNote)
         .join(StickyNote, BoardPlacement.note_id == StickyNote.id)
@@ -127,7 +132,9 @@ async def _logged_note_ids(
 @router.get("/{user_id}/task_reminders/pending", response_model=PendingResponse)
 async def get_pending_task_reminders(
     user_id: int,
-    slot: str = Query(..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"),
+    slot: str = Query(
+        ..., pattern=r"^\d{2}:\d{2}$", description="リマインドスロット (例 13:00)"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """指定スロットでまだ表示していない Today タスクをすべて返す（一括リマインド）。"""
@@ -140,12 +147,14 @@ async def get_pending_task_reminders(
         if p.note_id in logged:
             continue
         title = _short_title(n.content)
+        due_date_str = n.due_date.isoformat() if getattr(n, "due_date", None) else None
         items.append(
             PendingItem(
                 placement_id=p.id,
                 note_id=p.note_id,
                 title=title,
                 message=_remind_message(title),
+                due_date=due_date_str,
             )
         )
     summary = LIST_SUMMARY_MESSAGE
@@ -191,55 +200,14 @@ async def mark_task_reminder_slot_shown(
     return {"ok": True, "marked": marked}
 
 
-@router.post("/{user_id}/task_reminders/shown")
-async def mark_task_reminder_shown(
-    user_id: int,
-    body: ShownBody,
-    db: AsyncSession = Depends(get_db),
-):
-    """デスクトップがリマインド UI を表示したとき呼ぶ（同日同スロットの再送防止）。"""
-    await _ensure_user(user_id, db)
-    remind_date = _jst_today()
-    r = await db.execute(
-        select(TaskReminderLog).where(
-            TaskReminderLog.user_id == user_id,
-            TaskReminderLog.note_id == body.note_id,
-            TaskReminderLog.remind_date == remind_date,
-            TaskReminderLog.slot == body.slot,
-        )
-    )
-    if r.scalar_one_or_none() is not None:
-        return {"ok": True, "already": True}
-    r_pl = await db.execute(
-        select(BoardPlacement).where(
-            BoardPlacement.id == body.placement_id,
-            BoardPlacement.owner_id == user_id,
-            BoardPlacement.board_type == BoardType.PERSONAL,
-            BoardPlacement.lane == Lane.TODAY,
-        )
-    )
-    if r_pl.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="Placement not found or not in TODAY")
-    row = TaskReminderLog(
-        user_id=user_id,
-        note_id=body.note_id,
-        placement_id=body.placement_id,
-        remind_date=remind_date,
-        slot=body.slot,
-        action=None,
-    )
-    db.add(row)
-    await db.flush()
-    return {"ok": True, "already": False}
-
-
 @router.post("/{user_id}/task_reminders/ack")
 async def ack_task_reminder(
+    request: Request,
     user_id: int,
     body: AckBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """継続 / 完了 の応答。done のとき Personal を DONE に移動（Task 完了連動は board_placements と同じ）。"""
+    """継続 / 完了 の応答。done のとき Personal を DONE に移動し、全担当者が DONE ならタスクボード側も完了へ更新。"""
     await _ensure_user(user_id, db)
     remind_date = _jst_today()
     r = await db.execute(
@@ -274,23 +242,48 @@ async def ack_task_reminder(
         raise HTTPException(status_code=404, detail="Placement not found")
 
     log_row.action = body.action
-    log_row.acked_at = datetime.utcnow()
+    log_row.acked_at = utc_now_naive()
 
     if body.action == "done" and placement.lane != Lane.DONE:
-        prev_lane = placement.lane
         placement.lane = Lane.DONE
-        r_task = await db.execute(
-            select(BoardPlacement).where(
+
+        r_other = await db.execute(
+            select(BoardPlacement.lane).where(
                 BoardPlacement.note_id == placement.note_id,
-                BoardPlacement.board_type == BoardType.TASK,
-                BoardPlacement.owner_id.is_(None),
+                BoardPlacement.board_type == BoardType.PERSONAL,
+                BoardPlacement.id != placement.id,
             )
         )
-        task_placement = r_task.scalar_one_or_none()
-        if task_placement:
-            task_placement.matrix_quadrant = 5
-        elif prev_lane == Lane.HELP_REQUEST:
-            pass  # HELP_REQUEST から DONE は既存 PATCH と同様 task 連動のみ
+        other_lanes = r_other.scalars().all()
+        all_others_done = all(l == Lane.DONE for l in other_lanes)
+
+        if all_others_done:
+            r_note = await db.execute(
+                select(StickyNote).where(StickyNote.id == placement.note_id)
+            )
+            note = r_note.scalar_one_or_none()
+            if note:
+                note.status = NoteStatus.DONE
+                note.is_help_request = False
+                if note.postit_board_id and note.postit_note_id:
+                    await _notify_postit_archive_async(
+                        request, note.postit_board_id, note.postit_note_id
+                    )
+
+            r_task = await db.execute(
+                select(BoardPlacement).where(
+                    BoardPlacement.note_id == placement.note_id,
+                    BoardPlacement.board_type == BoardType.TASK,
+                    BoardPlacement.owner_id.is_(None),
+                )
+            )
+            task_placement = r_task.scalar_one_or_none()
+            if task_placement:
+                task_placement.matrix_quadrant = 5
 
     await db.flush()
-    return {"ok": True, "action": body.action, "lane": placement.lane.value if placement.lane else None}
+    return {
+        "ok": True,
+        "action": body.action,
+        "lane": placement.lane.value if placement.lane else None,
+    }

@@ -33,7 +33,7 @@ alembic upgrade head
 **追加する 3 項目**（値は Google Cloud Console で取得）:
 
 | 変数名 | 説明 | 例 |
-|--------|------|-----|
+| -------- | ------ | ----- |
 | `GOOGLE_CALENDAR_CLIENT_ID` | OAuth 2.0 クライアント ID | `123456789-xxx.apps.googleusercontent.com` |
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | 上記クライアントのシークレット | `GOCSPX-xxxxxx` |
 | `GOOGLE_CALENDAR_REDIRECT_URI` | コールバック用の URL（後述） | 下の「リダイレクト URI」を参照 |
@@ -119,7 +119,7 @@ GOOGLE_CALENDAR_REDIRECT_URI=http://localhost:8000/auth/google/callback
 ## トラブルシューティング
 
 | 症状 | 確認すること |
-|------|----------------------|
+| ------ | ---------------------- |
 | 「Google Calendar is not configured」 | `board-system/backend/.env` に 3 項目を書いたか。バックエンドを再起動したか。 |
 | 「google_calendar_redirect_uri is not set」 | `GOOGLE_CALENDAR_REDIRECT_URI` を書いたか。値の末尾に余計なスラッシュがないか。 |
 | コールバックで「redirect_uri_mismatch」 | Google Cloud Console の「承認済みのリダイレクト URI」と .env の `GOOGLE_CALENDAR_REDIRECT_URI` が**完全に一致**しているか（http/https、ポート、パス）。 |

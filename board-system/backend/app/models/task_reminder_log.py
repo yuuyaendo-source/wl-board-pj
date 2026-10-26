@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """タスクリマインドの送信・応答ログ（Personal Today 用）。"""
+from app.core.time_utils import utc_now_naive
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
@@ -26,5 +28,5 @@ class TaskReminderLog(Base):
     remind_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD (Asia/Tokyo)
     slot: Mapped[str] = mapped_column(String(5), nullable=False)  # "13:00"
     action: Mapped[str | None] = mapped_column(String(16), nullable=True)  # continue | done | None=表示のみ
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     acked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

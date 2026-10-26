@@ -1,26 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import LinkifiedText from "./LinkifiedText";
+import DueDateBadge from "./DueDateBadge";
+import { getDueDateBorderClass, formatWithDay } from "@shared/utils/dueDate";
 import type { PlacementWithNote, TakenByUser } from "@/lib/types";
 
 interface NoteCardProps {
   placement: PlacementWithNote;
   showAiBadge?: boolean;
-  /** パーソナル投稿（自分で作成）の印。タスクへ移動したら表示しない */
   showPersonalBadge?: boolean;
   draggable?: boolean;
-  /** ドラッグ時に dataTransfer に追加でセットする値（Personal のゴミ箱/タスクリリース制限用） */
   dragData?: Record<string, string>;
-  /** Task/Personal の付箋色（未指定時は placement.task_color または黄） */
   cardColor?: "yellow" | "green" | "grey" | "blue" | "red" | "purple";
-  /** カレンダー由来の付箋印 */
   showCalendarBadge?: boolean;
-  /** Task 用: 引き取り者（短縮名アイコン表示） */
   takenBy?: TakenByUser[];
-  /** 追記コールバック（指定時は追記入力欄を表示。付箋は追記のみ） */
   onAppendContent?: (noteId: number, currentContent: string | null, appendedText: string) => void;
+  onDueDateChange?: (noteId: number, dueDateStr: string) => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: (e: React.DragEvent) => void;
 }
@@ -34,6 +31,105 @@ const BG_COLOR = {
   purple: "bg-violet-100 border-violet-300",
 } as const;
 
+/** インライン日付入力ピッカー */
+function DueDatePicker({
+  noteId,
+  currentDueDate,
+  onSave,
+  onClose,
+}: {
+  noteId: number;
+  currentDueDate: string | null | undefined;
+  onSave: (noteId: number, dateStr: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(currentDueDate ?? "");
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onSave(noteId, value);
+    onClose();
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onSave(noteId, "");
+    onClose();
+  };
+
+  const handleOpenPicker = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (dateInputRef.current) {
+      if (typeof dateInputRef.current.showPicker === "function") {
+        try {
+          dateInputRef.current.showPicker();
+        } catch {
+          dateInputRef.current.focus();
+        }
+      } else {
+        dateInputRef.current.click();
+      }
+    }
+  };
+
+  return (
+    <div
+      className="mt-1 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg z-10"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="relative flex items-center">
+        <button
+          type="button"
+          onClick={handleOpenPicker}
+          className="flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+        >
+          <span>{value ? formatWithDay(value) : "未設定"}</span>
+          <span>📅</span>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={handleSave}
+        className="rounded bg-blue-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer"
+      >
+        保存
+      </button>
+      {currentDueDate && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300 cursor-pointer"
+        >
+          クリア
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        className="text-xs text-zinc-400 hover:text-zinc-600 px-1 cursor-pointer"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export default function NoteCard({
   placement,
   showAiBadge = false,
@@ -42,14 +138,20 @@ export default function NoteCard({
   dragData,
   cardColor,
   showCalendarBadge = false,
-  takenBy = [],
+  takenBy,
   onAppendContent,
+  onDueDateChange,
   onDragStart,
   onDragEnd,
 }: NoteCardProps) {
   const [appendText, setAppendText] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const color = cardColor ?? placement.task_color ?? "yellow";
   const bg = BG_COLOR[color];
+  const borderHighlight = getDueDateBorderClass(placement.due_date);
+
+  // 他担当者データの安全な評価（props 指定があれば優先、無ければ placement.taken_by をフォールバック参照）
+  const effectiveTakenBy = (takenBy && takenBy.length > 0) ? takenBy : (placement.taken_by || []);
 
   const handleSubmitAppend = () => {
     const trimmed = appendText.trim();
@@ -80,7 +182,7 @@ export default function NoteCard({
           {showPersonalBadge && (
             <span
               className="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500 text-[10px] font-bold text-white"
-              title="パーソナル投稿（自分で作成）"
+              title="パーソナル投稿"
             >
               P
             </span>
@@ -90,21 +192,74 @@ export default function NoteCard({
               ✨
             </span>
           )}
+          {placement.matrix_quadrant === 4 && (
+            <span
+              className="inline-flex h-5 w-5 items-center justify-center rounded bg-amber-500 text-[10px] font-bold text-white shadow-sm"
+              title="重要"
+            >
+              ⭐
+            </span>
+          )}
         </div>
       </div>
-      {takenBy.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {takenBy.map((u) => (
+
+      {/* 期限バッジ */}
+      {placement.due_date && (
+        <div
+          className="mt-0.5 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDueDateChange && setShowDatePicker((v) => !v);
+          }}
+        >
+          <DueDateBadge dueDate={placement.due_date} />
+        </div>
+      )}
+
+      {/* 期限未設定時の設定ボタン */}
+      {!placement.due_date && onDueDateChange && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowDatePicker((v) => !v);
+          }}
+          className="w-fit text-xs text-zinc-400 hover:text-zinc-600 font-medium cursor-pointer"
+        >
+          📅 期限を設定
+        </button>
+      )}
+
+      {/* 日付ピッカー */}
+      {showDatePicker && onDueDateChange && (
+        <DueDatePicker
+          noteId={placement.note_id}
+          currentDueDate={placement.due_date}
+          onSave={onDueDateChange}
+          onClose={() => setShowDatePicker(false)}
+        />
+      )}
+
+      {/* 他担当者の表示（対応中: 緑色 / 完了済み: 灰色＋打ち消し線＋チェックマーク） */}
+      {effectiveTakenBy.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-black/10 pt-1.5">
+          <span className="text-[10px] text-zinc-500 font-medium">他担当者:</span>
+          {effectiveTakenBy.map((u) => (
             <span
               key={u.id}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-xs font-medium text-zinc-600 shadow-sm"
-              title={u.name}
+              className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-xs transition-colors ${u.is_done
+                ? "bg-zinc-400 text-white line-through opacity-80"
+                : "bg-emerald-500 text-white"
+                }`}
+              title={`${u.name}${u.is_done ? " (完了済み)" : " (対応中)"}`}
             >
-              {u.name_short}
+              {u.is_done && <span>✅</span>}
+              {u.name_short || u.name}
             </span>
           ))}
         </div>
       )}
+
       {onAppendContent && (
         <div className="mt-1 flex gap-1" onClick={(e) => e.stopPropagation()}>
           <textarea
@@ -122,12 +277,12 @@ export default function NoteCard({
             autoComplete="off"
             {...{ "data-1p-ignore": true }}
             {...{ "data-lpignore": true }}
-            className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs"
+            className="min-w-0 flex-1 resize-none rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-900"
           />
           <button
             type="button"
             onClick={handleSubmitAppend}
-            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-gray-300 hover:bg-amber-300"
+            className="shrink-0 self-end rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-amber-300 cursor-pointer"
           >
             追記
           </button>
@@ -136,13 +291,12 @@ export default function NoteCard({
     </div>
   );
 
-  const className = `rounded-xl border border-[var(--border)] p-3 shadow-sm ${bg} ${
-    draggable ? "cursor-grab active:cursor-grabbing" : ""
-  }`;
+  const className = `rounded-xl border p-3 shadow-sm ${bg} ${borderHighlight} ${draggable ? "cursor-grab active:cursor-grabbing" : ""
+    }`;
 
   if (draggable) {
     return (
-      <motion.div layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }}>
+      <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
         <div
           className={className}
           draggable
@@ -153,8 +307,6 @@ export default function NoteCard({
             e.dataTransfer.setData("text/plain", noteIdStr);
             if (dragData) {
               Object.entries(dragData).forEach(([k, v]) => e.dataTransfer.setData(k, v));
-              // dragover では getData が空になるブラウザがあるため、Task リリース用に型だけ付与（drop ゾーンで types を参照）
-              // isFromTask: タスク由来の付箋をリリース（配置削除）。canReleaseToTask: パーソナル投稿もタスクへ追加可能
               if (dragData.isFromTask === "true" || dragData.canReleaseToTask === "true") {
                 e.dataTransfer.setData("application/x-board-task-release", "1");
               }
@@ -172,7 +324,6 @@ export default function NoteCard({
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       className={className}

@@ -40,7 +40,7 @@ MSI インストール後、一度でも exe を起動している場合、次�
 ## 2. デバイス側で考えられる要因
 
 | 要因 | 内容・対処 |
-|------|------------|
+| ------ | ------------ |
 | **Visual C++ Redistributable 未導入** | PIL の `_imaging.pyd` は C 拡張のため、Microsoft Visual C++ 再頒布パッケージが必要です。未導入の場合は [Microsoft の公式ページ](https://learn.microsoft.com/ja-jp/cpp/windows/latest-supported-vc-redist) から「x64」用をインストールして再起動し、exe を再度実行してください。 |
 | **ウイルス対策・セキュリティ** | 一部のセキュリティソフトが `.pyd` を「不審な DLL」としてブロック・隔離することがあります。除外設定に「インストール先フォルダ」や「WonderLinko.exe」を追加するか、一時的に無効にして起動できるか試してください。 |
 | **インストール先の権限** | インストール先（例: `%LocalAppData%\WonderLink\WonderLinko`）やその中の `lib\PIL` が読み取り不可・削除されていると失敗します。フォルダのプロパティで権限を確認し、`lib\PIL` に `_imaging*.pyd` が実際に存在するかも確認してください。 |

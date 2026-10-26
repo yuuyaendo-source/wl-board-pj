@@ -1,1 +1,1 @@
-# Board System Backend (Wonder Rinko)
+# Board System Backend (Wonder Linko)

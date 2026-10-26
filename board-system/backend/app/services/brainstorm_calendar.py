@@ -2,6 +2,7 @@
 """リン子ブレストからの Google カレンダー登録（確認フロー・A案: チャットで修正）。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -9,6 +10,7 @@ from datetime import datetime
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+from app.core.time_utils import get_timezone, utc_now_naive
 from app.ai.client import generate_json
 from app.services.calendar_proposal_store import (
     CalendarProposal,
@@ -31,13 +33,9 @@ _CANCEL_RE = re.compile(
 
 
 def _tz() -> ZoneInfo:
-    try:
-        from app.config import settings
+    from app.config import settings
 
-        name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-        return ZoneInfo(name)
-    except Exception:
-        return ZoneInfo("Asia/Tokyo")
+    return get_timezone(settings.calendar_timezone)
 
 
 def _now_ctx() -> str:
@@ -80,7 +78,11 @@ def proposal_payload(p: CalendarProposal) -> dict[str, Any]:
     }
 
 
-def extract_calendar_from_conversation(messages: list[dict[str, str]]) -> dict[str, Any] | None:
+def extract_calendar_from_conversation(
+    messages: list[dict[str, str]],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any] | None:
     """会話からカレンダー登録意図を抽出。JSON を返す。"""
     convo = []
     for m in messages[-8:]:
@@ -117,13 +119,19 @@ def extract_calendar_from_conversation(messages: list[dict[str, str]]) -> dict[s
 - 終了時刻が無ければ開始から30分後を end にする
 - タイムゾーンは +09:00 (Asia/Tokyo)
 """
-    data = generate_json(prompt)
+    # ⑦ 解決された ollama_url / model_override を渡す
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not isinstance(data, dict):
         return None
     return data
 
 
-def revise_draft(proposal: CalendarProposal, user_text: str) -> dict[str, Any] | None:
+def revise_draft(
+    proposal: CalendarProposal,
+    user_text: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any] | None:
     prompt = f"""カレンダー登録案をユーザーの修正指示で更新し、JSON のみ返してください。
 
 現在日時: {_now_ctx()}
@@ -146,26 +154,38 @@ def revise_draft(proposal: CalendarProposal, user_text: str) -> dict[str, Any] |
   "spoken": "修正後の確認をリン子口調で1文"
 }}
 """
-    data = generate_json(prompt)
+    # ⑦ 解決された ollama_url / model_override を渡す
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not isinstance(data, dict) or not data.get("ready"):
         return None
     draft = data.get("draft")
     if not isinstance(draft, dict):
         return None
-    return {"draft": draft, "spoken": (data.get("spoken") or "").strip() or _format_spoken_summary(draft)}
+    return {
+        "draft": draft,
+        "spoken": (data.get("spoken") or "").strip() or _format_spoken_summary(draft),
+    }
 
 
-async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[bool, str, dict[str, Any]]:
+async def create_google_event(
+    user_id: int, draft: dict[str, Any], db
+) -> tuple[bool, str, dict[str, Any]]:
     """Google Calendar にイベントを作成。戻り値: ok, message, extra"""
     from sqlalchemy import select
 
     from app.models import UserGoogleToken
     from app.routers.auth_google import GOOGLE_SCOPE, _sync_user_calendar_events_cache
 
-    result = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    result = await db.execute(
+        select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+    )
     row = result.scalar_one_or_none()
     if not row:
-        return False, "Google カレンダーがまだ連携されていません。パーソナルボードから連携してください。", {}
+        return (
+            False,
+            "Google カレンダーがまだ連携されていません。パーソナルボードから連携してください。",
+            {},
+        )
 
     summary = (draft.get("summary") or "予定").strip()
     start = (draft.get("start") or "").strip()
@@ -186,25 +206,51 @@ async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[
             client_id=settings.google_calendar_client_id,
             client_secret=settings.google_calendar_client_secret,
             scopes=GOOGLE_SCOPE,
+            expiry=row.token_expiry,
         )
-        if row.token_expiry and creds.expired and creds.refresh_token:
+        refreshed = False
+        if creds.refresh_token and (creds.expired or not creds.valid):
             creds.refresh(Request())
+            refreshed = True
+
         service = build("calendar", "v3", credentials=creds)
+        tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+
+        start_payload = (
+            {"dateTime": start, "timeZone": tz_name}
+            if "T" in start
+            else {"date": start}
+        )
+        end_payload = (
+            {"dateTime": end, "timeZone": tz_name} if "T" in end else {"date": end}
+        )
+
         body = {
             "summary": summary,
             "description": (draft.get("description") or "").strip(),
-            "start": {"dateTime": start, "timeZone": "Asia/Tokyo"},
-            "end": {"dateTime": end, "timeZone": "Asia/Tokyo"},
+            "start": start_payload,
+            "end": end_payload,
         }
-        return service.events().insert(calendarId="primary", body=body).execute()
-
-    import asyncio
+        event_res = service.events().insert(calendarId="primary", body=body).execute()
+        return event_res, (creds.token, creds.expiry) if refreshed else (None, None)
 
     try:
-        event = await asyncio.to_thread(_insert)
+        event, (new_token, new_expiry) = await asyncio.to_thread(_insert)
+        if new_token:
+            row.access_token = new_token
+            if new_expiry:
+                row.token_expiry = (
+                    new_expiry.replace(tzinfo=None)
+                    if getattr(new_expiry, "tzinfo", None)
+                    else new_expiry
+                )
+            row.updated_at = utc_now_naive()
+            await db.flush()
     except Exception as e:
         err = str(e)
-        logger.warning("[brainstorm_calendar] insert failed user_id=%s: %s", user_id, err[:200])
+        logger.warning(
+            "[brainstorm_calendar] insert failed user_id=%s: %s", user_id, err[:200]
+        )
         if "insufficient" in err.lower() or "scope" in err.lower() or "403" in err:
             return (
                 False,
@@ -217,12 +263,23 @@ async def create_google_event(user_id: int, draft: dict[str, Any], db) -> tuple[
         await _sync_user_calendar_events_cache(user_id, db)
     except Exception:
         pass
-    return True, f"入れました。「{summary}」です。", {"event_id": event.get("id"), "html_link": event.get("htmlLink")}
+    return (
+        True,
+        f"入れました。「{summary}」です。",
+        {"event_id": event.get("id"), "html_link": event.get("htmlLink")},
+    )
 
 
-def handle_new_calendar_intent(user_id: int, messages: list[dict[str, str]]) -> dict[str, Any]:
+def handle_new_calendar_intent(
+    user_id: int,
+    messages: list[dict[str, str]],
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
     """新規依頼。提案作成 or 質問文を返す。"""
-    extracted = extract_calendar_from_conversation(messages)
+    extracted = extract_calendar_from_conversation(
+        messages, ollama_url=ollama_url, model_override=model_override
+    )
     if not extracted or extracted.get("intent") != "calendar_create":
         return {"mode": "chat"}
     if not extracted.get("ready"):
@@ -235,23 +292,48 @@ def handle_new_calendar_intent(user_id: int, messages: list[dict[str, str]]) -> 
     if not isinstance(draft, dict) or not draft.get("start") or not draft.get("end"):
         return {"mode": "clarify", "spoken": "日時をもう少し教えてもらえますか？"}
     p = create_proposal(user_id, draft)
-    return {"mode": "proposal", "proposal": p, "spoken": _format_spoken_summary(p.draft)}
+    return {
+        "mode": "proposal",
+        "proposal": p,
+        "spoken": _format_spoken_summary(p.draft),
+    }
 
 
-def handle_pending(user_id: int, proposal_id: str, user_text: str) -> dict[str, Any]:
+def handle_pending(
+    user_id: int,
+    proposal_id: str,
+    user_text: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict[str, Any]:
     p = get_proposal(proposal_id, user_id)
     if p is None:
-        return {"mode": "expired", "spoken": "確認の期限が切れました。もう一度予定を教えてください。"}
+        return {
+            "mode": "expired",
+            "spoken": "確認の期限が切れました。もう一度予定を教えてください。",
+        }
     kind = interpret_pending_message(user_text)
     if kind == "cancel":
         delete_proposal(proposal_id, user_id)
         return {"mode": "cancelled", "spoken": "わかりました。登録はしません。"}
     if kind == "confirm":
         return {"mode": "confirm", "proposal": p}
-    revised = revise_draft(p, user_text)
+    revised = revise_draft(
+        p, user_text, ollama_url=ollama_url, model_override=model_override
+    )
     if not revised:
-        return {"mode": "clarify", "spoken": "すみません、修正内容が分かりませんでした。もう一度教えてください。"}
+        return {
+            "mode": "clarify",
+            "spoken": "すみません、修正内容が分かりませんでした。もう一度教えてください。",
+        }
     updated = update_draft(proposal_id, user_id, revised["draft"])
     if updated is None:
-        return {"mode": "expired", "spoken": "確認の期限が切れました。もう一度予定を教えてください。"}
-    return {"mode": "proposal", "proposal": updated, "spoken": revised.get("spoken") or _format_spoken_summary(updated.draft)}
+        return {
+            "mode": "expired",
+            "spoken": "確認の期限が切れました。もう一度予定を教えてください。",
+        }
+    return {
+        "mode": "proposal",
+        "proposal": updated,
+        "spoken": revised.get("spoken") or _format_spoken_summary(updated.draft),
+    }

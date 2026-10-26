@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """管理用: LLM エンドポイント（スロット）の切替。DB で環境変数 LLM_TARGET を上書き。"""
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +13,7 @@ from app.ai.client import invalidate_resolved_model_cache
 from app.config import settings
 from app.db import get_db
 from app.models.system_setting import SystemSetting
+from app.routers.auth_admin import get_current_admin
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +21,15 @@ router = APIRouter(prefix="/admin/llm", tags=["admin"])
 
 
 class LlmStatusResponse(BaseModel):
-    db_llm_target: int | None = Field(description="DB に保存した上書き。null は DB 未設定で env に従う")
+    db_llm_target: int | None = Field(
+        description="DB に保存した上書き。null は DB 未設定で env に従う"
+    )
     env_llm_target: int | None
     effective_llm_target: int | None
     resolved_url: str | None
-    model_override: str | None = Field(description="環境で固定モデル指定時のみ。null なら自動解決")
+    model_override: str | None = Field(
+        description="環境で固定モデル指定時のみ。null なら自動解決"
+    )
     model_mode: str = Field(description='"auto" | "fixed"')
 
 
@@ -42,7 +49,10 @@ class LlmUpdateBody(BaseModel):
 
 
 @router.get("", response_model=LlmStatusResponse)
-async def get_llm_status(db: AsyncSession = Depends(get_db)):
+async def get_llm_status(
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
     result = await db.execute(select(SystemSetting).where(SystemSetting.id == 1))
     row = result.scalar_one_or_none()
     db_t = row.llm_target if row else None
@@ -59,7 +69,11 @@ async def get_llm_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("", response_model=LlmStatusResponse)
-async def put_llm_status(body: LlmUpdateBody, db: AsyncSession = Depends(get_db)):
+async def put_llm_status(
+    body: LlmUpdateBody,
+    db: AsyncSession = Depends(get_db),
+    admin: str = Depends(get_current_admin),
+):
     if body.llm_target is not None:
         url, _ = settings.resolve_ollama_for_target(body.llm_target)
         if not url:
@@ -78,7 +92,7 @@ async def put_llm_status(body: LlmUpdateBody, db: AsyncSession = Depends(get_db)
 
     await db.flush()
     invalidate_resolved_model_cache(None)
-    logger.info("[Rinko AI] admin: llm_target を更新 db=%s", body.llm_target)
+    logger.info("[Linko AI] admin: llm_target を更新 db=%s", body.llm_target)
 
     eff = body.llm_target if body.llm_target is not None else settings.llm_target
     url, model_ov = settings.resolve_ollama_for_target(eff)

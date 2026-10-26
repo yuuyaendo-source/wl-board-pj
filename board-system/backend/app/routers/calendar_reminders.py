@@ -7,8 +7,9 @@ Google カレンダー予定のリマインド API（デスクトップ用）。
 """
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,23 +19,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
-from app.models import CalendarReminderLog, User, UserGoogleToken
+from app.models import CalendarReminderLog, PersonalSummaryCache, User, UserGoogleToken
+from app.core.time_utils import get_timezone
 
 router = APIRouter(prefix="/api/personal", tags=["calendar_reminders"])
 logger = logging.getLogger(__name__)
 
 REMIND_KIND_BEFORE_15 = "before_15"
 DEFAULT_MINUTES_BEFORE = 15
-# ポーリング間隔を考慮した通知ウィンドウ（分）
 WINDOW_MARGIN_MIN = 2.0
 
 
 def _jst_now() -> datetime:
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     return datetime.now(tz)
 
 
@@ -42,19 +40,11 @@ def _jst_today() -> str:
     return _jst_now().strftime("%Y-%m-%d")
 
 
-def _short_title(summary: str) -> str:
-    text = (summary or "").strip().replace("\n", " ") or "予定"
-    if len(text) <= 40:
-        return text
-    return text[:39] + "…"
-
-
 def _parse_event_start(start_str: str, tz: ZoneInfo) -> datetime | None:
     """終日 (date のみ) は None。dateTime 予定のみ。"""
     if not start_str or "T" not in start_str:
         return None
     try:
-        # Google は Z または +09:00 付き
         s = start_str.replace("Z", "+00:00")
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
@@ -62,6 +52,37 @@ def _parse_event_start(start_str: str, tz: ZoneInfo) -> datetime | None:
         return dt.astimezone(tz)
     except Exception:
         return None
+
+
+def _event_date(start_str: str, tz: ZoneInfo | None = None) -> str:
+    """修正⑤: 開始日時文字列からJSTでの日付部分 (YYYY-MM-DD) を抽出。"""
+    if not start_str:
+        return _jst_today()
+    if tz is None:
+        tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+        tz = get_timezone(tz_name)
+    dt = _parse_event_start(start_str, tz)
+    if dt is not None:
+        return dt.strftime("%Y-%m-%d")
+    if len(start_str) >= 10 and start_str[4] == "-" and start_str[7] == "-":
+        return start_str[:10]
+    return _jst_today()
+
+
+def _relevant_dates() -> list[str]:
+    """日付境界付近での検索用（前日・当日・翌日の3日間）。"""
+    now = _jst_now()
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    return [yesterday, today, tomorrow]
+
+
+def _short_title(summary: str) -> str:
+    text = (summary or "").strip().replace("\n", " ") or "予定"
+    if len(text) <= 40:
+        return text
+    return text[:39] + "…"
 
 
 def _voice_text(title: str, minutes_before: int) -> str:
@@ -89,7 +110,7 @@ class CalendarPendingResponse(BaseModel):
 
 class CalendarShownBody(BaseModel):
     event_id: str
-    event_start: str = ""  # 開始時刻 ISO。予定変更時は別扱いで再リマインド可能にする
+    event_start: str = ""
     remind_kind: str = Field(default=REMIND_KIND_BEFORE_15, max_length=16)
 
 
@@ -100,31 +121,39 @@ async def _ensure_user(user_id: int, db: AsyncSession) -> None:
 
 
 async def _logged_starts_by_event(
-    user_id: int, remind_date: str, remind_kind: str, db: AsyncSession
-) -> dict[str, str]:
-    """event_id → リマインド済みの開始時刻 (event_summary 列に保存)。"""
+    user_id: int, dates: list[str], remind_kind: str, db: AsyncSession
+) -> dict[tuple[str, str], str]:
     r = await db.execute(
-        select(CalendarReminderLog.event_id, CalendarReminderLog.event_summary).where(
+        select(
+            CalendarReminderLog.event_id,
+            CalendarReminderLog.remind_date,
+            CalendarReminderLog.event_summary,
+        ).where(
             CalendarReminderLog.user_id == user_id,
-            CalendarReminderLog.remind_date == remind_date,
+            CalendarReminderLog.remind_date.in_(dates),
             CalendarReminderLog.remind_kind == remind_kind,
         )
     )
-    return {row[0]: (row[1] or "") for row in r.all()}
+    return {(row[0], row[1]): (row[2] or "") for row in r.all()}
 
 
-@router.get("/{user_id}/calendar_reminders/pending", response_model=CalendarPendingResponse)
+@router.get(
+    "/{user_id}/calendar_reminders/pending", response_model=CalendarPendingResponse
+)
 async def get_pending_calendar_reminders(
     user_id: int,
     minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=15),
     db: AsyncSession = Depends(get_db),
 ):
-    """Google 連携済みユーザーの、まもなく開始する予定を返す。未連携は items=[]。"""
     await _ensure_user(user_id, db)
     remind_date = _jst_today()
-    remind_kind = REMIND_KIND_BEFORE_15 if minutes_before == 15 else f"before_{minutes_before}"
+    remind_kind = (
+        REMIND_KIND_BEFORE_15 if minutes_before == 15 else f"before_{minutes_before}"
+    )
 
-    r_tok = await db.execute(select(UserGoogleToken).where(UserGoogleToken.user_id == user_id))
+    r_tok = await db.execute(
+        select(UserGoogleToken).where(UserGoogleToken.user_id == user_id)
+    )
     if r_tok.scalar_one_or_none() is None:
         return CalendarPendingResponse(
             owner_id=user_id,
@@ -133,20 +162,23 @@ async def get_pending_calendar_reminders(
             items=[],
         )
 
-    from app.routers.auth_google import _fetch_today_events_for_user, _sync_user_calendar_events_cache
+    person_id = str(user_id)
+    r_cache = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
+    )
+    cache_row = r_cache.scalar_one_or_none()
+    events = []
+    if cache_row and cache_row.events:
+        try:
+            events = json.loads(cache_row.events)
+        except Exception:
+            events = []
 
-    events = await _fetch_today_events_for_user(user_id, db)
-    try:
-        await _sync_user_calendar_events_cache(user_id, db, events)
-    except Exception as e:
-        logger.warning("calendar pending cache sync failed user_id=%s: %s", user_id, e)
-    logged = await _logged_starts_by_event(user_id, remind_date, remind_kind, db)
+    dates_to_check = _relevant_dates()
+    logged = await _logged_starts_by_event(user_id, dates_to_check, remind_kind, db)
 
     tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("Asia/Tokyo")
+    tz = get_timezone(tz_name)
     now = _jst_now()
 
     items: list[CalendarPendingItem] = []
@@ -155,7 +187,9 @@ async def get_pending_calendar_reminders(
         if not event_id:
             continue
         start_str = e.get("start") or ""
-        if logged.get(event_id) == start_str:
+        target_event_date = _event_date(start_str, tz)
+
+        if logged.get((event_id, target_event_date)) == start_str:
             continue
         start_dt = _parse_event_start(start_str, tz)
         if start_dt is None:
@@ -191,15 +225,19 @@ async def mark_calendar_reminder_shown(
     minutes_before: int = Query(DEFAULT_MINUTES_BEFORE, ge=1, le=15),
     db: AsyncSession = Depends(get_db),
 ):
-    """デスクトップがリマインドを表示したとき呼ぶ。"""
     await _ensure_user(user_id, db)
-    remind_date = _jst_today()
-    remind_kind = REMIND_KIND_BEFORE_15 if minutes_before == 15 else f"before_{minutes_before}"
+    remind_kind = (
+        REMIND_KIND_BEFORE_15 if minutes_before == 15 else f"before_{minutes_before}"
+    )
     event_id = (body.event_id or "").strip()
     if not event_id:
         raise HTTPException(status_code=400, detail="event_id is required")
 
     event_start = (body.event_start or "").strip()
+    tz_name = getattr(settings, "calendar_timezone", None) or "Asia/Tokyo"
+    tz = get_timezone(tz_name)
+    remind_date = _event_date(event_start, tz)
+
     r = await db.execute(
         select(CalendarReminderLog).where(
             CalendarReminderLog.user_id == user_id,

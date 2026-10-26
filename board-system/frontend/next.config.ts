@@ -1,15 +1,23 @@
 import type { NextConfig } from "next";
 
-// 本番で付箋ボードと同一ドメイン運用時は /boards で提供（環境変数より優先して確実に効かせる）
-const basePath =
-  process.env.NEXT_PUBLIC_BASE_PATH !== undefined
-    ? process.env.NEXT_PUBLIC_BASE_PATH
-    : process.env.NODE_ENV === "production"
-      ? "/boards"
-      : "";
+// 余分な引用符を除去
+const rawBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/['"]/g, "").trim();
+
+// 環境変数がある場合のみ basePath を適用し、ない場合は undefined（ルート直下）にする
+const basePath = rawBasePath !== "" ? (rawBasePath.startsWith("/") ? rawBasePath : `/${rawBasePath}`) : undefined;
 
 const nextConfig: NextConfig = {
-  basePath,
+  ...(basePath ? { basePath } : {}),
+  // /task へのアクセスを /taskboard へ自動転送
+  async redirects() {
+    return [
+      {
+        source: "/task",
+        destination: "/taskboard",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

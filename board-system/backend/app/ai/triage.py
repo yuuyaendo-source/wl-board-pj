@@ -6,7 +6,11 @@ Main Board 新規投稿が「タスクか情報か」「担当者明記か」を
 from app.ai.client import generate_json
 
 
-def run_triage(content: str) -> dict | None:
+def run_triage(
+    content: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict | None:
     """
     付箋本文からタスク判定と担当者名を取得する。
     戻り値: None（API 未設定・失敗） or
@@ -25,12 +29,14 @@ def run_triage(content: str) -> dict | None:
 回答は必ず次の JSON 形式のみにしてください。他に説明は不要です。
 {{"is_task": true または false, "assignee_name": "担当者名（敬称なし。いなければ null）", "reason": "判定理由を1行で"}}
 """
-    data = generate_json(prompt)
+    data = generate_json(prompt, ollama_url=ollama_url, model_override=model_override)
     if not data:
         return None
     # LLM が "true" を文字列で返す場合にも対応（is True のみだと False になる）
     raw_is_task = data.get("is_task")
-    is_task = raw_is_task is True or (isinstance(raw_is_task, str) and raw_is_task.strip().lower() == "true")
+    is_task = raw_is_task is True or (
+        isinstance(raw_is_task, str) and raw_is_task.strip().lower() == "true"
+    )
     assignee = data.get("assignee_name")
     if isinstance(assignee, str):
         assignee = assignee.strip() or None

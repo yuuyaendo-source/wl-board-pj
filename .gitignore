@@ -5,10 +5,9 @@ Thumbs.db
 
 # Environment Variables
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
 
 # Python
 __pycache__/
@@ -17,34 +16,26 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Node.js
+# Database (SQLite)
+*.db
+*.sqlite3
+
+# Node.js (※ロックファイルはコミットするため除外リストから削除)
 node_modules/
 npm-debug.log
 yarn-error.log
-package-lock.json
-yarn.lock
 
-# Next.js
+# Next.js / Build Artifacts (先頭スラッシュを外してサブディレクトリにも適用)
 .next/
 out/
 build/
+dist/
+*.exe
+*.dll
 
 # VS Code
 .vscode/
 *.code-workspace
 
-# Project Specific (AI-Board)
-02_2_AI-Board/temp_captures/
-02_2_AI-Board/src/webapp/static/captures/
-02_2_AI-Board/src/webapp/static/voices/
-02_2_AI-Board/models_list.txt
-02_2_AI-Board/models.txt
-
-#Docs
+# Docs / Legacy
 old_docs/
-
-# Windows Build artifacts
-/build/
-/dist/
-*.exe
-*.dll

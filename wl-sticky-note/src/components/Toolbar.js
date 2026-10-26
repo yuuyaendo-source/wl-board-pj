@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import styles from "./Toolbar.module.css";
+import { MIN_SCALE, MAX_SCALE } from "@/constants/board";
 
 const COLORS = [
     "#ffeb3b", // Yellow
@@ -23,7 +24,9 @@ export default function Toolbar({
     onUpload,
     onToggleCommentPanel,
     onCenter,
-    onClearAllNotes
+    onClearAllNotes,
+    hideGrayNotes,
+    onToggleHideGrayNotes
 }) {
     const fileInputRef = useRef(null);
 
@@ -34,6 +37,11 @@ export default function Toolbar({
             e.target.value = ''; // Reset input
         }
     };
+
+    // 修正⑨: 開発環境ではローカルの 3001 ポートへフォールバック
+    const defaultBoardUrl = process.env.NODE_ENV === "production"
+        ? "https://wlboardsys.internal.wonder-link.com/boards"
+        : "http://localhost:3001/boards";
 
     return (
         <div className={styles.toolbar}>
@@ -62,14 +70,13 @@ export default function Toolbar({
 
             <div className={styles.secondaryBlock}>
                 <div className={styles.group}>
-                    <button className={styles.textBtn} onClick={() => setScale(s => Math.max(0.5, s - 0.1))}>−</button>
+                    <button className={styles.textBtn} onClick={() => setScale(s => Math.max(MIN_SCALE, s - 0.1))}>−</button>
                     <span style={{ minWidth: "3ch", fontSize: "0.9rem" }}>{Math.round(scale * 100)}%</span>
-                    <button className={styles.textBtn} onClick={() => setScale(s => Math.min(2, s + 0.1))}>＋</button>
+                    <button className={styles.textBtn} onClick={() => setScale(s => Math.min(MAX_SCALE, s + 0.1))}>＋</button>
                 </div>
 
                 <div className={styles.divider} role="separator" aria-hidden="true" />
 
-                {/* 並び順: センターへ戻る → 付箋一覧表示 → 付箋一覧保存 → 付箋データをインポート → 全削除 */}
                 <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="センターへ戻る">
                         <button type="button" className={styles.iconBtn} onClick={onCenter} aria-label="センターへ戻る">🎯</button>
@@ -110,6 +117,16 @@ export default function Toolbar({
                 <div className={styles.divider} role="separator" aria-hidden="true" />
 
                 <div className={styles.group}>
+                    <span className={styles.iconBtnWrap} data-tooltip={hideGrayNotes ? "グレー付箋を表示" : "グレー付箋を隠す"}>
+                        <button type="button" className={styles.iconBtn} onClick={onToggleHideGrayNotes} aria-label="グレー付箋の表示切替">
+                            {hideGrayNotes ? "🙈" : "👁️"}
+                        </button>
+                    </span>
+                </div>
+
+                <div className={styles.divider} role="separator" aria-hidden="true" />
+
+                <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="全削除">
                         <button
                             type="button"
@@ -127,7 +144,7 @@ export default function Toolbar({
                 <div className={styles.group}>
                     <span className={styles.iconBtnWrap} data-tooltip="Board System を開く">
                         <a
-                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || "https://wl-ai-board.internal.wonder-link.com/boards").replace(/\/$/, "") + "/task"}
+                            href={(process.env.NEXT_PUBLIC_BOARD_SYSTEM_URL || defaultBoardUrl).replace(/\/$/, "") + "/taskboard"}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={styles.iconBtn}
@@ -139,8 +156,6 @@ export default function Toolbar({
                     </span>
                 </div>
             </div>
-
         </div>
     );
 }
-

@@ -55,7 +55,7 @@ export default function CommentListPanel({ notes, onJumpToNote, onGroupNotes, on
                 </div>
             </div>
 
-            <div className={styles.noteList}>
+            <div className={styles.noteList} data-scrollable="true">
                 {notes.map((note) => (
                     <div
                         key={note.id}

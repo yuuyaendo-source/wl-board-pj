@@ -7,7 +7,7 @@ Board System を **Docker** で本番デプロイしている場合の構成の�
 ## 1. 全体像
 
 | 役割 | どこで動く | 使う DB / 設定 |
-|------|------------|-----------------|
+| ------ | ------------ | ----------------- |
 | **データベース** | Docker コンテナ `linko-db`（PostgreSQL） | データはボリューム `postgres_data` に永続化 |
 | **Board System API** | Docker コンテナ `linko-backend-blue` または `linko-backend-green` | コンテナの環境変数で **PostgreSQL** に接続 |
 | **Board System フロント** | Docker コンテナ `linko-frontend-blue/green` | API の URL はビルド時に埋め込み |
@@ -22,7 +22,7 @@ Board System を **Docker** で本番デプロイしている場合の構成の�
 
 ## 2. なぜ「SQLite」や「table users already exists」が出たか
 
-- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wl-board-sys-sv` のシェル）で動いています。
+- あなたが実行した `alembic upgrade heads` は **ホスト上**（`devuser01@wlboardsys-app-01` のシェル）で動いています。
 - そのとき使われるのは **ホストの** `board-system/backend/.env` と、そこに書かれた `DATABASE_URL` です。
 - 多くの場合、開発用に `DATABASE_URL=sqlite+aiosqlite:///./board.db` のままなので、**ホスト上の SQLite ファイル（board.db）** に対してマイグレーションが走ります。
 - その SQLite が「既にテーブルあり・alembic_version は空」のような状態だと、「table users already exists」になります。
@@ -131,6 +131,7 @@ docker exec -it linko-db psql -U linko_user -d linko_board_system -c "\dt"
    ```bash
    docker exec -it linko-backend-green alembic upgrade head
    ```
+
    または Blue に切り替わっていれば `linko-backend-blue`。これでマージリビジョン（f6a7b8c9d0e1）が適用される。
 
 ---
@@ -149,7 +150,9 @@ docker exec -it linko-db psql -U linko_user -d linko_board_system -c "\dt"
    ```bash
    docker exec -it linko-backend-green alembic stamp f6a7b8c9d0e1
    ```
+
    または
+
    ```bash
    docker exec -it linko-backend-blue alembic stamp f6a7b8c9d0e1
    ```
@@ -191,7 +194,7 @@ docker exec -it linko-backend-green alembic current
 ## 4. 本番の状態を確認するコマンド一覧
 
 | 確認したいこと | コマンド |
-|----------------|----------|
+| ---------------- | ---------- |
 | いまどちらが本番か（Blue/Green） | `cat /etc/nginx/conf.d/active_env.conf` |
 | 動いているコンテナ | `docker ps`（`linko-backend-*`, `linko-db`, `linko-frontend-*`, `linko-sticky-note-*` を確認） |
 | DB コンテナ（PostgreSQL）の状態 | `docker ps | grep linko-db` |

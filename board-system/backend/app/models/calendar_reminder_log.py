@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """カレンダーリマインドの送信ログ（Google 予定・15分前など）。"""
+from app.core.time_utils import utc_now_naive
+
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
@@ -25,4 +27,4 @@ class CalendarReminderLog(Base):
     remind_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD (Asia/Tokyo)
     remind_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="before_15")
     event_summary: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)

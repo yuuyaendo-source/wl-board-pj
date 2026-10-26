@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
 
 class UserCreate(BaseModel):
@@ -7,6 +8,7 @@ class UserCreate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
+    team_ids: List[int] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
@@ -14,6 +16,12 @@ class UserUpdate(BaseModel):
     email: str | None = None
     call_name: str | None = None
     role: str | None = None
+    team_ids: Optional[List[int]] = None
+
+
+class TeamSummary(BaseModel):
+    id: int
+    name: str
 
 
 class UserResponse(BaseModel):
@@ -22,6 +30,8 @@ class UserResponse(BaseModel):
     email: str | None
     call_name: str | None
     role: str | None
+    team_ids: List[int] = Field(default_factory=list)
+    teams: List[TeamSummary] = Field(default_factory=list)
     face_count: int = 0
 
     model_config = {"from_attributes": True}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { requireAdminAuth } from "@/app/components/AdminAuthModal";
 
 type LlmStatus = Awaited<ReturnType<typeof api.admin.llm.get>>;
 
@@ -32,35 +33,41 @@ export default function AdminSystemPage() {
   }, []);
 
   useEffect(() => {
-    void load();
+    requireAdminAuth(() => {
+      void load();
+    });
   }, [load]);
 
   const saveSlot = async (slot: number) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const s = await api.admin.llm.put({ llm_target: slot });
-      setStatus(s);
-      setDraft(slot);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setSaving(false);
-    }
+    requireAdminAuth(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const s = await api.admin.llm.put({ llm_target: slot });
+        setStatus(s);
+        setDraft(slot);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const clearDbOverride = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const s = await api.admin.llm.put({ llm_target: null });
-      setStatus(s);
-      setDraft("env");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "保存に失敗しました");
-    } finally {
-      setSaving(false);
-    }
+    requireAdminAuth(async () => {
+      setSaving(true);
+      setError(null);
+      try {
+        const s = await api.admin.llm.put({ llm_target: null });
+        setStatus(s);
+        setDraft("env");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "保存に失敗しました");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   return (

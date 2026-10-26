@@ -5,21 +5,21 @@ linko-system が GET /api/personal/{person_id}/summary でサマリを取得し�
 POST /api/personal/{person_id}/today でカレンダーキーワード由来の Today を送る。
 """
 import json
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models.personal_summary import PersonalSummaryCache
+from app.models.user import User
+from app.core.time_utils import utc_now_naive
 
 router = APIRouter(prefix="/api/personal", tags=["personal"])
 
 
 class TodayItem(BaseModel):
-    """Today 1件。label 必須、他は任意。"""
     label: str
     summary: str = ""
     start: str = ""
@@ -27,20 +27,58 @@ class TodayItem(BaseModel):
 
 
 class PostTodayBody(BaseModel):
-    """POST /api/personal/{person_id}/today の body。"""
     items: list[TodayItem] = []
 
 
 class EventItem(BaseModel):
-    """今日の予定1件。"""
     summary: str = ""
     start: str = ""
     end: str = ""
 
 
 class PostEventsBody(BaseModel):
-    """POST /api/personal/{person_id}/events の body。カレンダー枠に表示する今日の予定を保存。"""
     events: list[EventItem] = []
+
+
+async def _resolve_cache_row(
+    person_id: str, db: AsyncSession
+) -> tuple[PersonalSummaryCache | None, str]:
+    """修正⑥: person_id（user_id、または email 等）から PersonalSummaryCache を柔軟に解決。"""
+    pid_clean = person_id.strip()
+    result = await db.execute(
+        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == pid_clean)
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        return row, pid_clean
+
+    if "@" in pid_clean:
+        user_res = await db.execute(
+            select(User.id).where(func.lower(User.email) == pid_clean.lower())
+        )
+        uid = user_res.scalar_one_or_none()
+        if uid is not None:
+            uid_str = str(uid)
+            result = await db.execute(
+                select(PersonalSummaryCache).where(
+                    PersonalSummaryCache.person_id == uid_str
+                )
+            )
+            return result.scalar_one_or_none(), uid_str
+    elif pid_clean.isdigit():
+        user_res = await db.execute(select(User.email).where(User.id == int(pid_clean)))
+        email = user_res.scalar_one_or_none()
+        if email:
+            result = await db.execute(
+                select(PersonalSummaryCache).where(
+                    PersonalSummaryCache.person_id == email.strip().lower()
+                )
+            )
+            found = result.scalar_one_or_none()
+            if found:
+                return found, email.strip().lower()
+
+    return None, pid_clean
 
 
 @router.get("/{person_id}/summary")
@@ -48,14 +86,7 @@ async def get_personal_summary(
     person_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    linko-system 用。指定 person_id の events と today を返す。
-    キャッシュが無い場合は events=[], today=[] で 200 を返す。
-    """
-    result = await db.execute(
-        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
-    )
-    row = result.scalar_one_or_none()
+    row, _ = await _resolve_cache_row(person_id, db)
     if row is None:
         return {"events": [], "today": []}
     try:
@@ -75,23 +106,19 @@ async def post_personal_today(
     body: PostTodayBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    linko-system のカレンダーキーワード連携用。Today 項目を上書き保存する。
-    """
     if not person_id.strip():
         raise HTTPException(status_code=400, detail="person_id is required")
     today_json = json.dumps([item.model_dump() for item in body.items])
 
-    result = await db.execute(
-        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
-    )
-    row = result.scalar_one_or_none()
+    row, effective_pid = await _resolve_cache_row(person_id, db)
     if row is None:
-        row = PersonalSummaryCache(person_id=person_id, events="[]", today=today_json)
+        row = PersonalSummaryCache(
+            person_id=effective_pid, events="[]", today=today_json
+        )
         db.add(row)
     else:
         row.today = today_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
     return {"ok": True}
 
@@ -102,23 +129,18 @@ async def post_personal_events(
     body: PostEventsBody,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    今日の予定（events）をキャッシュに保存。カレンダー連携元（Google 取得結果等）が呼ぶ。
-    today は変更せず、events のみ更新する。
-    """
     if not person_id.strip():
         raise HTTPException(status_code=400, detail="person_id is required")
     events_json = json.dumps([e.model_dump() for e in body.events])
 
-    result = await db.execute(
-        select(PersonalSummaryCache).where(PersonalSummaryCache.person_id == person_id)
-    )
-    row = result.scalar_one_or_none()
+    row, effective_pid = await _resolve_cache_row(person_id, db)
     if row is None:
-        row = PersonalSummaryCache(person_id=person_id, events=events_json, today="[]")
+        row = PersonalSummaryCache(
+            person_id=effective_pid, events=events_json, today="[]"
+        )
         db.add(row)
     else:
         row.events = events_json
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now_naive()
     await db.flush()
     return {"ok": True}

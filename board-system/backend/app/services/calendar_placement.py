@@ -4,7 +4,10 @@ from __future__ import annotations
 
 PLACEMENT_SOURCE_CALENDAR = "calendar"  # 終日予定
 PLACEMENT_SOURCE_CALENDAR_TIMED = "calendar_timed"  # 時刻付き（N分前リマインドのみ）
-CALENDAR_PLACEMENT_SOURCES = (PLACEMENT_SOURCE_CALENDAR, PLACEMENT_SOURCE_CALENDAR_TIMED)
+CALENDAR_PLACEMENT_SOURCES = (
+    PLACEMENT_SOURCE_CALENDAR,
+    PLACEMENT_SOURCE_CALENDAR_TIMED,
+)
 
 EVENT_TYPE_WORKING_LOCATION = "workingLocation"
 
@@ -27,10 +30,6 @@ def placement_source_for_event(event: dict) -> str:
     if is_timed_event(event):
         return PLACEMENT_SOURCE_CALENDAR_TIMED
     return PLACEMENT_SOURCE_CALENDAR
-
-
-def is_calendar_placement_source(src: str | None) -> bool:
-    return src in CALENDAR_PLACEMENT_SOURCES
 
 
 def include_in_task_remind(placement_source: str | None) -> bool:

@@ -4,8 +4,6 @@
 OLLAMA_URL 未設定時は None を返す。
 
 OLLAMA_MODEL 未設定時は /api/tags（modified_at 新しい順）→ 失敗時 /v1/models でモデル名を自動解決し、短時間キャッシュする。
-
-※ Gemini は使用しない（ローカル LLM 利用のためコメントアウト）。
 """
 from __future__ import annotations
 
@@ -19,7 +17,6 @@ from typing import Any
 import requests
 
 from app.config import settings
-from app.services.llm_settings import get_resolved_ollama_sync
 
 logger = logging.getLogger(__name__)
 _session: requests.Session | None = None
@@ -36,7 +33,7 @@ def _get_session() -> requests.Session:
 
 
 def _split_root_and_v1(ollama_url: str) -> tuple[str, str]:
-    """http://host:11434[/v1] -> (root, v1_base)。"""
+    """http://host:11435[/v1] -> (root, v1_base)。"""
     u = ollama_url.strip().rstrip("/")
     if u.endswith("/v1"):
         root = u[:-3].rstrip("/")
@@ -90,9 +87,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /api/tags 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /api/tags 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /api/tags 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /api/tags 解析スキップ: %s", e)
 
     try:
         r = sess.get(f"{v1_base}/models", timeout=20)
@@ -101,9 +98,9 @@ def _discover_model_id(root: str, v1_base: str, sess: requests.Session) -> str |
             if picked:
                 return picked
     except requests.RequestException as e:
-        logger.debug("[Rinko AI] /v1/models 取得スキップ: %s", str(e)[:120])
+        logger.debug("[Linko AI] /v1/models 取得スキップ: %s", str(e)[:120])
     except (TypeError, ValueError, KeyError) as e:
-        logger.debug("[Rinko AI] /v1/models 解析スキップ: %s", e)
+        logger.debug("[Linko AI] /v1/models 解析スキップ: %s", e)
 
     return None
 
@@ -138,18 +135,20 @@ def resolve_ollama_model_for_request(
     discovered = _discover_model_id(root, v1_norm, sess)
     if not discovered:
         logger.warning(
-            "[Rinko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
+            "[Linko AI] Ollama から利用可能モデルを取得できませんでした（%s の /api/tags と /v1/models を確認）",
             root,
         )
         return None
 
     with _cache_lock:
         _model_cache[key] = (discovered, now + ttl)
-    logger.info("[Rinko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
+    logger.info("[Linko AI] モデル自動解決: %s (endpoint=%s)", discovered, key)
     return discovered
 
 
-def _post_chat_completions(v1_base: str, model: str, prompt: str, timeout: int) -> requests.Response:
+def _post_chat_completions(
+    v1_base: str, model: str, prompt: str, timeout: int
+) -> requests.Response:
     url = f"{v1_base.rstrip('/')}/chat/completions"
     payload = {
         "model": model,
@@ -159,18 +158,28 @@ def _post_chat_completions(v1_base: str, model: str, prompt: str, timeout: int) 
     return sess.post(url, json=payload, timeout=timeout)
 
 
-def generate_text(prompt: str) -> str | None:
+def generate_text(
+    prompt: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> str | None:
     """
     プロンプトを送り、応答のテキスト（Markdown 等）をそのまま返す。
-    実効 OLLAMA URL 未設定時は None。JSON 抽出は行わない。
+    ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
-    url, model_ov = get_resolved_ollama_sync()
+    if ollama_url is None:
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
+    else:
+        url, model_ov = ollama_url, model_override
+
     if not url:
         return None
     _, v1_base = _split_root_and_v1(url)
 
     for attempt in range(2):
-        model = resolve_ollama_model_for_request(url, model_ov, force_refresh=(attempt > 0))
+        model = resolve_ollama_model_for_request(
+            url, model_ov, force_refresh=(attempt > 0)
+        )
         if not model:
             return None
         try:
@@ -179,7 +188,7 @@ def generate_text(prompt: str) -> str | None:
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] chat/completions が 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
@@ -193,28 +202,44 @@ def generate_text(prompt: str) -> str | None:
                 return None
             return str(content).strip() or None
         except requests.RequestException as e:
-            logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, str(e)[:300])
+            logger.warning(
+                "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                type(e).__name__,
+                str(e)[:300],
+            )
             return None
         except Exception as e:
-            logger.warning("[Rinko AI] Ollama 呼び出しエラー: %s — %s", type(e).__name__, str(e)[:300])
+            logger.warning(
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
+                type(e).__name__,
+                str(e)[:300],
+            )
             return None
     return None
 
 
-def generate_json(prompt: str) -> dict | list | None:
+def generate_json(
+    prompt: str,
+    ollama_url: str | None = None,
+    model_override: str | None = None,
+) -> dict | list | None:
     """
     プロンプトを送り、応答から JSON を1つ抽出して dict または list で返す。
-    失敗時・実効 OLLAMA URL 未設定時は None。
-    OLLAMA_URL は OpenAI 互換のベース（例: http://host:11434/v1）。末尾の /v1 が無い場合は自動で付与。
-    404 の場合はモデル不一致の可能性 — 自動解決キャッシュを捨てて再試行する。
+    ollama_url が未渡しの場合は環境変数設定からフォールバック解決する。
     """
-    url, model_ov = get_resolved_ollama_sync()
+    if ollama_url is None:
+        url, model_ov = settings.resolve_ollama_for_target(settings.llm_target)
+    else:
+        url, model_ov = ollama_url, model_override
+
     if not url:
         return None
     _, v1_base = _split_root_and_v1(url)
 
     for attempt in range(2):
-        model = resolve_ollama_model_for_request(url, model_ov, force_refresh=(attempt > 0))
+        model = resolve_ollama_model_for_request(
+            url, model_ov, force_refresh=(attempt > 0)
+        )
         if not model:
             return None
         try:
@@ -223,23 +248,23 @@ def generate_json(prompt: str) -> dict | list | None:
                 invalidate_resolved_model_cache(v1_base)
                 if attempt == 0:
                     logger.warning(
-                        "[Rinko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
+                        "[Linko AI] Ollama API 404 — モデル解決を破棄して再試行します (model=%s)",
                         model,
                     )
                     continue
                 logger.warning(
-                    "[Rinko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
+                    "[Linko AI] Ollama API 404 — URL または OLLAMA_MODEL（固定時）を確認してください。"
                     " 自動解決時は ollama の /api/tags を確認してください。",
                 )
             r.raise_for_status()
             data = r.json()
             choices = data.get("choices") or []
             if not choices:
-                logger.warning("[Rinko AI] Ollama 応答に choices がありません")
+                logger.warning("[Linko AI] Ollama 応答に choices がありません")
                 return None
             content = (choices[0].get("message") or {}).get("content")
             if not content or not (text := str(content).strip()):
-                logger.warning("[Rinko AI] Ollama 応答が空でした")
+                logger.warning("[Linko AI] Ollama 応答が空でした")
                 return None
             if "```" in text:
                 m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
@@ -249,12 +274,22 @@ def generate_json(prompt: str) -> dict | list | None:
         except requests.RequestException as e:
             msg = str(e)[:300]
             if "404" not in msg:
-                logger.warning("[Rinko AI] Ollama API 呼び出しに失敗しました: %s — %s", type(e).__name__, msg)
+                logger.warning(
+                    "[Linko AI] Ollama API 呼び出しに失敗しました: %s — %s",
+                    type(e).__name__,
+                    msg,
+                )
             return None
         except json.JSONDecodeError as e:
-            logger.warning("[Rinko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200])
+            logger.warning(
+                "[Linko AI] Ollama 応答の JSON 解析に失敗しました: %s", str(e)[:200]
+            )
             return None
         except Exception as e:
-            logger.warning("[Rinko AI] Ollama 呼び出しエラー: %s — %s", type(e).__name__, str(e)[:300])
+            logger.warning(
+                "[Linko AI] Ollama 呼び出しエラー: %s — %s",
+                type(e).__name__,
+                str(e)[:300],
+            )
             return None
     return None

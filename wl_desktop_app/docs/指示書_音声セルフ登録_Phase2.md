@@ -23,7 +23,7 @@
 ## Phase 分割
 
 | Phase | 内容 | 成果 |
-|-------|------|------|
+| ------- | ------ | ------ |
 | **2a** | 音声セルフ登録（OTP 共通・チャレンジ録音・embedding 保存） | 社員 PC から声紋登録 |
 | **2b** | 話者照合エンジン（ECAPA-TDNN 等）本番化・閾値調整 | 照合スコアが安定 |
 | **2c** | エントランス音声 verify + **`face_or_voice` 開錠** | 登録音声で開錠 |
@@ -48,7 +48,7 @@
 顔のみ / 声のみ / 両方の組み合わせ:
 
 | パターン | OTP | トークン scope | UI |
-|----------|-----|----------------|-----|
+| ---------- | ----- | ---------------- | ----- |
 | 顔のみ | 1 回 | `face_put` | 既存 Phase 1 |
 | 声のみ | 1 回 | `voice_put` | 本 Phase 2a |
 | 両方 | **1 回** | `face_put`, `voice_put` | 顔 3 枚 → 続けて声 3 サンプル（同一セッション） |
@@ -77,7 +77,7 @@ sequenceDiagram
 ## 設計原則
 
 | 原則 | 内容 |
-|------|------|
+| ------ | ------ |
 | OTP 共通 | `start` / `verify` は顔 Phase 1 と **同一エンドポイント**。サービス名は `self_register` に統合（後方互換で `self_face_registration` 設定キーは残してよい） |
 | 最小権限 | トークン scope: `face_put` / `voice_put`。URL の `person_id` はトークンと一致必須 |
 | ライブ録音のみ | セルフ経路は **WAV ファイル選択不可**（管理者経路のみファイル可） |
@@ -91,7 +91,7 @@ sequenceDiagram
 ## 登録経路セキュリティ（なりすましリスク低減）
 
 | ID | 対策 | 実装 Phase |
-|----|------|------------|
+| ---- | ------ | ------------ |
 | S1 | メール OTP（既存） | 2a |
 | S2 | セルフ: ファイルアップロード不可 | 2a |
 | S3 | チャレンジフレーズ（例: 「リン子、今日は **4827** と申します」） | 2a |
@@ -150,7 +150,7 @@ sequenceDiagram
 ```
 
 | キー | 既定 | 説明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `self_voice_registration.enabled` | `false` | 音声セルフ登録マスター |
 | `consent_text_ja` | （文言） | 音声登録同意文 |
 | `enrollment_samples_required` | `3` | 1 セッションで必要なサンプル数 |
@@ -378,7 +378,7 @@ Entrance 待機
 ### auth_mode
 
 | 値 | 挙動 |
-|----|------|
+| ---- | ------ |
 | `face_only` | 現状維持 |
 | `voice_only` | 音声のみ |
 | **`face_or_voice`** | **どちらか成功で開錠（初期値）** |
@@ -406,7 +406,7 @@ Entrance 待機
 ### 新規ファイル（案）
 
 | ファイル | 役割 |
-|----------|------|
+| ---------- | ------ |
 | `voice_registry_self_client.py` | challenges GET, voice PUT self |
 | `voice_registry_self_dialog.py` | 同意 → OTP（顔ダイアログ再利用可）→ チャレンジ録音 |
 | `voice_capture.py` | 拡張: チャレンジ表示付き `VoiceCaptureDialog` |
@@ -435,7 +435,7 @@ def upload_voices_self_serial(...) -> tuple[int, int, str | None]: ...
 ### linko-system
 
 | # | タスク |
-|---|--------|
+| --- | -------- |
 | L1 | `self_voice_registration` 設定 + `/admin` UI |
 | L2 | `self_register/status`・`verify` の scope 拡張（face/voice 個別 enabled） |
 | L3 | `GET /self_register/voice/challenges` + セッションストア |
@@ -450,7 +450,7 @@ def upload_voices_self_serial(...) -> tuple[int, int, str | None]: ...
 ### wl_desktop_app
 
 | # | タスク |
-|---|--------|
+| --- | -------- |
 | D1 | `features.voice_registry_self` + 設定 UI |
 | D2 | `voice_registry_self_client.py` |
 | D3 | `voice_registry_self_dialog.py`（OTP は顔と共有） |
@@ -485,16 +485,16 @@ def upload_voices_self_serial(...) -> tuple[int, int, str | None]: ...
 
 ### Phase 2c
 
-8. `auth_mode=face_or_voice` で **顔または声** のどちらかで開錠
-9. エントランスは **毎回別チャレンジ**（登録サンプルの再生では開錠不可）
-10. `entrance_voice_unlock.enabled=false` で音声開錠のみ停止（顔は維持）
+1. `auth_mode=face_or_voice` で **顔または声** のどちらかで開錠
+2. エントランスは **毎回別チャレンジ**（登録サンプルの再生では開錠不可）
+3. `entrance_voice_unlock.enabled=false` で音声開錠のみ停止（顔は維持）
 
 ---
 
 ## テスト観点（手動）
 
 | # | 手順 | 期待 |
-|---|------|------|
+| --- | ------ | ------ |
 | T1 | voice OFF | 案内して終了 |
 | T2 | OTP → 3 サンプル | voice_embeddings 3/5 |
 | T3 | チャレンジ文言を読まず無音 | 400 quality rejected |
@@ -528,7 +528,7 @@ def upload_voices_self_serial(...) -> tuple[int, int, str | None]: ...
 ## バージョン・リリース
 
 | マイルストーン | バージョン目安 | 内容 |
-|----------------|----------------|------|
+| ---------------- | ---------------- | ------ |
 | 2a 完了 | **v3.9.0** | 音声セルフ登録 |
 | 2b 完了 | v3.9.x / linko のみ | embedding エンジン |
 | 2c 完了 | v3.10.0 + linko | エントランス音声開錠 |

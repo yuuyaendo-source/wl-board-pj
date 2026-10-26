@@ -9,12 +9,12 @@ POST /api/bs/brainstorm
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,7 @@ from app.ai.client import (
     _split_root_and_v1,
     resolve_ollama_model_for_request,
 )
+from app.config import settings
 from app.db import get_db
 from app.services.brainstorm_calendar import (
     create_google_event,
@@ -32,7 +33,7 @@ from app.services.brainstorm_calendar import (
     handle_pending,
     proposal_payload,
 )
-from app.services.llm_settings import get_resolved_ollama_sync
+from app.services.llm_settings import get_resolved_ollama_async
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,15 @@ class ChatMessage(BaseModel):
 
 class BrainstormRequest(BaseModel):
     messages: list[ChatMessage] = Field(..., description="会話履歴 (古い順)")
-    user_id: Optional[int] = Field(None, description="Board ユーザ ID (カレンダー登録時必須)")
-    calendar_create_enabled: bool = Field(False, description="カレンダー登録アクションを有効化")
-    pending_proposal_id: Optional[str] = Field(None, description="確認待ちの提案 ID (修正・承認用)")
+    user_id: int | None = Field(
+        None, description="Board ユーザ ID (カレンダー登録時必須)"
+    )
+    calendar_create_enabled: bool = Field(
+        False, description="カレンダー登録アクションを有効化"
+    )
+    pending_proposal_id: str | None = Field(
+        None, description="確認待ちの提案 ID (修正・承認用)"
+    )
 
 
 class CalendarActionBody(BaseModel):
@@ -108,20 +115,31 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
     if not msgs:
         return None
 
+    ollama_url, model_override = await get_resolved_ollama_async(db)
+
     if req.pending_proposal_id:
         user_text = _last_user_text(req)
         if not user_text:
             return None
-        result = handle_pending(req.user_id, req.pending_proposal_id, user_text)
+        result = await asyncio.to_thread(
+            handle_pending,
+            req.user_id,
+            req.pending_proposal_id,
+            user_text,
+            ollama_url,
+            model_override,
+        )
         mode = result.get("mode")
         spoken = (result.get("spoken") or "").strip()
         if mode == "confirm":
             p = result.get("proposal")
             if p is None:
-                return _sse_from_spoken("確認の期限が切れました。もう一度予定を教えてください。")
+                return _sse_from_spoken(
+                    "確認の期限が切れました。もう一度予定を教えてください。"
+                )
             ok, msg, _extra = await create_google_event(req.user_id, p.draft, db)
             delete_proposal(p.proposal_id, req.user_id)
-            return _sse_from_spoken(msg if ok else msg)
+            return _sse_from_spoken(msg)
         if mode == "proposal":
             p = result.get("proposal")
             if p is None:
@@ -129,8 +147,13 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
             return _sse_from_spoken(spoken, proposal_payload(p))
         return _sse_from_spoken(spoken or "わかりました。")
 
-    # 新規: 直近の user 発話がカレンダー依頼か判定
-    result = handle_new_calendar_intent(req.user_id, msgs)
+    result = await asyncio.to_thread(
+        handle_new_calendar_intent,
+        req.user_id,
+        msgs,
+        ollama_url,
+        model_override,
+    )
     mode = result.get("mode")
     if mode == "chat":
         return None
@@ -146,7 +169,9 @@ async def _try_calendar_flow(req: BrainstormRequest, db: AsyncSession):
 
 
 @router.post("/calendar/confirm")
-async def calendar_confirm(body: CalendarActionBody, db: AsyncSession = Depends(get_db)):
+async def calendar_confirm(
+    body: CalendarActionBody, db: AsyncSession = Depends(get_db)
+):
     """確認カードの「登録する」。"""
     p = get_proposal(body.proposal_id, body.user_id)
     if p is None:
@@ -166,7 +191,11 @@ async def calendar_cancel(body: CalendarActionBody):
 
 
 @router.post("")
-async def brainstorm(req: BrainstormRequest, db: AsyncSession = Depends(get_db)):
+async def brainstorm(
+    request: Request,
+    req: BrainstormRequest,
+    db: AsyncSession = Depends(get_db),
+):
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages が空です")
 
@@ -178,13 +207,17 @@ async def brainstorm(req: BrainstormRequest, db: AsyncSession = Depends(get_db))
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    url, model_override = get_resolved_ollama_sync()
+    url, model_override = await get_resolved_ollama_async(db)
     if not url:
-        raise HTTPException(status_code=503, detail="LLM (OLLAMA_URL) が設定されていません")
+        raise HTTPException(
+            status_code=503, detail="LLM (OLLAMA_URL) が設定されていません"
+        )
     _, v1_base = _split_root_and_v1(url)
     model = resolve_ollama_model_for_request(url, model_override)
     if not model:
-        raise HTTPException(status_code=503, detail="利用可能な LLM モデルを解決できませんでした")
+        raise HTTPException(
+            status_code=503, detail="利用可能な LLM モデルを解決できませんでした"
+        )
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for m in req.messages:
@@ -198,30 +231,40 @@ async def brainstorm(req: BrainstormRequest, db: AsyncSession = Depends(get_db))
 
     async def event_stream():
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-                async with client.stream("POST", chat_url, json=payload) as resp:
-                    if resp.status_code != 200:
-                        body = (await resp.aread()).decode("utf-8", "replace")[:200]
-                        logger.warning("[brainstorm] LLM HTTP %s: %s", resp.status_code, body)
-                        yield f"data: {json.dumps({'error': f'LLM HTTP {resp.status_code}'}, ensure_ascii=False)}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data = line[len("data:"):].strip()
-                        if data == "[DONE]":
-                            break
-                        try:
-                            obj = json.loads(data)
-                            delta = (obj.get("choices") or [{}])[0].get("delta", {}).get("content")
-                        except Exception:
-                            continue
-                        if delta:
-                            yield f"data: {json.dumps({'token': delta}, ensure_ascii=False)}\n\n"
+            client: httpx.AsyncClient = request.app.state.http_client
+            async with client.stream(
+                "POST", chat_url, json=payload, timeout=120.0
+            ) as resp:
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode("utf-8", "replace")[:200]
+                    logger.warning(
+                        "[brainstorm] LLM HTTP %s: %s", resp.status_code, body
+                    )
+                    yield f"data: {json.dumps({'error': f'LLM HTTP {resp.status_code}'}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                        delta = (
+                            (obj.get("choices") or [{}])[0]
+                            .get("delta", {})
+                            .get("content")
+                        )
+                    except Exception:
+                        continue
+                    if delta:
+                        yield f"data: {json.dumps({'token': delta}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.warning("[brainstorm] streaming エラー: %s — %s", type(e).__name__, str(e)[:200])
+            logger.warning(
+                "[brainstorm] streaming エラー: %s — %s", type(e).__name__, str(e)[:200]
+            )
             yield f"data: {json.dumps({'error': str(e)[:120]}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
