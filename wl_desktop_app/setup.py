@@ -207,7 +207,7 @@ executables = [
 ]
 
 # バージョンは version.py で一元管理
-from version import __version__
+from core.version import __version__
 
 setup(
     name="WonderLinkoDesktop",

@@ -136,7 +136,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._task_remind_weekdays_var = tk.BooleanVar(
             value=bool(self._cfg.get("task_remind_weekdays_only", True))
         )
-        from config_loader import parse_calendar_remind_minutes_list
+        from core.config_loader import parse_calendar_remind_minutes_list
 
         cal_mins = parse_calendar_remind_minutes_list(self._cfg)
         self._calendar_remind_minutes_var = tk.StringVar(
@@ -148,7 +148,7 @@ class SettingsDialog(ctk.CTkToplevel):
             value=tray_labels.get(tray_action, "付箋ボード")
         )
         try:
-            import startup
+            import core.startup as startup
 
             startup_on = startup.is_startup_enabled()
         except Exception:
@@ -358,7 +358,7 @@ class SettingsDialog(ctk.CTkToplevel):
     # --- ハンドラ ----------------------------------------------------------
     def _on_open_face_registry_admin(self) -> None:
         try:
-            from face_registry_admin_dialog import open_face_registry_admin_dialog
+            from ui.face_registry_admin_dialog import open_face_registry_admin_dialog
 
             draft = dict(self._cfg)
             draft["linko_admin_token"] = self._linko_admin_token_var.get().strip()
@@ -379,7 +379,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _on_open_face_self_register(self) -> None:
         try:
-            from face_registry_self_dialog import open_face_self_register_dialog
+            from ui.face_registry_self_dialog import open_face_self_register_dialog
 
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
@@ -399,7 +399,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _on_open_voice_self_register(self) -> None:
         try:
-            from voice_registry_self_dialog import open_voice_self_register_dialog
+            from ui.voice_registry_self_dialog import open_voice_self_register_dialog
 
             draft = dict(self._cfg)
             features = dict(draft.get("features") or {})
@@ -419,7 +419,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _on_open_edit_name(self) -> None:
         try:
-            from edit_name_dialog import open_edit_name_dialog
+            from ui.edit_name_dialog import open_edit_name_dialog
 
             open_edit_name_dialog(master=self, cfg=dict(self._cfg))
         except Exception as e:
@@ -433,7 +433,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _on_pause_task_remind_today(self) -> None:
         try:
             from tkinter import messagebox
-            from task_remind_client import pause_reminders_today
+            from services.task_remind_client import pause_reminders_today
 
             cfg = load_config()
             pause_reminders_today(cfg)
@@ -462,7 +462,7 @@ class SettingsDialog(ctk.CTkToplevel):
         for key, var in self._feature_vars.items():
             new_features[key] = bool(var.get())
 
-        from config_loader import (
+        from core.config_loader import (
             parse_task_remind_times_from_text,
             parse_calendar_remind_minutes_from_text,
         )
@@ -518,7 +518,7 @@ class SettingsDialog(ctk.CTkToplevel):
         # スタートアップの差分チェック＆適用
         if sys.platform == "win32":
             try:
-                import startup
+                import core.startup as startup
 
                 if desired_startup != startup.is_startup_enabled():
                     startup.set_startup_enabled(desired_startup)
@@ -551,7 +551,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 pass
         except Exception as e:
             try:
-                from app_log import log_error
+                from core.app_log import log_error
 
                 log_error(f"設定自動保存失敗: {e}")
             except Exception:
@@ -563,7 +563,7 @@ class SettingsDialog(ctk.CTkToplevel):
         new_visitor_notify = bool(new_features.get("visitor_notify"))
         if new_visitor_notify != prev_visitor_notify:
             try:
-                from visitor_notify_client import (
+                from services.visitor_notify_client import (
                     start_visitor_notify,
                     stop_visitor_notify,
                 )
@@ -599,9 +599,9 @@ class SettingsDialog(ctk.CTkToplevel):
         from tkinter import messagebox
 
         try:
-            from update_checker import check_for_update, download_and_install
-            from version import __version__
-            from config_loader import load_config
+            from core.update_checker import check_for_update, download_and_install
+            from core.version import __version__
+            from core.config_loader import load_config
         except Exception as e:
             messagebox.showerror("アップデート", f"更新モジュールの読み込みに失敗: {e}")
             return
@@ -642,7 +642,7 @@ class SettingsDialog(ctk.CTkToplevel):
             self._save_settings()
         except Exception as e:
             try:
-                from app_log import log_error
+                from core.app_log import log_error
 
                 log_error(f"閉じる時の設定保存失敗: {e}")
             except Exception:

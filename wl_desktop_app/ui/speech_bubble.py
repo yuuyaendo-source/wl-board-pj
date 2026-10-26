@@ -26,7 +26,7 @@ except ImportError as e:
     )
     raise
 
-from theme import Theme, IS_WINDOWS
+from core.theme import Theme, IS_WINDOWS
 
 
 class SpeechBubble:
@@ -52,7 +52,7 @@ class SpeechBubble:
         if not text or self._parent is None:
             return
         try:
-            from notifications import are_enabled
+            from services.notifications import are_enabled
 
             if not are_enabled():
                 return
@@ -65,7 +65,7 @@ class SpeechBubble:
         if not chunk or self._parent is None:
             return
         try:
-            from notifications import are_enabled
+            from services.notifications import are_enabled
 
             if not are_enabled():
                 return

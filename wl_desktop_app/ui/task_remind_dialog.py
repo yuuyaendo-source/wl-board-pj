@@ -14,7 +14,7 @@ except ImportError as e:
     print("customtkinter が見つかりません。", e)
     raise
 
-from config_loader import is_feature_enabled, load_config
+from core.config_loader import is_feature_enabled, load_config
 
 try:
     JST = ZoneInfo("Asia/Tokyo")
@@ -313,7 +313,7 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         note_id = item.get("note_id")
         self._on_action(item, "continue")
         try:
-            from chat_panel import open_chat_panel_with_task
+            from ui.chat_panel import open_chat_panel_with_task
 
             open_chat_panel_with_task(
                 master=self.master,
@@ -346,13 +346,13 @@ class TaskRemindListDialog(ctk.CTkToplevel):
         global _dialog_instance
         _dialog_instance = None
         try:
-            from task_remind_client import notify_dialog_closed
+            from services.task_remind_client import notify_dialog_closed
 
             notify_dialog_closed()
         except Exception:
             pass
         try:
-            import linko_avatar
+            import ui.linko_avatar as linko_avatar
 
             linko_avatar.dismiss_ui()
         except Exception:
@@ -387,7 +387,7 @@ def show_task_remind_dialog(
             _dialog_instance = None
 
     cfg = load_config()
-    from task_remind_client import (
+    from services.task_remind_client import (
         mark_slot_shown_today,
         notify_dialog_closed,
         post_shown_slot,
@@ -404,7 +404,7 @@ def show_task_remind_dialog(
     if count > 1 and "件" not in summary_text:
         summary_text = f"{summary_text}\n（{count}件）"
 
-    from remind_notify import TASK_VOICE_TEXT, deliver_remind
+    from services.remind_notify import TASK_VOICE_TEXT, deliver_remind
 
     titles = "、".join((it.get("title") or "")[:20] for it in items[:5])
     if len(items) > 5:
