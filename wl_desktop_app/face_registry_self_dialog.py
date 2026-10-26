@@ -197,7 +197,7 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
         self._btn_next.configure(state="normal")
         if data.get("skip_otp") and data.get("self_register_token"):
             self._apply_session(data)
-            self._open_capture(burst_count=3)
+            self._open_web_capture()
             return
         self._challenge_id = str(data.get("challenge_id") or "")
         masked = str(data.get("email_masked") or "")
@@ -240,7 +240,35 @@ class FaceSelfRegisterDialog(ctk.CTkToplevel):
             self._show_error("自分の顔を登録", "このセッションでは顔登録が許可されていません。")
             return
         self._apply_session(data)
-        self._open_capture(burst_count=3)
+        self._open_web_capture()
+
+    def _open_web_capture(self) -> None:
+        """linko-system の撮影専用画面をブラウザで開く（受付/管理と同じ撮影 UI・複数枚登録）。
+
+        旧来のアプリ内カメラ（FaceCaptureDialog の3連写）は、ブラウザを開けないときだけ使う。
+        """
+        import webbrowser
+
+        from face_registry_self_client import capture_page_url
+
+        self._cfg = load_config()
+        url = capture_page_url(self._cfg, self._person_id, self._token)
+        opened = False
+        if url:
+            try:
+                opened = bool(webbrowser.open(url))
+            except Exception:
+                opened = False
+        if not opened:
+            self._open_capture(burst_count=3)
+            return
+        self._show_info(
+            "顔の撮影",
+            f"{self._person_name} さんの撮影画面をブラウザで開きました。\n"
+            "画面の案内に従って撮影してください（正面を向いて、ゆっくり左右に少しだけ動かします）。\n"
+            "終わったら OK を押してください。",
+        )
+        self._maybe_prompt_voice()
 
     def _apply_session(self, data: dict) -> None:
         self._token = str(data.get("self_register_token") or "")
